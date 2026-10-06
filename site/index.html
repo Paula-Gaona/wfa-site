@@ -1,0 +1,1666 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wolverine Finance Association</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: green UVU masthead (brand row + nav row) + market-ticker band, then a single content column (max 1120px) whose views swap by role. */
+:root{
+  --brand:#275D38;          /* UVU Green */
+  --brand-deep:#1a4026;
+  --brand-text:#275D38;
+  --on-brand:#ffffff;
+  --tint:#e6efe8;
+  --paper:#f7f9f7;
+  --surface:#ffffff;
+  --ink:#0f1511;
+  --muted:#56655a;
+  --line:#d5dfd7;
+  --header-bg:#275D38;
+  --ticker-bg:#0f1511;
+  --ticker-fg:#e6efe8;
+  --up:#2f9a55;
+  --warn:#9a6a00;
+  --danger:#b3261e;
+  --cat-meeting:#4b5a50; --cat-speaker:#275D38; --cat-workshop:#2d5d86; --cat-competition:#6a3f86; --cat-social:#9a4a26;
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --body:"Source Sans 3","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  --radius:6px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --brand:#2f7046; --brand-deep:#1b3d27; --brand-text:#82c99a; --on-brand:#ffffff; --tint:#17281d;
+  --paper:#0c120e; --surface:#131b16; --ink:#e7eee9; --muted:#9aae9f; --line:#26352b;
+  --header-bg:#163322; --ticker-bg:#050806; --ticker-fg:#cfe3d5; --up:#5fd08a; --warn:#f0c060; --danger:#ff8a80;
+  --cat-meeting:#8fa094; --cat-speaker:#6cc28a; --cat-workshop:#6fa8dc; --cat-competition:#b48fd6; --cat-social:#e0956b;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --brand:#2f7046; --brand-deep:#1b3d27; --brand-text:#82c99a; --on-brand:#ffffff; --tint:#17281d;
+  --paper:#0c120e; --surface:#131b16; --ink:#e7eee9; --muted:#9aae9f; --line:#26352b;
+  --header-bg:#163322; --ticker-bg:#050806; --ticker-fg:#cfe3d5; --up:#5fd08a; --warn:#f0c060; --danger:#ff8a80;
+  --cat-meeting:#8fa094; --cat-speaker:#6cc28a; --cat-workshop:#6fa8dc; --cat-competition:#b48fd6; --cat-social:#e0956b;
+  color-scheme:dark}
+
+*{box-sizing:border-box}
+body{margin:0}
+[hidden]{display:none!important}
+img{max-width:100%}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.55}
+a{color:var(--brand-text)}
+h1,h2,h3{font-family:var(--display);line-height:1.05;text-wrap:balance;margin:0;letter-spacing:.01em}
+h1{font-size:clamp(2.6rem,7vw,4.6rem);font-weight:800;text-transform:uppercase}
+h1.page{font-size:clamp(2.2rem,5vw,3.2rem)}
+h2{font-size:2rem;font-weight:700;text-transform:uppercase}
+h3{font-size:1.3rem;font-weight:700}
+p{margin:0}
+.wrap{max-width:1120px;margin:0 auto;padding-inline:20px}
+.eyebrow{font-family:var(--mono);font-size:.75rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.muted{color:var(--muted)}
+.stack{display:flex;flex-direction:column;gap:16px}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.page-head{display:flex;flex-direction:column;gap:6px;max-width:720px}
+:focus-visible{outline:3px solid var(--up);outline-offset:2px}
+
+/* Header */
+.site-head{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--header-bg);color:var(--on-brand)}
+.head-in{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:10px 0}
+.brand{display:flex;align-items:center;gap:10px;color:inherit;text-decoration:none}
+.mark{width:40px;height:40px;border:2px solid currentColor;display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.05rem;letter-spacing:.02em}
+.brand-name{font-family:var(--display);font-weight:700;font-size:1.15rem;text-transform:uppercase;line-height:1}
+.brand-name small{display:block;font-family:var(--mono);font-size:.62rem;letter-spacing:.14em;opacity:.8;font-weight:500}
+.nav{display:flex;gap:2px;overflow-x:auto;flex-basis:100%;min-width:0;scrollbar-width:none;order:3;margin-inline:-12px}
+.nav a{color:var(--on-brand);text-decoration:none;padding:10px 12px;white-space:nowrap;font-weight:600;opacity:.85;border-bottom:3px solid transparent}
+.nav a:hover{opacity:1}
+.nav a[aria-current="page"]{opacity:1;border-bottom-color:#fff}
+.nav .sep{width:1px;background:rgba(255,255,255,.3);margin:10px 8px}
+.nav a.staff{font-family:var(--mono);font-size:.8rem;letter-spacing:.04em;text-transform:uppercase;padding-top:12px}
+.who{display:flex;align-items:center;gap:10px;margin-left:auto}
+.who .name{font-weight:600}
+
+/* Buttons & inputs */
+.btn{font:inherit;font-weight:700;border:2px solid var(--brand);background:var(--brand);color:var(--on-brand);padding:9px 18px;border-radius:var(--radius);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:8px;line-height:1.2}
+.btn:hover{background:var(--brand-deep);border-color:var(--brand-deep)}
+.btn.ghost{background:transparent;color:var(--brand-text);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--brand-text)}
+.btn.on-dark{background:#fff;color:#1a4026;border-color:#fff}
+.btn.on-dark.ghost{background:transparent;color:#fff;border-color:rgba(255,255,255,.55)}
+.btn.small{padding:5px 12px;font-size:.88rem}
+.btn.danger{background:transparent;color:var(--danger);border-color:var(--danger)}
+.btn.danger.armed{background:var(--danger);color:#fff}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:.92rem}
+input,select,textarea{font:inherit;font-weight:400;padding:9px 11px;border:1.5px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--ink);width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--brand-text);outline:none;box-shadow:0 0 0 3px var(--tint)}
+textarea{min-height:120px;resize:vertical}
+.check{flex-direction:row;align-items:center;gap:8px;font-weight:600}
+.check input{width:auto}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.hint{font-size:.85rem;color:var(--muted);font-weight:400}
+.err{color:var(--danger);font-weight:600;font-size:.92rem}
+.err:empty{display:none}
+
+/* Ticker */
+.ticker{background:var(--ticker-bg);color:var(--ticker-fg);font-family:var(--mono);font-size:.8rem;overflow:hidden;white-space:nowrap;border-bottom:3px solid var(--brand)}
+.ticker-track{display:inline-flex;gap:44px;padding-block:9px;padding-left:20px;animation:tick 48s linear infinite}
+.ticker-item{display:inline-flex;gap:10px}
+.ticker .sym{color:#fff;font-weight:500}
+.ticker .up{color:#5fd08a}
+@keyframes tick{to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion:reduce){.ticker-track{animation:none}}
+
+/* Sections */
+main{padding-block:36px 64px}
+.view{display:flex;flex-direction:column;gap:40px}
+.section-head{display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap;border-bottom:2px solid var(--ink);padding-bottom:8px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.tile{background:var(--surface);padding:16px 18px;display:flex;flex-direction:column;gap:2px}
+.tile .v{font-family:var(--display);font-weight:800;font-size:2.2rem;line-height:1;font-variant-numeric:tabular-nums}
+.tile .l{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+
+/* Hero */
+.hero{display:grid;grid-template-columns:1.4fr 1fr;gap:32px;align-items:stretch}
+.hero-copy{display:flex;flex-direction:column;gap:18px;justify-content:center;min-width:0}
+.hero-copy p.lede{font-size:1.2rem;max-width:34em;color:var(--muted)}
+.next-card{background:var(--brand);color:var(--on-brand);border-radius:var(--radius);padding:24px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.next-card .eyebrow{color:rgba(255,255,255,.75)}
+.next-card h3{font-size:1.7rem}
+.bigdate{display:flex;align-items:baseline;gap:10px;font-family:var(--display);font-weight:800;text-transform:uppercase}
+.bigdate .d{font-size:4rem;line-height:.9}
+.bigdate .m{font-size:1.5rem}
+@media (max-width:760px){.hero{grid-template-columns:1fr}}
+.today-bar{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;border:2px solid var(--brand-text);border-radius:var(--radius);padding:14px 18px;background:var(--tint)}
+.live{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;color:var(--brand-text)}
+.live::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--up)}
+
+/* Announcements */
+.ann{display:flex;flex-direction:column;gap:6px;padding:18px 0;border-bottom:1px solid var(--line)}
+.ann:first-child{padding-top:4px}
+.ann-meta{display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:.85rem;color:var(--muted)}
+.tag{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:3px;border:1px solid currentColor;white-space:nowrap}
+.tag.pinned,.tag.ok{color:var(--brand-text)}
+.tag.members{color:var(--cat-workshop)}
+.tag.warn{color:var(--warn)}
+.tag.bad{color:var(--danger)}
+.ann-body{white-space:pre-wrap;max-width:68ch}
+.home-cols{display:grid;grid-template-columns:1.2fr 1fr;gap:40px}
+.home-cols>*{min-width:0}
+@media (max-width:860px){.home-cols{grid-template-columns:1fr}}
+
+/* Event rows */
+.ev-list{display:flex;flex-direction:column}
+.ev-row{display:grid;grid-template-columns:64px 1fr auto;gap:16px;align-items:center;padding:14px 0;border:0;border-bottom:1px solid var(--line);cursor:pointer;background:none;text-align:left;font:inherit;color:inherit;width:100%}
+.ev-row:hover .ev-title{color:var(--brand-text);text-decoration:underline}
+.datebox{border:2px solid var(--ink);text-align:center;font-family:var(--display);text-transform:uppercase;line-height:1;padding:6px 0}
+.datebox .m{font-size:.85rem;font-weight:700;display:block}
+.datebox .d{font-size:1.75rem;font-weight:800}
+.ev-title{font-weight:700;font-size:1.08rem}
+.ev-sub{font-size:.9rem;color:var(--muted)}
+.cat{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.06em}
+.cat::before{content:"";width:9px;height:9px;border-radius:2px;background:var(--c)}
+.rsvp-count{font-family:var(--mono);font-size:.82rem;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.rsvp-count .up{color:var(--up)}
+.going{color:var(--brand-text);font-weight:700}
+
+/* Calendar */
+.cal-bar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.cal-bar h2{min-width:9ch}
+.filters{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:inherit;font-size:.85rem;font-weight:600;padding:5px 12px;border-radius:99px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.chip::before{content:"";width:8px;height:8px;border-radius:2px;background:var(--c,var(--muted))}
+.chip[aria-pressed="false"]{opacity:.5}
+.cal-scroll{overflow-x:auto}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-top:1px solid var(--line);border-left:1px solid var(--line);background:var(--surface)}
+.cal .dow{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;padding:8px;border-right:1px solid var(--line);border-bottom:2px solid var(--ink);color:var(--muted)}
+.cal .cell{min-height:112px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:6px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.cal .cell.out{background:var(--paper)}
+.cal .cell.out .num{opacity:.4}
+.cal .num{font-family:var(--mono);font-size:.8rem;font-variant-numeric:tabular-nums}
+.cal .cell.today .num{background:var(--brand);color:var(--on-brand);border-radius:3px;padding:0 6px;align-self:flex-start}
+.cal-ev{font:inherit;font-size:.8rem;font-weight:600;text-align:left;border:0;border-left:3px solid var(--c);background:var(--tint);color:var(--ink);padding:3px 6px;border-radius:2px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%}
+.cal-ev:hover{text-decoration:underline}
+.cal-ev .t{font-family:var(--mono);font-weight:500;font-size:.7rem;color:var(--muted);margin-right:4px}
+@media (max-width:640px){
+  .cal .cell{min-height:58px;padding:4px}
+  .cal-ev{font-size:0;padding:0;height:7px;border-left:0;background:var(--c);border-radius:2px}
+  .cal-ev .t{display:none}
+  .cal .dow{padding:6px 2px;text-align:center}
+}
+
+/* Modal */
+.backdrop{position:fixed;inset:0;background:rgba(5,10,7,.6);display:grid;place-items:center;padding:16px;z-index:50}
+.modal{background:var(--surface);color:var(--ink);border-radius:var(--radius);max-width:560px;width:100%;max-height:90vh;overflow:auto;border-top:6px solid var(--c,var(--brand))}
+.modal.wide{max-width:900px}
+.modal-in{padding:24px;display:flex;flex-direction:column;gap:16px}
+.modal-x{float:right;font:inherit;font-size:1.4rem;line-height:1;background:none;border:0;color:var(--muted);cursor:pointer;padding:4px 8px}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:.95rem}
+.facts dt{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding-top:3px}
+.facts dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.meter{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.meter span{display:block;height:100%;background:var(--up)}
+.codebig{font-family:var(--mono);font-size:clamp(3.5rem,14vw,7rem);letter-spacing:.2em;text-align:center;line-height:1;padding:20px 0;border:3px solid var(--ink);border-radius:var(--radius)}
+.checkin-form{display:flex;gap:8px;flex-wrap:wrap}
+.checkin-form input{width:9em;font-family:var(--mono);text-transform:uppercase;letter-spacing:.2em}
+
+/* Auth */
+.auth{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--surface)}
+.auth-side{background:var(--brand);color:var(--on-brand);padding:32px;display:flex;flex-direction:column;gap:14px;justify-content:space-between}
+.auth-side .eyebrow{color:rgba(255,255,255,.75)}
+.auth-form{padding:32px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.notice{background:var(--tint);border-left:4px solid var(--brand-text);padding:10px 14px;font-size:.95rem}
+@media (max-width:760px){.auth{grid-template-columns:1fr}.auth-side,.auth-form{padding:22px}}
+
+/* Tabs, tables */
+.tabs{display:flex;gap:4px;border-bottom:2px solid var(--line);overflow-x:auto}
+.tabs button{font:inherit;font-weight:700;background:none;border:0;padding:10px 14px;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--brand-text);border-bottom-color:var(--brand-text)}
+.tabs .badge{font-family:var(--mono);font-size:.7rem;background:var(--brand);color:var(--on-brand);border-radius:99px;padding:1px 7px;margin-left:6px}
+.table-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.95rem}
+th{font-family:var(--mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:2px solid var(--ink);white-space:nowrap}
+td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+td.num,th.num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+tr.me td{background:var(--tint);font-weight:700}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--tint)}
+tr.sel td{background:var(--tint)}
+td select{padding:5px 8px;width:auto}
+.role{font-family:var(--mono);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:3px;white-space:nowrap}
+.role.admin{background:var(--ink);color:var(--paper)}
+.role.officer{background:var(--brand);color:var(--on-brand)}
+.role.member{background:var(--tint);color:var(--brand-text)}
+.site-head .role.member,.site-head .role.officer{background:#fff;color:#1a4026}
+.site-head .role.admin{background:#0f1511;color:#fff}
+.split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px;align-items:start}
+@media (max-width:860px){.split{grid-template-columns:1fr}}
+.preview{border:1.5px dashed var(--line);border-radius:var(--radius);padding:16px;min-width:0}
+.list-row{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.list-row>div{min-width:0}
+.task{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start;padding:12px 0;border-bottom:1px solid var(--line)}
+.task input{width:20px;height:20px;margin-top:2px}
+.task.done .ev-title{text-decoration:line-through;color:var(--muted)}
+.pwset{border:1px solid var(--line);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;gap:8px;margin:0}
+.pwset legend{font-weight:700;padding:0 6px;font-size:.92rem}
+.mail-pre{white-space:pre-wrap;font-size:.95rem;overflow-wrap:anywhere}
+
+/* About, officers, resources, recaps */
+.pillars{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:24px}
+.pillar{border-top:4px solid var(--brand);padding-top:14px;display:flex;flex-direction:column;gap:8px}
+.officers{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:20px}
+.officer{display:flex;flex-direction:column;gap:10px;padding:20px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
+.officer-top{display:flex;gap:14px;align-items:center}
+.avatar{width:64px;height:64px;flex:none;background:var(--brand);color:var(--on-brand);display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.5rem}
+.officer .title{font-family:var(--mono);font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--brand-text)}
+.contact{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:10px;margin-top:auto;font-size:.92rem}
+.contact .line{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.contact .line span{overflow-wrap:anywhere;min-width:0}
+.res-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
+.res{display:flex;flex-direction:column;gap:6px;padding:18px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--ink)}
+.res:hover{border-color:var(--brand-text)}
+.res .go{color:var(--brand-text);font-weight:700;margin-top:auto}
+.lock{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:var(--tint);padding:18px 20px;border-radius:var(--radius)}
+.empty{padding:24px;text-align:center;color:var(--muted);border:1.5px dashed var(--line);border-radius:var(--radius)}
+.recap{display:flex;flex-direction:column;gap:12px;padding-bottom:32px;border-bottom:1px solid var(--line)}
+.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+.photos button{padding:0;border:0;background:none;cursor:zoom-in}
+.photos img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;border-radius:3px}
+.thumbs{display:flex;gap:8px;flex-wrap:wrap}
+.thumb{position:relative}
+.thumb img{width:84px;height:64px;object-fit:cover;border-radius:3px;display:block}
+.thumb button{position:absolute;top:2px;right:2px;font:inherit;font-size:.75rem;background:var(--ink);color:var(--paper);border:0;border-radius:3px;cursor:pointer;padding:0 6px}
+.arch{display:grid;grid-template-columns:110px 1fr auto;gap:16px;align-items:start;padding:16px 0;border-bottom:1px solid var(--line)}
+.arch>div{min-width:0}
+@media (max-width:560px){.arch{grid-template-columns:1fr}}
+.rank{font-family:var(--display);font-weight:800;font-size:1.4rem}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:12px 20px;border-radius:var(--radius);font-weight:600;z-index:60;max-width:calc(100% - 32px)}
+footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;color:var(--muted)}
+</style>
+</head>
+<body>
+<header class="site-head">
+  <div class="wrap head-in">
+    <a class="brand" href="#home" aria-label="Wolverine Finance Association home">
+      <span class="mark">WFA</span>
+      <span class="brand-name">Wolverine Finance<small>Association · UVU</small></span>
+    </a>
+    <div class="who" id="who"></div>
+    <nav class="nav" id="nav" aria-label="Main"></nav>
+  </div>
+</header>
+<div class="ticker" aria-label="Upcoming events"><div class="ticker-track" id="ticker"></div></div>
+<main class="wrap" id="app"><div class="empty">Loading club data…</div></main>
+<footer><div class="wrap row" style="justify-content:space-between">
+  <span>Wolverine Finance Association · A student club at Utah Valley University</span>
+  <span id="foot-role"></span>
+</div></footer>
+<div class="backdrop" id="modal" hidden></div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+/* ---------- Connection (both values are meant to be public) ---------- */
+const SUPABASE_URL = 'https://razxymbbfsnnnguyaalp.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_G9Ct3sh1zfK2peRadj-nzg_SSLCr2Sn';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const initialHash = location.hash;
+
+const CATS = {
+  meeting: ['General meeting', '--cat-meeting'],
+  speaker: ['Speaker', '--cat-speaker'],
+  workshop: ['Workshop', '--cat-workshop'],
+  competition: ['Competition', '--cat-competition'],
+  social: ['Social', '--cat-social']
+};
+const PTS = { meeting:10, speaker:10, workshop:15, competition:25, social:5 };
+const ARCH = { slides:'Slides', recording:'Recording', notes:'Notes', template:'Template' };
+const MAJORS = ['Finance','Accounting','Economics','Business Management','Marketing','Information Systems','Mathematics','Computer Science','Undeclared'];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function iso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function dayOffset(n){ const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+n); return iso(d); }
+function parseDay(s){ const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
+
+/* ---------- Data: loaded from Supabase into one in-memory snapshot ---------- */
+let authUser = null, session = null, myRole = 'guest', loaded = false;
+const db = { settings:{ semester:'', dues:0 }, adminEmails:[], officerEmails:[], profiles:{}, users:[], events:[], stats:{},
+  rsvps:{}, attendance:{}, announcements:[], recaps:[], archive:[], tasks:[], dues:{}, leader:[], log:[] };
+
+async function load(){
+  const { data: { session: s } } = await sb.auth.getSession();
+  authUser = s ? s.user : null;
+  session = authUser ? authUser.email.toLowerCase() : null;
+  const r = await sb.rpc('my_role');
+  myRole = session ? (r.data || 'member') : 'guest';
+  const signed = !!session, off = myRole === 'officer' || myRole === 'admin';
+  const t = name => sb.from(name).select('*');
+  const reqs = {
+    settings: sb.from('settings').select('*').eq('id', 1).maybeSingle(),
+    profiles: t('officers_public'),
+    events: t('events'),
+    stats: sb.rpc('event_stats'),
+    anns: t('announcements'),
+    recaps: t('recaps'),
+    archive: signed && t('archive'),
+    members: signed && t('members'),
+    rsvps: signed && t('rsvps'),
+    att: signed && t('attendance'),
+    dues: signed && t('dues'),
+    leader: signed && sb.rpc('leaderboard'),
+    access: off && t('access_list'),
+    codes: off && t('checkin_codes'),
+    tasks: off && t('tasks'),
+    log: myRole === 'admin' && sb.from('change_log').select('*').order('ts', { ascending:false }).limit(500)
+  };
+  const keys = Object.keys(reqs);
+  const res = await Promise.all(keys.map(k => reqs[k] || Promise.resolve({ data:null })));
+  const R = {};
+  keys.forEach((k, i) => { if (res[i].error) console.warn(k, res[i].error.message); R[k] = res[i].data; });
+
+  db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0) };
+  db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
+  (R.profiles || []).forEach(p => {
+    db.profiles[p.email] = { name:p.name, title:p.title, bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin };
+    (p.role === 'admin' ? db.adminEmails : db.officerEmails).push(p.email);
+  });
+  if (R.access){
+    db.adminEmails = R.access.filter(a => a.role === 'admin').map(a => a.email);
+    db.officerEmails = R.access.filter(a => a.role === 'officer').map(a => a.email);
+  }
+  db.users = (R.members || []).map(m => ({ id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, major:m.major, email:m.email, joined:m.joined }));
+  const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
+  db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null }));
+  db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
+  const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
+  db.rsvps = group(R.rsvps); db.attendance = group(R.att);
+  db.announcements = (R.anns || []).map(a => ({ id:a.id, title:a.title, body:a.body, aud:a.aud, pinned:a.pinned, date:iso(new Date(a.created_at)), author:a.author }));
+  db.recaps = (R.recaps || []).map(x => ({ id:x.id, eventId:x.event_id, title:x.title, body:x.body, photos:x.photos || [], date:iso(new Date(x.created_at)), author:x.author }));
+  db.archive = (R.archive || []).map(a => ({ id:a.id, title:a.title, type:a.type, url:a.url || '', eventId:a.event_id, desc:a.descr || '', date:a.date }));
+  db.tasks = (R.tasks || []).map(x => ({ id:x.id, title:x.title, eventId:x.event_id, who:x.owner, due:x.due, done:x.done }));
+  db.dues = {}; (R.dues || []).forEach(d => db.dues[d.email] = { status:d.status, date:d.updated });
+  db.leader = R.leader || [];
+  db.log = (R.log || []).map(l => ({ ts:l.ts, who:l.who, text:l.text }));
+}
+
+const must = r => { if (r.error) throw r.error; return r.data; };
+function errMsg(e){
+  const m = (e && (e.message || e.error_description)) || String(e);
+  if (/members_uvuid_unique|Database error saving new user/i.test(m)) return 'An account already uses this UVU ID.';
+  if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'Can’t reach the server. Check your connection and try again.';
+  if (/row-level security|permission denied/i.test(m)) return 'You don’t have permission to do that.';
+  return m;
+}
+// Run a change, reload everything, re-render. Errors show as a toast.
+async function act(fn, ok){
+  try { await fn(); await load(); if (ok) toast(ok); render(); return true; }
+  catch(e){ toast(errMsg(e)); return false; }
+}
+async function logChange(text){ try { await sb.from('change_log').insert({ text }); } catch(e){} }
+
+/* ---------- Roles ---------- */
+const RANK = { guest:0, member:1, officer:2, admin:3 };
+function role(){ return session ? myRole : 'guest'; }
+function can(r){ return RANK[role()] >= RANK[r]; }
+function roleOf(email){
+  if (!email) return 'guest';
+  const e = email.toLowerCase();
+  if (e === session) return myRole;
+  if (db.adminEmails.includes(e)) return 'admin';
+  if (db.officerEmails.includes(e)) return 'officer';
+  return 'member';
+}
+function me(){
+  if (!session) return null;
+  const meta = (authUser && authUser.user_metadata) || {};
+  return db.users.find(u => u.email === session) || { uvuid:'', first: meta.first || session.split('@')[0], last: meta.last || '', major:'', email: session, joined: todayIso() };
+}
+function staffEmails(){ return [...db.adminEmails, ...db.officerEmails.filter(e => !db.adminEmails.includes(e))]; }
+function userName(email){
+  if (!email) return '';
+  const u = db.users.find(x => x.email === email);
+  if (u && (u.first || u.last)) return u.first + ' ' + u.last;
+  return (db.profiles[email] && db.profiles[email].name) || email;
+}
+
+/* ---------- Helpers ---------- */
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function fmtDay(s){ return parseDay(s).toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }); }
+function fmtTime(t){ if (!t) return ''; let [h,m] = t.split(':').map(Number); const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + String(m).padStart(2,'0') + ' ' + ap; }
+function fmtStamp(ts){ return new Date(ts).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
+function todayIso(){ return dayOffset(0); }
+function isPast(ev){ return ev.date < todayIso(); }
+function isToday(ev){ return ev.date === todayIso(); }
+function sortedEvents(){ return [...db.events].sort((a,b) => (a.date + a.start).localeCompare(b.date + b.start)); }
+function upcoming(){ return sortedEvents().filter(e => !isPast(e)); }
+function heldEvents(){ return sortedEvents().filter(e => e.date <= todayIso()).reverse(); }
+function going(id){ return db.rsvps[id] || []; }
+function attended(id){ return db.attendance[id] || []; }
+function rsvpCount(id){ return db.stats[id] ? db.stats[id].rsvps : going(id).length; }
+function attCount(id){ return db.stats[id] ? db.stats[id].attended : attended(id).length; }
+function evById(id){ return db.events.find(e => e.id === id); }
+function catVar(c){ return 'var(' + (CATS[c] || CATS.meeting)[1] + ')'; }
+function points(email){ return db.events.reduce((s, e) => s + (attended(e.id).includes(email) ? PTS[e.cat] || 0 : 0), 0); }
+function attendCount(email){ return db.events.filter(e => attended(e.id).includes(email)).length; }
+function leaderboard(){
+  return db.leader.map(x => ({ u:{ first:x.first, last:x.last, major:x.major, email:x.email }, pts:x.points, n:x.events }))
+    .sort((a,b) => b.pts - a.pts || b.n - a.n || (a.u.last || '').localeCompare(b.u.last || ''));
+}
+function duesOf(email){ return (db.dues[email] || { status:'unpaid' }).status; }
+function toast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 3200); }
+function datebox(s){ const d = parseDay(s); return `<div class="datebox"><span class="m">${MON[d.getMonth()]}</span><span class="d">${d.getDate()}</span></div>`; }
+function initials(n){ return n.split(' ').map(s => s[0] || '').join('').slice(0,2).toUpperCase(); }
+function randStr(n, A){ const a = new Uint32Array(n); crypto.getRandomValues(a); return [...a].map(x => A[x % A.length]).join(''); }
+function newCode(){ return randStr(4, 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'); }
+function tempPw(){ return randStr(4, 'ABCDEFGHJKMNPQRSTUVWXYZ') + '-' + randStr(5, 'abcdefghjkmnpqrstuvwxyz23456789'); }
+function copyText(txt, label){
+  const fallback = () => showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3>Copy ${esc(label)}</h3></div>
+    <p class="muted">Your browser blocked automatic copying. The text is selected below. Press Ctrl+C (or ⌘C) to copy it.</p>
+    <textarea id="copy-box" style="min-height:200px" readonly>${esc(txt)}</textarea></div>`, () => { const b = document.getElementById('copy-box'); b.focus(); b.select(); });
+  try { navigator.clipboard.writeText(txt).then(() => toast(label[0].toUpperCase() + label.slice(1) + ' copied'), fallback); } catch(e){ fallback(); }
+}
+
+/* ---------- UI state ---------- */
+const ui = {
+  cal: (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
+  catsOn: new Set(Object.keys(CATS)),
+  officerTab: 'events', adminTab: 'access',
+  editEvent: null, armed: null, reportEvent: null,
+  memberSearch: '', logSearch: '', editOfficer: null,
+  recapPhotos: [], archType: 'all', duesFilter: 'all', tasksMine: false,
+  mail: { aud:'all', ev:'', subject:'', body:'' },
+  reset: { step:1, email:'' }, prefillEmail: '', notice: '', recovery: false
+};
+function pendingRsvp(){ try { return sessionStorage.getItem('wfa-pending'); } catch(e){ return ui._pending || null; } }
+function setPendingRsvp(id){ ui._pending = id; try { id ? sessionStorage.setItem('wfa-pending', id) : sessionStorage.removeItem('wfa-pending'); } catch(e){} }
+
+/* ---------- Chrome: nav, ticker ---------- */
+function renderChrome(route){
+  const links = [['home','Home'],['calendar','Calendar'],['recaps','Recaps'],['officers','Officers'],['about','About'],['resources','Resources']];
+  const mem = [['archive','Archive'],['leaderboard','Leaderboard'],['account','My account']];
+  const staff = [];
+  if (can('officer')) staff.push(['officer','Officer tools']);
+  if (can('admin')) staff.push(['admin','Admin']);
+  const a = ([r,l], cls='') => `<a class="${cls}" href="#${r}" ${route===r?'aria-current="page"':''}>${l}</a>`;
+  document.getElementById('nav').innerHTML = links.map(l => a(l)).join('') +
+    (can('member') ? '<span class="sep"></span>' + mem.map(l => a(l)).join('') : '') +
+    (staff.length ? '<span class="sep"></span>' + staff.map(l => a(l, 'staff')).join('') : '');
+  const u = me(), r = role();
+  document.getElementById('who').innerHTML = u
+    ? `<span class="name">${esc(u.first)}</span><span class="role ${r}">${r}</span><button class="btn on-dark ghost small" data-act="signout">Sign out</button>`
+    : `<a class="btn on-dark ghost small" href="#signin">Sign in</a><a class="btn on-dark small" href="#signup">Join</a>`;
+  document.getElementById('foot-role').textContent = session ? 'Signed in as ' + r : '';
+
+  const items = upcoming().slice(0, 6).map(e => {
+    const d = parseDay(e.date);
+    return `<span class="ticker-item"><span class="sym">WFA.${e.cat.slice(0,3).toUpperCase()}</span><span>${isToday(e) ? 'TODAY' : MON[d.getMonth()].toUpperCase() + ' ' + String(d.getDate()).padStart(2,'0')}</span><span>${esc(e.title.toUpperCase())}</span><span class="up">▲ ${rsvpCount(e.id)} RSVP</span></span>`;
+  }).join('');
+  document.getElementById('ticker').innerHTML = items ? items + items : '<span class="ticker-item">NO UPCOMING EVENTS POSTED</span>';
+}
+
+/* ---------- Shared pieces ---------- */
+function annHtml(a){
+  return `<article class="ann">
+    <div class="ann-meta">${a.pinned?'<span class="tag pinned">Pinned</span>':''}${a.aud==='members'?'<span class="tag members">Members</span>':''}<span>${fmtDay(a.date)}</span><span>· ${esc(userName(a.author))}</span></div>
+    <h3>${esc(a.title)}</h3><p class="ann-body">${esc(a.body)}</p></article>`;
+}
+function annList(limit){
+  const all = [...db.announcements].sort((a,b) => (b.pinned - a.pinned) || b.date.localeCompare(a.date));
+  const list = limit ? all.slice(0, limit) : all;
+  return (list.length ? list.map(annHtml).join('') : '<div class="empty">No announcements yet.</div>') +
+    (can('member') ? '' : `<div class="lock" style="margin-top:16px"><span>Members also see member-only announcements.</span><a class="btn small" href="#signin">Sign in</a></div>`);
+}
+function evRow(e){
+  const n = rsvpCount(e.id), mine = session && going(e.id).includes(session), was = session && attended(e.id).includes(session);
+  let status = '';
+  if (was) status = '<div class="going">Attended</div>';
+  else if (mine) status = isPast(e) ? '<div class="muted">RSVP’d, missed</div>' : '<div class="going">You’re going</div>';
+  return `<button class="ev-row" data-act="open-event" data-id="${e.id}">
+    ${datebox(e.date)}
+    <div style="min-width:0"><div class="cat" style="--c:${catVar(e.cat)}">${CATS[e.cat][0]}${isToday(e)?' · today':''}</div>
+      <div class="ev-title">${esc(e.title)}</div>
+      <div class="ev-sub">${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc)}</div></div>
+    <div class="rsvp-count">${status}<span class="up">▲</span> ${n}${e.cap?` / ${e.cap}`:''}</div>
+  </button>`;
+}
+function todayBar(){
+  return db.events.filter(isToday).map(e => {
+    const done = session && attended(e.id).includes(session);
+    return `<div class="today-bar"><div class="stack" style="gap:2px"><span class="live">Happening today · ${fmtTime(e.start)}</span><strong>${esc(e.title)}</strong></div>
+      ${done ? '<span class="going">You’re checked in ✓</span>' : `<button class="btn small" data-act="open-event" data-id="${e.id}">${can('officer') ? 'Open check-in' : 'Check in'}</button>`}</div>`;
+  }).join('');
+}
+function gate(need){
+  if (!session) return `<div class="view"><div class="lock"><span>This page is for members. Sign in or join to see it.</span><div class="row"><a class="btn small ghost" href="#signup">Join</a><a class="btn small" href="#signin">Sign in</a></div></div></div>`;
+  return `<div class="view"><div class="lock"><span>This page is for ${need}s. Your account is on the ${role()} list.</span><a class="btn small" href="#home">Go home</a></div></div>`;
+}
+function delBtn(key, label, act, id){
+  const armed = ui.armed === key;
+  return `<button class="btn danger small ${armed?'armed':''}" data-act="${act}" data-id="${esc(id)}" data-key="${esc(key)}">${armed ? 'Click again to confirm' : label}</button>`;
+}
+function eventOptions(list, sel, blank){
+  return (blank ? `<option value="">${blank}</option>` : '') + list.map(e => `<option value="${e.id}" ${e.id===sel?'selected':''}>${fmtDay(e.date)} · ${esc(e.title)}</option>`).join('');
+}
+function tabsHtml(tabs, cur, act){
+  return `<div class="tabs" role="tablist">${tabs.map(([k,l,b]) => `<button role="tab" aria-selected="${cur===k}" data-act="${act}" data-tab="${k}">${l}${b?`<span class="badge">${b}</span>`:''}</button>`).join('')}</div>`;
+}
+
+/* ---------- Public views ---------- */
+function viewHome(){
+  const next = upcoming().find(e => !isToday(e)) || upcoming()[0];
+  const recap = [...db.recaps].sort((a,b) => b.date.localeCompare(a.date))[0];
+  return `<div class="view">
+    ${todayBar()}
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow">Utah Valley University · Student club</div>
+        <h1>Wolverine Finance Association</h1>
+        <p class="lede">Hands-on finance for UVU students: terminal workshops, stock pitches, modeling nights, and conversations with people who work in the industry.</p>
+        <div class="row">
+          <a class="btn" href="#calendar">See the calendar</a>
+          ${can('member') ? '<a class="btn ghost" href="#account">My account</a>' : '<a class="btn ghost" href="#signup">Become a member</a>'}
+        </div>
+      </div>
+      ${next ? (() => { const d = parseDay(next.date); return `<aside class="next-card">
+        <div class="eyebrow">Next event</div>
+        <div class="bigdate"><span class="d">${d.getDate()}</span><span class="m">${MONTHS[d.getMonth()]}</span></div>
+        <h3>${esc(next.title)}</h3>
+        <p>${fmtTime(next.start)} · ${esc(next.loc)}</p>
+        <div><button class="btn on-dark" data-act="open-event" data-id="${next.id}">Details & RSVP</button></div>
+      </aside>`; })() : ''}
+    </section>
+    <div class="home-cols">
+      <section class="stack">
+        <div class="section-head"><h2>Announcements</h2>${can('officer')?'<a href="#officer" data-tab="announcements">Write one</a>':''}</div>
+        <div>${annList(4)}</div>
+      </section>
+      <section class="stack">
+        <div class="section-head"><h2>Coming up</h2><a href="#calendar">Full calendar</a></div>
+        <div class="ev-list">${upcoming().slice(0,4).map(evRow).join('') || '<div class="empty">No events scheduled yet.</div>'}</div>
+        ${recap ? `<div class="section-head" style="margin-top:16px"><h2>Latest recap</h2><a href="#recaps">All recaps</a></div>
+          <div class="stack" style="gap:6px"><span class="eyebrow">${evById(recap.eventId) ? esc(evById(recap.eventId).title) : ''}</span><h3>${esc(recap.title)}</h3><p class="muted">${esc(recap.body.split('\n')[0].slice(0,180))}${recap.body.length>180?'…':''}</p></div>` : ''}
+      </section>
+    </div>
+  </div>`;
+}
+
+function viewCalendar(){
+  const m = ui.cal, y = m.getFullYear(), mo = m.getMonth();
+  const start = new Date(y, mo, 1 - m.getDay());
+  const end = new Date(y, mo + 1, 0);
+  const weeks = Math.ceil((m.getDay() + end.getDate()) / 7);
+  const byDay = {};
+  db.events.filter(e => ui.catsOn.has(e.cat)).forEach(e => (byDay[e.date] = byDay[e.date] || []).push(e));
+  Object.values(byDay).forEach(l => l.sort((a,b) => a.start.localeCompare(b.start)));
+  let cells = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="dow">${d}</div>`).join('');
+  for (let i = 0; i < weeks * 7; i++){
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const k = iso(d), evs = byDay[k] || [];
+    cells += `<div class="cell ${d.getMonth()!==mo?'out':''} ${k===todayIso()?'today':''}">
+      <span class="num">${d.getDate()}</span>
+      ${evs.map(e => `<button class="cal-ev" style="--c:${catVar(e.cat)}" data-act="open-event" data-id="${e.id}" title="${esc(e.title)}"><span class="t">${fmtTime(e.start).replace(':00','')}</span>${esc(e.title)}</button>`).join('')}
+    </div>`;
+  }
+  const monthEvents = sortedEvents().filter(e => ui.catsOn.has(e.cat) && parseDay(e.date).getMonth() === mo && parseDay(e.date).getFullYear() === y);
+  return `<div class="view">
+    <div class="cal-bar">
+      <div class="row"><h2>${MONTHS[mo]} ${y}</h2>
+        <div class="row" style="gap:6px"><button class="btn ghost small" data-act="cal" data-d="-1" aria-label="Previous month">←</button><button class="btn ghost small" data-act="cal" data-d="0">Today</button><button class="btn ghost small" data-act="cal" data-d="1" aria-label="Next month">→</button></div>
+      </div>
+      ${can('officer')?'<a class="btn small" href="#officer" data-tab="events">+ Add event</a>':''}
+    </div>
+    <div class="filters" aria-label="Filter by type">${Object.entries(CATS).map(([k,[l,v]]) => `<button class="chip" style="--c:var(${v})" aria-pressed="${ui.catsOn.has(k)}" data-act="cat" data-cat="${k}">${l}</button>`).join('')}</div>
+    <div class="cal-scroll"><div class="cal">${cells}</div></div>
+    <section class="stack">
+      <div class="section-head"><h2>This month</h2><span class="muted">${monthEvents.length} event${monthEvents.length===1?'':'s'}</span></div>
+      <div class="ev-list">${monthEvents.map(evRow).join('') || '<div class="empty">Nothing scheduled this month.</div>'}</div>
+    </section>
+  </div>`;
+}
+
+function officerCard(email){
+  const p = db.profiles[email] || {}, n = userName(email), contact = p.contact || email;
+  return `<article class="officer">
+    <div class="officer-top"><div class="avatar">${esc(initials(n))}</div><div style="min-width:0"><div class="title">${esc(p.title || (roleOf(email)==='admin'?'Admin':'Officer'))}</div><h3>${esc(n)}</h3></div></div>
+    ${p.bio ? `<p class="muted">${esc(p.bio)}</p>` : ''}
+    <div class="contact">
+      <div class="line"><span>${esc(contact)}</span><button class="btn ghost small" data-act="copy" data-text="${esc(contact)}" data-label="email">Copy</button></div>
+      ${p.hours ? `<div class="line"><span class="muted">Office hours</span><span>${esc(p.hours)}</span></div>` : ''}
+      ${p.linkedin ? `<div class="line"><a href="${esc(p.linkedin)}" target="_blank" rel="noopener">LinkedIn profile ↗</a></div>` : ''}
+    </div>
+  </article>`;
+}
+function viewOfficers(){
+  const staff = staffEmails();
+  return `<div class="view">
+    <section class="page-head"><div class="eyebrow">${esc(db.settings.semester)} leadership</div><h1 class="page">Meet the officers</h1>
+      <p class="muted">Questions about events, dues, or getting involved? Email the officer who runs that area, or stop by during office hours.</p></section>
+    <div class="officers">${staff.map(officerCard).join('') || '<div class="empty">No officers listed yet.</div>'}</div>
+    ${can('officer') ? '<p class="hint">Officers: update your bio and contact info under Officer tools → My profile.</p>' : ''}
+  </div>`;
+}
+
+function viewAbout(){
+  return `<div class="view">
+    <section class="stack" style="max-width:720px">
+      <div class="eyebrow">About the club</div>
+      <h1 class="page">Built for students who want to work in finance</h1>
+      <p style="font-size:1.15rem">The Wolverine Finance Association connects UVU students with the skills, competitions, and people that lead to careers in investment banking, corporate finance, asset management, and financial planning. Any UVU student can join, whatever their major.</p>
+      <div><a class="btn ghost" href="#officers">Meet the officers</a></div>
+    </section>
+    <section class="pillars">
+      <div class="pillar"><h3>Learn the tools</h3><p class="muted">Bloomberg Terminal sessions, Excel modeling nights, and valuation workshops taught by students who have done the internships.</p></div>
+      <div class="pillar"><h3>Compete</h3><p class="muted">An internal stock pitch competition each semester and teams for outside challenges like the CFA Institute Research Challenge.</p></div>
+      <div class="pillar"><h3>Meet the industry</h3><p class="muted">Speaker nights, alumni socials, and firm visits that turn into referrals and interviews.</p></div>
+    </section>
+    <section class="stack">
+      <div class="section-head"><h2>How membership works</h2></div>
+      <div class="grid2">
+        <div class="stack" style="gap:6px"><h3>Join online</h3><p class="muted">Create an account with your UVU ID and preferred email. ${db.settings.dues ? `Semester dues are $${db.settings.dues}, paid to an officer.` : ''}</p></div>
+        <div class="stack" style="gap:6px"><h3>RSVP and check in</h3><p class="muted">RSVP from the calendar, then check in at the event with the code on screen. Check-ins earn leaderboard points.</p></div>
+        <div class="stack" style="gap:6px"><h3>Run for office</h3><p class="muted">Officer elections happen each spring. Active members near the top of the leaderboard are encouraged to run.</p></div>
+      </div>
+      ${can('member') ? '' : '<div><a class="btn" href="#signup">Become a member</a></div>'}
+    </section>
+  </div>`;
+}
+
+function viewResources(){
+  const links = [
+    ['SEC EDGAR full-text search','Primary source for 10-Ks, 10-Qs, and proxy statements when you build a pitch.','https://www.sec.gov/edgar/search/'],
+    ['FRED economic data','Federal Reserve data on rates, inflation, and employment for macro context.','https://fred.stlouisfed.org/'],
+    ['Damodaran Online','Free valuation datasets and lecture notes from NYU professor Aswath Damodaran.','https://pages.stern.nyu.edu/~adamodar/'],
+    ['CFA Institute','Program details for the CFA charter and the Research Challenge.','https://www.cfainstitute.org/'],
+    ['Investopedia','Quick definitions when a term in a speaker talk is new to you.','https://www.investopedia.com/']
+  ];
+  return `<div class="view">
+    <section class="page-head"><div class="eyebrow">Resources</div><h1 class="page">Where we start our research</h1>
+      <p class="muted">Free sources officers use to prepare workshops and stock pitches. Members can find past slides and recordings in the <a href="#archive">Archive</a>.</p></section>
+    <div class="res-grid">${links.map(([t,d,u]) => `<a class="res" href="${u}" target="_blank" rel="noopener"><h3>${t}</h3><p class="muted">${d}</p><span class="go">Open site ↗</span></a>`).join('')}</div>
+    <section class="stack">
+      <div class="section-head"><h2>Recruiting timeline</h2></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>When</th><th>What to do</th></tr></thead>
+        <tbody>
+          <tr><td>Freshman / sophomore year</td><td>Attend workshops, learn Excel and accounting basics, apply to sophomore insight programs.</td></tr>
+          <tr><td>Spring of sophomore year</td><td>Many banks open junior summer internship applications well over a year ahead. Have your résumé ready.</td></tr>
+          <tr><td>Junior summer</td><td>Internship. A strong summer often leads to a full-time return offer.</td></tr>
+          <tr><td>Senior fall</td><td>Full-time recruiting for anyone without a return offer.</td></tr>
+        </tbody></table></div>
+      <p class="hint">Timelines vary by firm and shift year to year. Check each firm's careers page.</p>
+    </section>
+  </div>`;
+}
+
+function viewRecaps(){
+  const list = [...db.recaps].sort((a,b) => b.date.localeCompare(a.date));
+  return `<div class="view">
+    <section class="page-head"><div class="eyebrow">Event recaps</div><h1 class="page">What you missed</h1>
+      <p class="muted">Notes and photos from past events.</p></section>
+    ${can('officer') ? '<div><a class="btn small" href="#officer" data-tab="recaps">+ Write a recap</a></div>' : ''}
+    <div class="stack" style="gap:32px">${list.map(r => { const e = evById(r.eventId); return `<article class="recap">
+      <div class="ann-meta">${e ? `<span class="cat" style="--c:${catVar(e.cat)}">${CATS[e.cat][0]}</span><span>${esc(e.title)} · ${fmtDay(e.date)}</span>` : ''}<span>· by ${esc(userName(r.author))}</span></div>
+      <h2>${esc(r.title)}</h2>
+      <p class="ann-body">${esc(r.body)}</p>
+      ${r.photos.length ? `<div class="photos">${r.photos.map((p,i) => `<button data-act="photo" data-id="${r.id}" data-i="${i}" aria-label="View photo ${i+1}"><img src="${esc(p)}" alt="Photo ${i+1} from ${esc(r.title)}" loading="lazy"></button>`).join('')}</div>` : ''}
+    </article>`; }).join('') || '<div class="empty">No recaps yet.</div>'}</div>
+  </div>`;
+}
+
+/* ---------- Member views ---------- */
+function viewArchive(){
+  if (!can('member')) return gate('member');
+  const items = [...db.archive].sort((a,b) => b.date.localeCompare(a.date)).filter(a => ui.archType === 'all' || a.type === ui.archType);
+  return `<div class="view">
+    <section class="page-head"><div class="eyebrow">Members only</div><h1 class="page">Workshop archive</h1>
+      <p class="muted">Slides, recordings, and templates from past events.</p></section>
+    <div class="filters">${[['all','All'], ...Object.entries(ARCH)].map(([k,l]) => `<button class="chip" aria-pressed="${ui.archType===k}" data-act="arch-type" data-type="${k}">${l}</button>`).join('')}</div>
+    <div>${items.map(a => { const e = evById(a.eventId); return `<div class="arch">
+      <div><span class="tag ok">${ARCH[a.type]}</span><div class="ev-sub" style="margin-top:6px">${fmtDay(a.date)}</div></div>
+      <div><div class="ev-title">${esc(a.title)}</div>${e ? `<div class="ev-sub">From: ${esc(e.title)}</div>` : ''}${a.desc ? `<p class="muted">${esc(a.desc)}</p>` : ''}</div>
+      <div>${a.url ? `<a class="btn ghost small" href="${esc(a.url)}" target="_blank" rel="noopener">Open ↗</a>` : '<span class="hint">Link not added yet</span>'}</div>
+    </div>`; }).join('') || '<div class="empty">Nothing here yet.</div>'}</div>
+    ${can('officer') ? '<div><a class="btn small" href="#officer" data-tab="archive">+ Add to archive</a></div>' : ''}
+  </div>`;
+}
+
+function viewLeaderboard(){
+  if (!can('member')) return gate('member');
+  const lb = leaderboard();
+  return `<div class="view">
+    <section class="page-head"><div class="eyebrow">${esc(db.settings.semester)} · members only</div><h1 class="page">Leaderboard</h1>
+      <p class="muted">Points come from checking in at events with the code shown on screen. RSVPs alone don't count.</p></section>
+    <div class="tiles">${Object.entries(PTS).map(([k,v]) => `<div class="tile"><span class="v">${v}</span><span class="l">${CATS[k][0]}</span></div>`).join('')}</div>
+    <div class="table-wrap"><table><thead><tr><th class="num">Rank</th><th>Member</th><th>Major</th><th class="num">Events</th><th class="num">Points</th></tr></thead><tbody>
+      ${lb.map((x,i) => `<tr class="${x.u.email===session?'me':''}"><td class="num"><span class="rank">${i+1}</span></td><td>${esc(x.u.first)} ${esc(x.u.last)}${x.u.email===session?' (you)':''}</td><td>${esc(x.u.major)}</td><td class="num">${x.n}</td><td class="num">${x.pts}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No members yet.</td></tr>'}
+    </tbody></table></div>
+  </div>`;
+}
+
+function viewAccount(){
+  const u = me(); if (!u) return gate('member');
+  const mine = sortedEvents().filter(e => going(e.id).includes(u.email) || attended(e.id).includes(u.email));
+  const up = mine.filter(e => !isPast(e)), past = mine.filter(isPast).reverse();
+  const lb = leaderboard(), rank = lb.findIndex(x => x.u.email === u.email) + 1;
+  const d = duesOf(u.email);
+  return `<div class="view">
+    <section class="row" style="justify-content:space-between;align-items:end">
+      <div class="page-head"><div class="eyebrow">My account</div><h1 class="page">${esc(u.first)} ${esc(u.last)}</h1></div>
+      <span class="role ${role()}">${role()}</span>
+    </section>
+    ${todayBar()}
+    <div class="tiles">
+      <div class="tile"><span class="v">${points(u.email)}</span><span class="l">Points</span></div>
+      <div class="tile"><span class="v">${rank ? '#' + rank : '—'}</span><span class="l">Rank of ${lb.length}</span></div>
+      <div class="tile"><span class="v">${attendCount(u.email)}</span><span class="l">Events attended</span></div>
+      <div class="tile"><span class="v" style="color:${d==='unpaid'?'var(--danger)':'var(--brand-text)'}">${d === 'paid' ? 'Paid' : d === 'waived' ? 'Waived' : 'Due'}</span><span class="l">${esc(db.settings.semester)} dues${d==='unpaid' && db.settings.dues ?` · $${db.settings.dues}`:''}</span></div>
+    </div>
+    <div class="split">
+      <section class="stack">
+        <div class="section-head"><h2>My RSVPs</h2><span class="muted">${up.length} upcoming</span></div>
+        <div class="ev-list">${up.map(evRow).join('') || '<div class="empty">No upcoming RSVPs. <a href="#calendar">Browse the calendar</a>.</div>'}</div>
+        ${past.length ? `<div class="section-head" style="margin-top:16px"><h3>History</h3><span class="muted">${past.length}</span></div><div class="ev-list">${past.map(evRow).join('')}</div>` : ''}
+      </section>
+      <section class="panel stack">
+        <h3>Profile</h3>
+        <dl class="facts">
+          <dt>UVU ID</dt><dd class="num">${esc(u.uvuid)}</dd>
+          <dt>Major</dt><dd>${esc(u.major)}</dd>
+          <dt>Email</dt><dd>${esc(u.email)}</dd>
+          <dt>Joined</dt><dd>${fmtDay(u.joined)}</dd>
+        </dl>
+        ${d === 'unpaid' && db.settings.dues ? `<p class="hint">Pay $${db.settings.dues} to any officer. They'll mark you paid here.</p>` : ''}
+      </section>
+    </div>
+  </div>`;
+}
+
+function viewAuth(mode){
+  if (session) return `<div class="view"><div class="notice">You’re signed in as ${esc(session)}. <a href="#home">Go home</a></div></div>`;
+  const pend = pendingRsvp() && evById(pendingRsvp());
+  const side = `<div class="auth-side">
+      <div class="stack"><div class="eyebrow">${mode==='signin'?'Members':'New members'}</div>
+      <h2>${mode==='signin'?'Welcome back':'Join the WFA'}</h2>
+      <p>${mode==='signin'?'Sign in to RSVP, check in at events, and see the archive and leaderboard.':'Membership is open to every UVU student. Your account lets you RSVP, check in for points, and see member-only content.'}</p></div>
+      <p style="opacity:.8;font-size:.9rem">Officer and admin access comes from the club’s access lists. If your email is on one, you’ll see those tools as soon as you sign in.</p>
+    </div>`;
+  const notice = (ui.notice ? `<div class="notice">${esc(ui.notice)}</div>` : '') +
+    (pend ? `<div class="notice">Sign in or create an account to RSVP for <strong>${esc(pend.title)}</strong>. We’ll save your spot right after.</div>` : '');
+  if (mode === 'signin') return `<div class="view"><div class="auth">${side}
+    <form class="auth-form" id="f-signin" novalidate>
+      ${notice}
+      <h2>Sign in</h2>
+      <label>Email<input id="si-email" type="email" autocomplete="email" required value="${esc(ui.prefillEmail)}"></label>
+      <label>Password<input id="si-pw" type="password" autocomplete="current-password" required></label>
+      <a href="#reset" style="align-self:flex-start;font-size:.92rem">Forgot your password?</a>
+      <div class="err" id="si-err"></div>
+      <div class="row"><button class="btn" type="submit">Sign in</button><span class="muted">New here? <a href="#signup">Create an account</a></span></div>
+    </form></div></div>`;
+  return `<div class="view"><div class="auth">${side}
+    <form class="auth-form" id="f-signup" novalidate>
+      ${notice}
+      <h2>Create your account</h2>
+      <label>UVU ID<input id="su-id" inputmode="numeric" maxlength="8" placeholder="8 digits" required><span class="hint">The 8-digit number on your UVU ID card.</span></label>
+      <div class="grid2">
+        <label>First name<input id="su-first" autocomplete="given-name" required></label>
+        <label>Last name<input id="su-last" autocomplete="family-name" required></label>
+      </div>
+      <label>Major<input id="su-major" list="majors" required placeholder="Start typing"><datalist id="majors">${MAJORS.map(m => `<option value="${m}">`).join('')}</datalist></label>
+      <label>Preferred email<input id="su-email" type="email" autocomplete="email" required><span class="hint">We’ll send a confirmation link here. If you’re an officer, use the email on the officer list.</span></label>
+      <div class="grid2">
+        <label>Password<input id="su-pw" type="password" autocomplete="new-password" required><span class="hint">At least 8 characters.</span></label>
+        <label>Confirm password<input id="su-pw2" type="password" autocomplete="new-password" required></label>
+      </div>
+      <div class="err" id="su-err"></div>
+      <div class="row"><button class="btn" type="submit">Create account</button><span class="muted">Already a member? <a href="#signin">Sign in</a></span></div>
+    </form></div></div>`;
+}
+
+function viewReset(){
+  if (session) return `<div class="view"><div class="notice">You’re signed in. To change your password, sign out first and use “Forgot your password?”</div></div>`;
+  const r = ui.reset;
+  const side = `<div class="auth-side"><div class="stack"><div class="eyebrow">Account help</div><h2>Reset your password</h2>
+    <p>We’ll email a 6-digit code to the address on your account. Enter it here with your new password.</p></div>
+    <p style="opacity:.8;font-size:.9rem">Didn’t get it? Check your spam folder, then send a new code.</p></div>`;
+  if (r.step === 1) return `<div class="view"><div class="auth">${side}
+    <form class="auth-form" id="f-reset1" novalidate>
+      <h2>Find your account</h2>
+      <label>Account email<input id="rs-email" type="email" autocomplete="email" required value="${esc(r.email)}"></label>
+      <div class="err" id="rs-err"></div>
+      <div class="row"><button class="btn" type="submit">Email me a code</button><a href="#signin">Back to sign in</a></div>
+    </form></div></div>`;
+  return `<div class="view"><div class="auth">${side}
+    <form class="auth-form" id="f-reset2" novalidate>
+      <div class="notice">If an account uses <strong>${esc(r.email)}</strong>, we emailed it a 6-digit code.</div>
+      <h2>Enter the code</h2>
+      <label>Verification code<input id="rs-code" inputmode="numeric" maxlength="10" autocomplete="one-time-code" style="font-family:var(--mono);letter-spacing:.3em;max-width:12em"></label>
+      <div class="grid2">
+        <label>New password<input id="rs-pw" type="password" autocomplete="new-password"><span class="hint">At least 8 characters.</span></label>
+        <label>Confirm<input id="rs-pw2" type="password" autocomplete="new-password"></label>
+      </div>
+      <div class="err" id="rs-err"></div>
+      <div class="row"><button class="btn" type="submit">Reset password</button><button class="btn ghost small" type="button" data-act="reset-resend">Send a new code</button><button class="btn ghost small" type="button" data-act="reset-back">Use a different email</button></div>
+    </form></div></div>`;
+}
+
+function viewSetup(){
+  const u = me(); if (!u) return gate('member');
+  const p = db.profiles[u.email] || {};
+  const recovering = ui.recovery && !(authUser.user_metadata || {}).must_change;
+  return `<div class="view"><div class="auth">
+    <div class="auth-side"><div class="stack"><div class="eyebrow">${recovering ? 'Account help' : 'Welcome' + (p.title ? ', ' + esc(p.title) : '')}</div>
+      <h2>${recovering ? 'Choose a new password' : 'Finish setting up, ' + esc(u.first)}</h2>
+      <p>${recovering ? 'Your reset link worked. Pick a new password to finish.' : 'You signed in with a temporary password. Choose your own to continue.'}</p></div></div>
+    <form class="auth-form" id="f-setup" novalidate>
+      <h2>Choose a password</h2>
+      ${u.uvuid ? '' : '<label>UVU ID<input id="st-id" inputmode="numeric" maxlength="8" placeholder="8 digits"></label>'}
+      ${u.major ? '' : `<label>Major<input id="st-major" list="majors2" placeholder="Start typing"><datalist id="majors2">${MAJORS.map(m => `<option value="${m}">`).join('')}</datalist></label>`}
+      <div class="grid2">
+        <label>New password<input id="st-pw" type="password" autocomplete="new-password"><span class="hint">At least 8 characters.</span></label>
+        <label>Confirm<input id="st-pw2" type="password" autocomplete="new-password"></label>
+      </div>
+      <div class="err" id="st-err"></div>
+      <div class="row"><button class="btn" type="submit">Save and continue</button></div>
+    </form></div></div>`;
+}
+
+/* ---------- Officer tools ---------- */
+function attendanceStats(e){
+  const r = going(e.id), a = attended(e.id);
+  const showed = r.filter(x => a.includes(x));
+  return { rsvp: r.length, came: a.length, showed: showed.length, walkins: a.filter(x => !r.includes(x)), noshows: r.filter(x => !a.includes(x)), rate: r.length ? Math.round(showed.length / r.length * 100) : null };
+}
+function memberTable(rows){
+  return `<div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Major</th><th>UVU ID</th><th>Role</th><th class="num">Events</th><th>Dues</th></tr></thead><tbody>
+    ${rows.map(u => `<tr><td>${esc(u.first)} ${esc(u.last)}</td><td>${esc(u.email)}</td><td>${esc(u.major)}</td><td class="num">${esc(u.uvuid)}</td><td><span class="role ${roleOf(u.email)}">${roleOf(u.email)}</span></td><td class="num">${attendCount(u.email)}</td><td>${duesOf(u.email)}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">No members yet.</td></tr>'}
+  </tbody></table></div>`;
+}
+
+const MAIL_TEMPLATES = {
+  reminder: ['Event reminder', 'Reminder: {event} on {date}', 'Hi everyone,\n\nQuick reminder that {event} is on {date} at {time} in {location}.\n\nSee you there,\nWolverine Finance Association'],
+  dues: ['Dues reminder', '{semester} WFA dues reminder', 'Hi,\n\nOur records show your {semester} dues (${dues}) are still outstanding. You can pay any officer at the next meeting.\n\nThanks,\nWolverine Finance Association'],
+  missed: ['We missed you', 'Sorry we missed you at {event}', 'Hi,\n\nWe missed you at {event} on {date}. Slides and notes are in the members archive on our site.\n\nHope to see you at the next one,\nWolverine Finance Association']
+};
+function mailAudiences(){
+  const ev = sortedEvents();
+  return [
+    ['General', [['all','All members'],['members','Members only (no officers)'],['staff','Officers and admins'],['unpaid','Members with unpaid dues']]],
+    ['RSVP’d to…', ev.map(e => ['rsvp:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
+    ['Attended…', ev.filter(e => e.date <= todayIso()).map(e => ['att:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
+    ['RSVP’d but missed…', ev.filter(isPast).map(e => ['noshow:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])]
+  ];
+}
+function audienceEmails(key){
+  const [k, id] = key.split(':');
+  if (k === 'all') return db.users.map(u => u.email);
+  if (k === 'members') return db.users.filter(u => roleOf(u.email) === 'member').map(u => u.email);
+  if (k === 'staff') return staffEmails();
+  if (k === 'unpaid') return db.users.filter(u => duesOf(u.email) === 'unpaid').map(u => u.email);
+  if (k === 'rsvp') return going(id);
+  if (k === 'att') return attended(id);
+  if (k === 'noshow') { const e = evById(id); return e ? attendanceStats(e).noshows : []; }
+  return [];
+}
+function fillMerge(s){
+  const [, id] = ui.mail.aud.split(':');
+  const e = evById(ui.mail.ev || (id || ''));
+  return s.replace(/\{event\}/g, e ? e.title : '{event}').replace(/\{date\}/g, e ? fmtDay(e.date) : '{date}').replace(/\{time\}/g, e ? fmtTime(e.start) : '{time}')
+    .replace(/\{location\}/g, e ? e.loc : '{location}').replace(/\{semester\}/g, db.settings.semester).replace(/\{dues\}/g, db.settings.dues);
+}
+function mailPreview(){
+  const to = audienceEmails(ui.mail.aud);
+  return `<div class="stack" style="gap:10px">
+    <dl class="facts"><dt>To (BCC)</dt><dd>${to.length} recipient${to.length===1?'':'s'}${to.length ? ': ' + esc(to.slice(0,3).join(', ')) + (to.length>3?` and ${to.length-3} more`:'') : ''}</dd>
+    <dt>Subject</dt><dd><strong>${esc(fillMerge(ui.mail.subject)) || '<span class="muted">No subject yet</span>'}</strong></dd></dl>
+    <div class="mail-pre">${esc(fillMerge(ui.mail.body)) || '<span class="muted">Message preview appears here.</span>'}</div>
+  </div>`;
+}
+function thumbsHtml(){
+  return ui.recapPhotos.map((p,i) => `<div class="thumb"><img src="${esc(p)}" alt="Selected photo ${i+1}"><button type="button" data-act="rm-photo" data-i="${i}" aria-label="Remove photo">×</button></div>`).join('');
+}
+
+function viewOfficer(){
+  if (!can('officer')) return gate('officer');
+  const openTasks = db.tasks.filter(t => !t.done).length;
+  const tabs = [['events','Events'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks',openTasks],['email','Email builder'],['dues','Dues'],['members','Members'],['profile','My profile']];
+  const T = ui.officerTab;
+  let body = '';
+
+  if (T === 'events'){
+    const e = ui.editEvent ? evById(ui.editEvent) : null;
+    body = `<div class="split">
+      <form class="panel stack" id="f-event">
+        <h3>${e ? 'Edit event' : 'Create an event'}</h3>
+        <label>Title<input id="ev-title" required value="${esc(e?.title)}" placeholder="e.g. DCF Valuation Workshop"></label>
+        <div class="grid2">
+          <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${e?.cat===k?'selected':''}>${l} · ${PTS[k]} pts</option>`).join('')}</select></label>
+          <label>Date<input id="ev-date" type="date" required value="${esc(e?.date || dayOffset(7))}"></label>
+        </div>
+        <div class="grid2">
+          <label>Starts<input id="ev-start" type="time" required value="${esc(e?.start || '18:00')}"></label>
+          <label>Ends<input id="ev-end" type="time" required value="${esc(e?.end || '19:00')}"></label>
+        </div>
+        <label>Location<input id="ev-loc" required value="${esc(e?.loc)}" placeholder="Building and room"></label>
+        <label>Seat limit<input id="ev-cap" type="number" min="0" value="${esc(e?.cap || 0)}"><span class="hint">0 means no limit. RSVPs close when the limit is reached.</span></label>
+        <label>Description<textarea id="ev-desc">${esc(e?.desc)}</textarea></label>
+        <div class="err" id="ev-err"></div>
+        <div class="row"><button class="btn" type="submit">${e ? 'Save changes' : 'Add to calendar'}</button>${e ? '<button class="btn ghost" type="button" data-act="cancel-edit">Cancel</button>' : ''}</div>
+      </form>
+      <section class="stack">
+        <div class="section-head"><h3>All events</h3><span class="muted">${db.events.length}</span></div>
+        <div>${sortedEvents().reverse().map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)}</div><div class="ev-sub">${fmtDay(ev.date)} · ${going(ev.id).length} RSVP${isPast(ev)?' · '+attended(ev.id).length+' attended':''}</div></div>
+          <div class="row" style="gap:6px"><button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button>${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('') || '<div class="empty">No events yet. Create the first one.</div>'}</div>
+      </section></div>`;
+  }
+
+  else if (T === 'checkin'){
+    const today = db.events.filter(isToday);
+    const held = heldEvents();
+    const all = held.reduce((s,e) => { const x = attendanceStats(e); s.r += x.rsvp; s.s += x.showed; s.c += x.came; s.w += x.walkins.length; return s; }, { r:0, s:0, c:0, w:0 });
+    const sel = evById(ui.reportEvent) || held[0];
+    const st = sel && attendanceStats(sel);
+    const nameList = l => l.length ? l.map(em => esc(userName(em))).join(', ') : '<span class="muted">None</span>';
+    body = `<div class="stack" style="gap:32px">
+      <section class="stack">
+        <div class="section-head"><h3>Today’s check-in</h3></div>
+        ${today.length ? today.map(e => `<div class="today-bar"><div class="stack" style="gap:2px"><span class="live">${fmtTime(e.start)} · ${attended(e.id).length} checked in</span><strong>${esc(e.title)}</strong></div>
+          <button class="btn small" data-act="show-code" data-id="${e.id}">${e.code ? 'Show code' : 'Start check-in'}</button></div>`).join('')
+          : '<div class="empty">No events today. On the day of an event, start check-in here and put the code on the projector.</div>'}
+      </section>
+      <section class="stack">
+        <div class="section-head"><h3>Attendance report</h3><span class="muted">${held.length} events held</span></div>
+        <div class="tiles">
+          <div class="tile"><span class="v">${all.r ? Math.round(all.s/all.r*100) + '%' : '—'}</span><span class="l">RSVPs who showed up</span></div>
+          <div class="tile"><span class="v">${all.c}</span><span class="l">Total check-ins</span></div>
+          <div class="tile"><span class="v">${all.w}</span><span class="l">Walk-ins (no RSVP)</span></div>
+          <div class="tile"><span class="v">${held.length ? (all.c/held.length).toFixed(1) : '—'}</span><span class="l">Avg per event</span></div>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>Event</th><th>Date</th><th class="num">RSVP</th><th class="num">Came</th><th class="num">Walk-ins</th><th class="num">No-shows</th><th class="num">Show rate</th></tr></thead><tbody>
+          ${held.map(e => { const x = attendanceStats(e); return `<tr class="click ${sel&&sel.id===e.id?'sel':''}" data-act="report-ev" data-id="${e.id}"><td>${esc(e.title)}</td><td>${fmtDay(e.date)}</td><td class="num">${x.rsvp}</td><td class="num">${x.came}</td><td class="num">${x.walkins.length}</td><td class="num">${x.noshows.length}</td><td class="num">${x.rate===null?'—':x.rate+'%'}</td></tr>`; }).join('') || '<tr><td colspan="7" class="muted">No events held yet.</td></tr>'}
+        </tbody></table></div>
+        ${sel ? `<div class="panel stack">
+          <h3>${esc(sel.title)}</h3>
+          <dl class="facts"><dt>Checked in</dt><dd>${nameList(attended(sel.id))}</dd><dt>Walk-ins</dt><dd>${nameList(st.walkins)}</dd><dt>No-shows</dt><dd>${nameList(st.noshows)}</dd></dl>
+          <form class="row" id="f-mark" data-id="${sel.id}"><label style="flex:1;min-width:200px">Mark someone present<select id="mark-who">${db.users.filter(u => !attended(sel.id).includes(u.email)).map(u => `<option value="${esc(u.email)}">${esc(u.first)} ${esc(u.last)}</option>`).join('')}</select></label><button class="btn ghost" style="align-self:end" type="submit">Mark present</button></form>
+          ${st.noshows.length ? `<div><button class="btn ghost small" data-act="mail-to" data-aud="noshow:${sel.id}" data-tpl="missed">Email the no-shows</button></div>` : ''}
+        </div>` : ''}
+      </section></div>`;
+  }
+
+  else if (T === 'announcements'){
+    body = `<div class="split">
+      <form class="panel stack" id="f-ann">
+        <h3>Announcement builder</h3>
+        <label>Headline<input id="an-title" required placeholder="e.g. Pitch deck template is posted"></label>
+        <label>Message<textarea id="an-body" required placeholder="What do members need to know?"></textarea></label>
+        <div class="grid2">
+          <label>Who can see it<select id="an-aud"><option value="all">Everyone, including visitors</option><option value="members">Signed-in members only</option></select></label>
+          <label class="check" style="align-self:end;padding-bottom:10px"><input id="an-pin" type="checkbox"> Pin to top</label>
+        </div>
+        <div class="err" id="an-err"></div>
+        <div class="row"><button class="btn" type="submit">Post announcement</button></div>
+        <div class="eyebrow">Live preview</div>
+        <div class="preview" id="an-preview">${annHtml({ title:'Your headline', body:'Your message will appear here.', aud:'all', pinned:false, date:todayIso(), author:session })}</div>
+      </form>
+      <section class="stack">
+        <div class="section-head"><h3>Posted</h3><span class="muted">${db.announcements.length}</span></div>
+        <div>${[...db.announcements].sort((a,b) => b.date.localeCompare(a.date)).map(a => `<div class="list-row"><div><div class="ev-title">${esc(a.title)}</div><div class="ev-sub">${fmtDay(a.date)} · ${a.aud==='members'?'Members only':'Everyone'}${a.pinned?' · pinned':''}</div></div>
+          <div class="row" style="gap:6px"><button class="btn ghost small" data-act="pin-ann" data-id="${a.id}">${a.pinned?'Unpin':'Pin'}</button>${delBtn('an-'+a.id,'Delete','del-ann',a.id)}</div></div>`).join('') || '<div class="empty">No announcements yet.</div>'}</div>
+      </section></div>`;
+  }
+
+  else if (T === 'recaps'){
+    const held = heldEvents();
+    body = `<div class="split">
+      <form class="panel stack" id="f-recap">
+        <h3>Write a recap</h3>
+        <label>Event<select id="rc-ev">${eventOptions(held, held[0]?.id, 'Not tied to an event')}</select></label>
+        <label>Headline<input id="rc-title" required placeholder="e.g. Five takeaways from the IB panel"></label>
+        <label>Recap<textarea id="rc-body" required placeholder="What happened, key takeaways, thank-yous"></textarea></label>
+        <label>Photos<input id="rc-photos" type="file" accept="image/*" multiple><span class="hint">Up to 6. Photos are resized before uploading.</span></label>
+        <div class="thumbs" id="rc-thumbs">${thumbsHtml()}</div>
+        <div class="err" id="rc-err"></div>
+        <div class="row"><button class="btn" type="submit" id="rc-submit">Publish recap</button></div>
+      </form>
+      <section class="stack">
+        <div class="section-head"><h3>Published</h3><span class="muted">${db.recaps.length}</span></div>
+        <div>${[...db.recaps].sort((a,b) => b.date.localeCompare(a.date)).map(r => `<div class="list-row"><div><div class="ev-title">${esc(r.title)}</div><div class="ev-sub">${fmtDay(r.date)} · ${r.photos.length} photo${r.photos.length===1?'':'s'}</div></div>${delBtn('rc-'+r.id,'Delete','del-recap',r.id)}</div>`).join('') || '<div class="empty">No recaps yet.</div>'}</div>
+      </section></div>`;
+  }
+
+  else if (T === 'archive'){
+    body = `<div class="split">
+      <form class="panel stack" id="f-arch">
+        <h3>Add to the archive</h3>
+        <label>Title<input id="ar-title" required placeholder="e.g. Three-statement model: slides"></label>
+        <div class="grid2">
+          <label>Type<select id="ar-type">${Object.entries(ARCH).map(([k,l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
+          <label>From event<select id="ar-ev">${eventOptions(heldEvents(), '', 'Not tied to an event')}</select></label>
+        </div>
+        <label>Link<input id="ar-url" type="url" placeholder="https://drive.google.com/…"><span class="hint">Share link to Google Drive, OneDrive, YouTube, etc. Set sharing so members can open it.</span></label>
+        <label>Note<input id="ar-desc" placeholder="Optional"></label>
+        <div class="err" id="ar-err"></div>
+        <div class="row"><button class="btn" type="submit">Add</button></div>
+      </form>
+      <section class="stack">
+        <div class="section-head"><h3>In the archive</h3><span class="muted">${db.archive.length}</span></div>
+        <div>${[...db.archive].sort((a,b) => b.date.localeCompare(a.date)).map(a => `<div class="list-row"><div><div class="ev-title">${esc(a.title)}</div><div class="ev-sub">${ARCH[a.type]} · ${a.url ? 'linked' : 'no link'}</div></div>${delBtn('ar-'+a.id,'Remove','del-arch',a.id)}</div>`).join('') || '<div class="empty">Empty.</div>'}</div>
+      </section></div>`;
+  }
+
+  else if (T === 'tasks'){
+    const staff = staffEmails();
+    const list = [...db.tasks].sort((a,b) => (a.done - b.done) || a.due.localeCompare(b.due)).filter(t => !ui.tasksMine || t.who === session);
+    body = `<div class="split">
+      <form class="panel stack" id="f-task">
+        <h3>Add a task</h3>
+        <label>Task<input id="tk-title" required placeholder="e.g. Print name tags"></label>
+        <div class="grid2">
+          <label>For event<select id="tk-ev">${eventOptions(upcoming(), '', 'General / no event')}</select></label>
+          <label>Due<input id="tk-due" type="date" value="${dayOffset(3)}"></label>
+        </div>
+        <label>Owner<select id="tk-who">${staff.map(e => `<option value="${esc(e)}" ${e===session?'selected':''}>${esc(userName(e))}</option>`).join('')}</select></label>
+        <div class="err" id="tk-err"></div>
+        <div class="row"><button class="btn" type="submit">Add task</button></div>
+      </form>
+      <section class="stack">
+        <div class="section-head"><h3>Planning tasks</h3><label class="check" style="font-weight:400"><input type="checkbox" id="tk-mine" ${ui.tasksMine?'checked':''}> Only mine</label></div>
+        <div>${list.map(t => { const e = evById(t.eventId), late = !t.done && t.due < todayIso(), dueToday = !t.done && t.due === todayIso();
+          return `<div class="task ${t.done?'done':''}"><input type="checkbox" data-act="toggle-task" data-id="${t.id}" ${t.done?'checked':''} aria-label="Mark done">
+            <div style="min-width:0"><div class="ev-title">${esc(t.title)}</div><div class="ev-sub">${esc(userName(t.who))}${e ? ' · ' + esc(e.title) : ''} · due ${fmtDay(t.due)} ${late?'<span class="tag bad">Overdue</span>':''}${dueToday?'<span class="tag warn">Today</span>':''}</div></div>
+            ${delBtn('tk-'+t.id,'Delete','del-task',t.id)}</div>`; }).join('') || '<div class="empty">No tasks.</div>'}</div>
+      </section></div>`;
+  }
+
+  else if (T === 'email'){
+    const to = audienceEmails(ui.mail.aud);
+    body = `<div class="split">
+      <form class="panel stack" id="f-mail">
+        <h3>Email draft builder</h3>
+        <div class="row" style="gap:6px"><span class="hint">Start from:</span>${Object.entries(MAIL_TEMPLATES).map(([k,[l]]) => `<button type="button" class="btn ghost small" data-act="mail-tpl" data-tpl="${k}">${l}</button>`).join('')}</div>
+        <label>Send to<select id="ml-aud">${mailAudiences().map(([g, opts]) => opts.length ? `<optgroup label="${esc(g)}">${opts.map(([k,l]) => `<option value="${k}" ${ui.mail.aud===k?'selected':''}>${esc(l)}</option>`).join('')}</optgroup>` : '').join('')}</select></label>
+        <label>Event for {event} details<select id="ml-ev">${eventOptions(sortedEvents(), ui.mail.ev, 'Use the event from “Send to”')}</select></label>
+        <label>Subject<input id="ml-subject" value="${esc(ui.mail.subject)}"></label>
+        <label>Message<textarea id="ml-body" style="min-height:200px">${esc(ui.mail.body)}</textarea>
+          <span class="hint">Placeholders: {event} {date} {time} {location} {semester} {dues}</span></label>
+      </form>
+      <section class="stack">
+        <div class="section-head"><h3>Preview</h3><span class="muted">${to.length} recipients</span></div>
+        <div class="preview" id="ml-preview">${mailPreview()}</div>
+        <div class="row">
+          <button class="btn" data-act="mail-copy" data-what="to" ${to.length?'':'disabled'}>Copy recipients</button>
+          <button class="btn ghost" data-act="mail-copy" data-what="subject">Copy subject</button>
+          <button class="btn ghost" data-act="mail-copy" data-what="body">Copy message</button>
+        </div>
+        <p class="hint">Paste recipients into the BCC field of your email app so members don’t see each other’s addresses.</p>
+      </section></div>`;
+  }
+
+  else if (T === 'dues'){
+    const rows = db.users.filter(u => ui.duesFilter === 'all' || duesOf(u.email) === ui.duesFilter);
+    const c = { paid:0, unpaid:0, waived:0 }; db.users.forEach(u => c[duesOf(u.email)]++);
+    body = `<div class="stack" style="gap:24px">
+      <form class="row" id="f-dues-set" style="align-items:end">
+        <label style="width:180px">Semester<input id="ds-sem" value="${esc(db.settings.semester)}"></label>
+        <label style="width:140px">Dues ($)<input id="ds-amt" type="number" min="0" value="${esc(db.settings.dues)}"></label>
+        <button class="btn ghost" type="submit">Save</button>
+      </form>
+      <div class="tiles">
+        <div class="tile"><span class="v">$${c.paid * db.settings.dues}</span><span class="l">Collected</span></div>
+        <div class="tile"><span class="v">${c.paid}</span><span class="l">Paid</span></div>
+        <div class="tile"><span class="v" style="color:var(--danger)">${c.unpaid}</span><span class="l">Unpaid · $${c.unpaid * db.settings.dues} outstanding</span></div>
+        <div class="tile"><span class="v">${c.waived}</span><span class="l">Waived</span></div>
+      </div>
+      <div class="row" style="justify-content:space-between">
+        <div class="filters">${[['all','Everyone'],['unpaid','Unpaid'],['paid','Paid'],['waived','Waived']].map(([k,l]) => `<button class="chip" aria-pressed="${ui.duesFilter===k}" data-act="dues-filter" data-f="${k}">${l}</button>`).join('')}</div>
+        ${c.unpaid ? '<button class="btn ghost small" data-act="mail-to" data-aud="unpaid" data-tpl="dues">Email unpaid members</button>' : ''}
+      </div>
+      <div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Updated</th></tr></thead><tbody>
+        ${rows.map(u => { const d = db.dues[u.email]; return `<tr><td>${esc(u.first)} ${esc(u.last)}</td><td>${esc(u.email)}</td>
+          <td><select data-dues="${esc(u.email)}" aria-label="Dues status for ${esc(u.first)}">${['unpaid','paid','waived'].map(s => `<option value="${s}" ${duesOf(u.email)===s?'selected':''}>${s[0].toUpperCase()+s.slice(1)}</option>`).join('')}</select></td>
+          <td>${d ? fmtDay(d.date) : '—'}</td></tr>`; }).join('') || '<tr><td colspan="4" class="muted">No one in this group.</td></tr>'}
+      </tbody></table></div></div>`;
+  }
+
+  else if (T === 'members'){
+    const q = ui.memberSearch.toLowerCase();
+    const rows = db.users.filter(u => !q || (u.first+' '+u.last+' '+u.email+' '+u.major+' '+u.uvuid).toLowerCase().includes(q));
+    body = `<section class="stack">
+      <div class="row"><label style="flex:1;min-width:220px">Search members<input id="mem-search" value="${esc(ui.memberSearch)}" placeholder="Name, email, major, or UVU ID"></label><span class="muted" style="align-self:end;padding-bottom:10px">${db.users.length} accounts</span></div>
+      ${memberTable(rows)}
+      ${can('admin') ? '<p class="hint">Need a spreadsheet? Admin → Member export.</p>' : ''}
+    </section>`;
+  }
+
+  else if (T === 'profile'){
+    const p = db.profiles[session] || {};
+    body = `<div class="split">
+      <form class="panel stack" id="f-profile">
+        <h3>My officer profile</h3>
+        <p class="hint">Shown on the public Officers page. Your title (${esc(p.title || 'Officer')}) is set by an admin.</p>
+        <label>Display name<input id="pf-name" value="${esc(p.name || userName(session))}"></label>
+        <label>Contact email<input id="pf-contact" type="email" value="${esc(p.contact || session)}"></label>
+        <label>Office hours<input id="pf-hours" value="${esc(p.hours || '')}" placeholder="e.g. Wed 2:00–3:00 PM, library 2nd floor"></label>
+        <label>LinkedIn URL<input id="pf-linkedin" type="url" value="${esc(p.linkedin || '')}" placeholder="https://www.linkedin.com/in/…"></label>
+        <label>Bio<textarea id="pf-bio" style="min-height:90px">${esc(p.bio || '')}</textarea></label>
+        <div class="err" id="pf-err"></div>
+        <div class="row"><button class="btn" type="submit">Save profile</button></div>
+      </form>
+      <section class="stack"><div class="eyebrow">How it looks</div>${officerCard(session)}</section>
+    </div>`;
+  }
+
+  return `<div class="view">
+    <div class="page-head"><div class="eyebrow">Officer tools</div><h1 class="page">Run the club</h1></div>
+    ${tabsHtml(tabs, T, 'otab')}
+    ${body}
+  </div>`;
+}
+
+/* ---------- Admin ---------- */
+function exportRows(){
+  const head = ['UVU ID','First name','Last name','Major','Email','Role','Joined','Dues','Events attended','Points'];
+  return [head, ...db.users.map(u => [u.uvuid, u.first, u.last, u.major, u.email, roleOf(u.email), u.joined, duesOf(u.email), attendCount(u.email), points(u.email)])];
+}
+function exportTsv(){
+  const clean = v => String(v ?? '').replace(/[\t\n\r]/g, ' ');
+  return exportRows().map(r => r.map(clean).join('\t')).join('\n');
+}
+function downloadCsv(){
+  const q = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const csv = exportRows().map(r => r.map(q).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }));
+  a.download = 'wfa-members-' + todayIso() + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function viewAdmin(){
+  if (!can('admin')) return gate('admin');
+  const T = ui.adminTab;
+  const tabs = [['access','Access lists'],['export','Member export'],['log','Change log']];
+  let body = '';
+  if (T === 'access'){
+    const ed = ui.editOfficer, p = ed ? (db.profiles[ed] || {}) : {};
+    const acct = ed ? db.users.find(u => u.email === ed) : null;
+    const nm = acct ? { first: acct.first, last: acct.last } : (() => { const s = (p.name || '').split(' '); return { first: s[0] || '', last: s.slice(1).join(' ') }; })();
+    const row = (email, list) => {
+      const pr = db.profiles[email] || {}, hasAcct = db.users.some(u => u.email === email);
+      return `<div class="list-row"><div><div class="ev-title">${esc(userName(email))} <span class="muted" style="font-weight:400">· ${esc(pr.title || (list==='admin'?'Admin':'Officer'))}</span></div>
+        <div class="ev-sub" style="overflow-wrap:anywhere">${esc(email)}${hasAcct?'':' · no account yet'}</div></div>
+        <div class="row" style="gap:6px"><button class="btn ghost small" data-act="edit-officer" data-id="${esc(email)}">Edit</button>${delBtn(list+'-'+email,'Remove','rm-access',email)}</div></div>`;
+    };
+    body = `<p class="muted" style="max-width:62ch">Access is set by email. Anyone who signs in with an email on the admin list sees admin tools; officer list emails see officer tools. Everyone else is a member.</p>
+    <div class="split">
+      <form class="panel stack" id="f-officer">
+        <h3>${ed ? 'Edit ' + esc(userName(ed)) : 'Add an officer or admin'}</h3>
+        <label>Login email<input id="of-email" type="email" required value="${esc(ed || '')}" ${ed?'readonly':''} placeholder="The email they sign in with"></label>
+        <div class="grid2">
+          <label>First name<input id="of-first" required value="${esc(nm.first)}" autocomplete="off"></label>
+          <label>Last name<input id="of-last" required value="${esc(nm.last)}" autocomplete="off"></label>
+        </div>
+        <div class="grid2">
+          <label>Title<input id="of-title" value="${esc(p.title || '')}" placeholder="e.g. VP of Finance"></label>
+          <label>Access level<select id="of-level"><option value="officer" ${ed && roleOf(ed)==='officer'?'selected':''}>Officer</option><option value="admin" ${ed && roleOf(ed)==='admin'?'selected':''}>Admin</option></select></label>
+        </div>
+        <fieldset class="pwset">
+          <legend>${acct ? 'New temporary password (optional)' : 'Temporary password (optional)'}</legend>
+          <div class="row" style="gap:8px;flex-wrap:nowrap"><input id="of-pw" autocomplete="off" spellcheck="false" style="font-family:var(--mono);flex:1;min-width:0" placeholder="${acct ? 'Leave blank to keep their password' : 'Leave blank if they’ll sign up themselves'}"><button type="button" class="btn ghost small" data-act="gen-pw">Generate</button></div>
+          <span class="hint">With a temporary password, their account is created now and they choose their own password at first sign-in.</span>
+          <label class="check"><input id="of-send" type="checkbox" checked> Email their login email and temporary password to them</label>
+        </fieldset>
+        <div class="grid2">
+          <label>Public contact email<input id="of-contact" type="email" value="${esc(p.contact || '')}" placeholder="Defaults to login email"></label>
+          <label>Office hours<input id="of-hours" value="${esc(p.hours || '')}"></label>
+        </div>
+        <label>LinkedIn URL<input id="of-linkedin" type="url" value="${esc(p.linkedin || '')}"></label>
+        <label>Short bio<textarea id="of-bio" style="min-height:80px">${esc(p.bio || '')}</textarea></label>
+        <div class="err" id="of-err"></div>
+        <div class="row"><button class="btn" type="submit" id="of-submit">${ed ? 'Save' : 'Add to list'}</button>${ed?'<button class="btn ghost" type="button" data-act="cancel-officer">Cancel</button>':''}</div>
+      </form>
+      <section class="stack">
+        <div class="section-head"><h3>Admins</h3><span class="muted">${db.adminEmails.length}</span></div>
+        <div>${db.adminEmails.map(e => row(e,'admin')).join('')}</div>
+        <div class="section-head"><h3>Officers</h3><span class="muted">${db.officerEmails.length}</span></div>
+        <div>${db.officerEmails.map(e => row(e,'officer')).join('') || '<div class="empty">No officers yet.</div>'}</div>
+      </section>
+    </div>`;
+  }
+  else if (T === 'export'){
+    body = `<section class="stack">
+      <div class="row" style="justify-content:space-between"><p class="muted" style="max-width:60ch">Download a CSV that opens in Excel or Google Sheets, or copy the rows and paste them into a sheet.</p>
+        <div class="row" style="gap:8px"><button class="btn" data-act="csv">Download CSV</button><button class="btn ghost" data-act="export">Copy ${db.users.length} members</button></div></div>
+      ${memberTable(db.users)}
+    </section>`;
+  }
+  else {
+    const q = ui.logSearch.toLowerCase();
+    const rows = db.log.filter(l => !q || (l.text + ' ' + userName(l.who)).toLowerCase().includes(q));
+    body = `<section class="stack">
+      <div class="row"><label style="flex:1;min-width:220px">Search the log<input id="log-search" value="${esc(ui.logSearch)}" placeholder="Person or action"></label><span class="muted" style="align-self:end;padding-bottom:10px">${db.log.length} entries · newest first</span></div>
+      <div class="table-wrap"><table><thead><tr><th>When</th><th>Who</th><th>What changed</th></tr></thead><tbody>
+        ${rows.map(l => `<tr><td style="white-space:nowrap">${fmtStamp(l.ts)}</td><td style="white-space:nowrap">${esc(userName(l.who))}</td><td>${esc(l.text)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No entries yet.</td></tr>'}
+      </tbody></table></div>
+      <p class="hint">Records changes made by officers and admins: events, announcements, recaps, archive, tasks, dues, check-in codes, profiles, and access lists.</p>
+    </section>`;
+  }
+  return `<div class="view">
+    <div class="page-head"><div class="eyebrow">Admin</div><h1 class="page">Club settings</h1></div>
+    ${tabsHtml(tabs, T, 'atab')}
+    ${body}
+  </div>`;
+}
+
+/* ---------- Modals ---------- */
+function showModal(inner, after, cls='', c=''){
+  const m = document.getElementById('modal');
+  m.innerHTML = `<div class="modal ${cls}" role="dialog" aria-modal="true" style="${c ? '--c:'+c : ''}">${inner}</div>`;
+  m.hidden = false;
+  (after || (() => { const x = m.querySelector('.modal-x'); if (x) x.focus(); }))();
+}
+function closeModal(){ document.getElementById('modal').hidden = true; }
+
+function openEvent(id){
+  const e = evById(id); if (!e) return;
+  const n = rsvpCount(id), mine = session && going(id).includes(session), full = e.cap && n >= e.cap;
+  const here = session && attended(id).includes(session);
+  let action;
+  if (isPast(e)) action = `<span class="muted">This event has ended.${here ? ' You attended.' : mine ? ' You RSVP’d.' : ''}</span>`;
+  else if (!session) action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button><span class="hint">You’ll sign in first.</span>`;
+  else if (mine) action = `<span class="going">You’re going.</span><button class="btn ghost small" data-act="unrsvp" data-id="${id}">Cancel RSVP</button>`;
+  else if (full) action = `<span class="muted">All ${e.cap} seats are taken.</span>`;
+  else action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button>`;
+  let checkin = '';
+  if (isToday(e)){
+    if (!session) checkin = `<div class="notice">At the event? <a href="#signin">Sign in</a> to check in and earn ${PTS[e.cat]} points.</div>`;
+    else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> +${PTS[e.cat]} points.</div>`;
+    else checkin = `<form class="stack" id="f-checkin" data-id="${id}" style="gap:8px"><label for="ci-code">Check-in code <span class="hint">Shown on screen at the event · +${PTS[e.cat]} points</span></label>
+      <div class="checkin-form"><input id="ci-code" maxlength="4" autocomplete="off" placeholder="CODE"><button class="btn" type="submit">Check in</button></div><div class="err" id="ci-err"></div></form>`;
+  }
+  showModal(`<div class="modal-in">
+    <div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="cat" style="--c:${catVar(e.cat)}">${CATS[e.cat][0]} · ${PTS[e.cat]} pts</div></div>
+    <h2>${esc(e.title)}</h2>
+    <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)}</dd><dt>Where</dt><dd>${esc(e.loc)}</dd><dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}${isPast(e)||isToday(e)?` · ${attCount(id)} checked in`:''}</dd></dl>
+    ${e.cap ? `<div class="meter"><span style="width:${Math.min(100,n/e.cap*100)}%"></span></div>` : ''}
+    <p style="white-space:pre-wrap">${esc(e.desc)}</p>
+    ${checkin}
+    <div class="row">${action}${can('officer') ? `<span style="margin-left:auto" class="row">${isToday(e) ? `<button class="btn ghost small" data-act="show-code" data-id="${id}">Check-in code</button>` : ''}<button class="btn ghost small" data-act="edit-event" data-id="${id}">Edit event</button></span>` : ''}</div>
+  </div>`, null, '', catVar(e.cat));
+}
+async function showCode(id, fresh){
+  let e = evById(id); if (!e) return;
+  if (!e.code || fresh){
+    const r = await sb.from('checkin_codes').upsert({ event_id: id, code: newCode() });
+    if (r.error) return toast(errMsg(r.error));
+    await logChange((fresh ? 'Changed the check-in code for “' : 'Started check-in for “') + e.title + '”');
+  }
+  await load(); render(); e = evById(id);
+  showModal(`<div class="modal-in">
+    <div><button class="modal-x" data-act="close" aria-label="Close">×</button><span class="live">Check-in open · ${esc(e.title)}</span></div>
+    <p>Members: open the event on the WFA site and enter</p>
+    <div class="codebig" aria-label="Check-in code">${esc(e.code)}</div>
+    <div class="row" style="justify-content:space-between"><strong>${attended(id).length} checked in · ${going(id).length} RSVP’d</strong>
+      <div class="row" style="gap:6px"><button class="btn ghost small" data-act="refresh-code" data-id="${id}">Refresh count</button><button class="btn ghost small" data-act="new-code" data-id="${id}">New code</button></div></div>
+    <p class="hint">Put this on the projector. Use “New code” if the code gets shared outside the room.</p>
+  </div>`, null, 'wide');
+}
+
+/* ---------- Render ---------- */
+const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources,
+  archive:viewArchive, leaderboard:viewLeaderboard, account:viewAccount,
+  signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
+function route(){ const r = location.hash.slice(1); return VIEWS[r] ? r : 'home'; }
+function render(){
+  if (!loaded) return;
+  let r = route();
+  if (session && ((authUser.user_metadata || {}).must_change || ui.recovery)) r = 'setup';   // must choose a password first
+  renderChrome(r); document.getElementById('app').innerHTML = VIEWS[r]();
+}
+window.addEventListener('hashchange', () => {
+  if (/access_token|error_description/.test(location.hash)) return;
+  ui.armed = null; closeModal(); render(); window.scrollTo(0,0);
+});
+
+async function afterLogin(){
+  await load();
+  const p = pendingRsvp();
+  setPendingRsvp(null);
+  if (p){
+    const r = await sb.from('rsvps').insert({ event_id: p });
+    toast(r.error ? errMsg(r.error) : 'RSVP saved');
+    await load(); location.hash = 'calendar';
+  } else location.hash = myRole === 'admin' ? 'admin' : myRole === 'officer' ? 'officer' : 'home';
+  render();
+}
+function useTemplate(k){ const [, s, b] = MAIL_TEMPLATES[k]; ui.mail.subject = s; ui.mail.body = b; }
+
+/* ---------- Click handling ---------- */
+document.addEventListener('click', async ev => {
+  if (ev.target.id === 'modal') { closeModal(); return; }
+  const link = ev.target.closest('a[data-tab]');
+  if (link) { if (link.getAttribute('href') === '#admin') ui.adminTab = link.dataset.tab; else ui.officerTab = link.dataset.tab; if (route() === link.getAttribute('href').slice(1)) render(); }
+  const t = ev.target.closest('[data-act]');
+  if (!t) return;
+  const a = t.dataset.act, id = t.dataset.id;
+  if (t.dataset.key && ui.armed !== t.dataset.key){ ui.armed = t.dataset.key; render(); return; }
+  ui.armed = null;
+  switch (a){
+    case 'open-event': openEvent(id); break;
+    case 'close': closeModal(); break;
+    case 'copy': copyText(t.dataset.text, t.dataset.label); break;
+    case 'signout': await sb.auth.signOut(); ui.recovery = false; await load(); toast('Signed out'); location.hash = 'home'; render(); break;
+    case 'cal': { const d = +t.dataset.d; if (d === 0){ const n = new Date(); ui.cal = new Date(n.getFullYear(), n.getMonth(), 1); } else ui.cal = new Date(ui.cal.getFullYear(), ui.cal.getMonth() + d, 1); render(); break; }
+    case 'cat': { const c = t.dataset.cat; ui.catsOn.has(c) ? ui.catsOn.delete(c) : ui.catsOn.add(c); if (!ui.catsOn.size) Object.keys(CATS).forEach(k => ui.catsOn.add(k)); render(); break; }
+    case 'rsvp':
+      if (!session){ setPendingRsvp(id); closeModal(); location.hash = 'signin'; break; }
+      if (await act(async () => must(await sb.from('rsvps').insert({ event_id: id })), 'RSVP saved')) openEvent(id);
+      break;
+    case 'unrsvp':
+      if (await act(async () => must(await sb.from('rsvps').delete().eq('event_id', id).eq('email', session)), 'RSVP canceled')) openEvent(id);
+      break;
+    case 'photo': { const r = db.recaps.find(x => x.id === id); showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3>${esc(r.title)}</h3></div><img src="${esc(r.photos[+t.dataset.i])}" alt="" style="width:100%;border-radius:3px"></div>`, null, 'wide'); break; }
+    case 'arch-type': ui.archType = t.dataset.type; render(); break;
+    case 'otab': ui.officerTab = t.dataset.tab; render(); break;
+    case 'atab': ui.adminTab = t.dataset.tab; render(); break;
+    case 'edit-event': closeModal(); ui.officerTab = 'events'; ui.editEvent = id; if (route() !== 'officer') location.hash = 'officer'; else render(); window.scrollTo(0,0); break;
+    case 'cancel-edit': ui.editEvent = null; render(); break;
+    case 'del-event': { const e = evById(id); if (ui.editEvent === id) ui.editEvent = null;
+      await act(async () => { must(await sb.from('events').delete().eq('id', id)); await logChange('Deleted event “' + e.title + '”'); }, 'Event deleted'); break; }
+    case 'show-code': await showCode(id); break;
+    case 'refresh-code': await showCode(id); break;
+    case 'new-code': await showCode(id, true); break;
+    case 'report-ev': ui.reportEvent = id; render(); break;
+    case 'pin-ann': { const x = db.announcements.find(n => n.id === id);
+      await act(async () => { must(await sb.from('announcements').update({ pinned: !x.pinned }).eq('id', id)); await logChange((x.pinned ? 'Unpinned' : 'Pinned') + ' announcement “' + x.title + '”'); }); break; }
+    case 'del-ann': { const x = db.announcements.find(n => n.id === id);
+      await act(async () => { must(await sb.from('announcements').delete().eq('id', id)); await logChange('Deleted announcement “' + x.title + '”'); }, 'Announcement deleted'); break; }
+    case 'rm-photo': ui.recapPhotos.splice(+t.dataset.i, 1); document.getElementById('rc-thumbs').innerHTML = thumbsHtml(); break;
+    case 'del-recap': { const x = db.recaps.find(n => n.id === id);
+      await act(async () => {
+        const paths = x.photos.map(u => u.split('/recap-photos/')[1]).filter(Boolean);
+        if (paths.length) await sb.storage.from('recap-photos').remove(paths);
+        must(await sb.from('recaps').delete().eq('id', id)); await logChange('Deleted recap “' + x.title + '”');
+      }, 'Recap deleted'); break; }
+    case 'del-arch': { const x = db.archive.find(n => n.id === id);
+      await act(async () => { must(await sb.from('archive').delete().eq('id', id)); await logChange('Removed “' + x.title + '” from the archive'); }); break; }
+    case 'toggle-task': { const x = db.tasks.find(n => n.id === id);
+      await act(async () => { must(await sb.from('tasks').update({ done: !x.done }).eq('id', id)); await logChange((x.done ? 'Reopened' : 'Completed') + ' task “' + x.title + '”'); }); break; }
+    case 'del-task': { const x = db.tasks.find(n => n.id === id);
+      await act(async () => { must(await sb.from('tasks').delete().eq('id', id)); await logChange('Deleted task “' + x.title + '”'); }); break; }
+    case 'mail-tpl': readMail(); useTemplate(t.dataset.tpl); render(); break;
+    case 'mail-to': ui.mail.aud = t.dataset.aud; ui.mail.ev = ''; useTemplate(t.dataset.tpl); ui.officerTab = 'email'; render(); window.scrollTo(0,0); break;
+    case 'mail-copy': {
+      const w = t.dataset.what;
+      if (w === 'to') copyText(audienceEmails(ui.mail.aud).join(', '), 'recipients');
+      else if (w === 'subject') copyText(fillMerge(ui.mail.subject), 'subject');
+      else copyText(fillMerge(ui.mail.body), 'message');
+      break; }
+    case 'dues-filter': ui.duesFilter = t.dataset.f; render(); break;
+    case 'export': copyText(exportTsv(), 'member list'); break;
+    case 'csv': downloadCsv(); break;
+    case 'gen-pw': document.getElementById('of-pw').value = tempPw(); break;
+    case 'edit-officer': ui.editOfficer = id; render(); window.scrollTo(0,0); break;
+    case 'cancel-officer': ui.editOfficer = null; render(); break;
+    case 'rm-access':
+      await act(async () => {
+        must(await sb.from('access_list').delete().eq('email', id));
+        await sb.from('officer_profiles').delete().eq('email', id);
+        await logChange('Removed ' + id + ' from the access list');
+      }, 'Removed ' + id); break;
+    case 'reset-back': ui.reset = { step:1, email: ui.reset.email }; render(); break;
+    case 'reset-resend': {
+      const { error } = await sb.auth.resetPasswordForEmail(ui.reset.email, { redirectTo: location.origin + location.pathname });
+      toast(error ? errMsg(error) : 'New code sent'); break; }
+  }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+/* ---------- Inputs ---------- */
+function rerenderKeepFocus(id){ const el = document.getElementById(id), pos = el.selectionStart; render(); const s = document.getElementById(id); s.focus(); try { s.setSelectionRange(pos, pos); } catch(e){} }
+function readMail(){ const g = id => document.getElementById(id); if (!g('ml-aud')) return; ui.mail = { aud: g('ml-aud').value, ev: g('ml-ev').value, subject: g('ml-subject').value, body: g('ml-body').value }; }
+function updateAnnPreview(){
+  const v = id => document.getElementById(id);
+  v('an-preview').innerHTML = annHtml({ title: v('an-title').value || 'Your headline', body: v('an-body').value || 'Your message will appear here.', aud: v('an-aud').value, pinned: v('an-pin').checked, date: todayIso(), author: session });
+}
+document.addEventListener('input', e => {
+  const id = e.target.id;
+  if (id === 'mem-search'){ ui.memberSearch = e.target.value; rerenderKeepFocus(id); }
+  if (id === 'log-search'){ ui.logSearch = e.target.value; rerenderKeepFocus(id); }
+  if (['an-title','an-body'].includes(id)) updateAnnPreview();
+  if (['ml-subject','ml-body'].includes(id)){ readMail(); document.getElementById('ml-preview').innerHTML = mailPreview(); }
+});
+document.addEventListener('change', async e => {
+  const id = e.target.id;
+  if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
+  if (['ml-aud','ml-ev'].includes(id)){ readMail(); render(); }
+  if (id === 'tk-mine'){ ui.tasksMine = e.target.checked; render(); }
+  if (e.target.dataset.dues){
+    const em = e.target.dataset.dues, s = e.target.value;
+    await act(async () => { must(await sb.from('dues').upsert({ email: em, status: s, updated: todayIso() })); await logChange('Marked ' + userName(em) + '’s dues ' + s); }, userName(em) + ': ' + s);
+  }
+  if (id === 'rc-photos'){
+    const files = [...e.target.files].slice(0, 6 - ui.recapPhotos.length);
+    for (const f of files){ try { ui.recapPhotos.push(await shrink(f)); } catch(err){ toast('Couldn’t read ' + f.name); } }
+    e.target.value = '';
+    document.getElementById('rc-thumbs').innerHTML = thumbsHtml();
+  }
+});
+function shrink(file){
+  return new Promise((res, rej) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const s = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = rej; img.src = url;
+  });
+}
+
+/* ---------- Forms ---------- */
+document.addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const f = ev.target, v = id => document.getElementById(id).value.trim();
+  const err = (id, msg) => { const el = document.getElementById(id); if (el) el.textContent = msg; };
+  const btn = f.querySelector('button[type="submit"]');
+  if (btn){ if (btn.disabled) return; btn.disabled = true; }
+  try { await handleSubmit(f, v, err); }
+  catch(e){ const el = f.querySelector('.err'); if (el) el.textContent = errMsg(e); else toast(errMsg(e)); }
+  finally { if (btn && document.body.contains(btn)) btn.disabled = false; }
+});
+
+async function handleSubmit(f, v, err){
+  if (f.id === 'f-signin'){
+    const email = v('si-email').toLowerCase(), pw = document.getElementById('si-pw').value;
+    if (!email || !pw) return err('si-err', 'Enter your email and password.');
+    const { error } = await sb.auth.signInWithPassword({ email, password: pw });
+    if (error) return err('si-err', /not confirmed/i.test(error.message) ? 'Confirm your email first. Click the link we sent when you signed up.' : /invalid login/i.test(error.message) ? 'Email or password is incorrect.' : errMsg(error));
+    ui.notice = ''; await afterLogin(); toast('Signed in as ' + myRole);
+  }
+
+  if (f.id === 'f-signup'){
+    const d = { uvuid: v('su-id'), first: v('su-first'), last: v('su-last'), major: v('su-major'), email: v('su-email').toLowerCase() };
+    const pw = document.getElementById('su-pw').value, pw2 = document.getElementById('su-pw2').value;
+    if (!/^\d{8}$/.test(d.uvuid)) return err('su-err', 'UVU ID must be 8 digits.');
+    if (!d.first || !d.last) return err('su-err', 'Enter your first and last name.');
+    if (!d.major) return err('su-err', 'Enter your major. Use “Undeclared” if you haven’t picked one.');
+    if (!EMAIL_RE.test(d.email)) return err('su-err', 'Enter a valid email address.');
+    if (pw.length < 8) return err('su-err', 'Password needs at least 8 characters.');
+    if (pw !== pw2) return err('su-err', 'Passwords don’t match.');
+    const { data, error } = await sb.auth.signUp({ email: d.email, password: pw,
+      options: { data: { uvuid: d.uvuid, first: d.first, last: d.last, major: d.major }, emailRedirectTo: location.origin + location.pathname } });
+    if (error) return err('su-err', errMsg(error));
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) return err('su-err', 'An account already uses this email. Sign in instead.');
+    if (data.session){ await afterLogin(); toast('Welcome to the WFA, ' + d.first); }
+    else { ui.prefillEmail = d.email; location.hash = 'signin'; ui.notice = `Almost done. We sent a confirmation link to ${d.email}. Click it, then sign in.`; render(); }
+  }
+
+  if (f.id === 'f-reset1'){
+    const email = v('rs-email').toLowerCase();
+    if (!EMAIL_RE.test(email)) return err('rs-err', 'Enter the email you signed up with.');
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+    if (error) return err('rs-err', errMsg(error));
+    ui.reset = { step:2, email }; render();
+  }
+
+  if (f.id === 'f-reset2'){
+    const email = ui.reset.email, code = v('rs-code');
+    const pw = document.getElementById('rs-pw').value, pw2 = document.getElementById('rs-pw2').value;
+    if (!/^\d{6,10}$/.test(code)) return err('rs-err', 'Enter the code from the email.');
+    if (pw.length < 8) return err('rs-err', 'Password needs at least 8 characters.');
+    if (pw !== pw2) return err('rs-err', 'Passwords don’t match.');
+    const vr = await sb.auth.verifyOtp({ email, token: code, type: 'recovery' });
+    if (vr.error) return err('rs-err', 'That code isn’t valid or has expired. Send a new code.');
+    const ur = await sb.auth.updateUser({ password: pw, data: { must_change: false } });
+    if (ur.error) return err('rs-err', errMsg(ur.error));
+    ui.reset = { step:1, email:'' }; ui.recovery = false;
+    await load(); toast('Password updated. You’re signed in.'); location.hash = 'home'; render();
+  }
+
+  if (f.id === 'f-setup'){
+    const u = me(), pw = document.getElementById('st-pw').value, pw2 = document.getElementById('st-pw2').value;
+    const idEl = document.getElementById('st-id'), majEl = document.getElementById('st-major');
+    const upd = {};
+    if (idEl){ const id = idEl.value.trim(); if (!/^\d{8}$/.test(id)) return err('st-err', 'UVU ID must be 8 digits.'); upd.uvuid = id; }
+    if (majEl){ if (!majEl.value.trim()) return err('st-err', 'Enter your major.'); upd.major = majEl.value.trim(); }
+    if (pw.length < 8) return err('st-err', 'Password needs at least 8 characters.');
+    if (pw !== pw2) return err('st-err', 'Passwords don’t match.');
+    if (Object.keys(upd).length){ const r = await sb.from('members').update(upd).eq('id', authUser.id); if (r.error) return err('st-err', errMsg(r.error)); }
+    const ur = await sb.auth.updateUser({ password: pw, data: { must_change: false } });
+    if (ur.error) return err('st-err', errMsg(ur.error));
+    ui.recovery = false; await load(); toast('You’re all set');
+    location.hash = myRole === 'admin' ? 'admin' : myRole === 'officer' ? 'officer' : 'home'; render();
+  }
+
+  if (f.id === 'f-checkin'){
+    const id = f.dataset.id, e = evById(id), code = v('ci-code').toUpperCase();
+    const r = await sb.rpc('check_in', { p_event: id, p_code: code });
+    if (r.error) return err('ci-err', errMsg(r.error));
+    const msg = { closed:'Check-in is only open on the day of the event.', notstarted:'Check-in hasn’t started yet. Wait for an officer to show the code.',
+      wrong:'That code doesn’t match. Check the screen and try again.', signin:'Sign in first.', missing:'This event no longer exists.' }[r.data];
+    if (msg) return err('ci-err', msg);
+    await load(); toast('Checked in · +' + PTS[e.cat] + ' points'); render(); openEvent(id);
+  }
+
+  if (f.id === 'f-mark'){
+    const id = f.dataset.id, who = v('mark-who'); if (!who) return;
+    await act(async () => { must(await sb.from('attendance').insert({ event_id: id, email: who })); await logChange('Marked ' + userName(who) + ' present at “' + evById(id).title + '”'); }, userName(who) + ' marked present');
+  }
+
+  if (f.id === 'f-event'){
+    const e = { title: v('ev-title'), cat: v('ev-cat'), date: v('ev-date'), start_time: v('ev-start'), end_time: v('ev-end'), loc: v('ev-loc'), cap: Math.max(0, parseInt(v('ev-cap')) || 0), descr: v('ev-desc') };
+    if (!e.title || !e.date || !e.start_time || !e.end_time || !e.loc) return err('ev-err', 'Fill in the title, date, times, and location.');
+    if (e.end_time <= e.start_time) return err('ev-err', 'End time must be after the start time.');
+    const editing = ui.editEvent;
+    const ok = await act(async () => {
+      if (editing){ must(await sb.from('events').update(e).eq('id', editing)); await logChange('Edited event “' + e.title + '”'); }
+      else { must(await sb.from('events').insert(e)); await logChange('Added event “' + e.title + '” on ' + fmtDay(e.date)); }
+      ui.editEvent = null;
+    }, editing ? 'Event updated' : 'Added to the calendar');
+  }
+
+  if (f.id === 'f-ann'){
+    const a = { title: v('an-title'), body: v('an-body'), aud: v('an-aud'), pinned: document.getElementById('an-pin').checked };
+    if (!a.title || !a.body) return err('an-err', 'Add a headline and a message.');
+    await act(async () => { must(await sb.from('announcements').insert(a)); await logChange('Posted announcement “' + a.title + '”'); }, 'Announcement posted');
+  }
+
+  if (f.id === 'f-recap'){
+    const r = { event_id: v('rc-ev') || null, title: v('rc-title'), body: v('rc-body') };
+    if (!r.title || !r.body) return err('rc-err', 'Add a headline and the recap text.');
+    document.getElementById('rc-submit').textContent = 'Uploading…';
+    const urls = [];
+    for (const p of ui.recapPhotos){
+      const blob = await (await fetch(p)).blob();
+      const path = crypto.randomUUID() + '.jpg';
+      const up = await sb.storage.from('recap-photos').upload(path, blob, { contentType: 'image/jpeg' });
+      if (up.error){ document.getElementById('rc-submit').textContent = 'Publish recap'; return err('rc-err', 'A photo didn’t upload: ' + errMsg(up.error)); }
+      urls.push(sb.storage.from('recap-photos').getPublicUrl(path).data.publicUrl);
+    }
+    r.photos = urls;
+    const ok = await act(async () => { must(await sb.from('recaps').insert(r)); await logChange('Published recap “' + r.title + '”'); }, 'Recap published');
+    if (ok) ui.recapPhotos = [];
+  }
+
+  if (f.id === 'f-arch'){
+    const a = { title: v('ar-title'), type: v('ar-type'), event_id: v('ar-ev') || null, url: v('ar-url'), descr: v('ar-desc') };
+    if (!a.title) return err('ar-err', 'Add a title.');
+    if (a.url && !/^https?:\/\//i.test(a.url)) return err('ar-err', 'Links must start with https://');
+    const e = evById(a.event_id); a.date = e ? e.date : todayIso();
+    await act(async () => { must(await sb.from('archive').insert(a)); await logChange('Added “' + a.title + '” to the archive'); }, 'Added to the archive');
+  }
+
+  if (f.id === 'f-task'){
+    const t = { title: v('tk-title'), event_id: v('tk-ev') || null, due: v('tk-due') || todayIso(), owner: v('tk-who'), done: false };
+    if (!t.title) return err('tk-err', 'Describe the task.');
+    await act(async () => { must(await sb.from('tasks').insert(t)); await logChange('Added task “' + t.title + '” for ' + userName(t.owner)); }, 'Task added');
+  }
+
+  if (f.id === 'f-dues-set'){
+    const sem = v('ds-sem'), amt = Math.max(0, parseFloat(v('ds-amt')) || 0);
+    if (!sem) return;
+    await act(async () => { must(await sb.from('settings').update({ semester: sem, dues: amt }).eq('id', 1)); await logChange('Set dues to $' + amt + ' for ' + sem); }, 'Dues settings saved');
+  }
+
+  if (f.id === 'f-profile'){
+    const contact = v('pf-contact'), linkedin = v('pf-linkedin');
+    if (contact && !EMAIL_RE.test(contact)) return err('pf-err', 'Enter a valid contact email.');
+    if (linkedin && !/^https?:\/\//i.test(linkedin)) return err('pf-err', 'LinkedIn link must start with https://');
+    const p = db.profiles[session] || {};
+    await act(async () => {
+      must(await sb.from('officer_profiles').upsert({ email: session, title: p.title || '', name: v('pf-name'), contact, hours: v('pf-hours'), linkedin, bio: v('pf-bio') }));
+      await logChange('Updated their officer profile');
+    }, 'Profile saved');
+  }
+
+  if (f.id === 'f-officer'){
+    const email = v('of-email').toLowerCase(), level = v('of-level'), contact = v('of-contact'), linkedin = v('of-linkedin');
+    const first = v('of-first'), last = v('of-last'), pw = v('of-pw'), send = document.getElementById('of-send').checked;
+    const title = v('of-title'), hours = v('of-hours'), bio = v('of-bio');
+    if (!EMAIL_RE.test(email)) return err('of-err', 'Enter a valid login email.');
+    if (!first || !last) return err('of-err', 'Enter their first and last name.');
+    if (pw && pw.length < 8) return err('of-err', 'Temporary password needs at least 8 characters.');
+    if (contact && !EMAIL_RE.test(contact)) return err('of-err', 'Enter a valid contact email.');
+    if (linkedin && !/^https?:\/\//i.test(linkedin)) return err('of-err', 'LinkedIn link must start with https://');
+
+    if (pw){
+      // Creating accounts and sending email needs the server function.
+      const { data, error } = await sb.functions.invoke('invite-officer', { body: { email, first, last, role: level, title, contact, hours, linkedin, bio, password: pw, send } });
+      if (error){
+        let m = error.message;
+        try { const j = await error.context.json(); m = j.error || m; } catch(_){}
+        if (/Failed to send a request|not found|404/i.test(m)) m = 'The invite-officer function isn’t set up yet. Leave the password blank for now, or finish step 4 of the setup guide.';
+        return err('of-err', m);
+      }
+      ui.editOfficer = null; await load(); render();
+      toast(data.emailed ? 'Saved. Login details emailed to ' + email : (data.warning || 'Saved ' + email + ' as ' + level));
+      return;
+    }
+    const before = roleOf(email);
+    must(await sb.from('access_list').upsert({ email, role: level }));
+    must(await sb.from('officer_profiles').upsert({ email, name: first + ' ' + last, title, contact, hours, linkedin, bio }));
+    if (db.users.some(u => u.email === email)) await sb.from('members').update({ first, last }).eq('email', email);
+    await logChange(before === level ? 'Edited officer profile for ' + email : 'Gave ' + email + ' ' + level + ' access');
+    ui.editOfficer = null; await load(); render(); toast('Saved ' + email + ' as ' + level);
+  }
+}
+
+/* ---------- Start ---------- */
+sb.auth.onAuthStateChange(event => { if (event === 'PASSWORD_RECOVERY'){ ui.recovery = true; if (loaded) render(); } });
+(async () => {
+  if (/type=recovery/.test(initialHash)) ui.recovery = true;
+  const m = initialHash.match(/error_description=([^&]+)/);
+  try { await load(); }
+  catch(e){ document.getElementById('app').innerHTML = `<div class="empty">Couldn’t load club data. ${esc(errMsg(e))}</div>`; return; }
+  if (/access_token|error_description/.test(initialHash)) history.replaceState(null, '', location.pathname + '#home');
+  loaded = true; render();
+  if (m) toast(decodeURIComponent(m[1].replace(/\+/g, ' ')));
+})();
+</script>
+</body>
+</html>
