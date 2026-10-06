@@ -1,3 +1,2 @@
-﻿# Netlify publishes only the site folder; supabase/ holds setup files and is never served.
 [build]
   publish = "site"
