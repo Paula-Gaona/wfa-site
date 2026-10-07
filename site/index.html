@@ -26,7 +26,7 @@
   --up:#2f9a55;
   --warn:#9a6a00;
   --danger:#b3261e;
-  --cat-meeting:#4b5a50; --cat-speaker:#275D38; --cat-workshop:#2d5d86; --cat-competition:#6a3f86; --cat-social:#9a4a26;
+  --cat-meeting:#4b5a50; --cat-speaker:#275D38; --cat-workshop:#2d5d86; --cat-competition:#6a3f86; --cat-social:#9a4a26; --cat-career:#7a5c12; --cat-excursion:#1f7a7a;
   --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
   --body:"Source Sans 3","Segoe UI",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
@@ -36,13 +36,13 @@
   --brand:#2f7046; --brand-deep:#1b3d27; --brand-text:#82c99a; --on-brand:#ffffff; --tint:#17281d;
   --paper:#0c120e; --surface:#131b16; --ink:#e7eee9; --muted:#9aae9f; --line:#26352b;
   --header-bg:#163322; --ticker-bg:#050806; --ticker-fg:#cfe3d5; --up:#5fd08a; --warn:#f0c060; --danger:#ff8a80;
-  --cat-meeting:#8fa094; --cat-speaker:#6cc28a; --cat-workshop:#6fa8dc; --cat-competition:#b48fd6; --cat-social:#e0956b;
+  --cat-meeting:#8fa094; --cat-speaker:#6cc28a; --cat-workshop:#6fa8dc; --cat-competition:#b48fd6; --cat-social:#e0956b; --cat-career:#e0b860; --cat-excursion:#5fc4c4;
   color-scheme:dark}}
 :root[data-theme="dark"]{
   --brand:#2f7046; --brand-deep:#1b3d27; --brand-text:#82c99a; --on-brand:#ffffff; --tint:#17281d;
   --paper:#0c120e; --surface:#131b16; --ink:#e7eee9; --muted:#9aae9f; --line:#26352b;
   --header-bg:#163322; --ticker-bg:#050806; --ticker-fg:#cfe3d5; --up:#5fd08a; --warn:#f0c060; --danger:#ff8a80;
-  --cat-meeting:#8fa094; --cat-speaker:#6cc28a; --cat-workshop:#6fa8dc; --cat-competition:#b48fd6; --cat-social:#e0956b;
+  --cat-meeting:#8fa094; --cat-speaker:#6cc28a; --cat-workshop:#6fa8dc; --cat-competition:#b48fd6; --cat-social:#e0956b; --cat-career:#e0b860; --cat-excursion:#5fc4c4;
   color-scheme:dark}
 
 *{box-sizing:border-box}
@@ -245,6 +245,9 @@ td select{padding:5px 8px;width:auto}
 .task.done .ev-title{text-decoration:line-through;color:var(--muted)}
 .pwset{border:1px solid var(--line);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;gap:8px;margin:0}
 .pwset legend{font-weight:700;padding:0 6px;font-size:.92rem}
+.picks{display:flex;flex-wrap:wrap;gap:6px}
+.pick{display:inline-flex;align-items:center;gap:4px;background:var(--tint);color:var(--ink);border:1px solid var(--line);border-radius:99px;padding:3px 4px 3px 12px;font-size:.9rem}
+.pick button{font:inherit;border:0;background:none;color:var(--muted);cursor:pointer;padding:0 6px;font-size:1.05rem;line-height:1}
 .mail-pre{white-space:pre-wrap;font-size:.95rem;overflow-wrap:anywhere}
 
 /* About, officers, resources, recaps */
@@ -300,6 +303,7 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
 </div></footer>
 <div class="backdrop" id="modal" hidden></div>
 <div class="toast" id="toast" hidden></div>
+<datalist id="dl-majors"></datalist><datalist id="dl-minors"></datalist>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
@@ -310,15 +314,21 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const initialHash = location.hash;
 
 const CATS = {
-  meeting: ['General meeting', '--cat-meeting'],
-  speaker: ['Speaker', '--cat-speaker'],
+  case_competition: ['Case competition', '--cat-competition'],
+  career_fair: ['Career fair', '--cat-career'],
+  guest_speaker: ['Guest speaker', '--cat-speaker'],
+  excursion: ['Excursion', '--cat-excursion'],
   workshop: ['Workshop', '--cat-workshop'],
-  competition: ['Competition', '--cat-competition'],
-  social: ['Social', '--cat-social']
+  social: ['Social', '--cat-social'],
+  officer_meeting: ['Officer meeting', '--cat-meeting']   // officers and admins only, no points
 };
-const PTS = { meeting:10, speaker:10, workshop:15, competition:25, social:5 };
+const PTS = { case_competition:25, career_fair:25, guest_speaker:15, excursion:25, workshop:10, social:10, officer_meeting:0 };
 const ARCH = { slides:'Slides', recording:'Recording', notes:'Notes', template:'Template' };
-const MAJORS = ['Finance','Accounting','Economics','Business Management','Marketing','Information Systems','Mathematics','Computer Science','Undeclared'];
+const TIERS = { president:'President', officer:'Officer' };
+const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
+// Degree programs and minors from catalog.uvu.edu/programs (October 2026)
+const MAJORS = ["Undeclared","Accounting, A.S.","Accounting, B.S.","American Sign Language Secondary Education, B.A.","Animation and Game Development, B.S.","Anthropology, B.A.","Anthropology, B.S.","Applied Artificial Intelligence, M.S.","Applied Communication, B.A.","Applied Communication, B.S.","Architecture, B.Arch","Art Education, B.S.","Art History, B.A.","Art and Design - Graphic Design Emphasis, A.A.S.","Art and Design - Graphic Design Emphasis, B.F.A.","Art and Design - Illustration Emphasis, A.A.S.","Art and Design - Illustration Emphasis, B.F.A.","Art and Design - Painting/Drawing/Printmaking Emphasis, B.F.A.","Art and Design - Photography Emphasis, A.A.S.","Art and Design - Photography Emphasis, B.F.A.","Art and Design - Sculpture and Ceramics Emphasis, B.F.A.","Art and Design, A.A.","Art and Design, A.S.","Art and Design, B.S.","Associate in Pre-Engineering - Biological and Chemical Engineering Emphasis, A.P.E.","Associate in Pre-Engineering - Civil and Mechanical Engineering Emphasis, A.P.E.","Associate in Pre-Engineering - Computer and Electrical Engineering Emphasis, A.P.E.","Automotive Technology, A.A.S.","Aviation Management, B.S.","Aviation Science, A.A.S.","Aviation Science, A.S.","Bioinformatics, B.S.","Biology Education, B.S.","Biology, A.A.","Biology, A.S.","Biology, B.S.","Biomedical Science, B.S.","Botany, B.S.","Business Management, A.S.","Business Technologies and Education, B.S.","Business and Analysis, B.S.","Cabinetry and Architectural Woodwork, A.A.S.","Chemistry - Biochemistry Emphasis, B.S.","Chemistry - Professional Chemistry Emphasis, B.S.","Chemistry Education, B.S.","Civil Engineering, B.S.","Clinical Mental Health Counseling, M.S.","Commercial Music, B.M.","Computational Data Science, B.S.","Computer Engineering, B.S.","Computer Science Education, B.S.","Computer Science, A.S.","Computer Science, B.S.","Constitutional Government Civics and Law, M.A.","Construction Management, A.A.S.","Construction Management, B.S.","Criminal Justice, A.A.","Criminal Justice, A.S.","Criminal Justice, B.S.","Culinary Arts, A.A.S.","Curriculum and Instruction, M.Ed.","Cybersecurity, A.A.S","Cybersecurity, B.S.","Cybersecurity, M.S.","Dance - Ballet Emphasis, B.F.A.","Dance - Modern Dance Emphasis, B.F.A.","Dance Education, B.S.","Dance, A.S.","Dance, B.S.","Deaf Studies - General Deaf Studies Emphasis, B.A.","Deaf Studies - Interpreting Emphasis, B.A.","Dental Hygiene, A.A.S.","Dental Hygiene, B.S.","Diesel Mechanics Technology, A.A.S.","Digital Audio, A.A.S.","Digital Audio, B.S.","Digital Cinema Production, A.A.S.","Digital Cinema Production, B.S.","Digital Marketing, B.S.","Early Childhood Education, A.S.","Earth Science Education, B.S.","Electrical Engineering, B.S.","Electrical and Computer Engineering, A.A.S.","Elementary Education, B.S.","Emergency Services Administration, B.S.","Emergency Services Operations, A.A.S.","Emergency Services Supervision, B.A.P.","Emergency Services, A.S.","Engineering Design Technology, A.A.S.","Engineering Design Technology, A.S.","Engineering and Technology Management, M.S.","English - Creative Writing Emphasis, B.A.","English - Creative Writing Emphasis, B.S.","English - Literary Studies Emphasis, B.A.","English - Literary Studies Emphasis, B.S.","English - Writing Studies Emphasis, B.A.","English - Writing Studies Emphasis, B.S.","English Education, B.A.","English Education, B.S.","Entertainment Design, A.A.S.","Entertainment Design, B.F.A.","Environmental Science and Management, B.S.","Environmental Studies, B.S.","Event Management, B.S.","Exercise Science, A.S.","Exercise Science, B.S.","Family Science, B.A.","Family Science, B.S.","Finance, B.S.","Finance, M.S.","Financial Planning and Wealth Management, B.S.","Forensic Science - Forensic Investigation Emphasis, B.S.","Forensic Science - Forensic Laboratory Emphasis, B.S.","Forensic Science, A.S.","Geography, B.S.","Geology, B.S.","Health Science, B.S.","Healthcare Administration, B.S.","Healthcare Services, A.A.S.","History and Social Studies Education, B.S.","History, B.A.","Hospitality Management, A.A.S.","Hospitality Management, A.S.","Hospitality Management, B.S.","Human Resource Management, B.S.","Humanities and Social Sciences, A.A.","Humanities and Social Sciences, A.S.","Humanities, B.A.","Humanities, B.S.","Information Systems - Application Development Emphasis, B.S.","Information Systems - Applied Artificial Intelligence Emphasis, B.S.","Information Systems - Data Analytics Emphasis, B.S.","Information Systems - Information Security Management Emphasis, B.S.","Information Systems and Technology, A.A.S.","Information Systems and Technology, A.S.","Information Technology, B.S.","Integrated Studies, B.A.","Integrated Studies, B.S.","International Business, B.S.","Marketing, B.S.","Marriage and Family Therapy, M.A.","Master of Accountancy, M.Acc","Master of Business Administration, M.B.A.","Master of Computer Science, M.C.S.","Master of Education in Applied Behavioral Analysis, M.Ed.","Master of Education in Higher Education Leadership, M.Ed.","Master of Education in K-12 Education Leadership, M.Ed.","Master of Education in School Counseling, M.Ed.","Master of Physician Assistant Studies, M.P.A.S.","Master of Public Administration, M.P.A.","Master of Social Work Advanced Standing, M.S.W.","Master of Social Work, M.S.W.","Mathematics - Actuarial Science Emphasis, B.S.","Mathematics - Applied Mathematics Emphasis, B.S.","Mathematics - Mathematics Emphasis, B.S.","Mathematics Education, B.S.","Mathematics, A.S.","Mechanical Engineering, B.S.","Mechatronics Engineering Technology - Automation and Electrical Technology Emphasis, A.A.S.","Mechatronics Engineering Technology - Mechatronics Emphasis, A.A.S.","Mechatronics Engineering Technology, B.S.","Microbiology, B.S.","Molecular Biosciences and Biotechnology, B.S.","Music Education, B.S.","Music, A.S.","Music, B.A.","Music, B.S.","National Security Studies, B.A.","National Security Studies, B.S.","Nursing, A.S.N.","Nursing, B.S.","Occupational Therapy Assistant, B.S.","Operations and Supply Chain Management, B.S.","Outdoor Recreation Management, A.S.","Outdoor Recreation Management, B.S.","Performance, B.M.","Philosophy, B.A.","Philosophy, B.S.","Physical Education Teacher Education, B.S.","Physical Therapist Assistant, SAAS","Physics Education, B.S.","Physics, B.S.","Political Science - American Government Emphasis, B.A.","Political Science - American Government Emphasis, B.S.","Political Science - Global Politics Emphasis, B.A.","Political Science - Global Politics Emphasis, B.S.","Political Science - Indian Affairs Administration Emphasis, B.A.","Political Science - Indian Affairs Administration Emphasis, B.S.","Political Science - Peace and Justice Studies Emphasis, B.A.","Political Science - Peace and Justice Studies Emphasis, B.S.","Political Science - Public Administration and Public Policy Emphasis, B.A.","Political Science - Public Administration and Public Policy Emphasis, B.S.","Political Science - Public Law and Political Philosophy Emphasis, B.A.","Political Science - Public Law and Political Philosophy Emphasis, B.S.","Pre-Elementary Education, A.S.","Pre-Engineering, A.S.","Professional Advancement, A.S.","Professional Advancement, B.A.P.","Professional Advancement, B.S.","Professional Pilot, B.S.","Professional Sales, B.S.","Psychology, B.A.","Psychology, B.S.","Public Health, A.S.","Public Health, B.S.","Public Relations and Strategic Communication, B.A.","Public Relations and Strategic Communication, B.S.","Respiratory Therapy, A.A.S.","Respiratory Therapy, B.S.","School Health Education, B.S.","Secondary Education, M.A.T.","Social Work, B.S.W.","Sociology, B.A.","Sociology, B.S.","Software Development, B.A.S.","Software Engineering, B.S.","Spanish Education, B.A.","Spanish, B.A.","Special Education - Mild/Moderate/Severe, B.S.","Statistics, B.S.","Strategic Foresight and Business, B.S.","Surveying Technology, A.A.S.","Technology Management, B.S.","Technology, A.A.S.","Theatre Arts - Acting Emphasis, B.F.A.","Theatre Arts - Musical Theatre Emphasis, B.F.A.","Theatre Arts - Theatre Design and Production Emphasis, B.F.A.","Theatre Arts, A.S.","Theatre Education, B.S.","Theatre Studies, A.A.","Theatre Studies, B.A.","Transportation Technologies, B.A.S.","Web Design and Development - Interaction and User Experience Design Emphasis, B.S.","Web Design and Development - Web Application Development Emphasis, B.S.","Web Design and Development, A.A.S.","Wildland Fire Management, A.A.S.","Zoology, B.S."];
+const MINORS = ["Accounting","American Indian Studies","American Studies","Anthropology","Applied Communication","Applied Data Analytics","Applied Economics","Art History","Autism Studies","Belonging in the Workplace","Biology","Business Analysis","Business Information Technology","Business Management","Chemistry","Chinese Commerce","Chinese Language","Chinese Studies","Cinema and Media Studies","Classical Studies","Cognitive Neuroscience","Computer Science","Constitutional Studies","Creative Writing","Criminal Justice","Deaf Studies","Digital Media","Earth Science","Electrical Engineering","English Education","Enterprise Development and Entrepreneurship","Enterprise Risk Management and Insurance","Environmental Science and Management","Environmental Studies","Ethical Leadership and Social Impact","Ethics","Event Management","Exercise Science","Family Science","Finance","French","Gender Studies","Geography","German","Gerontology","Health Communication","Healthcare Administration","History","Homeland Security","Horticulture","Human Resource Management","Humanities","Information Systems and Technology","International Business","Japanese","Languages","Latin American Studies","Leadership Studies - Nonprofit Organizations","Leadership Studies","Leadership by Design","Literary Studies","Marketing","Mathematics","Military Science","Music","National Security Studies","Nutrition","Organizational Leadership and Change","Outdoor Recreation","Peace and Justice Studies","Philosophy","Physics","Political Science","Portuguese","Psychology","Public Health","Public Relations and Strategic Communication","Real Estate Finance and Development","Religious Studies","Russian Studies","School Health Education","Sociology","Spanish","Spanish-English Translation and Interpreting","Sport Management","Statistics","Technical Communication","Technology Management","Theatre Studies","Writing Studies","Writing for Entertainment Media","Zoology"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function iso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -364,14 +374,17 @@ async function load(){
   db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0) };
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
   (R.profiles || []).forEach(p => {
-    db.profiles[p.email] = { name:p.name, title:p.title, bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin };
+    db.profiles[p.email] = { name:p.name, title:p.title, bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, tier:p.tier || 'officer', branch:p.branch || '' };
     (p.role === 'admin' ? db.adminEmails : db.officerEmails).push(p.email);
   });
   if (R.access){
     db.adminEmails = R.access.filter(a => a.role === 'admin').map(a => a.email);
     db.officerEmails = R.access.filter(a => a.role === 'officer').map(a => a.email);
   }
-  db.users = (R.members || []).map(m => ({ id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, major:m.major, email:m.email, joined:m.joined }));
+  db.users = (R.members || []).map(m => {
+    const majors = (m.majors && m.majors.length) ? m.majors : (m.major ? [m.major] : []);
+    return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(', '), email:m.email, joined:m.joined };
+  });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
@@ -403,7 +416,9 @@ async function logChange(text){ try { await sb.from('change_log').insert({ text 
 
 /* ---------- Roles ---------- */
 const RANK = { guest:0, member:1, officer:2, admin:3 };
-function role(){ return session ? myRole : 'guest'; }
+// Officers and admins can switch on "member view" to see the site the way members do.
+function isStaff(){ return !!session && (myRole === 'officer' || myRole === 'admin'); }
+function role(){ return session ? (isStaff() && ui.memberView ? 'member' : myRole) : 'guest'; }
 function can(r){ return RANK[role()] >= RANK[r]; }
 function roleOf(email){
   if (!email) return 'guest';
@@ -436,7 +451,11 @@ function fmtStamp(ts){ return new Date(ts).toLocaleString('en-US', { month:'shor
 function todayIso(){ return dayOffset(0); }
 function isPast(ev){ return ev.date < todayIso(); }
 function isToday(ev){ return ev.date === todayIso(); }
-function sortedEvents(){ return [...db.events].sort((a,b) => (a.date + a.start).localeCompare(b.date + b.start)); }
+function catName(c){ return (CATS[c] || ['Event'])[0]; }
+function ptsText(c){ return PTS[c] ? '+' + PTS[c] + ' points' : 'no points'; }
+// Officer meetings are hidden from members, and from officers in member view.
+function visibleEvents(){ return can('officer') ? db.events : db.events.filter(e => e.cat !== 'officer_meeting'); }
+function sortedEvents(){ return [...visibleEvents()].sort((a,b) => (a.date + a.start).localeCompare(b.date + b.start)); }
 function upcoming(){ return sortedEvents().filter(e => !isPast(e)); }
 function heldEvents(){ return sortedEvents().filter(e => e.date <= todayIso()).reverse(); }
 function going(id){ return db.rsvps[id] || []; }
@@ -467,6 +486,8 @@ function copyText(txt, label){
 
 /* ---------- UI state ---------- */
 const ui = {
+  memberView: (() => { try { return localStorage.getItem('wfa-member-view') === '1'; } catch(e){ return false; } })(),
+  picks: {}, editMajors: false,
   cal: (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
   catsOn: new Set(Object.keys(CATS)),
   officerTab: 'events', adminTab: 'access',
@@ -492,7 +513,7 @@ function renderChrome(route){
     (staff.length ? '<span class="sep"></span>' + staff.map(l => a(l, 'staff')).join('') : '');
   const u = me(), r = role();
   document.getElementById('who').innerHTML = u
-    ? `<span class="name">${esc(u.first)}</span><span class="role ${r}">${r}</span><button class="btn on-dark ghost small" data-act="signout">Sign out</button>`
+    ? `${isStaff() ? `<button class="btn on-dark ${ui.memberView ? '' : 'ghost'} small" data-act="member-view" aria-pressed="${!!ui.memberView}">${ui.memberView ? 'Member view: on' : 'Member view'}</button>` : ''}<span class="name">${esc(u.first)}</span><span class="role ${r}">${r}</span><button class="btn on-dark ghost small" data-act="signout">Sign out</button>`
     : `<a class="btn on-dark ghost small" href="#signin">Sign in</a><a class="btn on-dark small" href="#signup">Join</a>`;
   document.getElementById('foot-role').textContent = session ? 'Signed in as ' + r : '';
 
@@ -522,14 +543,14 @@ function evRow(e){
   else if (mine) status = isPast(e) ? '<div class="muted">RSVP’d, missed</div>' : '<div class="going">You’re going</div>';
   return `<button class="ev-row" data-act="open-event" data-id="${e.id}">
     ${datebox(e.date)}
-    <div style="min-width:0"><div class="cat" style="--c:${catVar(e.cat)}">${CATS[e.cat][0]}${isToday(e)?' · today':''}</div>
+    <div style="min-width:0"><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}${isToday(e)?' · today':''}</div>
       <div class="ev-title">${esc(e.title)}</div>
       <div class="ev-sub">${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc)}</div></div>
     <div class="rsvp-count">${status}<span class="up">▲</span> ${n}${e.cap?` / ${e.cap}`:''}</div>
   </button>`;
 }
 function todayBar(){
-  return db.events.filter(isToday).map(e => {
+  return visibleEvents().filter(isToday).map(e => {
     const done = session && attended(e.id).includes(session);
     return `<div class="today-bar"><div class="stack" style="gap:2px"><span class="live">Happening today · ${fmtTime(e.start)}</span><strong>${esc(e.title)}</strong></div>
       ${done ? '<span class="going">You’re checked in ✓</span>' : `<button class="btn small" data-act="open-event" data-id="${e.id}">${can('officer') ? 'Open check-in' : 'Check in'}</button>`}</div>`;
@@ -595,7 +616,7 @@ function viewCalendar(){
   const end = new Date(y, mo + 1, 0);
   const weeks = Math.ceil((m.getDay() + end.getDate()) / 7);
   const byDay = {};
-  db.events.filter(e => ui.catsOn.has(e.cat)).forEach(e => (byDay[e.date] = byDay[e.date] || []).push(e));
+  visibleEvents().filter(e => ui.catsOn.has(e.cat)).forEach(e => (byDay[e.date] = byDay[e.date] || []).push(e));
   Object.values(byDay).forEach(l => l.sort((a,b) => a.start.localeCompare(b.start)));
   let cells = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="dow">${d}</div>`).join('');
   for (let i = 0; i < weeks * 7; i++){
@@ -614,7 +635,7 @@ function viewCalendar(){
       </div>
       ${can('officer')?'<a class="btn small" href="#officer" data-tab="events">+ Add event</a>':''}
     </div>
-    <div class="filters" aria-label="Filter by type">${Object.entries(CATS).map(([k,[l,v]]) => `<button class="chip" style="--c:var(${v})" aria-pressed="${ui.catsOn.has(k)}" data-act="cat" data-cat="${k}">${l}</button>`).join('')}</div>
+    <div class="filters" aria-label="Filter by type">${Object.entries(CATS).filter(([k]) => k !== 'officer_meeting' || can('officer')).map(([k,[l,v]]) => `<button class="chip" style="--c:var(${v})" aria-pressed="${ui.catsOn.has(k)}" data-act="cat" data-cat="${k}">${l}</button>`).join('')}</div>
     <div class="cal-scroll"><div class="cal">${cells}</div></div>
     <section class="stack">
       <div class="section-head"><h2>This month</h2><span class="muted">${monthEvents.length} event${monthEvents.length===1?'':'s'}</span></div>
@@ -635,12 +656,20 @@ function officerCard(email){
     </div>
   </article>`;
 }
+function officerSections(staff){
+  if (!staff.length) return '<div class="empty">No officers listed yet.</div>';
+  const P = e => db.profiles[e] || {};
+  const pres = staff.filter(e => P(e).tier === 'president');
+  const rest = staff.filter(e => P(e).tier !== 'president');
+  const groups = [['Presidents', pres], ...Object.entries(BRANCHES).map(([k,l]) => [l, rest.filter(e => P(e).branch === k)]), ['Officers', rest.filter(e => !BRANCHES[P(e).branch])]];
+  return groups.filter(([,l]) => l.length).map(([label, l]) => `<section class="stack"><div class="section-head"><h2>${esc(label)}</h2><span class="muted">${l.length}</span></div><div class="officers">${l.map(officerCard).join('')}</div></section>`).join('');
+}
 function viewOfficers(){
   const staff = staffEmails();
   return `<div class="view">
     <section class="page-head"><div class="eyebrow">${esc(db.settings.semester)} leadership</div><h1 class="page">Meet the officers</h1>
       <p class="muted">Questions about events, dues, or getting involved? Email the officer who runs that area, or stop by during office hours.</p></section>
-    <div class="officers">${staff.map(officerCard).join('') || '<div class="empty">No officers listed yet.</div>'}</div>
+    ${officerSections(staff)}
     ${can('officer') ? '<p class="hint">Officers: update your bio and contact info under Officer tools → My profile.</p>' : ''}
   </div>`;
 }
@@ -704,7 +733,7 @@ function viewRecaps(){
       <p class="muted">Notes and photos from past events.</p></section>
     ${can('officer') ? '<div><a class="btn small" href="#officer" data-tab="recaps">+ Write a recap</a></div>' : ''}
     <div class="stack" style="gap:32px">${list.map(r => { const e = evById(r.eventId); return `<article class="recap">
-      <div class="ann-meta">${e ? `<span class="cat" style="--c:${catVar(e.cat)}">${CATS[e.cat][0]}</span><span>${esc(e.title)} · ${fmtDay(e.date)}</span>` : ''}<span>· by ${esc(userName(r.author))}</span></div>
+      <div class="ann-meta">${e ? `<span class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</span><span>${esc(e.title)} · ${fmtDay(e.date)}</span>` : ''}<span>· by ${esc(userName(r.author))}</span></div>
       <h2>${esc(r.title)}</h2>
       <p class="ann-body">${esc(r.body)}</p>
       ${r.photos.length ? `<div class="photos">${r.photos.map((p,i) => `<button data-act="photo" data-id="${r.id}" data-i="${i}" aria-label="View photo ${i+1}"><img src="${esc(p)}" alt="Photo ${i+1} from ${esc(r.title)}" loading="lazy"></button>`).join('')}</div>` : ''}
@@ -734,8 +763,8 @@ function viewLeaderboard(){
   const lb = leaderboard();
   return `<div class="view">
     <section class="page-head"><div class="eyebrow">${esc(db.settings.semester)} · members only</div><h1 class="page">Leaderboard</h1>
-      <p class="muted">Points come from checking in at events with the code shown on screen. RSVPs alone don't count.</p></section>
-    <div class="tiles">${Object.entries(PTS).map(([k,v]) => `<div class="tile"><span class="v">${v}</span><span class="l">${CATS[k][0]}</span></div>`).join('')}</div>
+      <p class="muted">Points come from checking in at events with the code shown on screen. RSVPs alone don't count. Officers and admins aren't ranked.</p></section>
+    <div class="tiles">${Object.entries(PTS).filter(([,v]) => v).map(([k,v]) => `<div class="tile"><span class="v">${v}</span><span class="l">${catName(k)}</span></div>`).join('')}</div>
     <div class="table-wrap"><table><thead><tr><th class="num">Rank</th><th>Member</th><th>Major</th><th class="num">Events</th><th class="num">Points</th></tr></thead><tbody>
       ${lb.map((x,i) => `<tr class="${x.u.email===session?'me':''}"><td class="num"><span class="rank">${i+1}</span></td><td>${esc(x.u.first)} ${esc(x.u.last)}${x.u.email===session?' (you)':''}</td><td>${esc(x.u.major)}</td><td class="num">${x.n}</td><td class="num">${x.pts}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No members yet.</td></tr>'}
     </tbody></table></div>
@@ -756,7 +785,7 @@ function viewAccount(){
     ${todayBar()}
     <div class="tiles">
       <div class="tile"><span class="v">${points(u.email)}</span><span class="l">Points</span></div>
-      <div class="tile"><span class="v">${rank ? '#' + rank : '—'}</span><span class="l">Rank of ${lb.length}</span></div>
+      <div class="tile"><span class="v">${rank ? '#' + rank : '—'}</span><span class="l">${rank ? 'Rank of ' + lb.length : isStaff() ? 'Officers aren’t ranked' : 'Not ranked yet'}</span></div>
       <div class="tile"><span class="v">${attendCount(u.email)}</span><span class="l">Events attended</span></div>
       <div class="tile"><span class="v" style="color:${d==='unpaid'?'var(--danger)':'var(--brand-text)'}">${d === 'paid' ? 'Paid' : d === 'waived' ? 'Waived' : 'Due'}</span><span class="l">${esc(db.settings.semester)} dues${d==='unpaid' && db.settings.dues ?` · $${db.settings.dues}`:''}</span></div>
     </div>
@@ -770,10 +799,12 @@ function viewAccount(){
         <h3>Profile</h3>
         <dl class="facts">
           <dt>UVU ID</dt><dd class="num">${esc(u.uvuid)}</dd>
-          <dt>Major</dt><dd>${esc(u.major)}</dd>
+          <dt>Major${u.majors && u.majors.length > 1 ? 's' : ''}</dt><dd>${esc(u.major) || '—'}</dd>
+          <dt>Minor</dt><dd>${esc(u.minor) || '—'}</dd>
           <dt>Email</dt><dd>${esc(u.email)}</dd>
           <dt>Joined</dt><dd>${fmtDay(u.joined)}</dd>
         </dl>
+        ${ui.editMajors ? majorEditForm(u) : '<div><button class="btn ghost small" data-act="edit-majors">Edit majors and minor</button></div>'}
         ${d === 'unpaid' && db.settings.dues ? `<p class="hint">Pay $${db.settings.dues} to any officer. They'll mark you paid here.</p>` : ''}
       </section>
     </div>
@@ -810,7 +841,7 @@ function viewAuth(mode){
         <label>First name<input id="su-first" autocomplete="given-name" required></label>
         <label>Last name<input id="su-last" autocomplete="family-name" required></label>
       </div>
-      <label>Major<input id="su-major" list="majors" required placeholder="Start typing"><datalist id="majors">${MAJORS.map(m => `<option value="${m}">`).join('')}</datalist></label>
+      ${majorPicker('su', ui.picks.su || [], '')}
       <label>Preferred email<input id="su-email" type="email" autocomplete="email" required><span class="hint">We’ll send a confirmation link here. If you’re an officer, use the email on the officer list.</span></label>
       <div class="grid2">
         <label>Password<input id="su-pw" type="password" autocomplete="new-password" required><span class="hint">At least 8 characters.</span></label>
@@ -848,25 +879,69 @@ function viewReset(){
     </form></div></div>`;
 }
 
+function needsPassword(){ return !!(authUser && ((authUser.user_metadata || {}).must_change || ui.recovery)); }
+function needsProfile(){ const u = db.users.find(x => x.email === session); return !!u && (!u.uvuid || !u.majors.length); }
 function viewSetup(){
   const u = me(); if (!u) return gate('member');
   const p = db.profiles[u.email] || {};
-  const recovering = ui.recovery && !(authUser.user_metadata || {}).must_change;
+  const pw = needsPassword(), recovering = ui.recovery && !(authUser.user_metadata || {}).must_change;
+  const head = recovering ? ['Account help', 'Choose a new password', 'Your reset link worked. Pick a new password to finish.']
+    : pw ? ['Welcome' + (p.title ? ', ' + esc(p.title) : ''), 'Finish setting up, ' + esc(u.first), 'You signed in with a temporary password. Choose your own to continue.']
+    : ['Almost done', 'Finish your profile, ' + esc(u.first), 'Add your UVU ID and major so the member list stays accurate.'];
   return `<div class="view"><div class="auth">
-    <div class="auth-side"><div class="stack"><div class="eyebrow">${recovering ? 'Account help' : 'Welcome' + (p.title ? ', ' + esc(p.title) : '')}</div>
-      <h2>${recovering ? 'Choose a new password' : 'Finish setting up, ' + esc(u.first)}</h2>
-      <p>${recovering ? 'Your reset link worked. Pick a new password to finish.' : 'You signed in with a temporary password. Choose your own to continue.'}</p></div></div>
+    <div class="auth-side"><div class="stack"><div class="eyebrow">${head[0]}</div>
+      <h2>${head[1]}</h2>
+      <p>${head[2]}</p></div></div>
     <form class="auth-form" id="f-setup" novalidate>
-      <h2>Choose a password</h2>
+      <h2>${pw ? 'Choose a password' : 'Your profile'}</h2>
       ${u.uvuid ? '' : '<label>UVU ID<input id="st-id" inputmode="numeric" maxlength="8" placeholder="8 digits"></label>'}
-      ${u.major ? '' : `<label>Major<input id="st-major" list="majors2" placeholder="Start typing"><datalist id="majors2">${MAJORS.map(m => `<option value="${m}">`).join('')}</datalist></label>`}
-      <div class="grid2">
+      ${u.majors && u.majors.length ? '' : majorPicker('st', ui.picks.st || [], u.minor || '')}
+      ${pw ? `<div class="grid2">
         <label>New password<input id="st-pw" type="password" autocomplete="new-password"><span class="hint">At least 8 characters.</span></label>
         <label>Confirm<input id="st-pw2" type="password" autocomplete="new-password"></label>
-      </div>
+      </div>` : ''}
       <div class="err" id="st-err"></div>
       <div class="row"><button class="btn" type="submit">Save and continue</button></div>
     </form></div></div>`;
+}
+
+/* ---------- Majors and minor picker ---------- */
+function majorPicker(p, majors, minor){
+  return `<div class="stack" style="gap:8px">
+    <label for="${p}-major-in">Major(s)</label>
+    <div class="picks" id="${p}-picks">${pickChips(p, majors)}</div>
+    <div class="row" style="gap:8px;flex-wrap:nowrap"><input id="${p}-major-in" list="dl-majors" placeholder="Start typing, e.g. Finance" autocomplete="off" style="flex:1;min-width:0"><button type="button" class="btn ghost small" data-act="add-major" data-p="${p}">Add</button></div>
+    <span class="hint">Choose from UVU’s catalog. Add each major separately if you have more than one.</span>
+  </div>
+  <label>Minor <span class="hint">(optional)</span><input id="${p}-minor" list="dl-minors" value="${esc(minor)}" placeholder="Start typing" autocomplete="off"></label>`;
+}
+function pickChips(p, majors){
+  return majors.map((m,i) => `<span class="pick">${esc(m)}<button type="button" data-act="rm-major" data-p="${p}" data-i="${i}" aria-label="Remove ${esc(m)}">×</button></span>`).join('') || '<span class="hint">No majors added yet.</span>';
+}
+// Adds whatever is typed in the major box. Returns false if it isn't a catalog major.
+function addMajor(p){
+  const inp = document.getElementById(p + '-major-in'); if (!inp) return true;
+  const val = inp.value.trim(); if (!val) return true;
+  const match = MAJORS.find(m => m.toLowerCase() === val.toLowerCase());
+  if (!match){ toast('Choose a major from the list that appears as you type.'); return false; }
+  const l = ui.picks[p] = ui.picks[p] || [];
+  if (!l.includes(match)) l.push(match);
+  inp.value = ''; document.getElementById(p + '-picks').innerHTML = pickChips(p, l); inp.focus();
+  return true;
+}
+function readPicker(p){
+  if (!addMajor(p)) return { error: 'Choose a major from the list that appears as you type, then click Add.' };
+  const el = document.getElementById(p + '-minor'), minor = el ? el.value.trim() : '';
+  const match = minor && MINORS.find(m => m.toLowerCase() === minor.toLowerCase());
+  if (minor && !match) return { error: 'Choose a minor from the list, or leave it blank.' };
+  return { majors: [...(ui.picks[p] || [])], minor: match || '' };
+}
+function majorEditForm(u){
+  return `<form class="stack" id="f-majors" style="gap:12px;border-top:1px solid var(--line);padding-top:14px" novalidate>
+    ${majorPicker('ac', ui.picks.ac || [], u.minor || '')}
+    <div class="err" id="ac-err"></div>
+    <div class="row"><button class="btn small" type="submit">Save</button><button class="btn ghost small" type="button" data-act="cancel-majors">Cancel</button></div>
+  </form>`;
 }
 
 /* ---------- Officer tools ---------- */
@@ -876,8 +951,8 @@ function attendanceStats(e){
   return { rsvp: r.length, came: a.length, showed: showed.length, walkins: a.filter(x => !r.includes(x)), noshows: r.filter(x => !a.includes(x)), rate: r.length ? Math.round(showed.length / r.length * 100) : null };
 }
 function memberTable(rows){
-  return `<div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Major</th><th>UVU ID</th><th>Role</th><th class="num">Events</th><th>Dues</th></tr></thead><tbody>
-    ${rows.map(u => `<tr><td>${esc(u.first)} ${esc(u.last)}</td><td>${esc(u.email)}</td><td>${esc(u.major)}</td><td class="num">${esc(u.uvuid)}</td><td><span class="role ${roleOf(u.email)}">${roleOf(u.email)}</span></td><td class="num">${attendCount(u.email)}</td><td>${duesOf(u.email)}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">No members yet.</td></tr>'}
+  return `<div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Major(s)</th><th>UVU ID</th><th>Role</th><th class="num">Events</th><th>Dues</th></tr></thead><tbody>
+    ${rows.map(u => `<tr><td>${esc(u.first)} ${esc(u.last)}</td><td>${esc(u.email)}</td><td>${esc(u.major)}${u.minor ? `<div class="hint">Minor: ${esc(u.minor)}</div>` : ''}</td><td class="num">${esc(u.uvuid)}</td><td><span class="role ${roleOf(u.email)}">${roleOf(u.email)}</span></td><td class="num">${attendCount(u.email)}</td><td>${duesOf(u.email)}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">No members yet.</td></tr>'}
   </tbody></table></div>`;
 }
 
@@ -938,7 +1013,7 @@ function viewOfficer(){
         <h3>${e ? 'Edit event' : 'Create an event'}</h3>
         <label>Title<input id="ev-title" required value="${esc(e?.title)}" placeholder="e.g. DCF Valuation Workshop"></label>
         <div class="grid2">
-          <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${e?.cat===k?'selected':''}>${l} · ${PTS[k]} pts</option>`).join('')}</select></label>
+          <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${e?.cat===k?'selected':''}>${l} · ${PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select></label>
           <label>Date<input id="ev-date" type="date" required value="${esc(e?.date || dayOffset(7))}"></label>
         </div>
         <div class="grid2">
@@ -1084,7 +1159,7 @@ function viewOfficer(){
         <h3>Email draft builder</h3>
         <div class="row" style="gap:6px"><span class="hint">Start from:</span>${Object.entries(MAIL_TEMPLATES).map(([k,[l]]) => `<button type="button" class="btn ghost small" data-act="mail-tpl" data-tpl="${k}">${l}</button>`).join('')}</div>
         <label>Send to<select id="ml-aud">${mailAudiences().map(([g, opts]) => opts.length ? `<optgroup label="${esc(g)}">${opts.map(([k,l]) => `<option value="${k}" ${ui.mail.aud===k?'selected':''}>${esc(l)}</option>`).join('')}</optgroup>` : '').join('')}</select></label>
-        <label>Event for {event} details<select id="ml-ev">${eventOptions(sortedEvents(), ui.mail.ev, 'Use the event from “Send to”')}</select></label>
+        <label>Event <span class="hint">(optional)</span><select id="ml-ev">${eventOptions(sortedEvents(), ui.mail.ev, 'None')}</select><span class="hint">Only needed if the message uses {event}, {date}, {time}, or {location}.</span></label>
         <label>Subject<input id="ml-subject" value="${esc(ui.mail.subject)}"></label>
         <label>Message<textarea id="ml-body" style="min-height:200px">${esc(ui.mail.body)}</textarea>
           <span class="hint">Placeholders: {event} {date} {time} {location} {semester} {dues}</span></label>
@@ -1093,11 +1168,12 @@ function viewOfficer(){
         <div class="section-head"><h3>Preview</h3><span class="muted">${to.length} recipients</span></div>
         <div class="preview" id="ml-preview">${mailPreview()}</div>
         <div class="row">
-          <button class="btn" data-act="mail-copy" data-what="to" ${to.length?'':'disabled'}>Copy recipients</button>
+          <button class="btn ${ui.armed==='mail-send'?'danger armed':''}" data-act="mail-send" data-key="mail-send" ${to.length?'':'disabled'}>${ui.armed==='mail-send' ? `Click again to send to ${to.length}` : `Send to ${to.length} ${to.length===1?'person':'people'}`}</button>
+          <button class="btn ghost" data-act="mail-copy" data-what="to" ${to.length?'':'disabled'}>Copy recipients</button>
           <button class="btn ghost" data-act="mail-copy" data-what="subject">Copy subject</button>
           <button class="btn ghost" data-act="mail-copy" data-what="body">Copy message</button>
         </div>
-        <p class="hint">Paste recipients into the BCC field of your email app so members don’t see each other’s addresses.</p>
+        <p class="hint">Sends from noreply@wolverinefinanceassociation.org with everyone in BCC, so members don’t see each other’s addresses. Replies go to your officer contact email. The free email plan allows 100 emails a day.</p>
       </section></div>`;
   }
 
@@ -1129,7 +1205,7 @@ function viewOfficer(){
 
   else if (T === 'members'){
     const q = ui.memberSearch.toLowerCase();
-    const rows = db.users.filter(u => !q || (u.first+' '+u.last+' '+u.email+' '+u.major+' '+u.uvuid).toLowerCase().includes(q));
+    const rows = db.users.filter(u => !q || (u.first+' '+u.last+' '+u.email+' '+u.major+' '+u.minor+' '+u.uvuid).toLowerCase().includes(q));
     body = `<section class="stack">
       <div class="row"><label style="flex:1;min-width:220px">Search members<input id="mem-search" value="${esc(ui.memberSearch)}" placeholder="Name, email, major, or UVU ID"></label><span class="muted" style="align-self:end;padding-bottom:10px">${db.users.length} accounts</span></div>
       ${memberTable(rows)}
@@ -1142,7 +1218,7 @@ function viewOfficer(){
     body = `<div class="split">
       <form class="panel stack" id="f-profile">
         <h3>My officer profile</h3>
-        <p class="hint">Shown on the public Officers page. Your title (${esc(p.title || 'Officer')}) is set by an admin.</p>
+        <p class="hint">Shown on the public Officers page. Your title (${esc(p.title || 'Officer')}), rank, and branch are set by an admin.</p>
         <label>Display name<input id="pf-name" value="${esc(p.name || userName(session))}"></label>
         <label>Contact email<input id="pf-contact" type="email" value="${esc(p.contact || session)}"></label>
         <label>Office hours<input id="pf-hours" value="${esc(p.hours || '')}" placeholder="e.g. Wed 2:00–3:00 PM, library 2nd floor"></label>
@@ -1164,8 +1240,8 @@ function viewOfficer(){
 
 /* ---------- Admin ---------- */
 function exportRows(){
-  const head = ['UVU ID','First name','Last name','Major','Email','Role','Joined','Dues','Events attended','Points'];
-  return [head, ...db.users.map(u => [u.uvuid, u.first, u.last, u.major, u.email, roleOf(u.email), u.joined, duesOf(u.email), attendCount(u.email), points(u.email)])];
+  const head = ['UVU ID','First name','Last name','Majors','Minor','Email','Role','Joined','Dues','Events attended','Points'];
+  return [head, ...db.users.map(u => [u.uvuid, u.first, u.last, u.major, u.minor, u.email, roleOf(u.email), u.joined, duesOf(u.email), attendCount(u.email), points(u.email)])];
 }
 function exportTsv(){
   const clean = v => String(v ?? '').replace(/[\t\n\r]/g, ' ');
@@ -1190,7 +1266,7 @@ function viewAdmin(){
     const nm = acct ? { first: acct.first, last: acct.last } : (() => { const s = (p.name || '').split(' '); return { first: s[0] || '', last: s.slice(1).join(' ') }; })();
     const row = (email, list) => {
       const pr = db.profiles[email] || {}, hasAcct = db.users.some(u => u.email === email);
-      return `<div class="list-row"><div><div class="ev-title">${esc(userName(email))} <span class="muted" style="font-weight:400">· ${esc(pr.title || (list==='admin'?'Admin':'Officer'))}</span></div>
+      return `<div class="list-row"><div><div class="ev-title">${esc(userName(email))} <span class="muted" style="font-weight:400">· ${esc(pr.title || (list==='admin'?'Admin':'Officer'))} · ${TIERS[pr.tier] || 'Officer'}${BRANCHES[pr.branch] ? ', ' + BRANCHES[pr.branch] : ''}</span></div>
         <div class="ev-sub" style="overflow-wrap:anywhere">${esc(email)}${hasAcct?'':' · no account yet'}</div></div>
         <div class="row" style="gap:6px"><button class="btn ghost small" data-act="edit-officer" data-id="${esc(email)}">Edit</button>${delBtn(list+'-'+email,'Remove','rm-access',email)}</div></div>`;
     };
@@ -1206,6 +1282,10 @@ function viewAdmin(){
         <div class="grid2">
           <label>Title<input id="of-title" value="${esc(p.title || '')}" placeholder="e.g. VP of Finance"></label>
           <label>Access level<select id="of-level"><option value="officer" ${ed && roleOf(ed)==='officer'?'selected':''}>Officer</option><option value="admin" ${ed && roleOf(ed)==='admin'?'selected':''}>Admin</option></select></label>
+        </div>
+        <div class="grid2">
+          <label>Rank on Officers page<select id="of-tier">${Object.entries(TIERS).map(([k,l]) => `<option value="${k}" ${(p.tier || 'officer')===k?'selected':''}>${l}</option>`).join('')}</select></label>
+          <label>Branch<select id="of-branch"><option value="">No branch</option>${Object.entries(BRANCHES).map(([k,l]) => `<option value="${k}" ${p.branch===k?'selected':''}>${l}</option>`).join('')}</select></label>
         </div>
         <fieldset class="pwset">
           <legend>${acct ? 'New temporary password (optional)' : 'Temporary password (optional)'}</legend>
@@ -1276,13 +1356,13 @@ function openEvent(id){
   else action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button>`;
   let checkin = '';
   if (isToday(e)){
-    if (!session) checkin = `<div class="notice">At the event? <a href="#signin">Sign in</a> to check in and earn ${PTS[e.cat]} points.</div>`;
-    else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> +${PTS[e.cat]} points.</div>`;
-    else checkin = `<form class="stack" id="f-checkin" data-id="${id}" style="gap:8px"><label for="ci-code">Check-in code <span class="hint">Shown on screen at the event · +${PTS[e.cat]} points</span></label>
+    if (!session) checkin = `<div class="notice">At the event? <a href="#signin">Sign in</a> to check in${PTS[e.cat] ? ' and earn ' + PTS[e.cat] + ' points' : ''}.</div>`;
+    else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e.cat)}.</div>`;
+    else checkin = `<form class="stack" id="f-checkin" data-id="${id}" style="gap:8px"><label for="ci-code">Check-in code <span class="hint">Shown on screen at the event · ${ptsText(e.cat)}</span></label>
       <div class="checkin-form"><input id="ci-code" maxlength="4" autocomplete="off" placeholder="CODE"><button class="btn" type="submit">Check in</button></div><div class="err" id="ci-err"></div></form>`;
   }
   showModal(`<div class="modal-in">
-    <div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="cat" style="--c:${catVar(e.cat)}">${CATS[e.cat][0]} · ${PTS[e.cat]} pts</div></div>
+    <div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${PTS[e.cat] ? PTS[e.cat] + ' pts' : 'officers only'}</div></div>
     <h2>${esc(e.title)}</h2>
     <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)}</dd><dt>Where</dt><dd>${esc(e.loc)}</dd><dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}${isPast(e)||isToday(e)?` · ${attCount(id)} checked in`:''}</dd></dl>
     ${e.cap ? `<div class="meter"><span style="width:${Math.min(100,n/e.cap*100)}%"></span></div>` : ''}
@@ -1317,7 +1397,7 @@ function route(){ const r = location.hash.slice(1); return VIEWS[r] ? r : 'home'
 function render(){
   if (!loaded) return;
   let r = route();
-  if (session && ((authUser.user_metadata || {}).must_change || ui.recovery)) r = 'setup';   // must choose a password first
+  if (session && (needsPassword() || needsProfile())) r = 'setup';   // finish the account before anything else
   renderChrome(r); document.getElementById('app').innerHTML = VIEWS[r]();
 }
 window.addEventListener('hashchange', () => {
@@ -1346,7 +1426,7 @@ document.addEventListener('click', async ev => {
   const t = ev.target.closest('[data-act]');
   if (!t) return;
   const a = t.dataset.act, id = t.dataset.id;
-  if (t.dataset.key && ui.armed !== t.dataset.key){ ui.armed = t.dataset.key; render(); return; }
+  if (t.dataset.key && ui.armed !== t.dataset.key){ readMail(); ui.armed = t.dataset.key; render(); return; }
   ui.armed = null;
   switch (a){
     case 'open-event': openEvent(id); break;
@@ -1399,6 +1479,17 @@ document.addEventListener('click', async ev => {
       else if (w === 'subject') copyText(fillMerge(ui.mail.subject), 'subject');
       else copyText(fillMerge(ui.mail.body), 'message');
       break; }
+    case 'mail-send': await sendMail(); break;
+    case 'member-view':
+      ui.memberView = !ui.memberView;
+      try { localStorage.setItem('wfa-member-view', ui.memberView ? '1' : '0'); } catch(e){}
+      if (ui.memberView && ['officer','admin'].includes(route())) location.hash = 'home';
+      toast(ui.memberView ? 'Member view on. You’re seeing the site as a member.' : 'Member view off');
+      render(); break;
+    case 'add-major': addMajor(t.dataset.p); break;
+    case 'rm-major': { const l = ui.picks[t.dataset.p] || []; l.splice(+t.dataset.i, 1); document.getElementById(t.dataset.p + '-picks').innerHTML = pickChips(t.dataset.p, l); break; }
+    case 'edit-majors': ui.editMajors = true; ui.picks.ac = [...(me().majors || [])]; render(); break;
+    case 'cancel-majors': ui.editMajors = false; render(); break;
     case 'dues-filter': ui.duesFilter = t.dataset.f; render(); break;
     case 'export': copyText(exportTsv(), 'member list'); break;
     case 'csv': downloadCsv(); break;
@@ -1417,7 +1508,22 @@ document.addEventListener('click', async ev => {
       toast(error ? errMsg(error) : 'New code sent'); break; }
   }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Enter' && /-major-in$/.test(e.target.id || '')){ e.preventDefault(); addMajor(e.target.id.split('-')[0]); }
+});
+async function sendMail(){
+  readMail();
+  const to = audienceEmails(ui.mail.aud), subject = fillMerge(ui.mail.subject).trim(), text = fillMerge(ui.mail.body).trim();
+  if (!to.length) return toast('No one is in that group.');
+  if (!subject || !text) return toast('Add a subject and a message.');
+  if (/\{(event|date|time|location)\}/.test(subject + text)) return toast('Pick an event, or remove {event}, {date}, {time}, and {location} from the message.');
+  toast('Sending…');
+  const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to, subject, text } });
+  if (error){ let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch(_){} return toast('Not sent: ' + m); }
+  toast(data.failed ? `Sent to ${data.sent}. ${data.failed} couldn’t be sent.` : `Sent to ${data.sent} ${data.sent === 1 ? 'person' : 'people'}`);
+  await load(); render();
+}
 
 /* ---------- Inputs ---------- */
 function rerenderKeepFocus(id){ const el = document.getElementById(id), pos = el.selectionStart; render(); const s = document.getElementById(id); s.focus(); try { s.setSelectionRange(pos, pos); } catch(e){} }
@@ -1484,16 +1590,17 @@ async function handleSubmit(f, v, err){
   }
 
   if (f.id === 'f-signup'){
-    const d = { uvuid: v('su-id'), first: v('su-first'), last: v('su-last'), major: v('su-major'), email: v('su-email').toLowerCase() };
+    const d = { uvuid: v('su-id'), first: v('su-first'), last: v('su-last'), email: v('su-email').toLowerCase() };
+    const pick = readPicker('su'); if (pick.error) return err('su-err', pick.error);
     const pw = document.getElementById('su-pw').value, pw2 = document.getElementById('su-pw2').value;
     if (!/^\d{8}$/.test(d.uvuid)) return err('su-err', 'UVU ID must be 8 digits.');
     if (!d.first || !d.last) return err('su-err', 'Enter your first and last name.');
-    if (!d.major) return err('su-err', 'Enter your major. Use “Undeclared” if you haven’t picked one.');
+    if (!pick.majors.length) return err('su-err', 'Add at least one major. Use “Undeclared” if you haven’t picked one.');
     if (!EMAIL_RE.test(d.email)) return err('su-err', 'Enter a valid email address.');
     if (pw.length < 8) return err('su-err', 'Password needs at least 8 characters.');
     if (pw !== pw2) return err('su-err', 'Passwords don’t match.');
     const { data, error } = await sb.auth.signUp({ email: d.email, password: pw,
-      options: { data: { uvuid: d.uvuid, first: d.first, last: d.last, major: d.major }, emailRedirectTo: location.origin + location.pathname } });
+      options: { data: { uvuid: d.uvuid, first: d.first, last: d.last, majors: pick.majors, minor: pick.minor, major: pick.majors[0] }, emailRedirectTo: location.origin + location.pathname } });
     if (error) return err('su-err', errMsg(error));
     if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) return err('su-err', 'An account already uses this email. Sign in instead.');
     if (data.session){ await afterLogin(); toast('Welcome to the WFA, ' + d.first); }
@@ -1522,17 +1629,33 @@ async function handleSubmit(f, v, err){
     await load(); toast('Password updated. You’re signed in.'); location.hash = 'home'; render();
   }
 
+  if (f.id === 'f-majors'){
+    const pick = readPicker('ac'); if (pick.error) return err('ac-err', pick.error);
+    if (!pick.majors.length) return err('ac-err', 'Add at least one major.');
+    const r = await sb.from('members').update({ majors: pick.majors, minor: pick.minor, major: pick.majors[0] }).eq('id', authUser.id);
+    if (r.error) return err('ac-err', errMsg(r.error));
+    ui.editMajors = false; await load(); toast('Profile saved'); render();
+  }
+
   if (f.id === 'f-setup'){
-    const u = me(), pw = document.getElementById('st-pw').value, pw2 = document.getElementById('st-pw2').value;
-    const idEl = document.getElementById('st-id'), majEl = document.getElementById('st-major');
+    const pwEl = document.getElementById('st-pw'), idEl = document.getElementById('st-id');
     const upd = {};
     if (idEl){ const id = idEl.value.trim(); if (!/^\d{8}$/.test(id)) return err('st-err', 'UVU ID must be 8 digits.'); upd.uvuid = id; }
-    if (majEl){ if (!majEl.value.trim()) return err('st-err', 'Enter your major.'); upd.major = majEl.value.trim(); }
-    if (pw.length < 8) return err('st-err', 'Password needs at least 8 characters.');
-    if (pw !== pw2) return err('st-err', 'Passwords don’t match.');
+    if (document.getElementById('st-major-in')){
+      const pick = readPicker('st'); if (pick.error) return err('st-err', pick.error);
+      if (!pick.majors.length) return err('st-err', 'Add at least one major. Use “Undeclared” if you haven’t picked one.');
+      Object.assign(upd, { majors: pick.majors, minor: pick.minor, major: pick.majors[0] });
+    }
+    if (pwEl){
+      const pw = pwEl.value, pw2 = document.getElementById('st-pw2').value;
+      if (pw.length < 8) return err('st-err', 'Password needs at least 8 characters.');
+      if (pw !== pw2) return err('st-err', 'Passwords don’t match.');
+    }
     if (Object.keys(upd).length){ const r = await sb.from('members').update(upd).eq('id', authUser.id); if (r.error) return err('st-err', errMsg(r.error)); }
-    const ur = await sb.auth.updateUser({ password: pw, data: { must_change: false } });
-    if (ur.error) return err('st-err', errMsg(ur.error));
+    if (pwEl){
+      const ur = await sb.auth.updateUser({ password: pwEl.value, data: { must_change: false } });
+      if (ur.error) return err('st-err', errMsg(ur.error));
+    }
     ui.recovery = false; await load(); toast('You’re all set');
     location.hash = myRole === 'admin' ? 'admin' : myRole === 'officer' ? 'officer' : 'home'; render();
   }
@@ -1544,7 +1667,7 @@ async function handleSubmit(f, v, err){
     const msg = { closed:'Check-in is only open on the day of the event.', notstarted:'Check-in hasn’t started yet. Wait for an officer to show the code.',
       wrong:'That code doesn’t match. Check the screen and try again.', signin:'Sign in first.', missing:'This event no longer exists.' }[r.data];
     if (msg) return err('ci-err', msg);
-    await load(); toast('Checked in · +' + PTS[e.cat] + ' points'); render(); openEvent(id);
+    await load(); toast('Checked in · ' + ptsText(e.cat)); render(); openEvent(id);
   }
 
   if (f.id === 'f-mark'){
@@ -1613,7 +1736,7 @@ async function handleSubmit(f, v, err){
     if (linkedin && !/^https?:\/\//i.test(linkedin)) return err('pf-err', 'LinkedIn link must start with https://');
     const p = db.profiles[session] || {};
     await act(async () => {
-      must(await sb.from('officer_profiles').upsert({ email: session, title: p.title || '', name: v('pf-name'), contact, hours: v('pf-hours'), linkedin, bio: v('pf-bio') }));
+      must(await sb.from('officer_profiles').upsert({ email: session, title: p.title || '', tier: p.tier || 'officer', branch: p.branch || '', name: v('pf-name'), contact, hours: v('pf-hours'), linkedin, bio: v('pf-bio') }));
       await logChange('Updated their officer profile');
     }, 'Profile saved');
   }
@@ -1621,7 +1744,7 @@ async function handleSubmit(f, v, err){
   if (f.id === 'f-officer'){
     const email = v('of-email').toLowerCase(), level = v('of-level'), contact = v('of-contact'), linkedin = v('of-linkedin');
     const first = v('of-first'), last = v('of-last'), pw = v('of-pw'), send = document.getElementById('of-send').checked;
-    const title = v('of-title'), hours = v('of-hours'), bio = v('of-bio');
+    const title = v('of-title'), hours = v('of-hours'), bio = v('of-bio'), tier = v('of-tier'), branch = v('of-branch');
     if (!EMAIL_RE.test(email)) return err('of-err', 'Enter a valid login email.');
     if (!first || !last) return err('of-err', 'Enter their first and last name.');
     if (pw && pw.length < 8) return err('of-err', 'Temporary password needs at least 8 characters.');
@@ -1630,7 +1753,7 @@ async function handleSubmit(f, v, err){
 
     if (pw){
       // Creating accounts and sending email needs the server function.
-      const { data, error } = await sb.functions.invoke('invite-officer', { body: { email, first, last, role: level, title, contact, hours, linkedin, bio, password: pw, send } });
+      const { data, error } = await sb.functions.invoke('invite-officer', { body: { email, first, last, role: level, title, tier, branch, contact, hours, linkedin, bio, password: pw, send } });
       if (error){
         let m = error.message;
         try { const j = await error.context.json(); m = j.error || m; } catch(_){}
@@ -1643,7 +1766,7 @@ async function handleSubmit(f, v, err){
     }
     const before = roleOf(email);
     must(await sb.from('access_list').upsert({ email, role: level }));
-    must(await sb.from('officer_profiles').upsert({ email, name: first + ' ' + last, title, contact, hours, linkedin, bio }));
+    must(await sb.from('officer_profiles').upsert({ email, name: first + ' ' + last, title, tier, branch, contact, hours, linkedin, bio }));
     if (db.users.some(u => u.email === email)) await sb.from('members').update({ first, last }).eq('email', email);
     await logChange(before === level ? 'Edited officer profile for ' + email : 'Gave ' + email + ' ' + level + ' access');
     ui.editOfficer = null; await load(); render(); toast('Saved ' + email + ' as ' + level);
@@ -1653,6 +1776,8 @@ async function handleSubmit(f, v, err){
 /* ---------- Start ---------- */
 sb.auth.onAuthStateChange(event => { if (event === 'PASSWORD_RECOVERY'){ ui.recovery = true; if (loaded) render(); } });
 (async () => {
+  document.getElementById('dl-majors').innerHTML = MAJORS.map(m => `<option value="${esc(m)}">`).join('');
+  document.getElementById('dl-minors').innerHTML = MINORS.map(m => `<option value="${esc(m)}">`).join('');
   if (/type=recovery/.test(initialHash)) ui.recovery = true;
   const m = initialHash.match(/error_description=([^&]+)/);
   try { await load(); }
