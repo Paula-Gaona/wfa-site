@@ -1201,7 +1201,7 @@ async function bulkAdd(){
 
 /* ---------- Weekly availability (15-minute slots) ---------- */
 const DAYS = [['mon','Mon'],['tue','Tue'],['wed','Wed'],['thu','Thu'],['fri','Fri'],['sat','Sat'],['sun','Sun']];
-const STEP = 15, START_MIN = 8 * 60, END_MIN = 22 * 60;   // 8:00 AM to 10:00 PM
+const STEP = 15, START_MIN = 7 * 60, END_MIN = 22 * 60;   // 7:00 AM to 10:00 PM
 const SLOT_MINS = Array.from({ length: (END_MIN - START_MIN) / STEP }, (_, i) => START_MIN + i * STEP);
 const OFFICER_WEIGHT = 3;   // an officer's availability counts this many times a member's
 function fmtMin(m){ let h = Math.floor(m / 60); const mm = m % 60, ap = h >= 12 && h < 24 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + String(mm).padStart(2, '0') + ' ' + ap; }
