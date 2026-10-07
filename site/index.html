@@ -1244,10 +1244,10 @@ function bulkBody(){
     <p class="muted" style="max-width:68ch">Add several officers at once, one per row. Blank rows are skipped. Rows that fail stay here so you can fix them and try again.</p>
     <div class="panel stack" style="gap:10px">
       <h3>Import from a spreadsheet</h3>
-      <p class="muted" style="max-width:68ch">Download the template, fill in one officer per row in Excel or Google Sheets, and save it as a CSV file. Then upload it. The rows appear in the table below so you can check them before adding.</p>
+      <p class="muted" style="max-width:68ch">Download the Excel template and fill in one officer per row. Branch, rank, and access have drop-down lists. It also works in Google Sheets. Then upload the file. The rows appear in the table below so you can check them before adding.</p>
       <div class="row">
-        <button class="btn ghost small" data-act="bulk-template">Download template (CSV)</button>
-        <label class="btn small" style="flex-direction:row;cursor:pointer">Upload CSV<input id="bulk-csv" type="file" accept=".csv,text/csv" hidden></label>
+        <button class="btn ghost small" data-act="bulk-template">Download template (Excel)</button>
+        <label class="btn small" style="flex-direction:row;cursor:pointer">Upload spreadsheet<input id="bulk-csv" type="file" accept=".xlsx,.csv,text/csv" hidden></label>
       </div>
       <span class="hint">Branch: Communications, Operations, Financial Applications, or blank. Rank: President, Vice President, Faculty advisor, Officer, or Honorary. Access: officer or admin.</span>
       ${ui.bulkNotes && ui.bulkNotes.length ? `<div class="stack" style="gap:4px">${ui.bulkNotes.map(n => `<div class="err">${esc(n)}</div>`).join('')}</div>` : ''}
@@ -1270,14 +1270,62 @@ function bulkBody(){
     ${ui.bulkResults ? `<div class="panel stack" style="gap:6px"><h3>Results</h3>${ui.bulkResults.map(x => `<div class="${x.ok ? '' : 'err'}">${esc(x.email)}: ${esc(x.msg)}</div>`).join('')}</div>` : ''}
   </section>`;
 }
-function downloadBulkTemplate(){
-  const csv = 'email,first_name,last_name,branch,rank,access\r\njane.doe@uvu.edu,Jane,Doe,Operations,Officer,officer\r\n';
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }));
-  a.download = 'wfa-officers-template.csv';
-  document.body.appendChild(a); a.click(); a.remove();
+let excelLib = null;
+function loadExcelJS(){
+  return excelLib || (excelLib = new Promise((res, rej) => {
+    if (window.ExcelJS) return res(window.ExcelJS);
+    const sc = document.createElement('script');
+    sc.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+    sc.onload = () => res(window.ExcelJS);
+    sc.onerror = () => { excelLib = null; rej(new Error('The spreadsheet tool didn’t load. Check your connection and try again.')); };
+    document.head.appendChild(sc);
+  }));
 }
-// Minimal CSV reader: handles quoted cells, commas and line breaks inside quotes, and "" escapes.
+const RANK_CHOICES = ['President', 'Vice President', 'Faculty advisor', 'Officer', 'Honorary'];
+async function buildBulkTemplate(){
+  const ExcelJS = await loadExcelJS();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Officers', { views: [{ state: 'frozen', ySplit: 1 }] });
+  ws.columns = [
+    { header: 'email', width: 32 }, { header: 'first_name', width: 16 }, { header: 'last_name', width: 16 },
+    { header: 'branch', width: 24 }, { header: 'rank', width: 18 }, { header: 'access', width: 12 }
+  ];
+  const head = ws.getRow(1);
+  head.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF275D38' } };
+  ws.addRow(['jane.doe@uvu.edu', 'Jane', 'Doe', 'Operations', 'Officer', 'officer']);
+  const list = (choices, what) => ({ type: 'list', allowBlank: true, formulae: ['"' + choices.join(',') + '"'],
+    showErrorMessage: true, errorStyle: 'stop', errorTitle: 'Pick from the list', error: 'Choose a ' + what + ' from the drop-down list.' });
+  for (let r = 2; r <= 300; r++){
+    ws.getCell('D' + r).dataValidation = list(Object.values(BRANCHES), 'branch');
+    ws.getCell('E' + r).dataValidation = list(RANK_CHOICES, 'rank');
+    ws.getCell('F' + r).dataValidation = list(['officer', 'admin'], 'access level');
+  }
+  return wb.xlsx.writeBuffer();
+}
+async function downloadBulkTemplate(){
+  try {
+    const buf = await buildBulkTemplate();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    a.download = 'wfa-officers-template.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch(e){ toast(errMsg(e)); }
+}
+// Reads the first sheet of an uploaded .xlsx into rows of cell text.
+async function readXlsxRows(file){
+  const ExcelJS = await loadExcelJS();
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(await file.arrayBuffer());
+  const ws = wb.worksheets[0], rows = [];
+  if (!ws) return rows;
+  ws.eachRow({ includeEmpty: false }, row => {
+    const vals = [];
+    for (let c = 1; c <= Math.max(6, ws.columnCount); c++) vals.push(String(row.getCell(c).text || '').trim());
+    rows.push(vals);
+  });
+  return rows.filter(r => r.some(Boolean));
+}// Minimal CSV reader: handles quoted cells, commas and line breaks inside quotes, and "" escapes.
 function parseCsv(text){
   text = text.replace(/^﻿/, '');
   const rows = []; let row = [], cell = '', q = false;
@@ -1299,8 +1347,9 @@ function matchOption(value, options){
   const hit = Object.entries(options).find(([k, l]) => n(k) === v || n(l) === v);
   return hit ? hit[0] : null;
 }
-function importBulkCsv(text){
-  const rows = parseCsv(text), notes = [];
+function importBulkCsv(text){ importBulkRows(parseCsv(text)); }
+function importBulkRows(rows){
+  const notes = [];
   if (rows.length < 2){ ui.bulkNotes = ['That file has no officer rows. Fill in the template below the header row.']; return render(); }
   const head = rows[0].map(h => h.trim().toLowerCase());
   const col = (...keys) => head.findIndex(h => keys.some(k => h.includes(k)));
@@ -2168,7 +2217,14 @@ document.addEventListener('change', async e => {
   if (id === 'avail-who'){ ui.availWho = e.target.value; ui.availPick = null; render(); }
   if (id === 'tk-mine'){ ui.tasksMine = e.target.checked; render(); }
   if (id === 'bulk-send') ui.bulkSend = e.target.checked;
-  if (id === 'bulk-csv' && e.target.files[0]){ const file = e.target.files[0]; e.target.value = ''; importBulkCsv(await file.text()); }
+  if (id === 'bulk-csv' && e.target.files[0]){
+    const file = e.target.files[0]; e.target.value = '';
+    try {
+      if (/\.xlsx$/i.test(file.name)) importBulkRows(await readXlsxRows(file));
+      else if (/\.xls$/i.test(file.name)) toast('That’s an older Excel format. Save it as .xlsx or .csv and upload again.');
+      else importBulkCsv(await file.text());
+    } catch(err){ toast('Couldn’t read that file: ' + errMsg(err)); }
+  }
   if (e.target.dataset.bulk){ const [i, k] = e.target.dataset.bulk.split(':'); ui.bulk[+i][k] = e.target.value; }
   if (e.target.dataset.appStatus){
     const aid = e.target.dataset.appStatus, st = e.target.value, x = db.apps.find(a => a.id === aid);
