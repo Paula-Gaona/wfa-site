@@ -78,6 +78,12 @@ p{margin:0}
 .nav a[aria-current="page"]{opacity:1;border-bottom-color:#fff}
 .nav .sep{width:1px;background:rgba(255,255,255,.3);margin:10px 8px}
 .nav a.staff{font-family:var(--mono);font-size:.8rem;letter-spacing:.04em;text-transform:uppercase;padding-top:12px}
+.nav .menu-btn{font:inherit;font-family:var(--mono);font-size:.8rem;letter-spacing:.04em;text-transform:uppercase;font-weight:600;color:var(--on-brand);background:none;border:0;border-bottom:3px solid transparent;padding:12px 12px 10px;white-space:nowrap;opacity:.85;cursor:pointer}
+.nav .menu-btn:hover,.nav .menu-btn[aria-expanded="true"]{opacity:1}
+.nav .menu-btn.current{opacity:1;border-bottom-color:#fff}
+.navmenu{position:fixed;z-index:40;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 10px 28px rgba(0,0,0,.2);padding:6px;min-width:220px;display:flex;flex-direction:column}
+.navmenu a{color:var(--ink);text-decoration:none;padding:9px 12px;border-radius:4px;font-weight:600}
+.navmenu a:hover,.navmenu a:focus-visible{background:var(--tint);outline:none}
 .who{display:flex;align-items:center;gap:10px;margin-left:auto}
 .who .name{font-weight:600}
 
@@ -296,6 +302,7 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
     <nav class="nav" id="nav" aria-label="Main"></nav>
   </div>
 </header>
+<div class="navmenu" id="navmenu" role="menu" hidden></div>
 <div class="ticker" aria-label="Upcoming events"><div class="ticker-track" id="ticker"></div></div>
 <main class="wrap" id="app"><div class="empty">Loading club data…</div></main>
 <footer><div class="wrap row" style="justify-content:space-between">
@@ -326,6 +333,8 @@ const CATS = {
 const PTS = { case_competition:25, career_fair:25, guest_speaker:15, excursion:25, workshop:10, social:10, officer_meeting:0 };
 const ARCH = { slides:'Slides', recording:'Recording', notes:'Notes', template:'Template' };
 const TIERS = { president:'President', officer:'Officer' };
+const OFFICER_TABS = [['events','Events'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['dues','Dues'],['members','Members']];
+const ADMIN_TABS = [['access','Access lists'],['export','Member export'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
 const MAJORS = ["Undeclared","Accounting, A.S.","Accounting, B.S.","American Sign Language Secondary Education, B.A.","Animation and Game Development, B.S.","Anthropology, B.A.","Anthropology, B.S.","Applied Artificial Intelligence, M.S.","Applied Communication, B.A.","Applied Communication, B.S.","Architecture, B.Arch","Art Education, B.S.","Art History, B.A.","Art and Design - Graphic Design Emphasis, A.A.S.","Art and Design - Graphic Design Emphasis, B.F.A.","Art and Design - Illustration Emphasis, A.A.S.","Art and Design - Illustration Emphasis, B.F.A.","Art and Design - Painting/Drawing/Printmaking Emphasis, B.F.A.","Art and Design - Photography Emphasis, A.A.S.","Art and Design - Photography Emphasis, B.F.A.","Art and Design - Sculpture and Ceramics Emphasis, B.F.A.","Art and Design, A.A.","Art and Design, A.S.","Art and Design, B.S.","Associate in Pre-Engineering - Biological and Chemical Engineering Emphasis, A.P.E.","Associate in Pre-Engineering - Civil and Mechanical Engineering Emphasis, A.P.E.","Associate in Pre-Engineering - Computer and Electrical Engineering Emphasis, A.P.E.","Automotive Technology, A.A.S.","Aviation Management, B.S.","Aviation Science, A.A.S.","Aviation Science, A.S.","Bioinformatics, B.S.","Biology Education, B.S.","Biology, A.A.","Biology, A.S.","Biology, B.S.","Biomedical Science, B.S.","Botany, B.S.","Business Management, A.S.","Business Technologies and Education, B.S.","Business and Analysis, B.S.","Cabinetry and Architectural Woodwork, A.A.S.","Chemistry - Biochemistry Emphasis, B.S.","Chemistry - Professional Chemistry Emphasis, B.S.","Chemistry Education, B.S.","Civil Engineering, B.S.","Clinical Mental Health Counseling, M.S.","Commercial Music, B.M.","Computational Data Science, B.S.","Computer Engineering, B.S.","Computer Science Education, B.S.","Computer Science, A.S.","Computer Science, B.S.","Constitutional Government Civics and Law, M.A.","Construction Management, A.A.S.","Construction Management, B.S.","Criminal Justice, A.A.","Criminal Justice, A.S.","Criminal Justice, B.S.","Culinary Arts, A.A.S.","Curriculum and Instruction, M.Ed.","Cybersecurity, A.A.S","Cybersecurity, B.S.","Cybersecurity, M.S.","Dance - Ballet Emphasis, B.F.A.","Dance - Modern Dance Emphasis, B.F.A.","Dance Education, B.S.","Dance, A.S.","Dance, B.S.","Deaf Studies - General Deaf Studies Emphasis, B.A.","Deaf Studies - Interpreting Emphasis, B.A.","Dental Hygiene, A.A.S.","Dental Hygiene, B.S.","Diesel Mechanics Technology, A.A.S.","Digital Audio, A.A.S.","Digital Audio, B.S.","Digital Cinema Production, A.A.S.","Digital Cinema Production, B.S.","Digital Marketing, B.S.","Early Childhood Education, A.S.","Earth Science Education, B.S.","Electrical Engineering, B.S.","Electrical and Computer Engineering, A.A.S.","Elementary Education, B.S.","Emergency Services Administration, B.S.","Emergency Services Operations, A.A.S.","Emergency Services Supervision, B.A.P.","Emergency Services, A.S.","Engineering Design Technology, A.A.S.","Engineering Design Technology, A.S.","Engineering and Technology Management, M.S.","English - Creative Writing Emphasis, B.A.","English - Creative Writing Emphasis, B.S.","English - Literary Studies Emphasis, B.A.","English - Literary Studies Emphasis, B.S.","English - Writing Studies Emphasis, B.A.","English - Writing Studies Emphasis, B.S.","English Education, B.A.","English Education, B.S.","Entertainment Design, A.A.S.","Entertainment Design, B.F.A.","Environmental Science and Management, B.S.","Environmental Studies, B.S.","Event Management, B.S.","Exercise Science, A.S.","Exercise Science, B.S.","Family Science, B.A.","Family Science, B.S.","Finance, B.S.","Finance, M.S.","Financial Planning and Wealth Management, B.S.","Forensic Science - Forensic Investigation Emphasis, B.S.","Forensic Science - Forensic Laboratory Emphasis, B.S.","Forensic Science, A.S.","Geography, B.S.","Geology, B.S.","Health Science, B.S.","Healthcare Administration, B.S.","Healthcare Services, A.A.S.","History and Social Studies Education, B.S.","History, B.A.","Hospitality Management, A.A.S.","Hospitality Management, A.S.","Hospitality Management, B.S.","Human Resource Management, B.S.","Humanities and Social Sciences, A.A.","Humanities and Social Sciences, A.S.","Humanities, B.A.","Humanities, B.S.","Information Systems - Application Development Emphasis, B.S.","Information Systems - Applied Artificial Intelligence Emphasis, B.S.","Information Systems - Data Analytics Emphasis, B.S.","Information Systems - Information Security Management Emphasis, B.S.","Information Systems and Technology, A.A.S.","Information Systems and Technology, A.S.","Information Technology, B.S.","Integrated Studies, B.A.","Integrated Studies, B.S.","International Business, B.S.","Marketing, B.S.","Marriage and Family Therapy, M.A.","Master of Accountancy, M.Acc","Master of Business Administration, M.B.A.","Master of Computer Science, M.C.S.","Master of Education in Applied Behavioral Analysis, M.Ed.","Master of Education in Higher Education Leadership, M.Ed.","Master of Education in K-12 Education Leadership, M.Ed.","Master of Education in School Counseling, M.Ed.","Master of Physician Assistant Studies, M.P.A.S.","Master of Public Administration, M.P.A.","Master of Social Work Advanced Standing, M.S.W.","Master of Social Work, M.S.W.","Mathematics - Actuarial Science Emphasis, B.S.","Mathematics - Applied Mathematics Emphasis, B.S.","Mathematics - Mathematics Emphasis, B.S.","Mathematics Education, B.S.","Mathematics, A.S.","Mechanical Engineering, B.S.","Mechatronics Engineering Technology - Automation and Electrical Technology Emphasis, A.A.S.","Mechatronics Engineering Technology - Mechatronics Emphasis, A.A.S.","Mechatronics Engineering Technology, B.S.","Microbiology, B.S.","Molecular Biosciences and Biotechnology, B.S.","Music Education, B.S.","Music, A.S.","Music, B.A.","Music, B.S.","National Security Studies, B.A.","National Security Studies, B.S.","Nursing, A.S.N.","Nursing, B.S.","Occupational Therapy Assistant, B.S.","Operations and Supply Chain Management, B.S.","Outdoor Recreation Management, A.S.","Outdoor Recreation Management, B.S.","Performance, B.M.","Philosophy, B.A.","Philosophy, B.S.","Physical Education Teacher Education, B.S.","Physical Therapist Assistant, SAAS","Physics Education, B.S.","Physics, B.S.","Political Science - American Government Emphasis, B.A.","Political Science - American Government Emphasis, B.S.","Political Science - Global Politics Emphasis, B.A.","Political Science - Global Politics Emphasis, B.S.","Political Science - Indian Affairs Administration Emphasis, B.A.","Political Science - Indian Affairs Administration Emphasis, B.S.","Political Science - Peace and Justice Studies Emphasis, B.A.","Political Science - Peace and Justice Studies Emphasis, B.S.","Political Science - Public Administration and Public Policy Emphasis, B.A.","Political Science - Public Administration and Public Policy Emphasis, B.S.","Political Science - Public Law and Political Philosophy Emphasis, B.A.","Political Science - Public Law and Political Philosophy Emphasis, B.S.","Pre-Elementary Education, A.S.","Pre-Engineering, A.S.","Professional Advancement, A.S.","Professional Advancement, B.A.P.","Professional Advancement, B.S.","Professional Pilot, B.S.","Professional Sales, B.S.","Psychology, B.A.","Psychology, B.S.","Public Health, A.S.","Public Health, B.S.","Public Relations and Strategic Communication, B.A.","Public Relations and Strategic Communication, B.S.","Respiratory Therapy, A.A.S.","Respiratory Therapy, B.S.","School Health Education, B.S.","Secondary Education, M.A.T.","Social Work, B.S.W.","Sociology, B.A.","Sociology, B.S.","Software Development, B.A.S.","Software Engineering, B.S.","Spanish Education, B.A.","Spanish, B.A.","Special Education - Mild/Moderate/Severe, B.S.","Statistics, B.S.","Strategic Foresight and Business, B.S.","Surveying Technology, A.A.S.","Technology Management, B.S.","Technology, A.A.S.","Theatre Arts - Acting Emphasis, B.F.A.","Theatre Arts - Musical Theatre Emphasis, B.F.A.","Theatre Arts - Theatre Design and Production Emphasis, B.F.A.","Theatre Arts, A.S.","Theatre Education, B.S.","Theatre Studies, A.A.","Theatre Studies, B.A.","Transportation Technologies, B.A.S.","Web Design and Development - Interaction and User Experience Design Emphasis, B.S.","Web Design and Development - Web Application Development Emphasis, B.S.","Web Design and Development, A.A.S.","Wildland Fire Management, A.A.S.","Zoology, B.S."];
@@ -511,7 +520,7 @@ function renderChrome(route){
   const a = ([r,l], cls='') => `<a class="${cls}" href="#${r}" ${route===r?'aria-current="page"':''}>${l}</a>`;
   document.getElementById('nav').innerHTML = links.map(l => a(l)).join('') +
     (can('member') ? '<span class="sep"></span>' + mem.map(l => a(l)).join('') : '') +
-    (staff.length ? '<span class="sep"></span>' + staff.map(l => a(l, 'staff')).join('') : '');
+    (staff.length ? '<span class="sep"></span>' + staff.map(([r,l]) => `<button class="menu-btn ${route===r?'current':''}" data-act="nav-menu" data-menu="${r}" aria-haspopup="true" aria-expanded="false">${l} ▾</button>`).join('') : '');
   const u = me(), r = role();
   document.getElementById('who').innerHTML = u
     ? `${isStaff() ? `<button class="btn on-dark ${ui.memberView ? '' : 'ghost'} small" data-act="member-view" aria-pressed="${!!ui.memberView}">${ui.memberView ? 'Member view: on' : 'Member view'}</button>` : ''}<span class="name">${esc(u.first)}</span><span class="role ${r}">${r}</span><button class="btn on-dark ghost small" data-act="signout">Sign out</button>`
@@ -678,7 +687,7 @@ function viewOfficers(){
     <section class="page-head"><div class="eyebrow">${esc(db.settings.semester)} leadership</div><h1 class="page">Meet the officers</h1>
       <p class="muted">Questions about events, dues, or getting involved? Email the officer who runs that area, or stop by during office hours.</p></section>
     ${officerSections(staff)}
-    ${can('officer') ? '<p class="hint">Officers: update your bio and contact info under Officer tools → My profile.</p>' : ''}
+    ${can('officer') ? '<p class="hint">Officers: update your picture, bio, and contact info under My account.</p>' : ''}
   </div>`;
 }
 
@@ -816,6 +825,7 @@ function viewAccount(){
         ${d === 'unpaid' && db.settings.dues ? `<p class="hint">Pay $${db.settings.dues} to any officer. They'll mark you paid here.</p>` : ''}
       </section>
     </div>
+    ${can('officer') ? `<section class="stack"><div class="section-head"><h2>Officer profile</h2><a href="#officers">See the Officers page</a></div>${officerProfileSection()}</section>` : ''}
   </div>`;
 }
 
@@ -1007,10 +1017,35 @@ function thumbsHtml(){
   return ui.recapPhotos.map((p,i) => `<div class="thumb"><img src="${esc(p)}" alt="Selected photo ${i+1}"><button type="button" data-act="rm-photo" data-i="${i}" aria-label="Remove photo">×</button></div>`).join('');
 }
 
+// Officers and admins edit their public Officers-page profile from My account.
+function officerProfileSection(){
+  const p = db.profiles[session] || {};
+  return `<div class="split">
+      <form class="panel stack" id="f-profile">
+        <h3>My officer profile</h3>
+        <p class="hint">Shown on the public Officers page. Your title (${esc(p.title || 'Officer')}), rank, and branch are set by an admin.</p>
+        <label>Display name<input id="pf-name" value="${esc(p.name || userName(session))}"></label>
+        <div class="stack" style="gap:8px">
+          <span style="font-weight:600;font-size:.92rem">Profile picture</span>
+          <div class="row" id="pf-photo-row">${photoPreview(p)}</div>
+          <input id="pf-photo" type="file" accept="image/*" aria-label="Choose a profile picture">
+          <span class="hint">Cropped to a square and resized. Saved when you click Save profile.</span>
+        </div>
+        <label>Contact email<input id="pf-contact" type="email" value="${esc(p.contact || session)}"></label>
+        <label>Office hours<input id="pf-hours" value="${esc(p.hours || '')}" placeholder="e.g. Wed 2:00–3:00 PM, library 2nd floor"></label>
+        <label>LinkedIn URL<input id="pf-linkedin" type="url" value="${esc(p.linkedin || '')}" placeholder="https://www.linkedin.com/in/…"></label>
+        <label>Bio<textarea id="pf-bio" style="min-height:90px">${esc(p.bio || '')}</textarea></label>
+        <div class="err" id="pf-err"></div>
+        <div class="row"><button class="btn" type="submit">Save profile</button></div>
+      </form>
+      <section class="stack"><div class="eyebrow">How it looks</div>${officerCard(session)}</section>
+    </div>`;
+}
+
 function viewOfficer(){
   if (!can('officer')) return gate('officer');
   const openTasks = db.tasks.filter(t => !t.done).length;
-  const tabs = [['events','Events'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks',openTasks],['email','Email builder'],['dues','Dues'],['members','Members'],['profile','My profile']];
+  const tabs = OFFICER_TABS.map(([k,l]) => [k, l, k === 'tasks' ? openTasks : '']);
   const T = ui.officerTab;
   let body = '';
 
@@ -1221,29 +1256,6 @@ function viewOfficer(){
     </section>`;
   }
 
-  else if (T === 'profile'){
-    const p = db.profiles[session] || {};
-    body = `<div class="split">
-      <form class="panel stack" id="f-profile">
-        <h3>My officer profile</h3>
-        <p class="hint">Shown on the public Officers page. Your title (${esc(p.title || 'Officer')}), rank, and branch are set by an admin.</p>
-        <label>Display name<input id="pf-name" value="${esc(p.name || userName(session))}"></label>
-        <div class="stack" style="gap:8px">
-          <span style="font-weight:600;font-size:.92rem">Profile picture</span>
-          <div class="row" id="pf-photo-row">${photoPreview(p)}</div>
-          <input id="pf-photo" type="file" accept="image/*" aria-label="Choose a profile picture">
-          <span class="hint">Cropped to a square and resized. Saved when you click Save profile.</span>
-        </div>
-        <label>Contact email<input id="pf-contact" type="email" value="${esc(p.contact || session)}"></label>
-        <label>Office hours<input id="pf-hours" value="${esc(p.hours || '')}" placeholder="e.g. Wed 2:00–3:00 PM, library 2nd floor"></label>
-        <label>LinkedIn URL<input id="pf-linkedin" type="url" value="${esc(p.linkedin || '')}" placeholder="https://www.linkedin.com/in/…"></label>
-        <label>Bio<textarea id="pf-bio" style="min-height:90px">${esc(p.bio || '')}</textarea></label>
-        <div class="err" id="pf-err"></div>
-        <div class="row"><button class="btn" type="submit">Save profile</button></div>
-      </form>
-      <section class="stack"><div class="eyebrow">How it looks</div>${officerCard(session)}</section>
-    </div>`;
-  }
 
   return `<div class="view">
     <div class="page-head"><div class="eyebrow">Officer tools</div><h1 class="page">Run the club</h1></div>
@@ -1272,7 +1284,7 @@ function downloadCsv(){
 function viewAdmin(){
   if (!can('admin')) return gate('admin');
   const T = ui.adminTab;
-  const tabs = [['access','Access lists'],['export','Member export'],['log','Change log']];
+  const tabs = ADMIN_TABS;
   let body = '';
   if (T === 'access'){
     const ed = ui.editOfficer, p = ed ? (db.profiles[ed] || {}) : {};
@@ -1357,6 +1369,14 @@ function showModal(inner, after, cls='', c=''){
   (after || (() => { const x = m.querySelector('.modal-x'); if (x) x.focus(); }))();
 }
 function closeModal(){ document.getElementById('modal').hidden = true; }
+function closeNavMenu(){
+  const m = document.getElementById('navmenu');
+  if (!m || m.hidden) return;
+  m.hidden = true;
+  document.querySelectorAll('[data-act="nav-menu"]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+}
+window.addEventListener('resize', closeNavMenu);
+window.addEventListener('scroll', closeNavMenu, { passive: true });
 
 function openEvent(id){
   const e = evById(id); if (!e) return;
@@ -1435,6 +1455,7 @@ function useTemplate(k){ const [, s, b] = MAIL_TEMPLATES[k]; ui.mail.subject = s
 /* ---------- Click handling ---------- */
 document.addEventListener('click', async ev => {
   if (ev.target.id === 'modal') { closeModal(); return; }
+  if (!ev.target.closest('[data-act="nav-menu"]')) closeNavMenu();
   const link = ev.target.closest('a[data-tab]');
   if (link) { if (link.getAttribute('href') === '#admin') ui.adminTab = link.dataset.tab; else ui.officerTab = link.dataset.tab; if (route() === link.getAttribute('href').slice(1)) render(); }
   const t = ev.target.closest('[data-act]');
@@ -1443,6 +1464,17 @@ document.addEventListener('click', async ev => {
   if (t.dataset.key && ui.armed !== t.dataset.key){ readMail(); ui.armed = t.dataset.key; render(); return; }
   ui.armed = null;
   switch (a){
+    case 'nav-menu': {
+      const m = document.getElementById('navmenu'), which = t.dataset.menu;
+      if (!m.hidden && m.dataset.for === which){ closeNavMenu(); break; }
+      closeNavMenu();
+      m.innerHTML = (which === 'admin' ? ADMIN_TABS : OFFICER_TABS).map(([k,l]) => `<a role="menuitem" href="#${which}" data-tab="${k}">${l}</a>`).join('');
+      const r = t.getBoundingClientRect();
+      m.style.top = (r.bottom + 4) + 'px';
+      m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 236)) + 'px';
+      m.dataset.for = which; m.hidden = false; t.setAttribute('aria-expanded', 'true');
+      m.querySelector('a').focus();
+      break; }
     case 'open-event': openEvent(id); break;
     case 'close': closeModal(); break;
     case 'copy': copyText(t.dataset.text, t.dataset.label); break;
@@ -1526,7 +1558,7 @@ document.addEventListener('click', async ev => {
   }
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Escape'){ closeModal(); closeNavMenu(); }
   if (e.key === 'Enter' && /-major-in$/.test(e.target.id || '')){ e.preventDefault(); addMajor(e.target.id.split('-')[0]); }
 });
 async function sendMail(){
