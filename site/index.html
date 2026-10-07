@@ -951,8 +951,8 @@ function attendanceStats(e){
   return { rsvp: r.length, came: a.length, showed: showed.length, walkins: a.filter(x => !r.includes(x)), noshows: r.filter(x => !a.includes(x)), rate: r.length ? Math.round(showed.length / r.length * 100) : null };
 }
 function memberTable(rows){
-  return `<div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Major(s)</th><th>UVU ID</th><th>Role</th><th class="num">Events</th><th>Dues</th></tr></thead><tbody>
-    ${rows.map(u => `<tr><td>${esc(u.first)} ${esc(u.last)}</td><td>${esc(u.email)}</td><td>${esc(u.major)}${u.minor ? `<div class="hint">Minor: ${esc(u.minor)}</div>` : ''}</td><td class="num">${esc(u.uvuid)}</td><td><span class="role ${roleOf(u.email)}">${roleOf(u.email)}</span></td><td class="num">${attendCount(u.email)}</td><td>${duesOf(u.email)}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">No members yet.</td></tr>'}
+  return `<div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Major(s)</th><th>UVU ID</th><th>Role</th><th class="num">Events</th><th>Dues</th>${can('admin') ? '<th></th>' : ''}</tr></thead><tbody>
+    ${rows.map(u => `<tr><td>${esc(u.first)} ${esc(u.last)}</td><td>${esc(u.email)}</td><td>${esc(u.major)}${u.minor ? `<div class="hint">Minor: ${esc(u.minor)}</div>` : ''}</td><td class="num">${esc(u.uvuid)}</td><td><span class="role ${roleOf(u.email)}">${roleOf(u.email)}</span></td><td class="num">${attendCount(u.email)}</td><td>${duesOf(u.email)}</td>${can('admin') ? `<td>${u.email === session ? '' : delBtn('mem-' + u.email, 'Remove', 'rm-member', u.email)}</td>` : ''}</tr>`).join('') || '<tr><td colspan="7" class="muted">No members yet.</td></tr>'}
   </tbody></table></div>`;
 }
 
@@ -1209,7 +1209,7 @@ function viewOfficer(){
     body = `<section class="stack">
       <div class="row"><label style="flex:1;min-width:220px">Search members<input id="mem-search" value="${esc(ui.memberSearch)}" placeholder="Name, email, major, or UVU ID"></label><span class="muted" style="align-self:end;padding-bottom:10px">${db.users.length} accounts</span></div>
       ${memberTable(rows)}
-      ${can('admin') ? '<p class="hint">Need a spreadsheet? Admin → Member export.</p>' : ''}
+      ${can('admin') ? '<p class="hint">Removing someone deletes their account, RSVPs, check-ins, and dues record. Need a spreadsheet? Admin → Member export.</p>' : ''}
     </section>`;
   }
 
@@ -1480,6 +1480,8 @@ document.addEventListener('click', async ev => {
       else copyText(fillMerge(ui.mail.body), 'message');
       break; }
     case 'mail-send': await sendMail(); break;
+    case 'rm-member':
+      await act(async () => must(await sb.rpc('remove_member', { p_email: id })), 'Removed ' + id); break;
     case 'member-view':
       ui.memberView = !ui.memberView;
       try { localStorage.setItem('wfa-member-view', ui.memberView ? '1' : '0'); } catch(e){}
