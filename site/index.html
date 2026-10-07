@@ -1258,7 +1258,7 @@ function bulkBody(){
         <button class="btn ghost small" data-act="bulk-template">Download template (Excel)</button>
         <label class="btn small" style="flex-direction:row;cursor:pointer">Upload spreadsheet<input id="bulk-csv" type="file" accept=".xlsx,.csv,text/csv" hidden></label>
       </div>
-      <span class="hint">Branch: Communications, Operations, Financial Applications, or blank. Rank: President, Vice President, Faculty advisor, Officer, or Honorary. Access: officer or admin.</span>
+      <span class="hint">Branch: Communications, Operations, Financial Applications, or No branch. Rank: President, Vice President, Faculty advisor, Officer, or Honorary. Access: officer or admin.</span>
       ${ui.bulkNotes && ui.bulkNotes.length ? `<div class="stack" style="gap:4px">${ui.bulkNotes.map(n => `<div class="err">${esc(n)}</div>`).join('')}</div>` : ''}
     </div>
     <div class="table-wrap"><table class="bulk"><thead><tr><th>Login email</th><th>First name</th><th>Last name</th><th>Branch</th><th>Rank</th><th>Access</th><th></th></tr></thead><tbody>
@@ -1306,7 +1306,7 @@ async function buildBulkTemplate(){
   const list = (choices, what) => ({ type: 'list', allowBlank: true, formulae: ['"' + choices.join(',') + '"'],
     showErrorMessage: true, errorStyle: 'stop', errorTitle: 'Pick from the list', error: 'Choose a ' + what + ' from the drop-down list.' });
   for (let r = 2; r <= 300; r++){
-    ws.getCell('D' + r).dataValidation = list(Object.values(BRANCHES), 'branch');
+    ws.getCell('D' + r).dataValidation = list(['No branch', ...Object.values(BRANCHES)], 'branch');
     ws.getCell('E' + r).dataValidation = list(RANK_CHOICES, 'rank');
     ws.getCell('F' + r).dataValidation = list(['officer', 'admin'], 'access level');
   }
@@ -1352,7 +1352,7 @@ function parseCsv(text){
 // Matches "Financial Applications", "financial_applications", "vice president", etc. to their keys.
 function matchOption(value, options){
   const n = s => String(s).trim().toLowerCase().replace(/\(.*\)/, '').trim().replace(/[\s-]+/g, '_');
-  const v = n(value); if (!v) return '';
+  const v = n(value); if (!v || ['no_branch', 'none', 'n/a', 'na', '-'].includes(v)) return '';
   const hit = Object.entries(options).find(([k, l]) => n(k) === v || n(l) === v);
   return hit ? hit[0] : null;
 }
