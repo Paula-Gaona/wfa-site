@@ -333,7 +333,9 @@ const CATS = {
 const PTS = { case_competition:25, career_fair:25, guest_speaker:15, excursion:25, workshop:10, social:10, officer_meeting:0 };
 const ARCH = { slides:'Slides', recording:'Recording', notes:'Notes', template:'Template' };
 const TIERS = { president:'President', officer:'Officer' };
-const OFFICER_TABS = [['events','Events'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['dues','Dues'],['members','Members']];
+// Dues tracking is hidden until the club collects dues. Set to true to bring it back.
+const DUES_ENABLED = false;
+const OFFICER_TABS = [['events','Events'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members']];
 const ADMIN_TABS = [['access','Access lists'],['export','Member export'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
@@ -691,7 +693,7 @@ function viewOfficers(){
   const staff = staffEmails();
   return `<div class="view">
     <section class="page-head"><div class="eyebrow">${esc(db.settings.semester)} leadership</div><h1 class="page">Meet the officers</h1>
-      <p class="muted">Questions about events, dues, or getting involved? Email the officer who runs that area, or stop by during office hours.</p></section>
+      <p class="muted">Questions about events or getting involved? Email the officer who runs that area, or stop by during office hours.</p></section>
     ${officerSections(staff)}
     ${can('officer') ? '<p class="hint">Officers: update your picture, bio, and contact info under My account.</p>' : ''}
   </div>`;
@@ -713,7 +715,7 @@ function viewAbout(){
     <section class="stack">
       <div class="section-head"><h2>How membership works</h2></div>
       <div class="grid2">
-        <div class="stack" style="gap:6px"><h3>Join online</h3><p class="muted">Create an account with your UVU ID and preferred email. ${db.settings.dues ? `Semester dues are $${db.settings.dues}, paid to an officer.` : ''}</p></div>
+        <div class="stack" style="gap:6px"><h3>Join online</h3><p class="muted">Create an account with your UVU ID and preferred email. ${DUES_ENABLED && db.settings.dues ? `Semester dues are $${db.settings.dues}, paid to an officer.` : ''}</p></div>
         <div class="stack" style="gap:6px"><h3>RSVP and check in</h3><p class="muted">RSVP from the calendar, then check in at the event with the code on screen. Check-ins earn leaderboard points.</p></div>
         <div class="stack" style="gap:6px"><h3>Run for office</h3><p class="muted">Officer elections happen each spring. Active members near the top of the leaderboard are encouraged to run.</p></div>
       </div>
@@ -810,7 +812,7 @@ function viewAccount(){
       <div class="tile"><span class="v">${points(u.email)}</span><span class="l">Points</span></div>
       <div class="tile"><span class="v">${rank ? '#' + rank : '—'}</span><span class="l">${rank ? 'Rank of ' + lb.length : isStaff() ? 'Officers aren’t ranked' : 'Not ranked yet'}</span></div>
       <div class="tile"><span class="v">${attendCount(u.email)}</span><span class="l">Events attended</span></div>
-      <div class="tile"><span class="v" style="color:${d==='unpaid'?'var(--danger)':'var(--brand-text)'}">${d === 'paid' ? 'Paid' : d === 'waived' ? 'Waived' : 'Due'}</span><span class="l">${esc(db.settings.semester)} dues${d==='unpaid' && db.settings.dues ?` · $${db.settings.dues}`:''}</span></div>
+      ${DUES_ENABLED ? `<div class="tile"><span class="v" style="color:${d==='unpaid'?'var(--danger)':'var(--brand-text)'}">${d === 'paid' ? 'Paid' : d === 'waived' ? 'Waived' : 'Due'}</span><span class="l">${esc(db.settings.semester)} dues${d==='unpaid' && db.settings.dues ?` · $${db.settings.dues}`:''}</span></div>` : ''}
     </div>
     <div class="split">
       <section class="stack">
@@ -828,7 +830,7 @@ function viewAccount(){
           <dt>Joined</dt><dd>${fmtDay(u.joined)}</dd>
         </dl>
         ${ui.editMajors ? majorEditForm(u) : '<div><button class="btn ghost small" data-act="edit-majors">Edit majors and minor</button></div>'}
-        ${d === 'unpaid' && db.settings.dues ? `<p class="hint">Pay $${db.settings.dues} to any officer. They'll mark you paid here.</p>` : ''}
+        ${DUES_ENABLED && d === 'unpaid' && db.settings.dues ? `<p class="hint">Pay $${db.settings.dues} to any officer. They'll mark you paid here.</p>` : ''}
       </section>
     </div>
     ${can('officer') ? `<section class="stack"><div class="section-head"><h2>Officer profile</h2><a href="#officers">See the Officers page</a></div>${officerProfileSection()}</section>` : ''}
@@ -975,8 +977,8 @@ function attendanceStats(e){
   return { rsvp: r.length, came: a.length, showed: showed.length, walkins: a.filter(x => !r.includes(x)), noshows: r.filter(x => !a.includes(x)), rate: r.length ? Math.round(showed.length / r.length * 100) : null };
 }
 function memberTable(rows){
-  return `<div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Major(s)</th><th>UVU ID</th><th>Role</th><th class="num">Events</th><th>Dues</th>${can('admin') ? '<th></th>' : ''}</tr></thead><tbody>
-    ${rows.map(u => `<tr><td>${esc(u.first)} ${esc(u.last)}</td><td>${esc(u.email)}</td><td>${esc(u.major)}${u.minor ? `<div class="hint">Minor: ${esc(u.minor)}</div>` : ''}</td><td class="num">${esc(u.uvuid)}</td><td><span class="role ${roleOf(u.email)}">${roleOf(u.email)}</span></td><td class="num">${attendCount(u.email)}</td><td>${duesOf(u.email)}</td>${can('admin') ? `<td>${u.email === session ? '' : delBtn('mem-' + u.email, 'Remove', 'rm-member', u.email)}</td>` : ''}</tr>`).join('') || '<tr><td colspan="7" class="muted">No members yet.</td></tr>'}
+  return `<div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Major(s)</th><th>UVU ID</th><th>Role</th><th class="num">Events</th>${DUES_ENABLED ? '<th>Dues</th>' : ''}${can('admin') ? '<th></th>' : ''}</tr></thead><tbody>
+    ${rows.map(u => `<tr><td>${esc(u.first)} ${esc(u.last)}</td><td>${esc(u.email)}</td><td>${esc(u.major)}${u.minor ? `<div class="hint">Minor: ${esc(u.minor)}</div>` : ''}</td><td class="num">${esc(u.uvuid)}</td><td><span class="role ${roleOf(u.email)}">${roleOf(u.email)}</span></td><td class="num">${attendCount(u.email)}</td>${DUES_ENABLED ? `<td>${duesOf(u.email)}</td>` : ''}${can('admin') ? `<td>${u.email === session ? '' : delBtn('mem-' + u.email, 'Remove', 'rm-member', u.email)}</td>` : ''}</tr>`).join('') || '<tr><td colspan="7" class="muted">No members yet.</td></tr>'}
   </tbody></table></div>`;
 }
 
@@ -988,7 +990,7 @@ const MAIL_TEMPLATES = {
 function mailAudiences(){
   const ev = sortedEvents();
   return [
-    ['General', [['all','All members'],['members','Members only (no officers)'],['staff','Officers and admins'],['unpaid','Members with unpaid dues']]],
+    ['General', [['all','All members'],['members','Members only (no officers)'],['staff','Officers and admins'], ...(DUES_ENABLED ? [['unpaid','Members with unpaid dues']] : [])]],
     ['RSVP’d to…', ev.map(e => ['rsvp:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
     ['Attended…', ev.filter(e => e.date <= todayIso()).map(e => ['att:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
     ['RSVP’d but missed…', ev.filter(isPast).map(e => ['noshow:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])]
@@ -1206,12 +1208,12 @@ function viewOfficer(){
     body = `<div class="split">
       <form class="panel stack" id="f-mail">
         <h3>Email draft builder</h3>
-        <div class="row" style="gap:6px"><span class="hint">Start from:</span>${Object.entries(MAIL_TEMPLATES).map(([k,[l]]) => `<button type="button" class="btn ghost small" data-act="mail-tpl" data-tpl="${k}">${l}</button>`).join('')}</div>
+        <div class="row" style="gap:6px"><span class="hint">Start from:</span>${Object.entries(MAIL_TEMPLATES).filter(([k]) => k !== 'dues' || DUES_ENABLED).map(([k,[l]]) => `<button type="button" class="btn ghost small" data-act="mail-tpl" data-tpl="${k}">${l}</button>`).join('')}</div>
         <label>Send to<select id="ml-aud">${mailAudiences().map(([g, opts]) => opts.length ? `<optgroup label="${esc(g)}">${opts.map(([k,l]) => `<option value="${k}" ${ui.mail.aud===k?'selected':''}>${esc(l)}</option>`).join('')}</optgroup>` : '').join('')}</select></label>
         <label>Event <span class="hint">(optional)</span><select id="ml-ev">${eventOptions(sortedEvents(), ui.mail.ev, 'None')}</select><span class="hint">Only needed if the message uses {event}, {date}, {time}, or {location}.</span></label>
         <label>Subject<input id="ml-subject" value="${esc(ui.mail.subject)}"></label>
         <label>Message<textarea id="ml-body" style="min-height:200px">${esc(ui.mail.body)}</textarea>
-          <span class="hint">Placeholders: {event} {date} {time} {location} {semester} {dues}</span></label>
+          <span class="hint">Placeholders: {event} {date} {time} {location} {semester}${DUES_ENABLED ? ' {dues}' : ''}</span></label>
       </form>
       <section class="stack">
         <div class="section-head"><h3>Preview</h3><span class="muted">${to.length} recipients</span></div>
@@ -1258,7 +1260,7 @@ function viewOfficer(){
     body = `<section class="stack">
       <div class="row"><label style="flex:1;min-width:220px">Search members<input id="mem-search" value="${esc(ui.memberSearch)}" placeholder="Name, email, major, or UVU ID"></label><span class="muted" style="align-self:end;padding-bottom:10px">${db.users.length} accounts</span></div>
       ${memberTable(rows)}
-      ${can('admin') ? '<p class="hint">Removing someone deletes their account, RSVPs, check-ins, and dues record. Need a spreadsheet? Admin → Member export.</p>' : ''}
+      ${can('admin') ? '<p class="hint">Removing someone deletes their account, RSVPs, and check-ins. Need a spreadsheet? Admin → Member export.</p>' : ''}
     </section>`;
   }
 
@@ -1272,8 +1274,8 @@ function viewOfficer(){
 
 /* ---------- Admin ---------- */
 function exportRows(){
-  const head = ['UVU ID','First name','Last name','Majors','Minor','Email','Role','Joined','Dues','Events attended','Points'];
-  return [head, ...db.users.map(u => [u.uvuid, u.first, u.last, u.major, u.minor, u.email, roleOf(u.email), u.joined, duesOf(u.email), attendCount(u.email), points(u.email)])];
+  const head = ['UVU ID','First name','Last name','Majors','Minor','Email','Role','Joined', ...(DUES_ENABLED ? ['Dues'] : []),'Events attended','Points'];
+  return [head, ...db.users.map(u => [u.uvuid, u.first, u.last, u.major, u.minor, u.email, roleOf(u.email), u.joined, ...(DUES_ENABLED ? [duesOf(u.email)] : []), attendCount(u.email), points(u.email)])];
 }
 function exportTsv(){
   const clean = v => String(v ?? '').replace(/[\t\n\r]/g, ' ');
@@ -1302,7 +1304,8 @@ function viewAdmin(){
         <div class="ev-sub" style="overflow-wrap:anywhere">${esc(email)}${hasAcct?'':' · no account yet'}</div></div>
         <div class="row" style="gap:6px"><button class="btn ghost small" data-act="edit-officer" data-id="${esc(email)}">Edit</button>${delBtn(list+'-'+email,'Remove','rm-access',email)}</div></div>`;
     };
-    body = `<p class="muted" style="max-width:62ch">Access is set by email. Anyone who signs in with an email on the admin list sees admin tools; officer list emails see officer tools. Everyone else is a member.</p>
+    body = `<form class="row" id="f-semester" style="align-items:end"><label style="width:220px">Current semester<input id="sem-name" value="${esc(db.settings.semester)}"></label><button class="btn ghost" type="submit">Save</button><span class="hint" style="padding-bottom:10px">Shown on the Officers page and leaderboard.</span></form>
+    <p class="muted" style="max-width:62ch">Access is set by email. Anyone who signs in with an email on the admin list sees admin tools; officer list emails see officer tools. Everyone else is a member.</p>
     <div class="split">
       <form class="panel stack" id="f-officer">
         <h3>${ed ? 'Edit ' + esc(userName(ed)) : 'Add an officer or admin'}</h3>
@@ -1357,7 +1360,7 @@ function viewAdmin(){
       <div class="table-wrap"><table><thead><tr><th>When</th><th>Who</th><th>What changed</th></tr></thead><tbody>
         ${rows.map(l => `<tr><td style="white-space:nowrap">${fmtStamp(l.ts)}</td><td style="white-space:nowrap">${esc(userName(l.who))}</td><td>${esc(l.text)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No entries yet.</td></tr>'}
       </tbody></table></div>
-      <p class="hint">Records changes made by officers and admins: events, announcements, recaps, archive, tasks, dues, check-in codes, profiles, and access lists.</p>
+      <p class="hint">Records changes made by officers and admins: events, announcements, recaps, archive, tasks, check-in codes, profiles, and access lists.</p>
     </section>`;
   }
   return `<div class="view">
@@ -1795,6 +1798,11 @@ async function handleSubmit(f, v, err){
     const t = { title: v('tk-title'), event_id: v('tk-ev') || null, due: v('tk-due') || todayIso(), owner: v('tk-who'), done: false };
     if (!t.title) return err('tk-err', 'Describe the task.');
     await act(async () => { must(await sb.from('tasks').insert(t)); await logChange('Added task “' + t.title + '” for ' + userName(t.owner)); }, 'Task added');
+  }
+
+  if (f.id === 'f-semester'){
+    const sem = v('sem-name'); if (!sem) return;
+    await act(async () => { must(await sb.from('settings').update({ semester: sem }).eq('id', 1)); await logChange('Set the semester to ' + sem); }, 'Semester saved');
   }
 
   if (f.id === 'f-dues-set'){
