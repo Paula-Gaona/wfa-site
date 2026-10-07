@@ -316,6 +316,7 @@ img.avatar{object-fit:cover;display:block}
 @media (max-width:560px){.arch{grid-template-columns:1fr}}
 .rank{font-family:var(--display);font-weight:800;font-size:1.4rem}
 
+.slottip{position:fixed;z-index:70;pointer-events:none;background:var(--ink);color:var(--paper);font-size:.8rem;font-weight:600;padding:4px 9px;border-radius:4px;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.2)}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:12px 20px;border-radius:var(--radius);font-weight:600;z-index:60;max-width:calc(100% - 32px)}
 footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;color:var(--muted)}
 </style>
@@ -341,6 +342,7 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
 </div></footer>
 <div class="backdrop" id="modal" hidden></div>
 <div class="toast" id="toast" hidden></div>
+<div class="slottip" id="slottip" hidden></div>
 <datalist id="dl-majors"></datalist><datalist id="dl-minors"></datalist>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -1282,6 +1284,16 @@ document.addEventListener('pointermove', e => {
     }
 });
 document.addEventListener('pointerup', () => { availPaint = null; });
+// Instant tooltip for availability blocks (anything with data-tip).
+document.addEventListener('pointermove', e => {
+  const tip = document.getElementById('slottip'); if (!tip) return;
+  const hit = document.elementFromPoint(e.clientX, e.clientY), el = hit && hit.closest('[data-tip]');
+  if (!el){ tip.hidden = true; return; }
+  tip.textContent = el.dataset.tip; tip.hidden = false;
+  const x = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8);
+  tip.style.left = x + 'px'; tip.style.top = (e.clientY + 18) + 'px';
+});
+window.addEventListener('scroll', () => { const tip = document.getElementById('slottip'); if (tip) tip.hidden = true; }, { passive: true });
 document.addEventListener('pointercancel', () => { availPaint = null; });
 
 function slotGrid(cellHtml){
@@ -1297,7 +1309,7 @@ function viewAvailability(){
       <p class="muted">Mark the times you’re usually free each week, in 15-minute blocks. Click a time, or press and drag to fill a whole stretch. Start on a green block to clear. Officers use this to schedule events when the most people can come.</p></section>
     <div class="row"><button class="btn" data-act="avail-save">Save availability</button><button class="btn ghost" data-act="avail-clear">Clear all</button>
       <span class="hint">${saved && saved.length ? 'Saved: ' + (saved.length / 4) + ' hours a week.' : 'Not saved yet.'}</span></div>
-    ${slotGrid((k, m, l) => { const key = k + '-' + m, on = d.has(key); return `<button class="slot ${on ? 'on' : ''}" data-slot="${key}" aria-pressed="${on}" aria-label="${l} ${fmtMin(m)}"></button>`; })}
+    ${slotGrid((k, m, l) => { const key = k + '-' + m, on = d.has(key); return `<button class="slot ${on ? 'on' : ''}" data-slot="${key}" aria-pressed="${on}" aria-label="${l} ${fmtMin(m)}" data-tip="${l} ${fmtMin(m)}–${fmtMin(m + STEP)}"></button>`; })}
     <div class="row"><button class="btn" data-act="avail-save">Save availability</button></div>
     ${can('officer') ? '<p><a class="btn ghost small" href="#officer" data-tab="availability">See everyone’s availability</a></p>' : ''}
   </div>`;
@@ -1349,7 +1361,7 @@ function availabilityChart(){
       <ol class="best">${top.map(r => `<li><strong>${dayName(r.day)} ${fmtMin(r.start)}–${fmtMin(r.end)}</strong><span class="muted">${r.o} of ${offCount} officers · ${r.m} of ${memCount} members</span></li>`).join('') || '<li class="muted">No overlapping times yet.</li>'}</ol></section>`}
     ${detail}
     ${slotGrid((k, m, l) => { const key = k + '-' + m, c = cell(key), a = single ? (c.score ? 1 : 0) : (max ? c.score / max : 0);
-      return `<button class="heat ${ui.availPick === key ? 'picked' : ''}" data-act="avail-pick" data-id="${key}" style="--a:${a.toFixed(2)}" aria-label="${l} ${fmtMin(m)}: ${c.o} officers, ${c.m} members free" title="${l} ${fmtMin(m)}: ${c.o} officers, ${c.m} members"></button>`; })}
+      return `<button class="heat ${ui.availPick === key ? 'picked' : ''}" data-act="avail-pick" data-id="${key}" style="--a:${a.toFixed(2)}" aria-label="${l} ${fmtMin(m)}: ${c.o} officers, ${c.m} members free" data-tip="${l} ${fmtMin(m)}–${fmtMin(m + STEP)} · ${c.o} officer${c.o === 1 ? '' : 's'}, ${c.m} member${c.m === 1 ? '' : 's'} free"></button>`; })}
     <p class="hint">${single ? 'Green blocks are when this person is free.' : 'Darker green means more people are free, with officers counting most.'}</p>
   </div>`;
 }
