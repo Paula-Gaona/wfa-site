@@ -283,6 +283,10 @@ td select{padding:5px 8px;width:auto}
 .rank-row select{width:auto}
 table.bulk td{padding:4px}
 table.bulk input,table.bulk select{padding:6px 8px;min-width:120px}
+.careers{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:16px;align-items:start}
+.career{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.career .facts{grid-template-columns:auto 1fr}
+.cat-head{font-size:1.35rem;text-transform:uppercase;color:var(--brand-text)}
 .mail-pre{white-space:pre-wrap;font-size:.95rem;overflow-wrap:anywhere}
 
 /* About, officers, resources, recaps */
@@ -434,6 +438,7 @@ async function load(){
     appset: sb.from('app_settings').select('*').eq('id', 1).maybeSingle(),
     resources: sb.from('resources').select('*').order('created_at'),
     timeline: sb.from('recruiting_timeline').select('*').order('sort'),
+    careers: sb.from('careers').select('*').order('sort'),
     apps: signed && t('applications'),
     avail: signed && t('availability'),
     access: off && t('access_list'),
@@ -473,6 +478,7 @@ async function load(){
   db.leader = R.leader || [];
   db.resources = R.resources || [];
   db.timeline = R.timeline || [];
+  db.careers = R.careers || [];
   db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null };
   db.apps = (R.apps || []).map(a => ({ ...a, date: iso(new Date(a.created_at)) }));
   db.avail = {}; (R.avail || []).forEach(a => db.avail[a.email] = [...normSlots(a.slots)]);
@@ -802,6 +808,49 @@ function viewAbout(){
   </div>`;
 }
 
+const CAREER_CATS = { high: 'High finance', corporate: 'Corporate finance' };
+function careerForm(c){
+  return `<form class="career stack" id="f-career" data-id="${esc(c.id)}" novalidate style="gap:10px">
+    <div class="grid2">
+      <label>Career<input id="cr-title" value="${esc(c.title)}" placeholder="e.g. Real estate finance"></label>
+      <label>Section<select id="cr-cat">${Object.entries(CAREER_CATS).map(([k, l]) => `<option value="${k}" ${c.category === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    </div>
+    <label>What the job is<textarea id="cr-summary" style="min-height:70px">${esc(c.summary)}</textarea></label>
+    <div class="grid2">
+      <label>Rough pay<input id="cr-pay" value="${esc(c.pay)}" placeholder="e.g. About $70k–$90k"></label>
+      <label>Weekly hours<input id="cr-hours" value="${esc(c.hours)}" placeholder="e.g. 45–55 hours a week"></label>
+    </div>
+    <label>How to get in<textarea id="cr-path" style="min-height:90px" placeholder="Recruiting timeline, typical entry point, skills or credentials">${esc(c.path)}</textarea></label>
+    <div class="err" id="cr-err"></div>
+    <div class="row"><button class="btn small" type="submit">Save</button><button class="btn ghost small" type="button" data-act="career-cancel">Cancel</button></div>
+  </form>`;
+}
+function careerCard(c){
+  if (ui.editCareer === c.id) return careerForm(c);
+  return `<article class="career">
+    <h3>${esc(c.title)}</h3>
+    ${c.summary ? `<p class="muted">${esc(c.summary)}</p>` : ''}
+    <dl class="facts">
+      ${c.pay ? `<dt>Pay</dt><dd>${esc(c.pay)}</dd>` : ''}
+      ${c.hours ? `<dt>Hours</dt><dd>${esc(c.hours)}</dd>` : ''}
+      ${c.path ? `<dt>Getting in</dt><dd>${esc(c.path)}</dd>` : ''}
+    </dl>
+    ${can('officer') ? `<div class="row" style="gap:6px;margin-top:auto"><button class="btn ghost small" data-act="career-edit" data-id="${c.id}">Edit</button>${delBtn('car-' + c.id, 'Delete', 'career-del', c.id)}</div>` : ''}
+  </article>`;
+}
+function careersSection(){
+  const list = db.careers || [];
+  return `<div class="section-head"><h2>Careers in finance</h2></div>
+    <p class="hint" style="max-width:72ch">Pay is a rough entry-level U.S. figure before taxes: base salary, plus bonus where noted. Big-city firms pay more, and numbers shift every year.</p>
+    ${Object.entries(CAREER_CATS).map(([k, l]) => `<section class="stack" style="gap:12px">
+      <h3 class="cat-head">${l}</h3>
+      <div class="careers">
+        ${list.filter(c => c.category === k).map(careerCard).join('') || (ui.editCareer === 'new-' + k ? '' : '<div class="empty">Nothing here yet.</div>')}
+        ${ui.editCareer === 'new-' + k ? careerForm({ id: '', category: k, title: '', summary: '', pay: '', hours: '', path: '' }) : ''}
+      </div>
+      ${can('officer') && ui.editCareer !== 'new-' + k ? `<div><button class="btn ghost small" data-act="career-new" data-cat="${k}">+ Add a career</button></div>` : ''}
+    </section>`).join('')}`;
+}
 function timelineSection(){
   if (ui.tlDraft) {
     const n = ui.tlDraft.length;
@@ -842,6 +891,7 @@ function viewResources(){
       <div class="err" id="rs-err"></div>
       <div><button class="btn" type="submit">Add resource</button></div>
     </form>` : ''}
+    <section class="stack">${careersSection()}</section>
     <section class="stack">
       ${timelineSection()}
       <p class="hint">Timelines vary by firm and shift year to year. Check each firm's careers page.</p>
@@ -1468,6 +1518,9 @@ function viewOfficer(){
         </div>
         <label>Location<input id="ev-loc" required value="${esc(e?.loc)}" placeholder="Building and room"></label>
         <label>Seat limit<input id="ev-cap" type="number" min="0" value="${esc(e?.cap || 0)}"><span class="hint">0 means no limit. RSVPs close when the limit is reached.</span></label>
+        <label>Check-in code <span class="hint">(optional)</span>
+          <span class="row" style="gap:8px;flex-wrap:nowrap"><input id="ev-code" maxlength="8" autocomplete="off" value="${esc(e?.code || '')}" placeholder="e.g. BULL" style="font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;flex:1;min-width:0"><button type="button" class="btn ghost small" data-act="ev-gen-code">Generate</button></span>
+          <span class="hint">Members type this at the event to check in. It only works on the event’s date. Leave blank to make one on the day.</span></label>
         <label>Description<textarea id="ev-desc">${esc(e?.desc)}</textarea></label>
         <div class="err" id="ev-err"></div>
         <div class="row"><button class="btn" type="submit">${e ? 'Save changes' : 'Add to calendar'}</button>${e ? '<button class="btn ghost" type="button" data-act="cancel-edit">Cancel</button>' : ''}</div>
@@ -1758,7 +1811,7 @@ function viewAdmin(){
       <div class="table-wrap"><table><thead><tr><th>When</th><th>Who</th><th>What changed</th></tr></thead><tbody>
         ${rows.map(l => `<tr><td style="white-space:nowrap">${fmtStamp(l.ts)}</td><td style="white-space:nowrap">${esc(userName(l.who))}</td><td>${esc(l.text)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No entries yet.</td></tr>'}
       </tbody></table></div>
-      <p class="hint">Records changes made by officers and admins: events, announcements, recaps, archive, tasks, resources, check-in codes, profiles, and access lists.</p>
+      <p class="hint">Records changes made by officers and admins: events, announcements, recaps, archive, tasks, resources, careers, check-in codes, profiles, and access lists.</p>
     </section>`;
   }
   return `<div class="view">
@@ -1800,7 +1853,7 @@ function openEvent(id){
     if (!session) checkin = `<div class="notice">At the event? <a href="#signin">Sign in</a> to check in${PTS[e.cat] ? ' and earn ' + PTS[e.cat] + ' points' : ''}.</div>`;
     else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e.cat)}.</div>`;
     else checkin = `<form class="stack" id="f-checkin" data-id="${id}" style="gap:8px"><label for="ci-code">Check-in code <span class="hint">Shown on screen at the event · ${ptsText(e.cat)}</span></label>
-      <div class="checkin-form"><input id="ci-code" maxlength="4" autocomplete="off" placeholder="CODE"><button class="btn" type="submit">Check in</button></div><div class="err" id="ci-err"></div></form>`;
+      <div class="checkin-form"><input id="ci-code" maxlength="8" autocomplete="off" placeholder="CODE"><button class="btn" type="submit">Check in</button></div><div class="err" id="ci-err"></div></form>`;
   }
   showModal(`<div class="modal-in">
     <div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${PTS[e.cat] ? PTS[e.cat] + ' pts' : 'officers only'}</div></div>
@@ -1953,6 +2006,12 @@ document.addEventListener('click', async ev => {
     case 'bulk-go': await bulkAdd(); break;
     case 'del-resource': { const x = (db.resources || []).find(r => r.id === id);
       await act(async () => { must(await sb.from('resources').delete().eq('id', id)); await logChange('Deleted resource “' + (x ? x.title : id) + '”'); }, 'Resource deleted'); break; }
+    case 'career-edit': ui.editCareer = id; render(); break;
+    case 'career-new': ui.editCareer = 'new-' + t.dataset.cat; render(); break;
+    case 'career-cancel': ui.editCareer = null; render(); break;
+    case 'career-del': { const c = (db.careers || []).find(x => x.id === id);
+      await act(async () => { must(await sb.from('careers').delete().eq('id', id)); await logChange('Deleted career “' + (c ? c.title : id) + '”'); }, 'Career deleted'); break; }
+    case 'ev-gen-code': document.getElementById('ev-code').value = newCode(); break;
     case 'tl-edit': ui.tlDraft = (db.timeline || []).map(r => ({ ...r })); render(); break;
     case 'tl-cancel': ui.tlDraft = null; render(); break;
     case 'tl-add': ui.tlDraft.push({ id: crypto.randomUUID(), when_text: '', what_text: '' }); render(); break;
@@ -2203,10 +2262,15 @@ async function handleSubmit(f, v, err){
     const e = { title: v('ev-title'), cat: v('ev-cat'), date: v('ev-date'), start_time: v('ev-start'), end_time: v('ev-end'), loc: v('ev-loc'), cap: Math.max(0, parseInt(v('ev-cap')) || 0), descr: v('ev-desc') };
     if (!e.title || !e.date || !e.start_time || !e.end_time || !e.loc) return err('ev-err', 'Fill in the title, date, times, and location.');
     if (e.end_time <= e.start_time) return err('ev-err', 'End time must be after the start time.');
+    const code = v('ev-code').toUpperCase().replace(/\s+/g, '');
+    if (code && !/^[A-Z0-9]{3,8}$/.test(code)) return err('ev-err', 'Check-in codes use 3–8 letters or numbers.');
     const editing = ui.editEvent;
     const ok = await act(async () => {
+      let evId = editing;
       if (editing){ must(await sb.from('events').update(e).eq('id', editing)); await logChange('Edited event “' + e.title + '”'); }
-      else { must(await sb.from('events').insert(e)); await logChange('Added event “' + e.title + '” on ' + fmtDay(e.date)); }
+      else { evId = must(await sb.from('events').insert(e).select('id').single()).id; await logChange('Added event “' + e.title + '” on ' + fmtDay(e.date)); }
+      if (code) must(await sb.from('checkin_codes').upsert({ event_id: evId, code }));
+      else if (editing && (evById(editing) || {}).code) must(await sb.from('checkin_codes').delete().eq('event_id', editing));
       ui.editEvent = null;
     }, editing ? 'Event updated' : 'Added to the calendar');
   }
@@ -2293,6 +2357,18 @@ async function handleSubmit(f, v, err){
     const ins = await sb.from('applications').insert({ cycle: db.app.opened_at, branches, year, grad, why, ideas, linkedin, other, resume_path: path });
     if (ins.error){ await sb.storage.from('resumes').remove([path]); return err('ap-err', errMsg(ins.error)); }
     await load(); toast('Application submitted'); render(); window.scrollTo(0,0);
+  }
+
+  if (f.id === 'f-career'){
+    const c = { title: v('cr-title'), category: v('cr-cat'), summary: v('cr-summary'), pay: v('cr-pay'), hours: v('cr-hours'), path: v('cr-path') };
+    if (!c.title) return err('cr-err', 'Give the career a name.');
+    const id = f.dataset.id;
+    await act(async () => {
+      if (id) must(await sb.from('careers').update(c).eq('id', id));
+      else must(await sb.from('careers').insert({ ...c, sort: (db.careers || []).filter(x => x.category === c.category).length }));
+      ui.editCareer = null;
+      await logChange((id ? 'Edited' : 'Added') + ' career “' + c.title + '”');
+    }, 'Career saved');
   }
 
   if (f.id === 'f-resource'){
