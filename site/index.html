@@ -345,15 +345,20 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
   <span id="foot-role"></span>
 </div></footer>
 <div class="backdrop" id="modal" hidden></div>
-<div class="toast" id="toast" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <div class="slottip" id="slottip" hidden></div>
 <datalist id="dl-majors"></datalist><datalist id="dl-minors"></datalist>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
 <script>
 /* ---------- Connection (both values are meant to be public) ---------- */
 const SUPABASE_URL = 'https://razxymbbfsnnnguyaalp.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_G9Ct3sh1zfK2peRadj-nzg_SSLCr2Sn';
+// Address used in links inside club emails. Keep it the same as the SITE_URL secret of the
+// invite-officer function. If UVU's network blocks it, use https://exquisite-salmiakki-d330b6.netlify.app for both.
+const PUBLIC_URL = 'https://wolverinefinanceassociation.org';
+// Must match VERSION in supabase/2-invite-officer.ts. A mismatch means the function pasted into Supabase is an older copy.
+const FUNCTION_VERSION = '2026-10-07';
 const SAFE_MSG = 'Safe view is on. Switch to Edit view to make changes.';
 const READ_RPCS = ['my_role', 'event_stats', 'leaderboard'];   // database functions that only read
 function safeFetch(input, init){
@@ -491,7 +496,16 @@ function errMsg(e){
   if (/members_uvuid_unique|Database error saving new user/i.test(m)) return 'An account already uses this UVU ID.';
   if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'Can’t reach the server. Check your connection and try again.';
   if (/row-level security|permission denied/i.test(m)) return 'You don’t have permission to do that.';
+  if (/email_address_not_authorized|Email address .* not authorized/i.test(m)) return 'The site can’t email that address yet. Ask a club admin to finish the email setup in Supabase (custom SMTP).';
+  if (/email rate limit exceeded/i.test(m)) return 'The site has sent too many emails for now. Try again in an hour.';
+  if (/only request this after \d+ seconds/i.test(m)) return 'A code was sent less than a minute ago. Use the code you have, or wait a minute and try again.';
   return m;
+}
+// Readable message from a failed sb.functions.invoke call.
+async function fnErr(error){
+  let m = error.message;
+  try { const j = await error.context.json(); m = j.error || j.message || m; } catch(_){}
+  return errMsg({ message: m });
 }
 // Run a change, reload everything, re-render. Errors show as a toast.
 async function act(fn, ok){
@@ -557,7 +571,17 @@ function leaderboard(){
     .sort((a,b) => b.pts - a.pts || b.n - a.n || (a.u.last || '').localeCompare(b.u.last || ''));
 }
 function duesOf(email){ return (db.dues[email] || { status:'unpaid' }).status; }
-function toast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 3200); }
+function toast(msg, ms = 3200){ const t = document.getElementById('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, ms); }
+// Shown when an officer was saved but the email they should have received did not go out. Stays until closed.
+const STALE_FN = 'The invite-officer function in Supabase is an older copy. Paste supabase/2-invite-officer.ts into Supabase (Edge Functions > invite-officer > Code) and deploy it.';
+const RESEND_HOW = 'To send it again, open their row with Change role, choose the first option under Sign-in setup, and Save.';
+function emailProblem(email, warning, title){
+  const msg = (warning || 'Saved, but no email was sent. ' + STALE_FN) + ' ' + RESEND_HOW;
+  showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3>${esc(title || 'No email went to ' + email)}</h3></div>
+    <p>${esc(msg)}</p>
+    <p class="muted">Their access was saved. Nothing else needs to be redone.</p>
+    <div class="row"><button class="btn" data-act="close">OK</button></div></div>`);
+}
 function datebox(s){ const d = parseDay(s); return `<div class="datebox"><span class="m">${MON[d.getMonth()]}</span><span class="d">${d.getDate()}</span></div>`; }
 function initials(n){ return n.split(' ').map(s => s[0] || '').join('').slice(0,2).toUpperCase(); }
 function randStr(n, A){ const a = new Uint32Array(n); crypto.getRandomValues(a); return [...a].map(x => A[x % A.length]).join(''); }
@@ -583,7 +607,7 @@ const ui = {
   memberSearch: '', logSearch: '', editOfficer: null,
   recapPhotos: [], archType: 'all', duesFilter: 'all', tasksMine: false,
   mail: { aud:'all', ev:'', subject:'', body:'' },
-  reset: { step:1, email:'' }, prefillEmail: '', notice: '', recovery: false
+  reset: { step:1, email:'' }, prefillEmail: '', notice: '', recovery: false, confirm: null, mailBusy: false
 };
 function pendingRsvp(){ try { return sessionStorage.getItem('wfa-pending'); } catch(e){ return ui._pending || null; } }
 function setPendingRsvp(id){ ui._pending = id; try { id ? sessionStorage.setItem('wfa-pending', id) : sessionStorage.removeItem('wfa-pending'); } catch(e){} }
@@ -996,6 +1020,16 @@ function viewAuth(mode){
     </div>`;
   const notice = (ui.notice ? `<div class="notice">${esc(ui.notice)}</div>` : '') +
     (pend ? `<div class="notice">Sign in or create an account to RSVP for <strong>${esc(pend.title)}</strong>. We’ll save your spot right after.</div>` : '');
+  // A code (not only a link) confirms new accounts: university link scanners can open a link, but not type a code.
+  if (mode === 'signin' && ui.confirm) return `<div class="view"><div class="auth">${side}
+    <form class="auth-form" id="f-confirm" novalidate>
+      ${notice}
+      <h2>Confirm your email</h2>
+      <p class="muted">We emailed <strong>${esc(ui.confirm.email)}</strong>. If the email has a code, enter it here. If it only has a link, click the link, then sign in.</p>
+      <label>Confirmation code<input id="cf-code" inputmode="numeric" maxlength="10" autocomplete="one-time-code" style="font-family:var(--mono);letter-spacing:.3em;max-width:12em"></label>
+      <div class="err" id="cf-err"></div>
+      <div class="row"><button class="btn" type="submit">Confirm</button><button class="btn ghost small" type="button" data-act="confirm-resend">Send a new code</button><button class="btn ghost small" type="button" data-act="confirm-skip">I clicked the link, sign in</button></div>
+    </form></div></div>`;
   if (mode === 'signin') return `<div class="view"><div class="auth">${side}
     <form class="auth-form" id="f-signin" novalidate>
       ${notice}
@@ -1026,22 +1060,30 @@ function viewAuth(mode){
     </form></div></div>`;
 }
 
-function viewReset(){
+// direct: the #code page from officer setup emails. It opens straight to code entry, so pressing Enter
+// cannot request a new code (which would cancel the one in the email).
+function viewReset(direct){
   if (session) return `<div class="view"><div class="notice">You’re signed in. To change your password, sign out first and use “Forgot your password?”</div></div>`;
   const r = ui.reset;
-  const side = `<div class="auth-side"><div class="stack"><div class="eyebrow">Account help</div><h2>Reset your password</h2>
-    <p>We’ll email a 6-digit code to the address on your account. Enter it here with your new password.</p></div>
-    <p style="opacity:.8;font-size:.9rem">Didn’t get it? Check your spam folder, then send a new code.</p></div>`;
-  if (r.step === 1) return `<div class="view"><div class="auth">${side}
+  const side = direct
+    ? `<div class="auth-side"><div class="stack"><div class="eyebrow">Officer setup</div><h2>Set up your account</h2>
+      <p>Enter your email, the setup code from your email, and the password you want.</p></div>
+      <p style="opacity:.8;font-size:.9rem">Code expired? Choose “Email me a new code”. Check your spam folder if it doesn’t arrive.</p></div>`
+    : `<div class="auth-side"><div class="stack"><div class="eyebrow">Account help</div><h2>Reset your password</h2>
+      <p>We’ll email a code to the address on your account. Enter it here with your new password.</p></div>
+      <p style="opacity:.8;font-size:.9rem">Didn’t get it? Check your spam folder, then send a new code.</p></div>`;
+  if (!direct && r.step === 1) return `<div class="view"><div class="auth">${side}
     <form class="auth-form" id="f-reset1" novalidate>
       <h2>Find your account</h2>
       <label>Account email<input id="rs-email" type="email" autocomplete="email" required value="${esc(r.email)}"></label>
       <div class="err" id="rs-err"></div>
-      <div class="row"><button class="btn" type="submit">Email me a code</button><a href="#signin">Back to sign in</a></div>
+      <div class="row"><button class="btn" type="submit">Email me a code</button><a href="#code">I already have a code</a><a href="#signin">Back to sign in</a></div>
+      <span class="hint">New officer? Your setup email has a code in it. Choose “I already have a code”.</span>
     </form></div></div>`;
   return `<div class="view"><div class="auth">${side}
     <form class="auth-form" id="f-reset2" novalidate>
-      <div class="notice">If an account uses <strong>${esc(r.email)}</strong>, we emailed it a 6-digit code.</div>
+      ${direct ? `<label>Account email<input id="rs-email2" type="email" autocomplete="email" required value="${esc(r.email)}"></label>`
+        : `<div class="notice">If an account uses <strong>${esc(r.email)}</strong>, we emailed it a code.</div>`}
       <h2>Enter the code</h2>
       <label>Verification code<input id="rs-code" inputmode="numeric" maxlength="10" autocomplete="one-time-code" style="font-family:var(--mono);letter-spacing:.3em;max-width:12em"></label>
       <div class="grid2">
@@ -1049,7 +1091,9 @@ function viewReset(){
         <label>Confirm<input id="rs-pw2" type="password" autocomplete="new-password"></label>
       </div>
       <div class="err" id="rs-err"></div>
-      <div class="row"><button class="btn" type="submit">Reset password</button><button class="btn ghost small" type="button" data-act="reset-resend">Send a new code</button><button class="btn ghost small" type="button" data-act="reset-back">Use a different email</button></div>
+      <div class="row">${direct
+        ? `<button class="btn" type="submit">Set password</button><button class="btn ghost small" type="button" data-act="code-resend">Email me a new code</button>`
+        : `<button class="btn" type="submit">Reset password</button><button class="btn ghost small" type="button" data-act="reset-resend">Send a new code</button><button class="btn ghost small" type="button" data-act="reset-back">Use a different email</button>`}</div>
     </form></div></div>`;
 }
 
@@ -1229,20 +1273,20 @@ async function notifyApplicationsOpen(){
   if (!to.length) return toast('Applications are open. There are no members to email yet.');
   const text = `Hi,\n\nApplications are open for WFA officer positions in the ${branchList()}.` +
     (db.app.deadline ? `\n\nApply by ${fmtDay(db.app.deadline)}.` : '') +
-    `\n\nApply here: ${location.origin}/#apply\n\nWolverine Finance Association`;
+    `\n\nApply here: ${PUBLIC_URL}/#apply\n\nWolverine Finance Association`;
   const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to, subject: 'WFA officer applications are open', text } });
-  if (error){ let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch(_){} return toast('Applications are open, but the email didn’t send: ' + m); }
-  toast(`Applications are open. Emailed ${data.sent} member${data.sent === 1 ? '' : 's'}.`);
+  if (error) return toast('Applications are open, but the email didn’t send: ' + await fnErr(error), 15000);
+  toast(`Applications are open. Emailed ${data.sent} member${data.sent === 1 ? '' : 's'}.` + (data.failed ? ` ${data.failed} couldn’t be sent${data.reason ? ': ' + data.reason : ''}.` : ''), data.failed ? 15000 : 3200);
 }
 
 /* ---------- Add several officers at once ---------- */
 // Sign-in setup choices shared by the single and bulk officer forms.
 function setupOptions(selected, existing){
   return [
-    ['invite', 'Email a setup link, no password in the email (recommended)'],
-    ['password', 'Email a temporary password'],
-    ['manual', 'Set a temporary password I’ll share myself (no email)'],
-    ['skip', existing ? 'Don’t change how they sign in' : 'Don’t create an account (they’ll sign up themselves)']
+    ['invite', existing ? 'Email them that they have access, plus a setup code if they never set a password (recommended)' : 'Email a setup code, no password in the email (recommended)'],
+    ['password', existing ? 'Replace their password with a temporary one and email it' : 'Email a temporary password'],
+    ['manual', existing ? 'Replace their password with a temporary one I’ll share myself (no email)' : 'Set a temporary password I’ll share myself (no email)'],
+    ['skip', existing ? 'Don’t email them or change how they sign in' : 'Don’t create an account or send an email (they’ll sign up themselves)']
   ].map(([k, l]) => `<option value="${k}" ${selected === k ? 'selected' : ''}>${l}</option>`).join('');
 }
 function bulkRow(){ return { email:'', first:'', last:'', branch:'', tier:'officer', level:'officer' }; }
@@ -1274,7 +1318,7 @@ function bulkBody(){
     </tbody></table></div>
     <div><button class="btn ghost small" data-act="bulk-add">+ Add row</button></div>
     <label style="max-width:560px">Sign-in setup<select id="bulk-mode">${setupOptions(ui.bulkMode || 'invite', false)}</select></label>
-    <span class="hint">The setup email has no password in it, which university email filters block less often. The free email plan sends up to 100 emails a day.</span>
+    <span class="hint">The setup email has a setup code instead of a password, which university email filters block less often. For people who already have an account, it just tells them they have access. The free email plan sends up to 100 emails a day.</span>
     <div><button class="btn" data-act="bulk-go" ${ui.bulkBusy ? 'disabled' : ''}>${ui.bulkBusy ? 'Adding…' : 'Add all officers'}</button></div>
     ${ui.bulkResults ? `<div class="panel stack" style="gap:6px"><h3>Results</h3>${ui.bulkResults.map(x => `<div class="${x.ok ? '' : 'err'}">${esc(x.email)}: ${esc(x.msg)}</div>`).join('')}</div>` : ''}
   </section>`;
@@ -1389,6 +1433,8 @@ async function bulkAdd(){
   if (bad) return toast('Each row needs a valid email and a first and last name. Check the row for ' + (bad.email || bad.first || 'the blank email') + '.');
   const seen = new Set(), dup = rows.find(r => seen.has(r.email) || !seen.add(r.email));
   if (dup) return toast(dup.email + ' is listed twice.');
+  const demote = rows.filter(r => roleOf(r.email) === 'admin' && r.level !== 'admin');
+  if (demote.length) return toast(demote.map(r => r.email).join(', ') + (demote.length === 1 ? ' is already an admin' : ' are already admins') + '. Set Access to Admin on that row, or use Change role on the Access lists tab.', 10000);
   ui.bulkBusy = true; ui.bulkResults = []; render();
   for (const r of rows){
     const prev = db.profiles[r.email] || {};
@@ -1398,9 +1444,15 @@ async function bulkAdd(){
         const pw = (mode === 'password' || mode === 'manual') ? tempPw() : '';
         const { data, error } = await sb.functions.invoke('invite-officer', { body: { email: r.email, first: r.first, last: r.last, role: r.level, title: r.title, tier: r.tier, branch: r.branch,
           contact: prev.contact || '', hours: prev.hours || '', linkedin: prev.linkedin || '', bio: prev.bio || '', mode, password: pw, send: mode !== 'manual' } });
-        if (error){ let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch(_){} throw new Error(m); }
+        if (error) throw new Error(await fnErr(error));
         if (!['president', 'officer'].includes(r.tier)) await sb.from('officer_profiles').update({ tier: r.tier }).eq('email', r.email);
-        ui.bulkResults.push({ email: r.email, ok: !data.warning, msg: mode === 'manual' ? 'Added. Temporary password to share: ' + pw : data.warning || (data.emailed ? (mode === 'invite' ? 'Added and emailed a setup link' : 'Added and emailed a temporary password') : 'Added') });
+        // invite and password modes always email; no email and no warning, or an older version in invite
+        // mode (its email has no setup code), means Supabase runs an older copy of the function.
+        const stale = mode === 'invite' && data.version !== FUNCTION_VERSION;
+        const mailed = mode === 'manual' || (data.emailed && !stale);
+        ui.bulkResults.push({ email: r.email, ok: mailed, msg: mode === 'manual' ? 'Added. Temporary password to share: ' + pw
+          : data.warning || (mailed ? (mode === 'invite' ? 'Added and emailed a setup code' : 'Added and emailed a temporary password')
+          : (data.emailed ? 'Added and emailed, but the email has no setup code. ' : 'Added, but no email was sent. ') + STALE_FN + ' Then add this row again.') });
       } else {
         must(await sb.from('access_list').upsert({ email: r.email, role: r.level }));
         must(await sb.from('officer_profiles').upsert({ email: r.email, name: r.first + ' ' + r.last, title: r.title, tier: r.tier, branch: r.branch }));
@@ -1415,7 +1467,7 @@ async function bulkAdd(){
   ui.bulk = ui.bulk.filter(r => failed.includes(r.email.trim().toLowerCase()));
   if (!ui.bulk.length) ui.bulk = [bulkRow(), bulkRow(), bulkRow()];
   await load(); render();
-  toast(failed.length ? `${rows.length - failed.length} added, ${failed.length} need attention` : `Added ${rows.length} officer${rows.length === 1 ? '' : 's'}`);
+  toast(failed.length ? `${rows.length - failed.length} done, ${failed.length} need attention (see Results)` : `Added ${rows.length} officer${rows.length === 1 ? '' : 's'}`);
 }
 
 /* ---------- Weekly availability (15-minute slots) ---------- */
@@ -1790,12 +1842,12 @@ function viewOfficer(){
         <div class="section-head"><h3>Preview</h3><span class="muted">${to.length} recipients</span></div>
         <div class="preview" id="ml-preview">${mailPreview()}</div>
         <div class="row">
-          <button class="btn ${ui.armed==='mail-send'?'danger armed':''}" data-act="mail-send" data-key="mail-send" ${to.length?'':'disabled'}>${ui.armed==='mail-send' ? `Click again to send to ${to.length}` : `Send to ${to.length} ${to.length===1?'person':'people'}`}</button>
+          <button class="btn ${ui.armed==='mail-send'?'danger armed':''}" data-act="mail-send" data-key="mail-send" ${to.length && !ui.mailBusy?'':'disabled'}>${ui.mailBusy ? 'Sending…' : ui.armed==='mail-send' ? `Click again to send to ${to.length}` : `Send to ${to.length} ${to.length===1?'person':'people'}`}</button>
           <button class="btn ghost" data-act="mail-copy" data-what="to" ${to.length?'':'disabled'}>Copy recipients</button>
           <button class="btn ghost" data-act="mail-copy" data-what="subject">Copy subject</button>
           <button class="btn ghost" data-act="mail-copy" data-what="body">Copy message</button>
         </div>
-        <p class="hint">Sends from noreply@wolverinefinanceassociation.org with everyone in BCC, so members don’t see each other’s addresses. Replies go to your officer contact email. The free email plan allows 100 emails a day.</p>
+        <p class="hint">Sends from noreply@wolverinefinanceassociation.org, one copy per person, so members don’t see each other’s addresses. Replies go to your officer contact email. The free email plan allows 100 emails a day.</p>
       </section></div>`;
   }
 
@@ -1896,9 +1948,9 @@ function viewAdmin(){
         </div>
         <fieldset class="pwset">
           <legend>Sign-in setup</legend>
-          <select id="of-setup" aria-label="Sign-in setup">${setupOptions(acct ? 'skip' : 'invite', !!acct)}</select>
+          <select id="of-setup" aria-label="Sign-in setup">${setupOptions(ed && roleOf(ed) !== 'member' ? 'skip' : 'invite', !!acct)}</select>
           <div class="row" style="gap:8px;flex-wrap:nowrap"><input id="of-pw" autocomplete="off" spellcheck="false" style="font-family:var(--mono);flex:1;min-width:0" placeholder="Temporary password (only for the password options)"><button type="button" class="btn ghost small" data-act="gen-pw">Generate</button></div>
-          <span class="hint">The setup email has no password in it. It tells them to set their own password with a code from “Forgot your password?”. University email filters block it less often than emails containing a password.</span>
+          <span class="hint">The setup email has no password in it. It carries a setup code they enter on the site to choose their own password. University email filters block it less often than emails containing a password. To email someone again, open their row with Change role and pick the first option.</span>
         </fieldset>
         <div class="grid2">
           <label>Public contact email<input id="of-contact" type="email" value="${esc(p.contact || '')}" placeholder="Defaults to login email"></label>
@@ -2009,7 +2061,7 @@ async function showCode(id, fresh){
 /* ---------- Render ---------- */
 const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources,
   archive:viewArchive, leaderboard:viewLeaderboard, account:viewAccount, apply:viewApply, availability:viewAvailability,
-  signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
+  signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:() => viewReset(false), code:() => viewReset(true), setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
 function route(){ const r = location.hash.slice(1); return VIEWS[r] ? r : 'home'; }
 function render(){
   if (!loaded) return;
@@ -2183,6 +2235,17 @@ document.addEventListener('click', async ev => {
         await logChange('Removed ' + id + ' from the access list');
       }, 'Removed ' + id); break;
     case 'reset-back': ui.reset = { step:1, email: ui.reset.email }; render(); break;
+    case 'confirm-resend': {
+      const { error } = await sb.auth.resend({ type: 'signup', email: ui.confirm.email, options: { emailRedirectTo: location.origin + location.pathname } });
+      if (error) document.getElementById('cf-err').textContent = errMsg(error); else toast('New code sent');
+      break; }
+    case 'confirm-skip': ui.prefillEmail = ui.confirm.email; ui.confirm = null; ui.notice = ''; render(); break;
+    case 'code-resend': {
+      const email = (document.getElementById('rs-email2').value || '').trim().toLowerCase();
+      if (!EMAIL_RE.test(email)){ document.getElementById('rs-err').textContent = 'Enter the email your setup code was sent to.'; break; }
+      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+      if (error){ document.getElementById('rs-err').textContent = errMsg(error); break; }
+      ui.reset = { step:2, email }; location.hash = 'reset'; break; }
     case 'reset-resend': {
       const { error } = await sb.auth.resetPasswordForEmail(ui.reset.email, { redirectTo: location.origin + location.pathname });
       toast(error ? errMsg(error) : 'New code sent'); break; }
@@ -2198,11 +2261,14 @@ async function sendMail(){
   if (!to.length) return toast('No one is in that group.');
   if (!subject || !text) return toast('Add a subject and a message.');
   if (/\{(event|date|time|location)\}/.test(subject + text)) return toast('Pick an event, or remove {event}, {date}, {time}, and {location} from the message.');
-  toast('Sending…');
-  const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to, subject, text } });
-  if (error){ let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch(_){} return toast('Not sent: ' + m); }
-  toast(data.failed ? `Sent to ${data.sent}. ${data.failed} couldn’t be sent.` : `Sent to ${data.sent} ${data.sent === 1 ? 'person' : 'people'}`);
-  await load(); render();
+  if (ui.mailBusy) return;
+  ui.mailBusy = true; render(); toast('Sending…', 60000);
+  try {
+    const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to, subject, text } });
+    if (error) return toast('Not sent: ' + await fnErr(error), 15000);
+    toast(data.failed ? `Sent to ${data.sent}. ${data.failed} couldn’t be sent${data.reason ? ': ' + data.reason : ''}.` : `Sent to ${data.sent} ${data.sent === 1 ? 'person' : 'people'}`, data.failed ? 15000 : 3200);
+    await load();
+  } finally { ui.mailBusy = false; render(); }
 }
 
 /* ---------- Inputs ---------- */
@@ -2300,8 +2366,20 @@ async function handleSubmit(f, v, err){
     const email = v('si-email').toLowerCase(), pw = document.getElementById('si-pw').value;
     if (!email || !pw) return err('si-err', 'Enter your email and password.');
     const { error } = await sb.auth.signInWithPassword({ email, password: pw });
-    if (error) return err('si-err', /not confirmed/i.test(error.message) ? 'Confirm your email first. Click the link we sent when you signed up.' : /invalid login/i.test(error.message) ? 'Email or password is incorrect.' : errMsg(error));
+    if (error && /not confirmed/i.test(error.message)){ ui.confirm = { email, pw }; ui.notice = ''; return render(); }
+    if (error) return err('si-err', /invalid login/i.test(error.message) ? 'Email or password is incorrect.' : errMsg(error));
     ui.notice = ''; await afterLogin(); toast('Signed in as ' + myRole);
+  }
+
+  if (f.id === 'f-confirm'){
+    const code = v('cf-code').replace(/\s/g, ''), { email, pw } = ui.confirm;
+    if (!/^\d{6,10}$/.test(code)) return err('cf-err', 'Enter the code from the email.');
+    const vr = await sb.auth.verifyOtp({ email, token: code, type: 'email' });
+    if (vr.error) return err('cf-err', 'That code isn’t valid or has expired. Choose “Send a new code”.');
+    // Set the password they typed again, in case someone else started an account with this email first.
+    const ur = await sb.auth.updateUser({ password: pw });
+    if (ur.error && !/different from the old password/i.test(ur.error.message)) toast(errMsg(ur.error), 8000);
+    ui.confirm = null; ui.notice = ''; await afterLogin(); toast('Email confirmed. Welcome to the WFA');
   }
 
   if (f.id === 'f-signup'){
@@ -2319,7 +2397,7 @@ async function handleSubmit(f, v, err){
     if (error) return err('su-err', errMsg(error));
     if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) return err('su-err', 'An account already uses this email. Sign in instead.');
     if (data.session){ await afterLogin(); toast('Welcome to the WFA, ' + d.first); }
-    else { ui.prefillEmail = d.email; location.hash = 'signin'; ui.notice = `Almost done. We sent a confirmation link to ${d.email}. Click it, then sign in.`; render(); }
+    else { ui.prefillEmail = d.email; ui.confirm = { email: d.email, pw }; ui.notice = 'Almost done. Confirm your email to finish creating your account.'; location.hash = 'signin'; render(); }
   }
 
   if (f.id === 'f-reset1'){
@@ -2331,15 +2409,20 @@ async function handleSubmit(f, v, err){
   }
 
   if (f.id === 'f-reset2'){
-    const email = ui.reset.email, code = v('rs-code');
+    const email = document.getElementById('rs-email2') ? v('rs-email2').toLowerCase() : ui.reset.email, code = v('rs-code').replace(/\s/g, '');
     const pw = document.getElementById('rs-pw').value, pw2 = document.getElementById('rs-pw2').value;
+    if (!EMAIL_RE.test(email)) return err('rs-err', 'Enter the email your code was sent to.');
     if (!/^\d{6,10}$/.test(code)) return err('rs-err', 'Enter the code from the email.');
     if (pw.length < 8) return err('rs-err', 'Password needs at least 8 characters.');
     if (pw !== pw2) return err('rs-err', 'Passwords don’t match.');
     const vr = await sb.auth.verifyOtp({ email, token: code, type: 'recovery' });
     if (vr.error) return err('rs-err', 'That code isn’t valid or has expired. Send a new code.');
     const ur = await sb.auth.updateUser({ password: pw, data: { must_change: false } });
-    if (ur.error) return err('rs-err', errMsg(ur.error));
+    if (ur.error){
+      // The code is used up, but they are signed in: send them to the setup page to pick a different password.
+      ui.reset = { step:1, email:'' }; ui.recovery = true;
+      await load(); render(); return err('st-err', errMsg(ur.error));
+    }
     ui.reset = { step:1, email:'' }; ui.recovery = false;
     await load(); toast('Password updated. You’re signed in.'); location.hash = 'home'; render();
   }
@@ -2555,6 +2638,8 @@ async function handleSubmit(f, v, err){
     if (pw && pw.length < 8) return err('of-err', 'Temporary password needs at least 8 characters.');
     if (contact && !EMAIL_RE.test(contact)) return err('of-err', 'Enter a valid contact email.');
     if (linkedin && !/^https?:\/\//i.test(linkedin)) return err('of-err', 'LinkedIn link must start with https://');
+    // The Add form defaults to Officer, so re-adding an admin there would quietly demote them.
+    if (!ui.editOfficer && roleOf(email) === 'admin' && level !== 'admin') return err('of-err', email + ' is already an admin. Use Change role on their row instead.');
 
     if (level === 'member'){
       must(await sb.from('access_list').delete().eq('email', email));
@@ -2567,9 +2652,8 @@ async function handleSubmit(f, v, err){
       // Creating accounts and sending email needs the server function.
       const { data, error } = await sb.functions.invoke('invite-officer', { body: { email, first, last, role: level, title, tier, branch, contact, hours, linkedin, bio, mode, password: pw, send: mode !== 'manual' } });
       if (error){
-        let m = error.message;
-        try { const j = await error.context.json(); m = j.error || m; } catch(_){}
-        if (/Failed to send a request|not found|404/i.test(m)) m = 'The invite-officer function isn’t set up yet. Leave the password blank for now, or finish step 4 of the setup guide.';
+        let m = await fnErr(error);
+        if (/Failed to send a request|Requested function was not found|404/i.test(m)) m = 'The invite-officer function isn’t set up in Supabase yet. Choose “Don’t create an account” for now, or paste supabase/2-invite-officer.ts into Supabase.';
         return err('of-err', m);
       }
       if (!['president', 'officer'].includes(tier)) await sb.from('officer_profiles').update({ tier }).eq('email', email);
@@ -2578,7 +2662,11 @@ async function handleSubmit(f, v, err){
         <p>${esc(first)} can sign in with <strong>${esc(email)}</strong> and this temporary password, then choose their own:</p>
         <div class="codebig" style="font-size:2rem;letter-spacing:.1em">${esc(pw)}</div>
         <div class="row"><button class="btn" data-act="copy" data-text="${esc(pw)}" data-label="password">Copy password</button><button class="btn ghost" data-act="close">Done</button></div></div>`);
-      else toast(data.warning || (data.emailed ? (mode === 'invite' ? 'Saved. Setup email sent to ' : 'Saved. Login details emailed to ') + email : 'Saved ' + email + ' as ' + level));
+      // invite and password modes always email; no email and no warning means Supabase runs an older copy of the function.
+      else if (!data.emailed) emailProblem(email, data.warning);
+      // An older function still emails, but without a setup code, so the officer would need Supabase's own mailer.
+      else if (mode === 'invite' && data.version !== FUNCTION_VERSION) emailProblem(email, 'Saved and emailed, but the email has no setup code. ' + STALE_FN, 'The email to ' + email + ' had no setup code');
+      else toast((mode === 'invite' ? 'Saved. Setup email sent to ' : 'Saved. Login details emailed to ') + email);
       return;
     }
     const before = roleOf(email);
@@ -2586,7 +2674,7 @@ async function handleSubmit(f, v, err){
     must(await sb.from('officer_profiles').upsert({ email, name: first + ' ' + last, title, tier, branch, contact, hours, linkedin, bio }));
     if (db.users.some(u => u.email === email)) await sb.from('members').update({ first, last }).eq('email', email);
     await logChange(before === level ? 'Edited officer profile for ' + email : 'Gave ' + email + ' ' + level + ' access');
-    ui.editOfficer = null; await load(); render(); toast('Saved ' + email + ' as ' + level);
+    ui.editOfficer = null; await load(); render(); toast(before === level ? 'Saved ' + email : 'Saved ' + email + ' as ' + level + '. No email was sent.', before === level ? 3200 : 6000);
   }
 }
 
@@ -2601,7 +2689,12 @@ sb.auth.onAuthStateChange(event => { if (event === 'PASSWORD_RECOVERY'){ ui.reco
   catch(e){ document.getElementById('app').innerHTML = `<div class="empty">Couldn’t load club data. ${esc(errMsg(e))}</div>`; return; }
   if (/access_token|error_description/.test(initialHash)) history.replaceState(null, '', location.pathname + '#home');
   loaded = true; render();
-  if (m) toast(decodeURIComponent(m[1].replace(/\+/g, ' ')));
+  if (m){
+    const msg = decodeURIComponent(m[1].replace(/\+/g, ' '));
+    // University email scanners often open confirmation links first, which uses them up but still confirms the account.
+    if (/expired|invalid/i.test(msg)) toast('That email link has expired or was already used. If you were confirming a new account, try signing in: it may already be confirmed.', 12000);
+    else toast(msg);
+  }
 })();
 </script>
 </body>
