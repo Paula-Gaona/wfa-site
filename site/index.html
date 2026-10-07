@@ -87,6 +87,10 @@ p{margin:0}
 .who{display:flex;align-items:center;gap:10px;margin-left:auto}
 .who .name{font-weight:600}
 
+/* Wider header; on desktop the menu wraps to a second line instead of scrolling sideways */
+.site-head .wrap{max-width:1440px}
+@media (min-width:761px){.nav{flex-wrap:wrap;overflow:visible}}
+
 /* Buttons & inputs */
 .btn{font:inherit;font-weight:700;border:2px solid var(--brand);background:var(--brand);color:var(--on-brand);padding:9px 18px;border-radius:var(--radius);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:8px;line-height:1.2}
 .btn:hover{background:var(--brand-deep);border-color:var(--brand-deep)}
