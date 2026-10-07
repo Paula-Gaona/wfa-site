@@ -257,6 +257,7 @@ td select{padding:5px 8px;width:auto}
 .officer{display:flex;flex-direction:column;gap:10px;padding:20px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
 .officer-top{display:flex;gap:14px;align-items:center}
 .avatar{width:64px;height:64px;flex:none;background:var(--brand);color:var(--on-brand);display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.5rem}
+img.avatar{object-fit:cover;display:block}
 .officer .title{font-family:var(--mono);font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--brand-text)}
 .contact{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:10px;margin-top:auto;font-size:.92rem}
 .contact .line{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
@@ -374,7 +375,7 @@ async function load(){
   db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0) };
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
   (R.profiles || []).forEach(p => {
-    db.profiles[p.email] = { name:p.name, title:p.title, bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, tier:p.tier || 'officer', branch:p.branch || '' };
+    db.profiles[p.email] = { name:p.name, title:p.title, bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '' };
     (p.role === 'admin' ? db.adminEmails : db.officerEmails).push(p.email);
   });
   if (R.access){
@@ -487,7 +488,7 @@ function copyText(txt, label){
 /* ---------- UI state ---------- */
 const ui = {
   memberView: (() => { try { return localStorage.getItem('wfa-member-view') === '1'; } catch(e){ return false; } })(),
-  picks: {}, editMajors: false,
+  picks: {}, editMajors: false, profilePhoto: null,
   cal: (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
   catsOn: new Set(Object.keys(CATS)),
   officerTab: 'events', adminTab: 'access',
@@ -647,7 +648,7 @@ function viewCalendar(){
 function officerCard(email){
   const p = db.profiles[email] || {}, n = userName(email), contact = p.contact || email;
   return `<article class="officer">
-    <div class="officer-top"><div class="avatar">${esc(initials(n))}</div><div style="min-width:0"><div class="title">${esc(p.title || (roleOf(email)==='admin'?'Admin':'Officer'))}</div><h3>${esc(n)}</h3></div></div>
+    <div class="officer-top">${p.photo ? `<img class="avatar" src="${esc(p.photo)}" alt="${esc(n)}">` : `<div class="avatar">${esc(initials(n))}</div>`}<div style="min-width:0"><div class="title">${esc(p.title || (roleOf(email)==='admin'?'Admin':'Officer'))}</div><h3>${esc(n)}</h3></div></div>
     ${p.bio ? `<p class="muted">${esc(p.bio)}</p>` : ''}
     <div class="contact">
       <div class="line"><span>${esc(contact)}</span><button class="btn ghost small" data-act="copy" data-text="${esc(contact)}" data-label="email">Copy</button></div>
@@ -655,6 +656,13 @@ function officerCard(email){
       ${p.linkedin ? `<div class="line"><a href="${esc(p.linkedin)}" target="_blank" rel="noopener">LinkedIn profile ↗</a></div>` : ''}
     </div>
   </article>`;
+}
+// The profile picture shown in the My profile form: a newly chosen one, a removal, or the saved one.
+function photoPreview(p){
+  const src = ui.profilePhoto === null ? (p.photo || '') : ui.profilePhoto;
+  return src
+    ? `<img class="avatar" src="${esc(src)}" alt="Profile picture"><button type="button" class="btn ghost small" data-act="pf-photo-rm">Remove picture</button>`
+    : `<div class="avatar">${esc(initials(p.name || userName(session)))}</div><span class="hint">No picture yet.</span>`;
 }
 function officerSections(staff){
   if (!staff.length) return '<div class="empty">No officers listed yet.</div>';
@@ -1220,6 +1228,12 @@ function viewOfficer(){
         <h3>My officer profile</h3>
         <p class="hint">Shown on the public Officers page. Your title (${esc(p.title || 'Officer')}), rank, and branch are set by an admin.</p>
         <label>Display name<input id="pf-name" value="${esc(p.name || userName(session))}"></label>
+        <div class="stack" style="gap:8px">
+          <span style="font-weight:600;font-size:.92rem">Profile picture</span>
+          <div class="row" id="pf-photo-row">${photoPreview(p)}</div>
+          <input id="pf-photo" type="file" accept="image/*" aria-label="Choose a profile picture">
+          <span class="hint">Cropped to a square and resized. Saved when you click Save profile.</span>
+        </div>
         <label>Contact email<input id="pf-contact" type="email" value="${esc(p.contact || session)}"></label>
         <label>Office hours<input id="pf-hours" value="${esc(p.hours || '')}" placeholder="e.g. Wed 2:00–3:00 PM, library 2nd floor"></label>
         <label>LinkedIn URL<input id="pf-linkedin" type="url" value="${esc(p.linkedin || '')}" placeholder="https://www.linkedin.com/in/…"></label>
@@ -1480,6 +1494,7 @@ document.addEventListener('click', async ev => {
       else copyText(fillMerge(ui.mail.body), 'message');
       break; }
     case 'mail-send': await sendMail(); break;
+    case 'pf-photo-rm': ui.profilePhoto = ''; document.getElementById('pf-photo-row').innerHTML = photoPreview(db.profiles[session] || {}); break;
     case 'rm-member':
       await act(async () => must(await sb.rpc('remove_member', { p_email: id })), 'Removed ' + id); break;
     case 'member-view':
@@ -1550,6 +1565,11 @@ document.addEventListener('change', async e => {
     const em = e.target.dataset.dues, s = e.target.value;
     await act(async () => { must(await sb.from('dues').upsert({ email: em, status: s, updated: todayIso() })); await logChange('Marked ' + userName(em) + '’s dues ' + s); }, userName(em) + ': ' + s);
   }
+  if (id === 'pf-photo' && e.target.files[0]){
+    try { ui.profilePhoto = await shrinkSquare(e.target.files[0], 400); } catch(err){ toast('Couldn’t read that image.'); }
+    e.target.value = '';
+    document.getElementById('pf-photo-row').innerHTML = photoPreview(db.profiles[session] || {});
+  }
   if (id === 'rc-photos'){
     const files = [...e.target.files].slice(0, 6 - ui.recapPhotos.length);
     for (const f of files){ try { ui.recapPhotos.push(await shrink(f)); } catch(err){ toast('Couldn’t read ' + f.name); } }
@@ -1557,6 +1577,19 @@ document.addEventListener('change', async e => {
     document.getElementById('rc-thumbs').innerHTML = thumbsHtml();
   }
 });
+// Center-crops an image to a square of at most `size` pixels.
+function shrinkSquare(file, size){
+  return new Promise((res, rej) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const s = Math.min(img.width, img.height), c = document.createElement('canvas');
+      c.width = c.height = Math.min(size, s);
+      c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = rej; img.src = url;
+  });
+}
 function shrink(file){
   return new Promise((res, rej) => {
     const img = new Image(), url = URL.createObjectURL(file);
@@ -1738,7 +1771,19 @@ async function handleSubmit(f, v, err){
     if (linkedin && !/^https?:\/\//i.test(linkedin)) return err('pf-err', 'LinkedIn link must start with https://');
     const p = db.profiles[session] || {};
     await act(async () => {
-      must(await sb.from('officer_profiles').upsert({ email: session, title: p.title || '', tier: p.tier || 'officer', branch: p.branch || '', name: v('pf-name'), contact, hours: v('pf-hours'), linkedin, bio: v('pf-bio') }));
+      let photo = p.photo || '';
+      if (ui.profilePhoto !== null){
+        const old = photo.split('/officer-photos/')[1];
+        photo = '';
+        if (ui.profilePhoto){
+          const path = crypto.randomUUID() + '.jpg';
+          must(await sb.storage.from('officer-photos').upload(path, await (await fetch(ui.profilePhoto)).blob(), { contentType: 'image/jpeg' }));
+          photo = sb.storage.from('officer-photos').getPublicUrl(path).data.publicUrl;
+        }
+        if (old) await sb.storage.from('officer-photos').remove([old]);
+      }
+      must(await sb.from('officer_profiles').upsert({ email: session, photo, title: p.title || '', tier: p.tier || 'officer', branch: p.branch || '', name: v('pf-name'), contact, hours: v('pf-hours'), linkedin, bio: v('pf-bio') }));
+      ui.profilePhoto = null;
       await logChange('Updated their officer profile');
     }, 'Profile saved');
   }

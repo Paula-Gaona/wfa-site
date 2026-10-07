@@ -1,4 +1,4 @@
--- WFA update: let admins remove members.
+-- WFA update: let admins remove members, and give officers profile pictures.
 -- Paste into Supabase -> SQL Editor -> New query, then Run.
 
 create or replace function public.remove_member(p_email text) returns text
@@ -22,3 +22,18 @@ begin
   insert into change_log (who, text) values (jwt_email(), 'Removed member ' || e);
   return 'ok';
 end $$;
+
+-- ============ Officer profile pictures ============
+alter table public.officer_profiles add column if not exists photo text not null default '';
+
+drop view if exists public.officers_public;
+create view public.officers_public as
+  select p.*, a.role from public.officer_profiles p join public.access_list a using (email);
+grant select on public.officers_public to anon, authenticated;
+
+insert into storage.buckets (id, name, public) values ('officer-photos', 'officer-photos', true)
+  on conflict (id) do nothing;
+create policy "officers upload profile photos" on storage.objects for insert to authenticated
+  with check (bucket_id = 'officer-photos' and public.is_officer());
+create policy "officers delete profile photos" on storage.objects for delete to authenticated
+  using (bucket_id = 'officer-photos' and public.is_officer());
