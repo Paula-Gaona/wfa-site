@@ -408,6 +408,7 @@ async function load(){
     leader: signed && sb.rpc('leaderboard'),
     appset: sb.from('app_settings').select('*').eq('id', 1).maybeSingle(),
     resources: sb.from('resources').select('*').order('created_at'),
+    timeline: sb.from('recruiting_timeline').select('*').order('sort'),
     apps: signed && t('applications'),
     avail: signed && t('availability'),
     access: off && t('access_list'),
@@ -446,6 +447,7 @@ async function load(){
   db.dues = {}; (R.dues || []).forEach(d => db.dues[d.email] = { status:d.status, date:d.updated });
   db.leader = R.leader || [];
   db.resources = R.resources || [];
+  db.timeline = R.timeline || [];
   db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null };
   db.apps = (R.apps || []).map(a => ({ ...a, date: iso(new Date(a.created_at)) }));
   db.avail = {}; (R.avail || []).forEach(a => db.avail[a.email] = [...normSlots(a.slots)]);
@@ -771,6 +773,29 @@ function viewAbout(){
   </div>`;
 }
 
+function timelineSection(){
+  if (ui.tlDraft) {
+    const n = ui.tlDraft.length;
+    return `<div class="section-head"><h2>Recruiting timeline</h2><span class="muted">Editing</span></div>
+    <div class="table-wrap"><table><thead><tr><th>When</th><th>What to do</th><th></th></tr></thead><tbody>
+      ${ui.tlDraft.map((r, i) => `<tr>
+        <td style="min-width:180px"><input data-tl="${i}:when_text" value="${esc(r.when_text)}" aria-label="Row ${i + 1}: when"></td>
+        <td style="min-width:280px"><textarea data-tl="${i}:what_text" style="min-height:60px" aria-label="Row ${i + 1}: what to do">${esc(r.what_text)}</textarea></td>
+        <td><div class="row" style="gap:4px;flex-wrap:nowrap">
+          <button class="btn ghost small" data-act="tl-move" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Move row ${i + 1} up">↑</button>
+          <button class="btn ghost small" data-act="tl-move" data-i="${i}" data-d="1" ${i === n - 1 ? 'disabled' : ''} aria-label="Move row ${i + 1} down">↓</button>
+          <button class="btn ghost small" data-act="tl-rm" data-i="${i}" aria-label="Delete row ${i + 1}">×</button></div></td>
+      </tr>`).join('')}
+    </tbody></table></div>
+    <div><button class="btn ghost small" data-act="tl-add">+ Add row</button></div>
+    <div class="row"><button class="btn" data-act="tl-save">Save timeline</button><button class="btn ghost" data-act="tl-cancel">Cancel</button></div>`;
+  }
+  const rows = db.timeline || [];
+  return `<div class="section-head"><h2>Recruiting timeline</h2>${can('officer') ? '<button class="btn ghost small" data-act="tl-edit">Edit timeline</button>' : ''}</div>
+    <div class="table-wrap"><table><thead><tr><th>When</th><th>What to do</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td>${esc(r.when_text)}</td><td>${esc(r.what_text)}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No timeline yet.</td></tr>'}
+    </tbody></table></div>`;
+}
 function viewResources(){
   const links = db.resources || [];
   return `<div class="view">
@@ -789,15 +814,7 @@ function viewResources(){
       <div><button class="btn" type="submit">Add resource</button></div>
     </form>` : ''}
     <section class="stack">
-      <div class="section-head"><h2>Recruiting timeline</h2></div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>When</th><th>What to do</th></tr></thead>
-        <tbody>
-          <tr><td>Freshman / sophomore year</td><td>Attend workshops, learn Excel and accounting basics, apply to sophomore insight programs.</td></tr>
-          <tr><td>Spring of sophomore year</td><td>Many banks open junior summer internship applications well over a year ahead. Have your résumé ready.</td></tr>
-          <tr><td>Junior summer</td><td>Internship. A strong summer often leads to a full-time return offer.</td></tr>
-          <tr><td>Senior fall</td><td>Full-time recruiting for anyone without a return offer.</td></tr>
-        </tbody></table></div>
+      ${timelineSection()}
       <p class="hint">Timelines vary by firm and shift year to year. Check each firm's careers page.</p>
     </section>
   </div>`;
@@ -1875,6 +1892,22 @@ document.addEventListener('click', async ev => {
     case 'bulk-go': await bulkAdd(); break;
     case 'del-resource': { const x = (db.resources || []).find(r => r.id === id);
       await act(async () => { must(await sb.from('resources').delete().eq('id', id)); await logChange('Deleted resource “' + (x ? x.title : id) + '”'); }, 'Resource deleted'); break; }
+    case 'tl-edit': ui.tlDraft = (db.timeline || []).map(r => ({ ...r })); render(); break;
+    case 'tl-cancel': ui.tlDraft = null; render(); break;
+    case 'tl-add': ui.tlDraft.push({ id: crypto.randomUUID(), when_text: '', what_text: '' }); render(); break;
+    case 'tl-rm': ui.tlDraft.splice(+t.dataset.i, 1); render(); break;
+    case 'tl-move': { const i = +t.dataset.i, j = i + +t.dataset.d; [ui.tlDraft[i], ui.tlDraft[j]] = [ui.tlDraft[j], ui.tlDraft[i]]; render(); break; }
+    case 'tl-save': {
+      const rows = ui.tlDraft.map((r, i) => ({ id: r.id || crypto.randomUUID(), when_text: (r.when_text || '').trim(), what_text: (r.what_text || '').trim(), sort: i }))
+        .filter(r => r.when_text || r.what_text);
+      if (rows.some(r => !r.when_text || !r.what_text)) { toast('Fill in both columns on each row, or delete the row.'); break; }
+      const keep = new Set(rows.map(r => r.id)), gone = (db.timeline || []).filter(r => !keep.has(r.id)).map(r => r.id);
+      await act(async () => {
+        if (gone.length) must(await sb.from('recruiting_timeline').delete().in('id', gone));
+        if (rows.length) must(await sb.from('recruiting_timeline').upsert(rows));
+        ui.tlDraft = null; await logChange('Updated the recruiting timeline');
+      }, 'Timeline saved');
+      break; }
     case 'rm-member':
       await act(async () => must(await sb.rpc('remove_member', { p_email: id })), 'Removed ' + id); break;
     case 'member-view':
@@ -1932,6 +1965,7 @@ function updateAnnPreview(){
 document.addEventListener('input', e => {
   const id = e.target.id;
   if (e.target.dataset.bulk){ const [i, k] = e.target.dataset.bulk.split(':'); ui.bulk[+i][k] = e.target.value; }
+  if (e.target.dataset.tl){ const [i, k] = e.target.dataset.tl.split(':'); ui.tlDraft[+i][k] = e.target.value; }
   if (id === 'mem-search'){ ui.memberSearch = e.target.value; rerenderKeepFocus(id); }
   if (id === 'log-search'){ ui.logSearch = e.target.value; rerenderKeepFocus(id); }
   if (['an-title','an-body'].includes(id)) updateAnnPreview();
