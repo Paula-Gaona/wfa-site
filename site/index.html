@@ -84,6 +84,11 @@ p{margin:0}
 .navmenu{position:fixed;z-index:40;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 10px 28px rgba(0,0,0,.2);padding:6px;min-width:220px;display:flex;flex-direction:column}
 .navmenu a{color:var(--ink);text-decoration:none;padding:9px 12px;border-radius:4px;font-weight:600}
 .navmenu a:hover,.navmenu a:focus-visible{background:var(--tint);outline:none}
+.seg-toggle{display:inline-flex;border:2px solid rgba(255,255,255,.55);border-radius:var(--radius);overflow:hidden}
+.seg-toggle button{font:inherit;font-size:.85rem;font-weight:700;background:transparent;color:#fff;border:0;padding:4px 11px;cursor:pointer}
+.seg-toggle button[aria-pressed="true"]{background:#fff;color:#1a4026}
+.safebar{background:var(--tint);color:var(--ink);border-bottom:3px solid var(--warn);font-weight:600}
+.safebar .wrap{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding-block:8px}
 .who{display:flex;align-items:center;gap:10px;margin-left:auto}
 .who .name{font-weight:600}
 
@@ -270,7 +275,8 @@ td select{padding:5px 8px;width:auto}
 .avail.q th[scope="row"]{font-family:var(--mono);font-size:.72rem;color:var(--muted);font-weight:500;vertical-align:top;line-height:1;padding:0 8px 0 0}
 .avail.q tr.hr td,.avail.q tr.hr th{padding-top:5px}
 .avail.q .slot{width:56px;height:14px;border-radius:2px;border-width:1px;touch-action:none;display:block}
-.avail.q .heat{width:56px;height:14px;border-radius:2px;border:0}
+.avail.q .heat{width:56px;height:14px;border-radius:2px;border:0;padding:0;display:block;cursor:pointer}
+.avail.q .heat.picked{outline:2px solid var(--ink);outline-offset:1px}
 .best{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:6px}
 .best li span{margin-left:10px}
 .rank-row{flex-direction:row;align-items:center;justify-content:space-between;gap:12px;font-weight:600}
@@ -326,6 +332,7 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
   </div>
 </header>
 <div class="navmenu" id="navmenu" role="menu" hidden></div>
+<div class="safebar" id="safebar" role="status" hidden></div>
 <div class="ticker" aria-label="Upcoming events"><div class="ticker-track" id="ticker"></div></div>
 <main class="wrap" id="app"><div class="empty">Loading club data…</div></main>
 <footer><div class="wrap row" style="justify-content:space-between">
@@ -341,7 +348,23 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
 /* ---------- Connection (both values are meant to be public) ---------- */
 const SUPABASE_URL = 'https://razxymbbfsnnnguyaalp.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_G9Ct3sh1zfK2peRadj-nzg_SSLCr2Sn';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const SAFE_MSG = 'Safe view is on. Switch to Edit view to make changes.';
+const READ_RPCS = ['my_role', 'event_stats', 'leaderboard'];   // database functions that only read
+function safeFetch(input, init){
+  const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+  let safe = false;
+  try { safe = ui.safeView && isStaff(); } catch(e){}   // ui/session aren't set up during the very first calls
+  if (safe && method !== 'GET' && method !== 'HEAD'){
+    const path = new URL(typeof input === 'string' ? input : input.url).pathname;
+    const allowed = path.startsWith('/auth/')                                               // sign in/out, sessions
+      || (path.startsWith('/rest/v1/rpc/') && READ_RPCS.includes(path.split('/').pop()))
+      || path.startsWith('/storage/v1/object/sign/');                                       // open a resume
+    if (!allowed) return Promise.resolve(new Response(JSON.stringify({ message: SAFE_MSG, error: SAFE_MSG, code: 'safe_view' }),
+      { status: 403, headers: { 'Content-Type': 'application/json' } }));
+  }
+  return fetch(input, init);
+}
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { fetch: safeFetch } });
 const initialHash = location.hash;
 
 const CATS = {
@@ -542,6 +565,7 @@ function copyText(txt, label){
 /* ---------- UI state ---------- */
 const ui = {
   memberView: (() => { try { return localStorage.getItem('wfa-member-view') === '1'; } catch(e){ return false; } })(),
+  safeView: (() => { try { return localStorage.getItem('wfa-safe-view') === '1'; } catch(e){ return false; } })(),
   picks: {}, editMajors: false, profilePhoto: null,
   appFilter: 'all', availDraft: null, bulk: null, bulkSend: true, bulkBusy: false, bulkResults: null,
   cal: (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
@@ -570,8 +594,11 @@ function renderChrome(route){
     (staff.length ? '<span class="sep"></span>' + staff.map(([r,l]) => `<button class="menu-btn ${route===r?'current':''}" data-act="nav-menu" data-menu="${r}" aria-haspopup="true" aria-expanded="false">${l} ▾</button>`).join('') : '');
   const u = me(), r = role();
   document.getElementById('who').innerHTML = u
-    ? `${isStaff() ? `<button class="btn on-dark ${ui.memberView ? '' : 'ghost'} small" data-act="member-view" aria-pressed="${!!ui.memberView}">${ui.memberView ? 'Member view: on' : 'Member view'}</button>` : ''}<span class="name">${esc(u.first)}</span><span class="role ${r}">${r}</span><button class="btn on-dark ghost small" data-act="signout">Sign out</button>`
+    ? `${isStaff() ? `<span class="seg-toggle" role="group" aria-label="Edit or safe view"><button data-act="safe-view" data-mode="edit" aria-pressed="${!ui.safeView}" title="Make changes">Edit</button><button data-act="safe-view" data-mode="safe" aria-pressed="${!!ui.safeView}" title="Look around without changing anything">Safe</button></span>` : ''}${isStaff() ? `<button class="btn on-dark ${ui.memberView ? '' : 'ghost'} small" data-act="member-view" aria-pressed="${!!ui.memberView}">${ui.memberView ? 'Member view: on' : 'Member view'}</button>` : ''}<span class="name">${esc(u.first)}</span><span class="role ${r}">${r}</span><button class="btn on-dark ghost small" data-act="signout">Sign out</button>`
     : `<a class="btn on-dark ghost small" href="#signin">Sign in</a><a class="btn on-dark small" href="#signup">Join</a>`;
+  const bar = document.getElementById('safebar');
+  bar.hidden = !(ui.safeView && isStaff());
+  if (!bar.hidden) bar.innerHTML = '<div class="wrap"><span>Safe view is on. You can see every page, but nothing can be changed.</span><button class="btn small" data-act="safe-view" data-mode="edit">Switch to Edit view</button></div>';
   document.getElementById('foot-role').textContent = session ? 'Signed in as ' + r : '';
 
   const items = upcoming().slice(0, 6).map(e => {
@@ -1272,36 +1299,58 @@ function viewAvailability(){
       <span class="hint">${saved && saved.length ? 'Saved: ' + (saved.length / 4) + ' hours a week.' : 'Not saved yet.'}</span></div>
     ${slotGrid((k, m, l) => { const key = k + '-' + m, on = d.has(key); return `<button class="slot ${on ? 'on' : ''}" data-slot="${key}" aria-pressed="${on}" aria-label="${l} ${fmtMin(m)}"></button>`; })}
     <div class="row"><button class="btn" data-act="avail-save">Save availability</button></div>
-    ${can('officer') ? '<p class="hint">See everyone’s availability under Officer tools → Availability.</p>' : ''}
+    ${can('officer') ? '<p><a class="btn ghost small" href="#officer" data-tab="availability">See everyone’s availability</a></p>' : ''}
   </div>`;
 }
 function availabilityChart(){
   const staff = new Set(staffEmails());
-  const rows = Object.entries(db.avail).filter(([, sl]) => sl.length);
-  if (!rows.length) return '<div class="empty">No one has shared their availability yet. Members fill it out on the Availability page.</div>';
-  const offs = rows.filter(([e]) => staff.has(e)), mems = rows.filter(([e]) => !staff.has(e));
-  const max = offs.length * OFFICER_WEIGHT + mems.length;
+  const all = Object.entries(db.avail).filter(([, sl]) => sl.length);
+  if (!all.length) return '<div class="empty">No one has shared their availability yet. Members fill it out on the Availability page.</div>';
+  const who = ui.availWho || 'all', groups = { all: 'Everyone', officers: 'Officers only', members: 'Members only' };
+  const single = !groups[who];
+  const rows = all.filter(([e]) => who === 'all' || (who === 'officers' ? staff.has(e) : who === 'members' ? !staff.has(e) : e === who));
+  const people = all.map(([e]) => e).sort((x, y) => userName(x).localeCompare(userName(y)));
   const sets = rows.map(([e, sl]) => [e, new Set(sl)]);
-  const cell = key => { let o = 0, m = 0; sets.forEach(([e, st]) => { if (st.has(key)) staff.has(e) ? o++ : m++; }); return { o, m, score: o * OFFICER_WEIGHT + m }; };
+  const offCount = rows.filter(([e]) => staff.has(e)).length, memCount = rows.length - offCount;
+  const max = offCount * OFFICER_WEIGHT + memCount;
+  const cell = key => {
+    const offs = [], mems = [];
+    sets.forEach(([e, st]) => { if (st.has(key)) (staff.has(e) ? offs : mems).push(e); });
+    return { offs, mems, o: offs.length, m: mems.length, score: offs.length * OFFICER_WEIGHT + mems.length };
+  };
   // Merge back-to-back slots with the same people into ranges, then rank them.
   const ranges = [];
-  DAYS.forEach(([k]) => {
+  if (!single) DAYS.forEach(([k]) => {
     let cur = null;
     SLOT_MINS.forEach(m => {
       const c = cell(k + '-' + m);
       if (c.score && cur && cur.o === c.o && cur.m === c.m && cur.end === m) cur.end = m + STEP;
-      else { if (cur) ranges.push(cur); cur = c.score ? { day: k, start: m, end: m + STEP, ...c } : null; }
+      else { if (cur) ranges.push(cur); cur = c.score ? { day: k, start: m, end: m + STEP, o: c.o, m: c.m, score: c.score } : null; }
     });
     if (cur) ranges.push(cur);
   });
-  const top = ranges.sort((a, b) => b.score - a.score || (b.end - b.start) - (a.end - a.start)).slice(0, 5);
-  return `<div class="stack" style="gap:24px">
-    <p class="muted">${offs.length} officer${offs.length === 1 ? '' : 's'} and ${mems.length} member${mems.length === 1 ? '' : 's'} have shared their availability. Officers count ${OFFICER_WEIGHT}× as much as members when ranking times.</p>
-    <section class="stack"><div class="section-head"><h3>Best times</h3></div>
-      <ol class="best">${top.map(r => `<li><strong>${dayName(r.day)} ${fmtMin(r.start)}–${fmtMin(r.end)}</strong><span class="muted">${r.o} of ${offs.length} officers · ${r.m} of ${mems.length} members</span></li>`).join('')}</ol></section>
-    ${slotGrid((k, m, l) => { const c = cell(k + '-' + m), a = max ? c.score / max : 0;
-      return `<div class="heat" style="--a:${a.toFixed(2)}" title="${l} ${fmtMin(m)}: ${c.o} officers, ${c.m} members"></div>`; })}
-    <p class="hint">Darker green means more people are free, with officers counting most. Hover a block to see who’s free then.</p>
+  const top = ranges.sort((x, y) => y.score - x.score || (y.end - y.start) - (x.end - x.start)).slice(0, 5);
+  const names = list => list.map(e => esc(userName(e))).join(', ') || '<span class="muted">No one</span>';
+  let detail = '<p class="hint">Click any block to see who’s free then.</p>';
+  if (ui.availPick){
+    const [k, m] = ui.availPick.split('-'), c = cell(ui.availPick);
+    detail = `<div class="panel stack" style="gap:6px"><h3>${dayName(k)} ${fmtMin(+m)}–${fmtMin(+m + STEP)}</h3>
+      <dl class="facts"><dt>Officers free</dt><dd>${names(c.offs)}</dd><dt>Members free</dt><dd>${names(c.mems)}</dd></dl></div>`;
+  }
+  return `<div class="stack" style="gap:20px">
+    <div class="row" style="justify-content:space-between">
+      <label style="flex-direction:row;align-items:center;gap:8px">Show<select id="avail-who" style="width:auto">
+        ${Object.entries(groups).map(([k, l]) => `<option value="${k}" ${who === k ? 'selected' : ''}>${l}</option>`).join('')}
+        <optgroup label="One person">${people.map(e => `<option value="${esc(e)}" ${who === e ? 'selected' : ''}>${esc(userName(e))}${staff.has(e) ? ' (officer)' : ''}</option>`).join('')}</optgroup>
+      </select></label>
+      <span class="muted">${single ? esc(userName(who)) + ' is free ' + ((db.avail[who] || []).length / 4) + ' hours a week' : `${offCount} officer${offCount === 1 ? '' : 's'} and ${memCount} member${memCount === 1 ? '' : 's'} shared availability. Officers count ${OFFICER_WEIGHT}× when ranking.`}</span>
+    </div>
+    ${single ? '' : `<section class="stack"><div class="section-head"><h3>Best times</h3></div>
+      <ol class="best">${top.map(r => `<li><strong>${dayName(r.day)} ${fmtMin(r.start)}–${fmtMin(r.end)}</strong><span class="muted">${r.o} of ${offCount} officers · ${r.m} of ${memCount} members</span></li>`).join('') || '<li class="muted">No overlapping times yet.</li>'}</ol></section>`}
+    ${detail}
+    ${slotGrid((k, m, l) => { const key = k + '-' + m, c = cell(key), a = single ? (c.score ? 1 : 0) : (max ? c.score / max : 0);
+      return `<button class="heat ${ui.availPick === key ? 'picked' : ''}" data-act="avail-pick" data-id="${key}" style="--a:${a.toFixed(2)}" aria-label="${l} ${fmtMin(m)}: ${c.o} officers, ${c.m} members free" title="${l} ${fmtMin(m)}: ${c.o} officers, ${c.m} members"></button>`; })}
+    <p class="hint">${single ? 'Green blocks are when this person is free.' : 'Darker green means more people are free, with officers counting most.'}</p>
   </div>`;
 }
 /* ---------- Officer tools ---------- */
@@ -1910,6 +1959,12 @@ document.addEventListener('click', async ev => {
       break; }
     case 'rm-member':
       await act(async () => must(await sb.rpc('remove_member', { p_email: id })), 'Removed ' + id); break;
+    case 'avail-pick': ui.availPick = ui.availPick === id ? null : id; render(); break;
+    case 'safe-view':
+      ui.safeView = t.dataset.mode === 'safe';
+      try { localStorage.setItem('wfa-safe-view', ui.safeView ? '1' : '0'); } catch(e){}
+      toast(ui.safeView ? 'Safe view on. Nothing can be changed.' : 'Edit view on');
+      render(); break;
     case 'member-view':
       ui.memberView = !ui.memberView;
       try { localStorage.setItem('wfa-member-view', ui.memberView ? '1' : '0'); } catch(e){}
@@ -1975,6 +2030,7 @@ document.addEventListener('change', async e => {
   const id = e.target.id;
   if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
   if (['ml-aud','ml-ev'].includes(id)){ readMail(); render(); }
+  if (id === 'avail-who'){ ui.availWho = e.target.value; ui.availPick = null; render(); }
   if (id === 'tk-mine'){ ui.tasksMine = e.target.checked; render(); }
   if (id === 'bulk-send') ui.bulkSend = e.target.checked;
   if (e.target.dataset.bulk){ const [i, k] = e.target.dataset.bulk.split(':'); ui.bulk[+i][k] = e.target.value; }
