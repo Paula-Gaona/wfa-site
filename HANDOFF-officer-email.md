@@ -10,7 +10,22 @@ Get PR #1 live and prove it with one test email to `11067393@uvu.edu` (Dave's UV
 
 Two parts of this repo deploy differently. Pushing to `main` publishes only `site/` (through Netlify). Everything in `supabase/` changes only when someone pastes it into the Supabase dashboard. So the PR fixes nothing until both parts are done, **in the order below**.
 
-Paula makes the calls: merging, clicking through the dashboard, entering secrets. You guide her, check each step, and fix anything that breaks. Never ask for an API key in chat, and never commit one.
+### How to work with Paula
+
+Paula is not technical. **Do everything you can yourself** and keep what you ask of her to decisions, approvals, and typing secrets.
+
+- **Do it yourself:** git, reading the diff, running the tests, merging main into the branch if needed, checking the live site, reading logs, and anything in the Supabase or Resend dashboards your tools can reach while she is signed in. That includes a browser tool or the Supabase CLI/MCP, if you have them.
+- **Ask before** anything that changes production: merging, changing a Supabase setting, deploying the function, or sending an email. Say in one sentence what it does, then ask.
+- **When she has to click:** give one step at a time, in plain words. Name the exact button and say what she should see afterwards. Wait for her to confirm before giving the next step. No jargon. Say "the settings page for sign-in emails", not "auth config".
+- **Secrets:** she pastes API keys into the dashboard herself. Never ask for one in chat, never commit one.
+- **When you're done:** give her a short plain-English summary of what changed, what's left, and who to tell.
+
+### Step 0a: check what's new before anything else
+
+Main may have moved since this was written (base `0b57c32`), and the deployed function may differ from the repo.
+- Run `git fetch` and compare `main` with this branch. If `main` has new commits, merge `main` into the branch, resolve any conflicts, re-run `node supabase/test/invite-officer.test.mjs`, and push.
+- Read the whole PR diff and check it against the claims in this file. If anything here looks wrong or out of date, trust what you verify, and tell Paula what was different.
+- Give Paula a plain-English summary of what the PR changes, about five bullet points, before asking to merge.
 
 ## The problem (reported 2026-10-06)
 
@@ -47,9 +62,9 @@ node supabase/test/invite-officer.test.mjs
 
 You should see 13 checks pass. This needs Node 22.18 or newer, and nothing is sent. The site has no automated tests. It was smoke-tested in a browser with a fake Supabase client: `#code`, the sign-up code step, the warnings, the bulk guards, and the busy lock.
 
-**2. Merge.** This is Paula's call. Netlify publishes `site/`. Then check that `https://wolverinefinanceassociation.org/#code` shows "Set up your account". It is safe to merge before the function is pasted: with the old function, the site warns that the email had no setup code.
+**2. Merge.** Ask Paula, then merge it yourself (`gh pr merge 1 --merge`). Netlify publishes `site/` within a few minutes. Then check that `https://wolverinefinanceassociation.org/#code` shows "Set up your account". It is safe to merge before the function is pasted: with the old function, the site warns that the email had no setup code.
 
-**3–6. Dashboard settings.** Paula clicks; you guide. These are README steps 2–6:
+**3–6. Dashboard settings.** If your tools can reach the dashboard, make the changes yourself with her OK. Otherwise walk her through one click at a time. These are README steps 2–6:
 - Templates: Confirm signup ← `supabase/12-confirm-signup-template.html`; Reset password ← `supabase/3-reset-email-template.html`
 - Email OTP length `10`, expiration `86400`. Keep 10 digits if the expiration is long, or the code can be guessed.
 - Custom SMTP through Resend (`smtp.resend.com`, port 465, user `resend`, a Resend API key that Paula creates and pastes herself), then raise the email rate limit
@@ -58,9 +73,9 @@ You should see 13 checks pass. This needs Node 22.18 or newer, and nothing is se
 
 If Paula has the Supabase CLI or MCP linked to project `razxymbbfsnnnguyaalp`, you may set the auth settings through the Management API. Check the field names against the current docs first; the dashboard is the safe default.
 
-**7. Deploy the function.** Paste all of `supabase/2-invite-officer.ts` into Edge Functions > invite-officer > Code and deploy. The file is plain ASCII on purpose, so don't let an editor turn quotes curly. If you deploy with the CLI instead, the function name is `invite-officer`, and **leave the "Verify JWT" setting as the dashboard shows it now**.
+**7. Deploy the function.** Do it yourself if you can (CLI or browser); otherwise walk her through it. Paste all of `supabase/2-invite-officer.ts` into Edge Functions > invite-officer > Code and deploy. The file is plain ASCII on purpose, so don't let an editor turn quotes curly. If you deploy with the CLI instead, the function name is `invite-officer`, and **leave the "Verify JWT" setting as the dashboard shows it now**.
 
-**8. Test email.** On the site, as an admin: Admin > Access lists. If `11067393@uvu.edu` is listed, use **Change role** on that row, keep its access level, choose the first Sign-in setup option, and Save. If it is not listed, ask Dave before adding him. Expect "Saved. Setup email sent to 11067393@uvu.edu" and **no** warning modal. Then tell Dave it has been sent. His Claude can read that mailbox and will check the folder (Inbox, not Junk or quarantine), the `Authentication-Results` header (spf, dkim and dmarc all pass), and that the code works on `#code`.
+**8. Test email.** Paula has to be signed in to the site as an admin, so do it in her browser or walk her through it. On the site: Admin > Access lists. If `11067393@uvu.edu` is listed, use **Change role** on that row, keep its access level, choose the first Sign-in setup option, and Save. If it is not listed, ask Dave before adding him. Expect "Saved. Setup email sent to 11067393@uvu.edu" and **no** warning modal. Then tell Dave it has been sent. His Claude can read that mailbox and will check the folder (Inbox, not Junk or quarantine), the `Authentication-Results` header (spf, dkim and dmarc all pass), and that the code works on `#code`.
 
 **9. Re-send to people who never got a usable invite.** Ask Paula first, because this emails people. For each officer marked "no account yet", or who never finished setup: Change role → first Sign-in setup option → Save. Use Change role, **not** the Add form or bulk import.
 
