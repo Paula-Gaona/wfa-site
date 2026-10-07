@@ -384,7 +384,7 @@ async function load(){
   db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0) };
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
   (R.profiles || []).forEach(p => {
-    db.profiles[p.email] = { name:p.name, title:p.title, bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '' };
+    db.profiles[p.email] = { name:p.name, title:p.title, bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '', majors:p.majors || [], minor:p.minor || '' };
     (p.role === 'admin' ? db.adminEmails : db.officerEmails).push(p.email);
   });
   if (R.access){
@@ -393,7 +393,7 @@ async function load(){
   }
   db.users = (R.members || []).map(m => {
     const majors = (m.majors && m.majors.length) ? m.majors : (m.major ? [m.major] : []);
-    return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(', '), email:m.email, joined:m.joined };
+    return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(' & '), email:m.email, joined:m.joined };
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null }));
@@ -654,10 +654,16 @@ function viewCalendar(){
   </div>`;
 }
 
+// "Finance, B.S. · Minor: Accounting" for an officer card, or nothing if neither is set.
+function studyLine(p){
+  const majors = (p.majors || []).join(' & '), minor = p.minor ? 'Minor: ' + p.minor : '';
+  const text = [majors, minor].filter(Boolean).join(' · ');
+  return text ? `<div class="ev-sub">${esc(text)}</div>` : '';
+}
 function officerCard(email){
   const p = db.profiles[email] || {}, n = userName(email), contact = p.contact || email;
   return `<article class="officer">
-    <div class="officer-top">${p.photo ? `<img class="avatar" src="${esc(p.photo)}" alt="${esc(n)}">` : `<div class="avatar">${esc(initials(n))}</div>`}<div style="min-width:0"><div class="title">${esc(p.title || (roleOf(email)==='admin'?'Admin':'Officer'))}</div><h3>${esc(n)}</h3></div></div>
+    <div class="officer-top">${p.photo ? `<img class="avatar" src="${esc(p.photo)}" alt="${esc(n)}">` : `<div class="avatar">${esc(initials(n))}</div>`}<div style="min-width:0"><div class="title">${esc(p.title || (roleOf(email)==='admin'?'Admin':'Officer'))}</div><h3>${esc(n)}</h3>${studyLine(p)}</div></div>
     ${p.bio ? `<p class="muted">${esc(p.bio)}</p>` : ''}
     <div class="contact">
       <div class="line"><span>${esc(contact)}</span><button class="btn ghost small" data-act="copy" data-text="${esc(contact)}" data-label="email">Copy</button></div>
@@ -1023,7 +1029,7 @@ function officerProfileSection(){
   return `<div class="split">
       <form class="panel stack" id="f-profile">
         <h3>My officer profile</h3>
-        <p class="hint">Shown on the public Officers page. Your title (${esc(p.title || 'Officer')}), rank, and branch are set by an admin.</p>
+        <p class="hint">Shown on the public Officers page. Your title (${esc(p.title || 'Officer')}), rank, and branch are set by an admin. Your majors and minor come from “Edit majors and minor” above.</p>
         <label>Display name<input id="pf-name" value="${esc(p.name || userName(session))}"></label>
         <div class="stack" style="gap:8px">
           <span style="font-weight:600;font-size:.92rem">Profile picture</span>
