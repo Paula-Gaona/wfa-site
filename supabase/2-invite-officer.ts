@@ -97,10 +97,17 @@ Deno.serve(async (req) => {
     const role = b.role === 'admin' ? 'admin' : 'officer';
     const tier = TIERS.includes(b.tier) ? b.tier : 'officer';
     const branch = BRANCHES.includes(b.branch) ? b.branch : '';
-    const password = String(b.password || '');
+    // How they sign in the first time:
+    //   invite   - account created with a random password nobody sees; email explains how to set one with a reset code
+    //   password - temporary password, emailed to them
+    //   manual   - temporary password the admin shares in person (no email)
+    //   skip     - no account; they sign up themselves
+    const MODES = ['invite', 'password', 'manual', 'skip'];
+    const mode = MODES.includes(b.mode) ? b.mode : (b.password ? 'password' : 'skip');
+    let password = (mode === 'password' || mode === 'manual') ? String(b.password || '') : '';
     if (!EMAIL_RE.test(email)) return json({ error: 'Enter a valid login email.' }, 400);
     if (!first || !last) return json({ error: 'Enter their first and last name.' }, 400);
-    if (password && password.length < 8) return json({ error: 'Temporary password needs at least 8 characters.' }, 400);
+    if ((mode === 'password' || mode === 'manual') && password.length < 8) return json({ error: 'Temporary password needs at least 8 characters.' }, 400);
 
     const acc = await admin.from('access_list').upsert({ email, role });
     if (acc.error) return json({ error: acc.error.message }, 400);
@@ -113,10 +120,10 @@ Deno.serve(async (req) => {
         const { error } = await admin.auth.admin.updateUserById(existing.id, { password, user_metadata: { must_change: true } });
         if (error) return json({ error: error.message }, 400);
       }
-    } else if (password) {
+    } else if (mode !== 'skip') {
       const { error } = await admin.auth.admin.createUser({
-        email, password, email_confirm: true,
-        user_metadata: { first, last, uvuid: '', majors: [], minor: '', must_change: true },
+        email, password: password || crypto.randomUUID() + 'Aa1!', email_confirm: true,
+        user_metadata: { first, last, uvuid: '', majors: [], minor: '', must_change: !!password },
       });
       if (error) return json({ error: error.message }, 400);
       created = true;
@@ -133,18 +140,31 @@ Deno.serve(async (req) => {
     else if (password) await log(`Set a temporary password for ${email}`);
 
     let emailed = false, warning = '';
-    if (password && b.send) {
+    const sendEmail = mode === 'invite' || (mode === 'password' && b.send !== false);
+    if (sendEmail) {
       const title = String(b.title || '') || (role === 'admin' ? 'an admin' : 'an officer');
-      const signin = `${site}/#signin`;
-      const intro = `Hi ${first},\n\nYou have been added as ${title} for the Wolverine Finance Association.\n\n` +
-        `Login email: ${email}\nTemporary password: ${password}\n\n` +
-        `The first time you sign in, you will choose your own password.`;
+      // Replies go to the admin's public contact email, which mail filters trust more than a no-reply address.
+      const { data: prof2 } = await admin.from('officer_profiles').select('contact').eq('email', caller).maybeSingle();
+      const replyTo = prof2?.contact || caller;
+      let intro: string, link: string, label: string;
+      if (mode === 'invite') {
+        link = `${site}/#reset`; label = 'Set up your account';
+        intro = `Hi ${first},\n\nYou have been added as ${title} for the Wolverine Finance Association.\n\n` +
+          `To set up your account:\n1. Open the club website and choose "Forgot your password?" on the sign-in page.\n` +
+          `2. Enter this email address: ${email}\n3. We will email you a 6-digit code. Enter it and choose your password.\n\n` +
+          `After that, sign in with your email and the password you chose.`;
+      } else {
+        link = `${site}/#signin`; label = 'Sign in';
+        intro = `Hi ${first},\n\nYou have been added as ${title} for the Wolverine Finance Association.\n\n` +
+          `Login email: ${email}\nTemporary password: ${password}\n\n` +
+          `The first time you sign in, you will choose your own password.`;
+      }
       const r = await resend({
-        to: [email], subject: `Your Wolverine Finance Association ${role} account`,
-        text: `${intro}\n\nSign in here: ${signin}`,
-        html: htmlEmail(intro, { label: 'Sign in', url: signin }),
+        to: [email], reply_to: replyTo, subject: `You've been added to the Wolverine Finance Association officer team`,
+        text: `${intro}\n\n${label}: ${link}`,
+        html: htmlEmail(intro, { label, url: link }),
       });
-      if (r.ok) { emailed = true; await log(`Emailed login details to ${email}`); }
+      if (r.ok) { emailed = true; await log(mode === 'invite' ? `Emailed setup instructions to ${email}` : `Emailed login details to ${email}`); }
       else warning = 'Saved, but the email did not send: ' + r.detail;
     }
     return json({ ok: true, created, emailed, warning });

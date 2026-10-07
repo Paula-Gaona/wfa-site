@@ -1236,6 +1236,15 @@ async function notifyApplicationsOpen(){
 }
 
 /* ---------- Add several officers at once ---------- */
+// Sign-in setup choices shared by the single and bulk officer forms.
+function setupOptions(selected, existing){
+  return [
+    ['invite', 'Email a setup link, no password in the email (recommended)'],
+    ['password', 'Email a temporary password'],
+    ['manual', 'Set a temporary password I’ll share myself (no email)'],
+    ['skip', existing ? 'Don’t change how they sign in' : 'Don’t create an account (they’ll sign up themselves)']
+  ].map(([k, l]) => `<option value="${k}" ${selected === k ? 'selected' : ''}>${l}</option>`).join('');
+}
 function bulkRow(){ return { email:'', first:'', last:'', branch:'', tier:'officer', level:'officer' }; }
 function bulkBody(){
   if (!ui.bulk) ui.bulk = [bulkRow(), bulkRow(), bulkRow()];
@@ -1264,8 +1273,8 @@ function bulkBody(){
       </tr>`).join('')}
     </tbody></table></div>
     <div><button class="btn ghost small" data-act="bulk-add">+ Add row</button></div>
-    <label class="check"><input id="bulk-send" type="checkbox" ${ui.bulkSend ? 'checked' : ''}> Create accounts with temporary passwords and email each person their login details</label>
-    <span class="hint">Leave this off to just put them on the officer list; they get officer tools when they sign up with that email. The free email plan sends up to 100 emails a day.</span>
+    <label style="max-width:560px">Sign-in setup<select id="bulk-mode">${setupOptions(ui.bulkMode || 'invite', false)}</select></label>
+    <span class="hint">The setup email has no password in it, which university email filters block less often. The free email plan sends up to 100 emails a day.</span>
     <div><button class="btn" data-act="bulk-go" ${ui.bulkBusy ? 'disabled' : ''}>${ui.bulkBusy ? 'Adding…' : 'Add all officers'}</button></div>
     ${ui.bulkResults ? `<div class="panel stack" style="gap:6px"><h3>Results</h3>${ui.bulkResults.map(x => `<div class="${x.ok ? '' : 'err'}">${esc(x.email)}: ${esc(x.msg)}</div>`).join('')}</div>` : ''}
   </section>`;
@@ -1384,12 +1393,14 @@ async function bulkAdd(){
   for (const r of rows){
     const prev = db.profiles[r.email] || {};
     try {
-      if (ui.bulkSend){
+      const mode = ui.bulkMode || 'invite';
+      if (mode !== 'skip'){
+        const pw = (mode === 'password' || mode === 'manual') ? tempPw() : '';
         const { data, error } = await sb.functions.invoke('invite-officer', { body: { email: r.email, first: r.first, last: r.last, role: r.level, title: r.title, tier: r.tier, branch: r.branch,
-          contact: prev.contact || '', hours: prev.hours || '', linkedin: prev.linkedin || '', bio: prev.bio || '', password: tempPw(), send: true } });
+          contact: prev.contact || '', hours: prev.hours || '', linkedin: prev.linkedin || '', bio: prev.bio || '', mode, password: pw, send: mode !== 'manual' } });
         if (error){ let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch(_){} throw new Error(m); }
         if (!['president', 'officer'].includes(r.tier)) await sb.from('officer_profiles').update({ tier: r.tier }).eq('email', r.email);
-        ui.bulkResults.push({ email: r.email, ok: !data.warning, msg: data.emailed ? 'Added and emailed login details' : (data.warning || 'Added') });
+        ui.bulkResults.push({ email: r.email, ok: !data.warning, msg: mode === 'manual' ? 'Added. Temporary password to share: ' + pw : data.warning || (data.emailed ? (mode === 'invite' ? 'Added and emailed a setup link' : 'Added and emailed a temporary password') : 'Added') });
       } else {
         must(await sb.from('access_list').upsert({ email: r.email, role: r.level }));
         must(await sb.from('officer_profiles').upsert({ email: r.email, name: r.first + ' ' + r.last, title: r.title, tier: r.tier, branch: r.branch }));
@@ -1884,10 +1895,10 @@ function viewAdmin(){
           <label>Branch<select id="of-branch"><option value="">No branch</option>${Object.entries(BRANCHES).map(([k,l]) => `<option value="${k}" ${p.branch===k?'selected':''}>${l}</option>`).join('')}</select></label>
         </div>
         <fieldset class="pwset">
-          <legend>${acct ? 'New temporary password (optional)' : 'Temporary password (optional)'}</legend>
-          <div class="row" style="gap:8px;flex-wrap:nowrap"><input id="of-pw" autocomplete="off" spellcheck="false" style="font-family:var(--mono);flex:1;min-width:0" placeholder="${acct ? 'Leave blank to keep their password' : 'Leave blank if they’ll sign up themselves'}"><button type="button" class="btn ghost small" data-act="gen-pw">Generate</button></div>
-          <span class="hint">With a temporary password, their account is created now and they choose their own password at first sign-in.</span>
-          <label class="check"><input id="of-send" type="checkbox" checked> Email their login email and temporary password to them</label>
+          <legend>Sign-in setup</legend>
+          <select id="of-setup" aria-label="Sign-in setup">${setupOptions(acct ? 'skip' : 'invite', !!acct)}</select>
+          <div class="row" style="gap:8px;flex-wrap:nowrap"><input id="of-pw" autocomplete="off" spellcheck="false" style="font-family:var(--mono);flex:1;min-width:0" placeholder="Temporary password (only for the password options)"><button type="button" class="btn ghost small" data-act="gen-pw">Generate</button></div>
+          <span class="hint">The setup email has no password in it. It tells them to set their own password with a code from “Forgot your password?”. University email filters block it less often than emails containing a password.</span>
         </fieldset>
         <div class="grid2">
           <label>Public contact email<input id="of-contact" type="email" value="${esc(p.contact || '')}" placeholder="Defaults to login email"></label>
@@ -2216,7 +2227,7 @@ document.addEventListener('change', async e => {
   if (['ml-aud','ml-ev'].includes(id)){ readMail(); render(); }
   if (id === 'avail-who'){ ui.availWho = e.target.value; ui.availPick = null; render(); }
   if (id === 'tk-mine'){ ui.tasksMine = e.target.checked; render(); }
-  if (id === 'bulk-send') ui.bulkSend = e.target.checked;
+  if (id === 'bulk-mode') ui.bulkMode = e.target.value;
   if (id === 'bulk-csv' && e.target.files[0]){
     const file = e.target.files[0]; e.target.value = '';
     try {
@@ -2535,7 +2546,9 @@ async function handleSubmit(f, v, err){
 
   if (f.id === 'f-officer'){
     const email = v('of-email').toLowerCase(), level = v('of-level'), contact = v('of-contact'), linkedin = v('of-linkedin');
-    const first = v('of-first'), last = v('of-last'), pw = v('of-pw'), send = document.getElementById('of-send').checked;
+    const first = v('of-first'), last = v('of-last'), mode = v('of-setup');
+    let pw = (mode === 'password' || mode === 'manual') ? v('of-pw') : '';
+    if ((mode === 'password' || mode === 'manual') && !pw){ pw = tempPw(); document.getElementById('of-pw').value = pw; }
     const hours = v('of-hours'), bio = v('of-bio'), tier = v('of-tier'), branch = v('of-branch'), title = buildTitle(tier, branch);
     if (!EMAIL_RE.test(email)) return err('of-err', 'Enter a valid login email.');
     if (!first || !last) return err('of-err', 'Enter their first and last name.');
@@ -2550,9 +2563,9 @@ async function handleSubmit(f, v, err){
       ui.editOfficer = null; await load(); render(); toast(userName(email) + ' is now a member');
       return;
     }
-    if (pw){
+    if (mode !== 'skip'){
       // Creating accounts and sending email needs the server function.
-      const { data, error } = await sb.functions.invoke('invite-officer', { body: { email, first, last, role: level, title, tier, branch, contact, hours, linkedin, bio, password: pw, send } });
+      const { data, error } = await sb.functions.invoke('invite-officer', { body: { email, first, last, role: level, title, tier, branch, contact, hours, linkedin, bio, mode, password: pw, send: mode !== 'manual' } });
       if (error){
         let m = error.message;
         try { const j = await error.context.json(); m = j.error || m; } catch(_){}
@@ -2561,7 +2574,11 @@ async function handleSubmit(f, v, err){
       }
       if (!['president', 'officer'].includes(tier)) await sb.from('officer_profiles').update({ tier }).eq('email', email);
       ui.editOfficer = null; await load(); render();
-      toast(data.emailed ? 'Saved. Login details emailed to ' + email : (data.warning || 'Saved ' + email + ' as ' + level));
+      if (mode === 'manual') showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3>Share this temporary password</h3></div>
+        <p>${esc(first)} can sign in with <strong>${esc(email)}</strong> and this temporary password, then choose their own:</p>
+        <div class="codebig" style="font-size:2rem;letter-spacing:.1em">${esc(pw)}</div>
+        <div class="row"><button class="btn" data-act="copy" data-text="${esc(pw)}" data-label="password">Copy password</button><button class="btn ghost" data-act="close">Done</button></div></div>`);
+      else toast(data.warning || (data.emailed ? (mode === 'invite' ? 'Saved. Setup email sent to ' : 'Saved. Login details emailed to ') + email : 'Saved ' + email + ' as ' + level));
       return;
     }
     const before = roleOf(email);
