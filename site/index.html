@@ -266,6 +266,11 @@ td select{padding:5px 8px;width:auto}
 .slot:hover{border-color:var(--brand-text)}
 .slot.on{background:var(--brand);border-color:var(--brand)}
 .heat{width:64px;height:40px;border-radius:4px;display:grid;place-items:center;font-family:var(--mono);font-size:.8rem;border:1px solid var(--line);color:var(--ink);background:color-mix(in srgb, var(--brand) calc(var(--a) * 100%), var(--surface))}
+.avail.q{border-spacing:3px 1px}
+.avail.q th[scope="row"]{font-family:var(--mono);font-size:.72rem;color:var(--muted);font-weight:500;vertical-align:top;line-height:1;padding:0 8px 0 0}
+.avail.q tr.hr td,.avail.q tr.hr th{padding-top:5px}
+.avail.q .slot{width:56px;height:14px;border-radius:2px;border-width:1px;touch-action:none;display:block}
+.avail.q .heat{width:56px;height:14px;border-radius:2px;border:0}
 .best{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:6px}
 .best li span{margin-left:10px}
 .rank-row{flex-direction:row;align-items:center;justify-content:space-between;gap:12px;font-weight:600}
@@ -402,6 +407,7 @@ async function load(){
     dues: signed && t('dues'),
     leader: signed && sb.rpc('leaderboard'),
     appset: sb.from('app_settings').select('*').eq('id', 1).maybeSingle(),
+    resources: sb.from('resources').select('*').order('created_at'),
     apps: signed && t('applications'),
     avail: signed && t('availability'),
     access: off && t('access_list'),
@@ -439,9 +445,10 @@ async function load(){
   db.tasks = (R.tasks || []).map(x => ({ id:x.id, title:x.title, eventId:x.event_id, who:x.owner, due:x.due, done:x.done }));
   db.dues = {}; (R.dues || []).forEach(d => db.dues[d.email] = { status:d.status, date:d.updated });
   db.leader = R.leader || [];
+  db.resources = R.resources || [];
   db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null };
   db.apps = (R.apps || []).map(a => ({ ...a, date: iso(new Date(a.created_at)) }));
-  db.avail = {}; (R.avail || []).forEach(a => db.avail[a.email] = a.slots || []);
+  db.avail = {}; (R.avail || []).forEach(a => db.avail[a.email] = [...normSlots(a.slots)]);
   db.log = (R.log || []).map(l => ({ ts:l.ts, who:l.who, text:l.text }));
 }
 
@@ -765,17 +772,22 @@ function viewAbout(){
 }
 
 function viewResources(){
-  const links = [
-    ['SEC EDGAR full-text search','Primary source for 10-Ks, 10-Qs, and proxy statements when you build a pitch.','https://www.sec.gov/edgar/search/'],
-    ['FRED economic data','Federal Reserve data on rates, inflation, and employment for macro context.','https://fred.stlouisfed.org/'],
-    ['Damodaran Online','Free valuation datasets and lecture notes from NYU professor Aswath Damodaran.','https://pages.stern.nyu.edu/~adamodar/'],
-    ['CFA Institute','Program details for the CFA charter and the Research Challenge.','https://www.cfainstitute.org/'],
-    ['Investopedia','Quick definitions when a term in a speaker talk is new to you.','https://www.investopedia.com/']
-  ];
+  const links = db.resources || [];
   return `<div class="view">
     <section class="page-head"><div class="eyebrow">Resources</div><h1 class="page">Where we start our research</h1>
       <p class="muted">Free sources officers use to prepare workshops and stock pitches. Members can find past slides and recordings in the <a href="#archive">Archive</a>.</p></section>
-    <div class="res-grid">${links.map(([t,d,u]) => `<a class="res" href="${u}" target="_blank" rel="noopener"><h3>${t}</h3><p class="muted">${d}</p><span class="go">Open site ↗</span></a>`).join('')}</div>
+    <div class="res-grid">${links.map(r => `<div class="res"><h3>${esc(r.title)}</h3>${r.descr ? `<p class="muted">${esc(r.descr)}</p>` : ''}
+      <div class="row" style="margin-top:auto;justify-content:space-between"><a class="go" href="${esc(r.url)}" target="_blank" rel="noopener">Open site ↗</a>${can('officer') ? delBtn('res-' + r.id, 'Delete', 'del-resource', r.id) : ''}</div></div>`).join('') || '<div class="empty">No resources yet.</div>'}</div>
+    ${can('officer') ? `<form class="panel stack" id="f-resource" novalidate style="max-width:640px">
+      <h3>Add a resource</h3>
+      <div class="grid2">
+        <label>Name<input id="rs-title" placeholder="e.g. Wall Street Prep"></label>
+        <label>Link<input id="rs-url" type="url" placeholder="https://…"></label>
+      </div>
+      <label>Short description <span class="hint">(optional)</span><input id="rs-descr" placeholder="What it’s good for"></label>
+      <div class="err" id="rs-err"></div>
+      <div><button class="btn" type="submit">Add resource</button></div>
+    </form>` : ''}
     <section class="stack">
       <div class="section-head"><h2>Recruiting timeline</h2></div>
       <div class="table-wrap"><table>
@@ -1187,25 +1199,62 @@ async function bulkAdd(){
   toast(failed.length ? `${rows.length - failed.length} added, ${failed.length} need attention` : `Added ${rows.length} officer${rows.length === 1 ? '' : 's'}`);
 }
 
-/* ---------- Weekly availability ---------- */
+/* ---------- Weekly availability (15-minute slots) ---------- */
 const DAYS = [['mon','Mon'],['tue','Tue'],['wed','Wed'],['thu','Thu'],['fri','Fri'],['sat','Sat'],['sun','Sun']];
-const BLOCKS = [8, 10, 12, 14, 16, 18, 20];   // two-hour blocks starting at these hours
-const OFFICER_WEIGHT = 3;                     // an officer's availability counts this many times a member's
-function blockLabel(h){ const f = x => (x % 12 || 12) + (x < 12 ? ' AM' : ' PM'); return f(h) + '–' + f(h + 2); }
-function slotLabel(key){ const [k, h] = key.split('-'); return DAYS.find(d => d[0] === k)[1] + ' ' + blockLabel(+h); }
+const STEP = 15, START_MIN = 8 * 60, END_MIN = 22 * 60;   // 8:00 AM to 10:00 PM
+const SLOT_MINS = Array.from({ length: (END_MIN - START_MIN) / STEP }, (_, i) => START_MIN + i * STEP);
+const OFFICER_WEIGHT = 3;   // an officer's availability counts this many times a member's
+function fmtMin(m){ let h = Math.floor(m / 60); const mm = m % 60, ap = h >= 12 && h < 24 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + String(mm).padStart(2, '0') + ' ' + ap; }
+function dayName(k){ return DAYS.find(d => d[0] === k)[1]; }
+// Slot keys are "day-minutesSinceMidnight" (tue-975 = Tue 4:15 PM). Older 2-hour keys (tue-16) are expanded.
+function normSlots(list){
+  const out = new Set();
+  (list || []).forEach(key => {
+    const [d, n] = key.split('-'), v = +n;
+    if (v < 24) { for (let m = v * 60; m < v * 60 + 120; m += STEP) out.add(d + '-' + m); } else out.add(key);
+  });
+  return out;
+}
 function availDraft(){ if (!ui.availDraft) ui.availDraft = new Set(db.avail[session] || []); return ui.availDraft; }
+
+// Click-and-drag painting: starting on an empty slot marks free, starting on a filled one clears.
+// Everything in the rectangle from the starting slot to the pointer gets painted, so fast drags don't skip rows.
+let availPaint = null, availStart = null;
+function paintSlot(el, on){ const d = availDraft(), key = el.dataset.slot; on ? d.add(key) : d.delete(key); el.classList.toggle('on', on); el.setAttribute('aria-pressed', on); }
+function slotPos(key){ const [k, m] = key.split('-'); return { d: DAYS.findIndex(x => x[0] === k), m: +m }; }
+document.addEventListener('pointerdown', e => {
+  const el = e.target.closest('[data-slot]'); if (!el || e.button > 0) return;
+  e.preventDefault(); availPaint = !availDraft().has(el.dataset.slot); availStart = slotPos(el.dataset.slot); paintSlot(el, availPaint);
+});
+document.addEventListener('pointermove', e => {
+  if (availPaint === null) return;
+  const hit = document.elementFromPoint(e.clientX, e.clientY), el = hit && hit.closest('[data-slot]');
+  if (!el) return;
+  const p = slotPos(el.dataset.slot);
+  for (let d = Math.min(p.d, availStart.d); d <= Math.max(p.d, availStart.d); d++)
+    for (let m = Math.min(p.m, availStart.m); m <= Math.max(p.m, availStart.m); m += STEP) {
+      const c = document.querySelector(`[data-slot="${DAYS[d][0]}-${m}"]`);
+      if (c && availDraft().has(c.dataset.slot) !== availPaint) paintSlot(c, availPaint);
+    }
+});
+document.addEventListener('pointerup', () => { availPaint = null; });
+document.addEventListener('pointercancel', () => { availPaint = null; });
+
+function slotGrid(cellHtml){
+  return `<div class="table-wrap"><table class="avail q"><thead><tr><th></th>${DAYS.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead><tbody>
+    ${SLOT_MINS.map(m => `<tr class="${m % 60 === 0 ? 'hr' : ''}"><th scope="row">${m % 60 === 0 ? fmtMin(m) : ''}</th>${DAYS.map(([k, l]) => `<td>${cellHtml(k, m, l)}</td>`).join('')}</tr>`).join('')}
+  </tbody></table></div>`;
+}
 function viewAvailability(){
   if (!can('member')) return gate('member');
   const d = availDraft(), saved = db.avail[session];
   return `<div class="view">
     <section class="page-head"><div class="eyebrow">Members</div><h1 class="page">When are you free?</h1>
-      <p class="muted">Tap the times you’re usually free each week, then save. Officers use this to schedule events when the most people can come.</p></section>
-    <div class="table-wrap"><table class="avail"><thead><tr><th></th>${DAYS.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead><tbody>
-      ${BLOCKS.map(h => `<tr><th scope="row">${blockLabel(h)}</th>${DAYS.map(([k, l]) => { const key = k + '-' + h, on = d.has(key);
-        return `<td><button class="slot ${on ? 'on' : ''}" data-act="avail-cell" data-id="${key}" aria-pressed="${on}" aria-label="${l} ${blockLabel(h)}">${on ? '✓' : ''}</button></td>`; }).join('')}</tr>`).join('')}
-    </tbody></table></div>
+      <p class="muted">Mark the times you’re usually free each week, in 15-minute blocks. Click a time, or press and drag to fill a whole stretch. Start on a green block to clear. Officers use this to schedule events when the most people can come.</p></section>
     <div class="row"><button class="btn" data-act="avail-save">Save availability</button><button class="btn ghost" data-act="avail-clear">Clear all</button>
-      <span class="hint">${saved ? saved.length + ' time block' + (saved.length === 1 ? '' : 's') + ' saved.' : 'Not saved yet.'}</span></div>
+      <span class="hint">${saved && saved.length ? 'Saved: ' + (saved.length / 4) + ' hours a week.' : 'Not saved yet.'}</span></div>
+    ${slotGrid((k, m, l) => { const key = k + '-' + m, on = d.has(key); return `<button class="slot ${on ? 'on' : ''}" data-slot="${key}" aria-pressed="${on}" aria-label="${l} ${fmtMin(m)}"></button>`; })}
+    <div class="row"><button class="btn" data-act="avail-save">Save availability</button></div>
     ${can('officer') ? '<p class="hint">See everyone’s availability under Officer tools → Availability.</p>' : ''}
   </div>`;
 }
@@ -1215,20 +1264,29 @@ function availabilityChart(){
   if (!rows.length) return '<div class="empty">No one has shared their availability yet. Members fill it out on the Availability page.</div>';
   const offs = rows.filter(([e]) => staff.has(e)), mems = rows.filter(([e]) => !staff.has(e));
   const max = offs.length * OFFICER_WEIGHT + mems.length;
-  const cell = key => { const o = offs.filter(([, sl]) => sl.includes(key)).length, m = mems.filter(([, sl]) => sl.includes(key)).length; return { key, o, m, score: o * OFFICER_WEIGHT + m }; };
-  const top = BLOCKS.flatMap(h => DAYS.map(([k]) => cell(k + '-' + h))).filter(c => c.score).sort((a, b) => b.score - a.score || b.o - a.o).slice(0, 5);
+  const sets = rows.map(([e, sl]) => [e, new Set(sl)]);
+  const cell = key => { let o = 0, m = 0; sets.forEach(([e, st]) => { if (st.has(key)) staff.has(e) ? o++ : m++; }); return { o, m, score: o * OFFICER_WEIGHT + m }; };
+  // Merge back-to-back slots with the same people into ranges, then rank them.
+  const ranges = [];
+  DAYS.forEach(([k]) => {
+    let cur = null;
+    SLOT_MINS.forEach(m => {
+      const c = cell(k + '-' + m);
+      if (c.score && cur && cur.o === c.o && cur.m === c.m && cur.end === m) cur.end = m + STEP;
+      else { if (cur) ranges.push(cur); cur = c.score ? { day: k, start: m, end: m + STEP, ...c } : null; }
+    });
+    if (cur) ranges.push(cur);
+  });
+  const top = ranges.sort((a, b) => b.score - a.score || (b.end - b.start) - (a.end - a.start)).slice(0, 5);
   return `<div class="stack" style="gap:24px">
     <p class="muted">${offs.length} officer${offs.length === 1 ? '' : 's'} and ${mems.length} member${mems.length === 1 ? '' : 's'} have shared their availability. Officers count ${OFFICER_WEIGHT}× as much as members when ranking times.</p>
     <section class="stack"><div class="section-head"><h3>Best times</h3></div>
-      <ol class="best">${top.map(c => `<li><strong>${slotLabel(c.key)}</strong><span class="muted">${c.o} of ${offs.length} officers · ${c.m} of ${mems.length} members</span></li>`).join('')}</ol></section>
-    <div class="table-wrap"><table class="avail"><thead><tr><th></th>${DAYS.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead><tbody>
-      ${BLOCKS.map(h => `<tr><th scope="row">${blockLabel(h)}</th>${DAYS.map(([k, l]) => { const c = cell(k + '-' + h), a = max ? c.score / max : 0;
-        return `<td><div class="heat" style="--a:${a.toFixed(2)};${a > .55 ? 'color:#fff;' : ''}" title="${l} ${blockLabel(h)}: ${c.o} officers, ${c.m} members">${c.o}/${c.m}</div></td>`; }).join('')}</tr>`).join('')}
-    </tbody></table></div>
-    <p class="hint">Each square shows officers / members free at that time. Darker green means more people, with officers counting most.</p>
+      <ol class="best">${top.map(r => `<li><strong>${dayName(r.day)} ${fmtMin(r.start)}–${fmtMin(r.end)}</strong><span class="muted">${r.o} of ${offs.length} officers · ${r.m} of ${mems.length} members</span></li>`).join('')}</ol></section>
+    ${slotGrid((k, m, l) => { const c = cell(k + '-' + m), a = max ? c.score / max : 0;
+      return `<div class="heat" style="--a:${a.toFixed(2)}" title="${l} ${fmtMin(m)}: ${c.o} officers, ${c.m} members"></div>`; })}
+    <p class="hint">Darker green means more people are free, with officers counting most. Hover a block to see who’s free then.</p>
   </div>`;
 }
-
 /* ---------- Officer tools ---------- */
 function attendanceStats(e){
   const r = going(e.id), a = attended(e.id);
@@ -1622,7 +1680,7 @@ function viewAdmin(){
       <div class="table-wrap"><table><thead><tr><th>When</th><th>Who</th><th>What changed</th></tr></thead><tbody>
         ${rows.map(l => `<tr><td style="white-space:nowrap">${fmtStamp(l.ts)}</td><td style="white-space:nowrap">${esc(userName(l.who))}</td><td>${esc(l.text)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No entries yet.</td></tr>'}
       </tbody></table></div>
-      <p class="hint">Records changes made by officers and admins: events, announcements, recaps, archive, tasks, check-in codes, profiles, and access lists.</p>
+      <p class="hint">Records changes made by officers and admins: events, announcements, recaps, archive, tasks, resources, check-in codes, profiles, and access lists.</p>
     </section>`;
   }
   return `<div class="view">
@@ -1727,6 +1785,8 @@ function useTemplate(k){ const [, s, b] = MAIL_TEMPLATES[k]; ui.mail.subject = s
 document.addEventListener('click', async ev => {
   if (ev.target.id === 'modal') { closeModal(); return; }
   if (!ev.target.closest('[data-act="nav-menu"]')) closeNavMenu();
+  const slotEl = ev.target.closest('[data-slot]');
+  if (slotEl){ if (ev.detail === 0) paintSlot(slotEl, !availDraft().has(slotEl.dataset.slot)); return; }
   const link = ev.target.closest('a[data-tab]');
   if (link) { if (link.getAttribute('href') === '#admin') ui.adminTab = link.dataset.tab; else ui.officerTab = link.dataset.tab; if (route() === link.getAttribute('href').slice(1)) render(); }
   const t = ev.target.closest('[data-act]');
@@ -1806,10 +1866,6 @@ document.addEventListener('click', async ev => {
       if (error || !data){ if (w) w.close(); toast('Couldn’t open the resume: ' + errMsg(error)); break; }
       if (w) w.location = data.signedUrl; else location.href = data.signedUrl;
       break; }
-    case 'avail-cell': {
-      const d = availDraft(); d.has(id) ? d.delete(id) : d.add(id);
-      const on = d.has(id); t.classList.toggle('on', on); t.setAttribute('aria-pressed', on); t.textContent = on ? '✓' : '';
-      break; }
     case 'avail-clear': availDraft().clear(); render(); break;
     case 'avail-save':
       await act(async () => { must(await sb.from('availability').upsert({ email: session, slots: [...availDraft()], updated_at: new Date().toISOString() })); ui.availDraft = null; }, 'Availability saved');
@@ -1817,6 +1873,8 @@ document.addEventListener('click', async ev => {
     case 'bulk-add': ui.bulk.push(bulkRow()); render(); break;
     case 'bulk-rm': ui.bulk.splice(+t.dataset.i, 1); if (!ui.bulk.length) ui.bulk.push(bulkRow()); render(); break;
     case 'bulk-go': await bulkAdd(); break;
+    case 'del-resource': { const x = (db.resources || []).find(r => r.id === id);
+      await act(async () => { must(await sb.from('resources').delete().eq('id', id)); await logChange('Deleted resource “' + (x ? x.title : id) + '”'); }, 'Resource deleted'); break; }
     case 'rm-member':
       await act(async () => must(await sb.rpc('remove_member', { p_email: id })), 'Removed ' + id); break;
     case 'member-view':
@@ -2133,6 +2191,13 @@ async function handleSubmit(f, v, err){
     const ins = await sb.from('applications').insert({ cycle: db.app.opened_at, branches, year, grad, why, ideas, linkedin, other, resume_path: path });
     if (ins.error){ await sb.storage.from('resumes').remove([path]); return err('ap-err', errMsg(ins.error)); }
     await load(); toast('Application submitted'); render(); window.scrollTo(0,0);
+  }
+
+  if (f.id === 'f-resource'){
+    const r = { title: v('rs-title'), url: v('rs-url'), descr: v('rs-descr') };
+    if (!r.title) return err('rs-err', 'Give the resource a name.');
+    if (!/^https?:\/\/\S+\.\S+/i.test(r.url)) return err('rs-err', 'Enter the full link, starting with https://');
+    await act(async () => { must(await sb.from('resources').insert(r)); await logChange('Added resource “' + r.title + '”'); }, 'Resource added');
   }
 
   if (f.id === 'f-semester'){
