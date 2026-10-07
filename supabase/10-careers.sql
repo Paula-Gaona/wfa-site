@@ -22,7 +22,7 @@ insert into public.careers (category, sort, title, summary, pay, hours, path) va
 ('high', 0, 'Investment banking',
  $q$Advise companies on mergers and acquisitions and on raising money through stock and debt. Analysts build financial models, pitch books, and deal documents.$q$,
  $q$Analyst: about $110k–$120k base, $160k–$200k with bonus$q$,
- $q$70–90 hours a week$q$,
+ $q$80–100+ hours a week, more during live deals$q$,
  $q$The main door is a junior-summer analyst internship, and banks recruit for it very early: start networking freshman and sophomore year, because applications can open in the spring of sophomore year. Most full-time offers come from the internship. Learn accounting, valuation (DCF and comparables), and Excel modeling.$q$),
 ('high', 1, 'Sales & trading',
  $q$Buy and sell securities such as stocks, bonds, currencies, and commodities for clients or the bank, and pitch market ideas to investors.$q$,
