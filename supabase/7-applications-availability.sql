@@ -79,7 +79,7 @@ create policy "members update own availability" on public.availability for updat
 -- ============ Faculty advisors, and honorary officers (officer permissions, hidden from the public Officers page) ============
 alter table public.officer_profiles drop constraint if exists officer_profiles_tier_check;
 alter table public.officer_profiles add constraint officer_profiles_tier_check
-  check (tier in ('president', 'advisor', 'officer', 'honorary'));
+  check (tier in ('president', 'vice_president', 'advisor', 'officer', 'honorary'));
 
 drop view if exists public.officers_public;
 create view public.officers_public as

@@ -350,9 +350,18 @@ const CATS = {
 };
 const PTS = { case_competition:25, career_fair:25, guest_speaker:15, excursion:25, workshop:10, social:10, officer_meeting:0 };
 const ARCH = { slides:'Slides', recording:'Recording', notes:'Notes', template:'Template' };
-const TIERS = { president:'President', advisor:'Faculty advisor', officer:'Officer', honorary:'Honorary (hidden from Officers page)' };
+const TIERS = { president:'President', vice_president:'Vice President', advisor:'Faculty advisor', officer:'Officer', honorary:'Honorary (hidden from Officers page)' };
 // Dues tracking is hidden until the club collects dues. Set to true to bring it back.
 const DUES_ENABLED = false;
+// Officer titles come from rank + branch, e.g. "President of Operations", "Communications Officer".
+function buildTitle(tier, branch){
+  const b = BRANCHES[branch];
+  if (tier === 'president') return b ? 'President of ' + b : 'President';
+  if (tier === 'vice_president') return b ? 'Vice President of ' + b : 'Vice President';
+  if (tier === 'advisor') return 'Faculty Advisor';
+  if (tier === 'honorary') return 'Honorary Officer';
+  return b ? b + ' Officer' : 'Officer';
+}
 const OFFICER_TABS = [['events','Events'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members']];
 const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
@@ -408,7 +417,7 @@ async function load(){
   db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0) };
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
   (R.profiles || []).forEach(p => {
-    db.profiles[p.email] = { name:p.name, title:p.title, bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '', majors:p.majors || [], minor:p.minor || '' };
+    db.profiles[p.email] = { name:p.name, title:buildTitle(p.tier, p.branch), bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '', majors:p.majors || [], minor:p.minor || '' };
     (p.role === 'admin' ? db.adminEmails : db.officerEmails).push(p.email);
   });
   if (R.access){
@@ -715,8 +724,9 @@ function officerSections(staff){
   const P = e => db.profiles[e] || {};
   const pres = staff.filter(e => P(e).tier === 'president');
   const advisors = staff.filter(e => P(e).tier === 'advisor');
-  const rest = staff.filter(e => P(e).tier !== 'president' && P(e).tier !== 'advisor');
-  const groups = [['Presidents', pres], [advisors.length > 1 ? 'Faculty advisors' : 'Faculty advisor', advisors], ...Object.entries(BRANCHES).map(([k,l]) => [l, rest.filter(e => P(e).branch === k)]), ['Officers', rest.filter(e => !BRANCHES[P(e).branch])]];
+  const vps = staff.filter(e => P(e).tier === 'vice_president');
+  const rest = staff.filter(e => !['president', 'vice_president', 'advisor'].includes(P(e).tier));
+  const groups = [['Presidents', pres], [vps.length > 1 ? 'Vice Presidents' : 'Vice President', vps], [advisors.length > 1 ? 'Faculty advisors' : 'Faculty advisor', advisors], ...Object.entries(BRANCHES).map(([k,l]) => [l, rest.filter(e => P(e).branch === k)]), ['Officers', rest.filter(e => !BRANCHES[P(e).branch])]];
   return groups.filter(([,l]) => l.length).map(([label, l]) => `<section class="stack"><div class="section-head"><h2>${esc(label)}</h2><span class="muted">${l.length}</span></div><div class="officers">${l.map(officerCard).join('')}</div></section>`).join('');
 }
 function viewOfficers(){
@@ -1118,18 +1128,17 @@ async function notifyApplicationsOpen(){
 }
 
 /* ---------- Add several officers at once ---------- */
-function bulkRow(){ return { email:'', first:'', last:'', title:'', branch:'', tier:'officer', level:'officer' }; }
+function bulkRow(){ return { email:'', first:'', last:'', branch:'', tier:'officer', level:'officer' }; }
 function bulkBody(){
   if (!ui.bulk) ui.bulk = [bulkRow(), bulkRow(), bulkRow()];
   const opt = (obj, cur) => Object.entries(obj).map(([k, l]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${l}</option>`).join('');
   return `<section class="stack">
     <p class="muted" style="max-width:68ch">Add several officers at once, one per row. Blank rows are skipped. Rows that fail stay here so you can fix them and try again.</p>
-    <div class="table-wrap"><table class="bulk"><thead><tr><th>Login email</th><th>First name</th><th>Last name</th><th>Title</th><th>Branch</th><th>Rank</th><th>Access</th><th></th></tr></thead><tbody>
+    <div class="table-wrap"><table class="bulk"><thead><tr><th>Login email</th><th>First name</th><th>Last name</th><th>Branch</th><th>Rank</th><th>Access</th><th></th></tr></thead><tbody>
       ${ui.bulk.map((r, i) => `<tr>
         <td><input data-bulk="${i}:email" type="email" value="${esc(r.email)}" placeholder="name@uvu.edu" aria-label="Row ${i + 1} login email"></td>
         <td><input data-bulk="${i}:first" value="${esc(r.first)}" aria-label="Row ${i + 1} first name"></td>
         <td><input data-bulk="${i}:last" value="${esc(r.last)}" aria-label="Row ${i + 1} last name"></td>
-        <td><input data-bulk="${i}:title" value="${esc(r.title)}" placeholder="e.g. VP of Events" aria-label="Row ${i + 1} title"></td>
         <td><select data-bulk="${i}:branch" aria-label="Row ${i + 1} branch"><option value="">No branch</option>${opt(BRANCHES, r.branch)}</select></td>
         <td><select data-bulk="${i}:tier" aria-label="Row ${i + 1} rank">${opt(TIERS, r.tier)}</select></td>
         <td><select data-bulk="${i}:level" aria-label="Row ${i + 1} access">${opt({ officer:'Officer', admin:'Admin' }, r.level)}</select></td>
@@ -1144,8 +1153,8 @@ function bulkBody(){
   </section>`;
 }
 async function bulkAdd(){
-  const rows = ui.bulk.map(r => ({ ...r, email: r.email.trim().toLowerCase(), first: r.first.trim(), last: r.last.trim(), title: r.title.trim() }))
-    .filter(r => r.email || r.first || r.last || r.title);
+  const rows = ui.bulk.map(r => ({ ...r, email: r.email.trim().toLowerCase(), first: r.first.trim(), last: r.last.trim(), title: buildTitle(r.tier, r.branch) }))
+    .filter(r => r.email || r.first || r.last);
   if (!rows.length) return toast('Fill in at least one row.');
   const bad = rows.find(r => !EMAIL_RE.test(r.email) || !r.first || !r.last);
   if (bad) return toast('Each row needs a valid email and a first and last name. Check the row for ' + (bad.email || bad.first || 'the blank email') + '.');
@@ -1159,7 +1168,7 @@ async function bulkAdd(){
         const { data, error } = await sb.functions.invoke('invite-officer', { body: { email: r.email, first: r.first, last: r.last, role: r.level, title: r.title, tier: r.tier, branch: r.branch,
           contact: prev.contact || '', hours: prev.hours || '', linkedin: prev.linkedin || '', bio: prev.bio || '', password: tempPw(), send: true } });
         if (error){ let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch(_){} throw new Error(m); }
-        if (r.tier === 'honorary' || r.tier === 'advisor') await sb.from('officer_profiles').update({ tier: r.tier }).eq('email', r.email);
+        if (!['president', 'officer'].includes(r.tier)) await sb.from('officer_profiles').update({ tier: r.tier }).eq('email', r.email);
         ui.bulkResults.push({ email: r.email, ok: !data.warning, msg: data.emailed ? 'Added and emailed login details' : (data.warning || 'Added') });
       } else {
         must(await sb.from('access_list').upsert({ email: r.email, role: r.level }));
@@ -1281,7 +1290,7 @@ function officerProfileSection(){
   return `<div class="split">
       <form class="panel stack" id="f-profile">
         <h3>My officer profile</h3>
-        <p class="hint">Shown on the public Officers page. Your title (${esc(p.title || 'Officer')}), rank, and branch are set by an admin. Your majors and minor come from “Edit majors and minor” above.</p>
+        <p class="hint">Shown on the public Officers page. Your title (${esc(p.title || 'Officer')}) comes from the rank and branch an admin sets. Your majors and minor come from “Edit majors and minor” above.</p>
         <label>Display name<input id="pf-name" value="${esc(p.name || userName(session))}"></label>
         <div class="stack" style="gap:8px">
           <span style="font-weight:600;font-size:.92rem">Profile picture</span>
@@ -1552,7 +1561,7 @@ function viewAdmin(){
     const nm = acct ? { first: acct.first, last: acct.last } : (() => { const s = (p.name || '').split(' '); return { first: s[0] || '', last: s.slice(1).join(' ') }; })();
     const row = (email, list) => {
       const pr = db.profiles[email] || {}, hasAcct = db.users.some(u => u.email === email);
-      return `<div class="list-row"><div><div class="ev-title">${esc(userName(email))} <span class="muted" style="font-weight:400">· ${esc(pr.title || (list==='admin'?'Admin':'Officer'))} · ${TIERS[pr.tier] || 'Officer'}${BRANCHES[pr.branch] ? ', ' + BRANCHES[pr.branch] : ''}</span></div>
+      return `<div class="list-row"><div><div class="ev-title">${esc(userName(email))} <span class="muted" style="font-weight:400">· ${esc(pr.title || 'Officer')}${pr.tier === 'honorary' ? ' (hidden from Officers page)' : ''}</span></div>
         <div class="ev-sub" style="overflow-wrap:anywhere">${esc(email)}${hasAcct?'':' · no account yet'}</div></div>
         <div class="row" style="gap:6px"><button class="btn ghost small" data-act="edit-officer" data-id="${esc(email)}">Change role</button>${delBtn(list+'-'+email,'Remove','rm-access',email)}</div></div>`;
     };
@@ -1567,7 +1576,6 @@ function viewAdmin(){
           <label>Last name<input id="of-last" required value="${esc(nm.last)}" autocomplete="off"></label>
         </div>
         <div class="grid2">
-          <label>Title<input id="of-title" value="${esc(p.title || '')}" placeholder="e.g. VP of Finance"></label>
           <label>Access level<select id="of-level"><option value="officer" ${ed && roleOf(ed)==='officer'?'selected':''}>Officer</option><option value="admin" ${ed && roleOf(ed)==='admin'?'selected':''}>Admin</option>${ed && roleOf(ed) !== 'member' ? '<option value="member">Member (remove officer access)</option>' : ''}</select></label>
         </div>
         <div class="grid2">
@@ -2164,7 +2172,7 @@ async function handleSubmit(f, v, err){
   if (f.id === 'f-officer'){
     const email = v('of-email').toLowerCase(), level = v('of-level'), contact = v('of-contact'), linkedin = v('of-linkedin');
     const first = v('of-first'), last = v('of-last'), pw = v('of-pw'), send = document.getElementById('of-send').checked;
-    const title = v('of-title'), hours = v('of-hours'), bio = v('of-bio'), tier = v('of-tier'), branch = v('of-branch');
+    const hours = v('of-hours'), bio = v('of-bio'), tier = v('of-tier'), branch = v('of-branch'), title = buildTitle(tier, branch);
     if (!EMAIL_RE.test(email)) return err('of-err', 'Enter a valid login email.');
     if (!first || !last) return err('of-err', 'Enter their first and last name.');
     if (pw && pw.length < 8) return err('of-err', 'Temporary password needs at least 8 characters.');
@@ -2187,7 +2195,7 @@ async function handleSubmit(f, v, err){
         if (/Failed to send a request|not found|404/i.test(m)) m = 'The invite-officer function isn’t set up yet. Leave the password blank for now, or finish step 4 of the setup guide.';
         return err('of-err', m);
       }
-      if (tier === 'honorary' || tier === 'advisor') await sb.from('officer_profiles').update({ tier }).eq('email', email);
+      if (!['president', 'officer'].includes(tier)) await sb.from('officer_profiles').update({ tier }).eq('email', email);
       ui.editOfficer = null; await load(); render();
       toast(data.emailed ? 'Saved. Login details emailed to ' + email : (data.warning || 'Saved ' + email + ' as ' + level));
       return;
