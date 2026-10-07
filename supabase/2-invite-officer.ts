@@ -21,7 +21,7 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const TIERS = ['president', 'officer'];
+const TIERS = ['president', 'advisor', 'officer', 'honorary'];
 const BRANCHES = ['', 'communications', 'operations', 'financial_applications'];
 
 const escHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));

@@ -254,6 +254,20 @@ td select{padding:5px 8px;width:auto}
 .picks{display:flex;flex-wrap:wrap;gap:6px}
 .pick{display:inline-flex;align-items:center;gap:4px;background:var(--tint);color:var(--ink);border:1px solid var(--line);border-radius:99px;padding:3px 4px 3px 12px;font-size:.9rem}
 .pick button{font:inherit;border:0;background:none;color:var(--muted);cursor:pointer;padding:0 6px;font-size:1.05rem;line-height:1}
+.avail{border-collapse:separate;border-spacing:4px;width:auto}
+.avail th{border:0;padding:4px 6px;text-align:center}
+.avail th[scope="row"]{text-align:right;white-space:nowrap}
+.avail td{padding:0;border:0}
+.slot{width:56px;height:40px;border:1.5px solid var(--line);border-radius:4px;background:var(--surface);color:var(--on-brand);font:inherit;font-weight:700;cursor:pointer}
+.slot:hover{border-color:var(--brand-text)}
+.slot.on{background:var(--brand);border-color:var(--brand)}
+.heat{width:64px;height:40px;border-radius:4px;display:grid;place-items:center;font-family:var(--mono);font-size:.8rem;border:1px solid var(--line);color:var(--ink);background:color-mix(in srgb, var(--brand) calc(var(--a) * 100%), var(--surface))}
+.best{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:6px}
+.best li span{margin-left:10px}
+.rank-row{flex-direction:row;align-items:center;justify-content:space-between;gap:12px;font-weight:600}
+.rank-row select{width:auto}
+table.bulk td{padding:4px}
+table.bulk input,table.bulk select{padding:6px 8px;min-width:120px}
 .mail-pre{white-space:pre-wrap;font-size:.95rem;overflow-wrap:anywhere}
 
 /* About, officers, resources, recaps */
@@ -332,11 +346,11 @@ const CATS = {
 };
 const PTS = { case_competition:25, career_fair:25, guest_speaker:15, excursion:25, workshop:10, social:10, officer_meeting:0 };
 const ARCH = { slides:'Slides', recording:'Recording', notes:'Notes', template:'Template' };
-const TIERS = { president:'President', officer:'Officer' };
+const TIERS = { president:'President', advisor:'Faculty advisor', officer:'Officer', honorary:'Honorary (hidden from Officers page)' };
 // Dues tracking is hidden until the club collects dues. Set to true to bring it back.
 const DUES_ENABLED = false;
-const OFFICER_TABS = [['events','Events'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members']];
-const ADMIN_TABS = [['access','Access lists'],['export','Member export'],['log','Change log']];
+const OFFICER_TABS = [['events','Events'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members']];
+const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
 const MAJORS = ["Undeclared","Accounting, A.S.","Accounting, B.S.","American Sign Language Secondary Education, B.A.","Animation and Game Development, B.S.","Anthropology, B.A.","Anthropology, B.S.","Applied Artificial Intelligence, M.S.","Applied Communication, B.A.","Applied Communication, B.S.","Architecture, B.Arch","Art Education, B.S.","Art History, B.A.","Art and Design - Graphic Design Emphasis, A.A.S.","Art and Design - Graphic Design Emphasis, B.F.A.","Art and Design - Illustration Emphasis, A.A.S.","Art and Design - Illustration Emphasis, B.F.A.","Art and Design - Painting/Drawing/Printmaking Emphasis, B.F.A.","Art and Design - Photography Emphasis, A.A.S.","Art and Design - Photography Emphasis, B.F.A.","Art and Design - Sculpture and Ceramics Emphasis, B.F.A.","Art and Design, A.A.","Art and Design, A.S.","Art and Design, B.S.","Associate in Pre-Engineering - Biological and Chemical Engineering Emphasis, A.P.E.","Associate in Pre-Engineering - Civil and Mechanical Engineering Emphasis, A.P.E.","Associate in Pre-Engineering - Computer and Electrical Engineering Emphasis, A.P.E.","Automotive Technology, A.A.S.","Aviation Management, B.S.","Aviation Science, A.A.S.","Aviation Science, A.S.","Bioinformatics, B.S.","Biology Education, B.S.","Biology, A.A.","Biology, A.S.","Biology, B.S.","Biomedical Science, B.S.","Botany, B.S.","Business Management, A.S.","Business Technologies and Education, B.S.","Business and Analysis, B.S.","Cabinetry and Architectural Woodwork, A.A.S.","Chemistry - Biochemistry Emphasis, B.S.","Chemistry - Professional Chemistry Emphasis, B.S.","Chemistry Education, B.S.","Civil Engineering, B.S.","Clinical Mental Health Counseling, M.S.","Commercial Music, B.M.","Computational Data Science, B.S.","Computer Engineering, B.S.","Computer Science Education, B.S.","Computer Science, A.S.","Computer Science, B.S.","Constitutional Government Civics and Law, M.A.","Construction Management, A.A.S.","Construction Management, B.S.","Criminal Justice, A.A.","Criminal Justice, A.S.","Criminal Justice, B.S.","Culinary Arts, A.A.S.","Curriculum and Instruction, M.Ed.","Cybersecurity, A.A.S","Cybersecurity, B.S.","Cybersecurity, M.S.","Dance - Ballet Emphasis, B.F.A.","Dance - Modern Dance Emphasis, B.F.A.","Dance Education, B.S.","Dance, A.S.","Dance, B.S.","Deaf Studies - General Deaf Studies Emphasis, B.A.","Deaf Studies - Interpreting Emphasis, B.A.","Dental Hygiene, A.A.S.","Dental Hygiene, B.S.","Diesel Mechanics Technology, A.A.S.","Digital Audio, A.A.S.","Digital Audio, B.S.","Digital Cinema Production, A.A.S.","Digital Cinema Production, B.S.","Digital Marketing, B.S.","Early Childhood Education, A.S.","Earth Science Education, B.S.","Electrical Engineering, B.S.","Electrical and Computer Engineering, A.A.S.","Elementary Education, B.S.","Emergency Services Administration, B.S.","Emergency Services Operations, A.A.S.","Emergency Services Supervision, B.A.P.","Emergency Services, A.S.","Engineering Design Technology, A.A.S.","Engineering Design Technology, A.S.","Engineering and Technology Management, M.S.","English - Creative Writing Emphasis, B.A.","English - Creative Writing Emphasis, B.S.","English - Literary Studies Emphasis, B.A.","English - Literary Studies Emphasis, B.S.","English - Writing Studies Emphasis, B.A.","English - Writing Studies Emphasis, B.S.","English Education, B.A.","English Education, B.S.","Entertainment Design, A.A.S.","Entertainment Design, B.F.A.","Environmental Science and Management, B.S.","Environmental Studies, B.S.","Event Management, B.S.","Exercise Science, A.S.","Exercise Science, B.S.","Family Science, B.A.","Family Science, B.S.","Finance, B.S.","Finance, M.S.","Financial Planning and Wealth Management, B.S.","Forensic Science - Forensic Investigation Emphasis, B.S.","Forensic Science - Forensic Laboratory Emphasis, B.S.","Forensic Science, A.S.","Geography, B.S.","Geology, B.S.","Health Science, B.S.","Healthcare Administration, B.S.","Healthcare Services, A.A.S.","History and Social Studies Education, B.S.","History, B.A.","Hospitality Management, A.A.S.","Hospitality Management, A.S.","Hospitality Management, B.S.","Human Resource Management, B.S.","Humanities and Social Sciences, A.A.","Humanities and Social Sciences, A.S.","Humanities, B.A.","Humanities, B.S.","Information Systems - Application Development Emphasis, B.S.","Information Systems - Applied Artificial Intelligence Emphasis, B.S.","Information Systems - Data Analytics Emphasis, B.S.","Information Systems - Information Security Management Emphasis, B.S.","Information Systems and Technology, A.A.S.","Information Systems and Technology, A.S.","Information Technology, B.S.","Integrated Studies, B.A.","Integrated Studies, B.S.","International Business, B.S.","Marketing, B.S.","Marriage and Family Therapy, M.A.","Master of Accountancy, M.Acc","Master of Business Administration, M.B.A.","Master of Computer Science, M.C.S.","Master of Education in Applied Behavioral Analysis, M.Ed.","Master of Education in Higher Education Leadership, M.Ed.","Master of Education in K-12 Education Leadership, M.Ed.","Master of Education in School Counseling, M.Ed.","Master of Physician Assistant Studies, M.P.A.S.","Master of Public Administration, M.P.A.","Master of Social Work Advanced Standing, M.S.W.","Master of Social Work, M.S.W.","Mathematics - Actuarial Science Emphasis, B.S.","Mathematics - Applied Mathematics Emphasis, B.S.","Mathematics - Mathematics Emphasis, B.S.","Mathematics Education, B.S.","Mathematics, A.S.","Mechanical Engineering, B.S.","Mechatronics Engineering Technology - Automation and Electrical Technology Emphasis, A.A.S.","Mechatronics Engineering Technology - Mechatronics Emphasis, A.A.S.","Mechatronics Engineering Technology, B.S.","Microbiology, B.S.","Molecular Biosciences and Biotechnology, B.S.","Music Education, B.S.","Music, A.S.","Music, B.A.","Music, B.S.","National Security Studies, B.A.","National Security Studies, B.S.","Nursing, A.S.N.","Nursing, B.S.","Occupational Therapy Assistant, B.S.","Operations and Supply Chain Management, B.S.","Outdoor Recreation Management, A.S.","Outdoor Recreation Management, B.S.","Performance, B.M.","Philosophy, B.A.","Philosophy, B.S.","Physical Education Teacher Education, B.S.","Physical Therapist Assistant, SAAS","Physics Education, B.S.","Physics, B.S.","Political Science - American Government Emphasis, B.A.","Political Science - American Government Emphasis, B.S.","Political Science - Global Politics Emphasis, B.A.","Political Science - Global Politics Emphasis, B.S.","Political Science - Indian Affairs Administration Emphasis, B.A.","Political Science - Indian Affairs Administration Emphasis, B.S.","Political Science - Peace and Justice Studies Emphasis, B.A.","Political Science - Peace and Justice Studies Emphasis, B.S.","Political Science - Public Administration and Public Policy Emphasis, B.A.","Political Science - Public Administration and Public Policy Emphasis, B.S.","Political Science - Public Law and Political Philosophy Emphasis, B.A.","Political Science - Public Law and Political Philosophy Emphasis, B.S.","Pre-Elementary Education, A.S.","Pre-Engineering, A.S.","Professional Advancement, A.S.","Professional Advancement, B.A.P.","Professional Advancement, B.S.","Professional Pilot, B.S.","Professional Sales, B.S.","Psychology, B.A.","Psychology, B.S.","Public Health, A.S.","Public Health, B.S.","Public Relations and Strategic Communication, B.A.","Public Relations and Strategic Communication, B.S.","Respiratory Therapy, A.A.S.","Respiratory Therapy, B.S.","School Health Education, B.S.","Secondary Education, M.A.T.","Social Work, B.S.W.","Sociology, B.A.","Sociology, B.S.","Software Development, B.A.S.","Software Engineering, B.S.","Spanish Education, B.A.","Spanish, B.A.","Special Education - Mild/Moderate/Severe, B.S.","Statistics, B.S.","Strategic Foresight and Business, B.S.","Surveying Technology, A.A.S.","Technology Management, B.S.","Technology, A.A.S.","Theatre Arts - Acting Emphasis, B.F.A.","Theatre Arts - Musical Theatre Emphasis, B.F.A.","Theatre Arts - Theatre Design and Production Emphasis, B.F.A.","Theatre Arts, A.S.","Theatre Education, B.S.","Theatre Studies, A.A.","Theatre Studies, B.A.","Transportation Technologies, B.A.S.","Web Design and Development - Interaction and User Experience Design Emphasis, B.S.","Web Design and Development - Web Application Development Emphasis, B.S.","Web Design and Development, A.A.S.","Wildland Fire Management, A.A.S.","Zoology, B.S."];
@@ -350,7 +364,8 @@ function parseDay(s){ const [y,m,d] = s.split('-').map(Number); return new Date(
 /* ---------- Data: loaded from Supabase into one in-memory snapshot ---------- */
 let authUser = null, session = null, myRole = 'guest', loaded = false;
 const db = { settings:{ semester:'', dues:0 }, adminEmails:[], officerEmails:[], profiles:{}, users:[], events:[], stats:{},
-  rsvps:{}, attendance:{}, announcements:[], recaps:[], archive:[], tasks:[], dues:{}, leader:[], log:[] };
+  rsvps:{}, attendance:{}, announcements:[], recaps:[], archive:[], tasks:[], dues:{}, leader:[], log:[],
+  app:{ open:false, branches:[], deadline:'', opened_at:null }, apps:[], avail:{} };
 
 async function load(){
   const { data: { session: s } } = await sb.auth.getSession();
@@ -373,6 +388,9 @@ async function load(){
     att: signed && t('attendance'),
     dues: signed && t('dues'),
     leader: signed && sb.rpc('leaderboard'),
+    appset: sb.from('app_settings').select('*').eq('id', 1).maybeSingle(),
+    apps: signed && t('applications'),
+    avail: signed && t('availability'),
     access: off && t('access_list'),
     codes: off && t('checkin_codes'),
     tasks: off && t('tasks'),
@@ -408,6 +426,9 @@ async function load(){
   db.tasks = (R.tasks || []).map(x => ({ id:x.id, title:x.title, eventId:x.event_id, who:x.owner, due:x.due, done:x.done }));
   db.dues = {}; (R.dues || []).forEach(d => db.dues[d.email] = { status:d.status, date:d.updated });
   db.leader = R.leader || [];
+  db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null };
+  db.apps = (R.apps || []).map(a => ({ ...a, date: iso(new Date(a.created_at)) }));
+  db.avail = {}; (R.avail || []).forEach(a => db.avail[a.email] = a.slots || []);
   db.log = (R.log || []).map(l => ({ ts:l.ts, who:l.who, text:l.text }));
 }
 
@@ -500,6 +521,7 @@ function copyText(txt, label){
 const ui = {
   memberView: (() => { try { return localStorage.getItem('wfa-member-view') === '1'; } catch(e){ return false; } })(),
   picks: {}, editMajors: false, profilePhoto: null,
+  appFilter: 'all', availDraft: null, bulk: null, bulkSend: true, bulkBusy: false, bulkResults: null,
   cal: (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
   catsOn: new Set(Object.keys(CATS)),
   officerTab: 'events', adminTab: 'access',
@@ -515,7 +537,8 @@ function setPendingRsvp(id){ ui._pending = id; try { id ? sessionStorage.setItem
 /* ---------- Chrome: nav, ticker ---------- */
 function renderChrome(route){
   const links = [['home','Home'],['calendar','Calendar'],['recaps','Recaps'],['officers','Officers'],['about','About'],['resources','Resources']];
-  const mem = [['archive','Archive'],['leaderboard','Leaderboard'],['account','My account']];
+  if (appsOpen()) links.push(['apply','Apply']);
+  const mem = [['archive','Archive'],['leaderboard','Leaderboard'],['availability','Availability'],['account','My account']];
   const staff = [];
   if (can('officer')) staff.push(['officer','Officer tools']);
   if (can('admin')) staff.push(['admin','Admin']);
@@ -589,6 +612,7 @@ function viewHome(){
   const recap = [...db.recaps].sort((a,b) => b.date.localeCompare(a.date))[0];
   return `<div class="view">
     ${todayBar()}
+    ${appsBanner()}
     <section class="hero">
       <div class="hero-copy">
         <div class="eyebrow">Utah Valley University · Student club</div>
@@ -682,11 +706,13 @@ function photoPreview(p){
     : `<div class="avatar">${esc(initials(p.name || userName(session)))}</div><span class="hint">No picture yet.</span>`;
 }
 function officerSections(staff){
+  staff = staff.filter(e => (db.profiles[e] || {}).tier !== 'honorary');
   if (!staff.length) return '<div class="empty">No officers listed yet.</div>';
   const P = e => db.profiles[e] || {};
   const pres = staff.filter(e => P(e).tier === 'president');
-  const rest = staff.filter(e => P(e).tier !== 'president');
-  const groups = [['Presidents', pres], ...Object.entries(BRANCHES).map(([k,l]) => [l, rest.filter(e => P(e).branch === k)]), ['Officers', rest.filter(e => !BRANCHES[P(e).branch])]];
+  const advisors = staff.filter(e => P(e).tier === 'advisor');
+  const rest = staff.filter(e => P(e).tier !== 'president' && P(e).tier !== 'advisor');
+  const groups = [['Presidents', pres], [advisors.length > 1 ? 'Faculty advisors' : 'Faculty advisor', advisors], ...Object.entries(BRANCHES).map(([k,l]) => [l, rest.filter(e => P(e).branch === k)]), ['Officers', rest.filter(e => !BRANCHES[P(e).branch])]];
   return groups.filter(([,l]) => l.length).map(([label, l]) => `<section class="stack"><div class="section-head"><h2>${esc(label)}</h2><span class="muted">${l.length}</span></div><div class="officers">${l.map(officerCard).join('')}</div></section>`).join('');
 }
 function viewOfficers(){
@@ -970,6 +996,226 @@ function majorEditForm(u){
   </form>`;
 }
 
+/* ---------- Officer applications ---------- */
+const YEARS = ['Freshman','Sophomore','Junior','Senior','Graduate student'];
+const APP_STATUS = { new:'New', interviewing:'Interviewing', accepted:'Accepted', declined:'Declined' };
+function listText(a){ return a.length < 2 ? (a[0] || '') : a.slice(0, -1).join(', ') + (a.length > 2 ? ',' : '') + ' and ' + a[a.length - 1]; }
+function ordinal(n){ return n + (['th','st','nd','rd'][n] || 'th'); }
+function gradYears(){ const y = new Date().getFullYear(); return Array.from({ length: 7 }, (_, i) => y + i); }
+function appsOpen(){ return db.app.open && db.app.branches.length > 0 && (!db.app.deadline || db.app.deadline >= todayIso()); }
+function myApplication(){ return db.apps.find(a => a.email === session && a.cycle === db.app.opened_at); }
+function branchList(){ const n = db.app.branches.length; return listText(db.app.branches.map(b => BRANCHES[b])) + (n > 1 ? ' branches' : ' branch'); }
+
+function appsBanner(){
+  if (!appsOpen()) return '';
+  return `<div class="today-bar"><div class="stack" style="gap:2px"><span class="live">Officer applications open${db.app.deadline ? ' · due ' + fmtDay(db.app.deadline) : ''}</span>
+    <strong>Apply to join the ${esc(branchList())}</strong></div>
+    <a class="btn small" href="#apply">${session && myApplication() ? 'View your application' : 'Apply'}</a></div>`;
+}
+
+function viewApply(){
+  const head = `<section class="page-head"><div class="eyebrow">Officer applications</div><h1 class="page">Join the officer team</h1>
+    <p class="muted">Officers plan events, run workshops, and keep the club running.${appsOpen() ? ` Now accepting applications for the ${esc(branchList())}.${db.app.deadline ? ' Applications close at the end of ' + fmtDay(db.app.deadline) + '.' : ''}` : ''}</p></section>`;
+  if (!appsOpen()) return `<div class="view">${head}<div class="empty">Officer applications are closed right now. Watch the announcements for the next opening.</div></div>`;
+  if (!session) return `<div class="view">${head}<div class="lock"><span>Sign in or create a member account to apply.</span><div class="row"><a class="btn small ghost" href="#signup">Join</a><a class="btn small" href="#signin">Sign in</a></div></div></div>`;
+  const mine = myApplication();
+  if (mine) return `<div class="view">${head}<div class="notice">We received your application on ${fmtDay(mine.date)} for ${esc(listText(mine.branches.map(b => BRANCHES[b] || b)))}. The officers will reach out by email.</div></div>`;
+  const u = me(), br = db.app.branches;
+  const branchField = br.length === 1
+    ? `<div class="notice">You’re applying for the <strong>${esc(BRANCHES[br[0]])}</strong> branch.</div>`
+    : `<fieldset class="pwset"><legend>Rank the branches you’re interested in</legend>
+        <span class="hint">Give your top choice “1st choice.” Mark any branch you don’t want as “Not interested.”</span>
+        ${br.map((b, bi) => `<label class="rank-row"><span>${esc(BRANCHES[b])}</span><select data-rank="${b}">${br.map((_, i) => `<option value="${i + 1}" ${i === bi ? 'selected' : ''}>${ordinal(i + 1)} choice</option>`).join('')}<option value="0">Not interested</option></select></label>`).join('')}
+      </fieldset>`;
+  return `<div class="view">${head}
+    <form class="panel stack" id="f-apply" novalidate style="max-width:760px">
+      <div class="stack" style="gap:6px"><h3>Your details</h3>
+        <dl class="facts"><dt>Name</dt><dd>${esc(u.first)} ${esc(u.last)}</dd><dt>Email</dt><dd>${esc(u.email)}</dd><dt>UVU ID</dt><dd>${esc(u.uvuid) || '—'}</dd><dt>Major(s)</dt><dd>${esc(u.major) || '—'}</dd><dt>Minor</dt><dd>${esc(u.minor) || '—'}</dd></dl>
+        <span class="hint">Something wrong? Update it on <a href="#account">My account</a> first.</span></div>
+      ${branchField}
+      <div class="grid2">
+        <label>Year in school<select id="ap-year"><option value="">Choose one</option>${YEARS.map(y => `<option>${y}</option>`).join('')}</select></label>
+        <label>Expected graduation<span class="row" style="gap:8px;flex-wrap:nowrap"><select id="ap-grad-term" aria-label="Graduation semester"><option>Spring</option><option>Summer</option><option>Fall</option></select><select id="ap-grad-year" aria-label="Graduation year">${gradYears().map(y => `<option>${y}</option>`).join('')}</select></span></label>
+      </div>
+      <label>Why do you want this role?<textarea id="ap-why"></textarea></label>
+      <label>What would you start or change in WFA?<textarea id="ap-ideas"></textarea></label>
+      <div class="grid2">
+        <label>Resume (PDF, up to 5 MB)<input id="ap-resume" type="file" accept="application/pdf,.pdf"><span class="hint">Only admins can open it.</span></label>
+        <label>LinkedIn <span class="hint">(optional)</span><input id="ap-linkedin" type="url" placeholder="https://www.linkedin.com/in/…"></label>
+      </div>
+      <label>Anything else you’d like us to know? <span class="hint">(optional)</span><textarea id="ap-other" style="min-height:80px"></textarea></label>
+      <div class="err" id="ap-err"></div>
+      <div class="row"><button class="btn" type="submit">Submit application</button></div>
+    </form></div>`;
+}
+
+// Attendance for an applicant: events attended out of all events held, and how often they show up when they RSVP.
+function applicantStats(email){
+  const held = heldEvents().filter(e => e.cat !== 'officer_meeting');
+  const came = held.filter(e => attended(e.id).includes(email)).length;
+  const rsvpd = held.filter(e => going(e.id).includes(email));
+  const showed = rsvpd.filter(e => attended(e.id).includes(email)).length;
+  return { came, held: held.length, pctEvents: held.length ? Math.round(came / held.length * 100) : null,
+    rsvps: rsvpd.length, pctRsvp: rsvpd.length ? Math.round(showed / rsvpd.length * 100) : null };
+}
+function adminApplicationsBody(){
+  const a = db.app;
+  const list = db.apps.filter(x => ui.appFilter === 'all' || x.status === ui.appFilter).sort((x, y) => y.created_at.localeCompare(x.created_at));
+  return `<div class="stack" style="gap:28px">
+    <form class="panel stack" id="f-appset" novalidate>
+      <h3>Application settings</h3>
+      <label class="check"><input id="as-open" type="checkbox" ${a.open ? 'checked' : ''}> Applications are open</label>
+      <fieldset class="pwset"><legend>Branches taking applications</legend>
+        ${Object.entries(BRANCHES).map(([k, l]) => `<label class="check"><input type="checkbox" data-branch="${k}" ${a.branches.includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}
+        <span class="hint">If two or more are open, applicants rank them. Presidents aren’t chosen through this form.</span></fieldset>
+      <label style="max-width:260px">Deadline <span class="hint">(optional)</span><input id="as-deadline" type="date" value="${esc(a.deadline)}"><span class="hint">The form closes after this day.</span></label>
+      ${a.open ? '' : '<label class="check"><input id="as-notify" type="checkbox" checked> When I open applications, email all members a link to apply</label>'}
+      <div class="err" id="as-err"></div>
+      <div class="row"><button class="btn" type="submit">Save settings</button>${appsOpen() ? '<a href="#apply">See the application page</a>' : ''}</div>
+    </form>
+    <section class="stack">
+      <div class="section-head"><h3>Applications</h3><span class="muted">${db.apps.length}</span></div>
+      <div class="filters">${[['all', 'All'], ...Object.entries(APP_STATUS)].map(([k, l]) => `<button class="chip" aria-pressed="${ui.appFilter === k}" data-act="app-filter" data-f="${k}">${l} (${k === 'all' ? db.apps.length : db.apps.filter(x => x.status === k).length})</button>`).join('')}</div>
+      ${list.map(appCard).join('') || '<div class="empty">No applications yet.</div>'}
+    </section></div>`;
+}
+function appCard(x){
+  const u = db.users.find(m => m.email === x.email) || { first: x.email, last: '', uvuid: '', major: '', minor: '' };
+  const st = applicantStats(x.email);
+  return `<article class="panel stack" style="gap:12px">
+    <div class="row" style="justify-content:space-between;align-items:start">
+      <div style="min-width:0"><h3>${esc(u.first)} ${esc(u.last)}</h3><div class="ev-sub" style="overflow-wrap:anywhere">${esc(x.email)} · UVU ID ${esc(u.uvuid) || '—'} · applied ${fmtDay(x.date)}</div></div>
+      <label style="flex-direction:row;align-items:center;gap:8px">Status<select data-app-status="${x.id}" style="width:auto">${Object.entries(APP_STATUS).map(([k, l]) => `<option value="${k}" ${x.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    </div>
+    <dl class="facts">
+      <dt>Branches</dt><dd>${x.branches.map((b, i) => (x.branches.length > 1 ? ordinal(i + 1) + ': ' : '') + esc(BRANCHES[b] || b)).join(' · ')}</dd>
+      <dt>Year</dt><dd>${esc(x.year)} · graduating ${esc(x.grad)}</dd>
+      <dt>Study</dt><dd>${esc(u.major) || '—'}${u.minor ? ' · Minor: ' + esc(u.minor) : ''}</dd>
+      <dt>Attendance</dt><dd>${st.came} of ${st.held} events (${st.pctEvents === null ? '—' : st.pctEvents + '%'}) · ${st.pctRsvp === null ? 'no RSVPs yet' : 'showed up to ' + st.pctRsvp + '% of ' + st.rsvps + ' RSVP' + (st.rsvps === 1 ? '' : 's')}</dd>
+    </dl>
+    <details><summary style="cursor:pointer;font-weight:600">Answers</summary><div class="stack" style="gap:10px;margin-top:10px">
+      <div><div class="eyebrow">Why this role</div><p class="ann-body">${esc(x.why)}</p></div>
+      <div><div class="eyebrow">What they’d start or change</div><p class="ann-body">${esc(x.ideas)}</p></div>
+      ${x.other ? `<div><div class="eyebrow">Anything else</div><p class="ann-body">${esc(x.other)}</p></div>` : ''}
+    </div></details>
+    <div class="row">${x.resume_path ? `<button class="btn ghost small" data-act="open-resume" data-id="${esc(x.resume_path)}">Open resume (PDF)</button>` : ''}${x.linkedin ? `<a class="btn ghost small" href="${esc(x.linkedin)}" target="_blank" rel="noopener">LinkedIn ↗</a>` : ''}${x.status === 'accepted' && roleOf(x.email) === 'member' ? `<button class="btn small" data-act="change-status" data-id="${esc(x.email)}">Make officer</button>` : ''}</div>
+    <form class="stack" id="f-appnote-${x.id}" data-app-note="${x.id}" style="gap:6px" novalidate><label>Private notes<textarea style="min-height:70px">${esc(x.notes)}</textarea></label><div><button class="btn ghost small" type="submit">Save notes</button></div></form>
+  </article>`;
+}
+async function notifyApplicationsOpen(){
+  const to = db.users.filter(u => roleOf(u.email) === 'member').map(u => u.email);
+  if (!to.length) return toast('Applications are open. There are no members to email yet.');
+  const text = `Hi,\n\nApplications are open for WFA officer positions in the ${branchList()}.` +
+    (db.app.deadline ? `\n\nApply by ${fmtDay(db.app.deadline)}.` : '') +
+    `\n\nApply here: ${location.origin}/#apply\n\nWolverine Finance Association`;
+  const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to, subject: 'WFA officer applications are open', text } });
+  if (error){ let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch(_){} return toast('Applications are open, but the email didn’t send: ' + m); }
+  toast(`Applications are open. Emailed ${data.sent} member${data.sent === 1 ? '' : 's'}.`);
+}
+
+/* ---------- Add several officers at once ---------- */
+function bulkRow(){ return { email:'', first:'', last:'', title:'', branch:'', tier:'officer', level:'officer' }; }
+function bulkBody(){
+  if (!ui.bulk) ui.bulk = [bulkRow(), bulkRow(), bulkRow()];
+  const opt = (obj, cur) => Object.entries(obj).map(([k, l]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${l}</option>`).join('');
+  return `<section class="stack">
+    <p class="muted" style="max-width:68ch">Add several officers at once, one per row. Blank rows are skipped. Rows that fail stay here so you can fix them and try again.</p>
+    <div class="table-wrap"><table class="bulk"><thead><tr><th>Login email</th><th>First name</th><th>Last name</th><th>Title</th><th>Branch</th><th>Rank</th><th>Access</th><th></th></tr></thead><tbody>
+      ${ui.bulk.map((r, i) => `<tr>
+        <td><input data-bulk="${i}:email" type="email" value="${esc(r.email)}" placeholder="name@uvu.edu" aria-label="Row ${i + 1} login email"></td>
+        <td><input data-bulk="${i}:first" value="${esc(r.first)}" aria-label="Row ${i + 1} first name"></td>
+        <td><input data-bulk="${i}:last" value="${esc(r.last)}" aria-label="Row ${i + 1} last name"></td>
+        <td><input data-bulk="${i}:title" value="${esc(r.title)}" placeholder="e.g. VP of Events" aria-label="Row ${i + 1} title"></td>
+        <td><select data-bulk="${i}:branch" aria-label="Row ${i + 1} branch"><option value="">No branch</option>${opt(BRANCHES, r.branch)}</select></td>
+        <td><select data-bulk="${i}:tier" aria-label="Row ${i + 1} rank">${opt(TIERS, r.tier)}</select></td>
+        <td><select data-bulk="${i}:level" aria-label="Row ${i + 1} access">${opt({ officer:'Officer', admin:'Admin' }, r.level)}</select></td>
+        <td><button type="button" class="btn ghost small" data-act="bulk-rm" data-i="${i}" aria-label="Remove row ${i + 1}">×</button></td>
+      </tr>`).join('')}
+    </tbody></table></div>
+    <div><button class="btn ghost small" data-act="bulk-add">+ Add row</button></div>
+    <label class="check"><input id="bulk-send" type="checkbox" ${ui.bulkSend ? 'checked' : ''}> Create accounts with temporary passwords and email each person their login details</label>
+    <span class="hint">Leave this off to just put them on the officer list; they get officer tools when they sign up with that email. The free email plan sends up to 100 emails a day.</span>
+    <div><button class="btn" data-act="bulk-go" ${ui.bulkBusy ? 'disabled' : ''}>${ui.bulkBusy ? 'Adding…' : 'Add all officers'}</button></div>
+    ${ui.bulkResults ? `<div class="panel stack" style="gap:6px"><h3>Results</h3>${ui.bulkResults.map(x => `<div class="${x.ok ? '' : 'err'}">${esc(x.email)}: ${esc(x.msg)}</div>`).join('')}</div>` : ''}
+  </section>`;
+}
+async function bulkAdd(){
+  const rows = ui.bulk.map(r => ({ ...r, email: r.email.trim().toLowerCase(), first: r.first.trim(), last: r.last.trim(), title: r.title.trim() }))
+    .filter(r => r.email || r.first || r.last || r.title);
+  if (!rows.length) return toast('Fill in at least one row.');
+  const bad = rows.find(r => !EMAIL_RE.test(r.email) || !r.first || !r.last);
+  if (bad) return toast('Each row needs a valid email and a first and last name. Check the row for ' + (bad.email || bad.first || 'the blank email') + '.');
+  const seen = new Set(), dup = rows.find(r => seen.has(r.email) || !seen.add(r.email));
+  if (dup) return toast(dup.email + ' is listed twice.');
+  ui.bulkBusy = true; ui.bulkResults = []; render();
+  for (const r of rows){
+    const prev = db.profiles[r.email] || {};
+    try {
+      if (ui.bulkSend){
+        const { data, error } = await sb.functions.invoke('invite-officer', { body: { email: r.email, first: r.first, last: r.last, role: r.level, title: r.title, tier: r.tier, branch: r.branch,
+          contact: prev.contact || '', hours: prev.hours || '', linkedin: prev.linkedin || '', bio: prev.bio || '', password: tempPw(), send: true } });
+        if (error){ let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch(_){} throw new Error(m); }
+        if (r.tier === 'honorary' || r.tier === 'advisor') await sb.from('officer_profiles').update({ tier: r.tier }).eq('email', r.email);
+        ui.bulkResults.push({ email: r.email, ok: !data.warning, msg: data.emailed ? 'Added and emailed login details' : (data.warning || 'Added') });
+      } else {
+        must(await sb.from('access_list').upsert({ email: r.email, role: r.level }));
+        must(await sb.from('officer_profiles').upsert({ email: r.email, name: r.first + ' ' + r.last, title: r.title, tier: r.tier, branch: r.branch }));
+        await logChange('Gave ' + r.email + ' ' + r.level + ' access');
+        ui.bulkResults.push({ email: r.email, ok: true, msg: 'Added to the officer list' });
+      }
+    } catch(e){ ui.bulkResults.push({ email: r.email, ok: false, msg: errMsg(e) }); }
+    render();
+  }
+  ui.bulkBusy = false;
+  const failed = ui.bulkResults.filter(x => !x.ok).map(x => x.email);
+  ui.bulk = ui.bulk.filter(r => failed.includes(r.email.trim().toLowerCase()));
+  if (!ui.bulk.length) ui.bulk = [bulkRow(), bulkRow(), bulkRow()];
+  await load(); render();
+  toast(failed.length ? `${rows.length - failed.length} added, ${failed.length} need attention` : `Added ${rows.length} officer${rows.length === 1 ? '' : 's'}`);
+}
+
+/* ---------- Weekly availability ---------- */
+const DAYS = [['mon','Mon'],['tue','Tue'],['wed','Wed'],['thu','Thu'],['fri','Fri'],['sat','Sat'],['sun','Sun']];
+const BLOCKS = [8, 10, 12, 14, 16, 18, 20];   // two-hour blocks starting at these hours
+const OFFICER_WEIGHT = 3;                     // an officer's availability counts this many times a member's
+function blockLabel(h){ const f = x => (x % 12 || 12) + (x < 12 ? ' AM' : ' PM'); return f(h) + '–' + f(h + 2); }
+function slotLabel(key){ const [k, h] = key.split('-'); return DAYS.find(d => d[0] === k)[1] + ' ' + blockLabel(+h); }
+function availDraft(){ if (!ui.availDraft) ui.availDraft = new Set(db.avail[session] || []); return ui.availDraft; }
+function viewAvailability(){
+  if (!can('member')) return gate('member');
+  const d = availDraft(), saved = db.avail[session];
+  return `<div class="view">
+    <section class="page-head"><div class="eyebrow">Members</div><h1 class="page">When are you free?</h1>
+      <p class="muted">Tap the times you’re usually free each week, then save. Officers use this to schedule events when the most people can come.</p></section>
+    <div class="table-wrap"><table class="avail"><thead><tr><th></th>${DAYS.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead><tbody>
+      ${BLOCKS.map(h => `<tr><th scope="row">${blockLabel(h)}</th>${DAYS.map(([k, l]) => { const key = k + '-' + h, on = d.has(key);
+        return `<td><button class="slot ${on ? 'on' : ''}" data-act="avail-cell" data-id="${key}" aria-pressed="${on}" aria-label="${l} ${blockLabel(h)}">${on ? '✓' : ''}</button></td>`; }).join('')}</tr>`).join('')}
+    </tbody></table></div>
+    <div class="row"><button class="btn" data-act="avail-save">Save availability</button><button class="btn ghost" data-act="avail-clear">Clear all</button>
+      <span class="hint">${saved ? saved.length + ' time block' + (saved.length === 1 ? '' : 's') + ' saved.' : 'Not saved yet.'}</span></div>
+    ${can('officer') ? '<p class="hint">See everyone’s availability under Officer tools → Availability.</p>' : ''}
+  </div>`;
+}
+function availabilityChart(){
+  const staff = new Set(staffEmails());
+  const rows = Object.entries(db.avail).filter(([, sl]) => sl.length);
+  if (!rows.length) return '<div class="empty">No one has shared their availability yet. Members fill it out on the Availability page.</div>';
+  const offs = rows.filter(([e]) => staff.has(e)), mems = rows.filter(([e]) => !staff.has(e));
+  const max = offs.length * OFFICER_WEIGHT + mems.length;
+  const cell = key => { const o = offs.filter(([, sl]) => sl.includes(key)).length, m = mems.filter(([, sl]) => sl.includes(key)).length; return { key, o, m, score: o * OFFICER_WEIGHT + m }; };
+  const top = BLOCKS.flatMap(h => DAYS.map(([k]) => cell(k + '-' + h))).filter(c => c.score).sort((a, b) => b.score - a.score || b.o - a.o).slice(0, 5);
+  return `<div class="stack" style="gap:24px">
+    <p class="muted">${offs.length} officer${offs.length === 1 ? '' : 's'} and ${mems.length} member${mems.length === 1 ? '' : 's'} have shared their availability. Officers count ${OFFICER_WEIGHT}× as much as members when ranking times.</p>
+    <section class="stack"><div class="section-head"><h3>Best times</h3></div>
+      <ol class="best">${top.map(c => `<li><strong>${slotLabel(c.key)}</strong><span class="muted">${c.o} of ${offs.length} officers · ${c.m} of ${mems.length} members</span></li>`).join('')}</ol></section>
+    <div class="table-wrap"><table class="avail"><thead><tr><th></th>${DAYS.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead><tbody>
+      ${BLOCKS.map(h => `<tr><th scope="row">${blockLabel(h)}</th>${DAYS.map(([k, l]) => { const c = cell(k + '-' + h), a = max ? c.score / max : 0;
+        return `<td><div class="heat" style="--a:${a.toFixed(2)};${a > .55 ? 'color:#fff;' : ''}" title="${l} ${blockLabel(h)}: ${c.o} officers, ${c.m} members">${c.o}/${c.m}</div></td>`; }).join('')}</tr>`).join('')}
+    </tbody></table></div>
+    <p class="hint">Each square shows officers / members free at that time. Darker green means more people, with officers counting most.</p>
+  </div>`;
+}
+
 /* ---------- Officer tools ---------- */
 function attendanceStats(e){
   const r = going(e.id), a = attended(e.id);
@@ -978,7 +1224,7 @@ function attendanceStats(e){
 }
 function memberTable(rows){
   return `<div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Major(s)</th><th>UVU ID</th><th>Role</th><th class="num">Events</th>${DUES_ENABLED ? '<th>Dues</th>' : ''}${can('admin') ? '<th></th>' : ''}</tr></thead><tbody>
-    ${rows.map(u => `<tr><td>${esc(u.first)} ${esc(u.last)}</td><td>${esc(u.email)}</td><td>${esc(u.major)}${u.minor ? `<div class="hint">Minor: ${esc(u.minor)}</div>` : ''}</td><td class="num">${esc(u.uvuid)}</td><td><span class="role ${roleOf(u.email)}">${roleOf(u.email)}</span></td><td class="num">${attendCount(u.email)}</td>${DUES_ENABLED ? `<td>${duesOf(u.email)}</td>` : ''}${can('admin') ? `<td>${u.email === session ? '' : delBtn('mem-' + u.email, 'Remove', 'rm-member', u.email)}</td>` : ''}</tr>`).join('') || '<tr><td colspan="7" class="muted">No members yet.</td></tr>'}
+    ${rows.map(u => `<tr><td>${esc(u.first)} ${esc(u.last)}</td><td>${esc(u.email)}</td><td>${esc(u.major)}${u.minor ? `<div class="hint">Minor: ${esc(u.minor)}</div>` : ''}</td><td class="num">${esc(u.uvuid)}</td><td><span class="role ${roleOf(u.email)}">${roleOf(u.email)}</span></td><td class="num">${attendCount(u.email)}</td>${DUES_ENABLED ? `<td>${duesOf(u.email)}</td>` : ''}${can('admin') ? `<td>${u.email === session ? '' : `<div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn ghost small" data-act="change-status" data-id="${esc(u.email)}">${roleOf(u.email) === 'member' ? 'Make officer' : 'Change role'}</button>${delBtn('mem-' + u.email, 'Remove', 'rm-member', u.email)}</div>`}</td>` : ''}</tr>`).join('') || '<tr><td colspan="7" class="muted">No members yet.</td></tr>'}
   </tbody></table></div>`;
 }
 
@@ -1254,6 +1500,7 @@ function viewOfficer(){
       </tbody></table></div></div>`;
   }
 
+  else if (T === 'availability'){ body = availabilityChart(); }
   else if (T === 'members'){
     const q = ui.memberSearch.toLowerCase();
     const rows = db.users.filter(u => !q || (u.first+' '+u.last+' '+u.email+' '+u.major+' '+u.minor+' '+u.uvuid).toLowerCase().includes(q));
@@ -1292,7 +1539,8 @@ function downloadCsv(){
 function viewAdmin(){
   if (!can('admin')) return gate('admin');
   const T = ui.adminTab;
-  const tabs = ADMIN_TABS;
+  const newApps = db.apps.filter(a => a.status === 'new').length;
+  const tabs = ADMIN_TABS.map(([k,l]) => [k, l, k === 'applications' ? newApps : '']);
   let body = '';
   if (T === 'access'){
     const ed = ui.editOfficer, p = ed ? (db.profiles[ed] || {}) : {};
@@ -1302,13 +1550,13 @@ function viewAdmin(){
       const pr = db.profiles[email] || {}, hasAcct = db.users.some(u => u.email === email);
       return `<div class="list-row"><div><div class="ev-title">${esc(userName(email))} <span class="muted" style="font-weight:400">· ${esc(pr.title || (list==='admin'?'Admin':'Officer'))} · ${TIERS[pr.tier] || 'Officer'}${BRANCHES[pr.branch] ? ', ' + BRANCHES[pr.branch] : ''}</span></div>
         <div class="ev-sub" style="overflow-wrap:anywhere">${esc(email)}${hasAcct?'':' · no account yet'}</div></div>
-        <div class="row" style="gap:6px"><button class="btn ghost small" data-act="edit-officer" data-id="${esc(email)}">Edit</button>${delBtn(list+'-'+email,'Remove','rm-access',email)}</div></div>`;
+        <div class="row" style="gap:6px"><button class="btn ghost small" data-act="edit-officer" data-id="${esc(email)}">Change role</button>${delBtn(list+'-'+email,'Remove','rm-access',email)}</div></div>`;
     };
     body = `<form class="row" id="f-semester" style="align-items:end"><label style="width:220px">Current semester<input id="sem-name" value="${esc(db.settings.semester)}"></label><button class="btn ghost" type="submit">Save</button><span class="hint" style="padding-bottom:10px">Shown on the Officers page and leaderboard.</span></form>
     <p class="muted" style="max-width:62ch">Access is set by email. Anyone who signs in with an email on the admin list sees admin tools; officer list emails see officer tools. Everyone else is a member.</p>
     <div class="split">
       <form class="panel stack" id="f-officer">
-        <h3>${ed ? 'Edit ' + esc(userName(ed)) : 'Add an officer or admin'}</h3>
+        <h3>${!ed ? 'Add an officer or admin' : roleOf(ed) === 'member' ? 'Make ' + esc(userName(ed)) + ' an officer' : 'Change ' + esc(userName(ed)) + '’s role'}</h3>
         <label>Login email<input id="of-email" type="email" required value="${esc(ed || '')}" ${ed?'readonly':''} placeholder="The email they sign in with"></label>
         <div class="grid2">
           <label>First name<input id="of-first" required value="${esc(nm.first)}" autocomplete="off"></label>
@@ -1316,7 +1564,7 @@ function viewAdmin(){
         </div>
         <div class="grid2">
           <label>Title<input id="of-title" value="${esc(p.title || '')}" placeholder="e.g. VP of Finance"></label>
-          <label>Access level<select id="of-level"><option value="officer" ${ed && roleOf(ed)==='officer'?'selected':''}>Officer</option><option value="admin" ${ed && roleOf(ed)==='admin'?'selected':''}>Admin</option></select></label>
+          <label>Access level<select id="of-level"><option value="officer" ${ed && roleOf(ed)==='officer'?'selected':''}>Officer</option><option value="admin" ${ed && roleOf(ed)==='admin'?'selected':''}>Admin</option>${ed && roleOf(ed) !== 'member' ? '<option value="member">Member (remove officer access)</option>' : ''}</select></label>
         </div>
         <div class="grid2">
           <label>Rank on Officers page<select id="of-tier">${Object.entries(TIERS).map(([k,l]) => `<option value="${k}" ${(p.tier || 'officer')===k?'selected':''}>${l}</option>`).join('')}</select></label>
@@ -1345,6 +1593,8 @@ function viewAdmin(){
       </section>
     </div>`;
   }
+  else if (T === 'applications'){ body = adminApplicationsBody(); }
+  else if (T === 'bulk'){ body = bulkBody(); }
   else if (T === 'export'){
     body = `<section class="stack">
       <div class="row" style="justify-content:space-between"><p class="muted" style="max-width:60ch">Download a CSV that opens in Excel or Google Sheets, or copy the rows and paste them into a sheet.</p>
@@ -1434,7 +1684,7 @@ async function showCode(id, fresh){
 
 /* ---------- Render ---------- */
 const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources,
-  archive:viewArchive, leaderboard:viewLeaderboard, account:viewAccount,
+  archive:viewArchive, leaderboard:viewLeaderboard, account:viewAccount, apply:viewApply, availability:viewAvailability,
   signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
 function route(){ const r = location.hash.slice(1); return VIEWS[r] ? r : 'home'; }
 function render(){
@@ -1487,7 +1737,7 @@ document.addEventListener('click', async ev => {
     case 'open-event': openEvent(id); break;
     case 'close': closeModal(); break;
     case 'copy': copyText(t.dataset.text, t.dataset.label); break;
-    case 'signout': await sb.auth.signOut(); ui.recovery = false; await load(); toast('Signed out'); location.hash = 'home'; render(); break;
+    case 'signout': await sb.auth.signOut(); ui.recovery = false; ui.availDraft = null; await load(); toast('Signed out'); location.hash = 'home'; render(); break;
     case 'cal': { const d = +t.dataset.d; if (d === 0){ const n = new Date(); ui.cal = new Date(n.getFullYear(), n.getMonth(), 1); } else ui.cal = new Date(ui.cal.getFullYear(), ui.cal.getMonth() + d, 1); render(); break; }
     case 'cat': { const c = t.dataset.cat; ui.catsOn.has(c) ? ui.catsOn.delete(c) : ui.catsOn.add(c); if (!ui.catsOn.size) Object.keys(CATS).forEach(k => ui.catsOn.add(k)); render(); break; }
     case 'rsvp':
@@ -1536,6 +1786,25 @@ document.addEventListener('click', async ev => {
       break; }
     case 'mail-send': await sendMail(); break;
     case 'pf-photo-rm': ui.profilePhoto = ''; document.getElementById('pf-photo-row').innerHTML = photoPreview(db.profiles[session] || {}); break;
+    case 'change-status': ui.adminTab = 'access'; ui.editOfficer = id; if (route() !== 'admin') location.hash = 'admin'; else render(); window.scrollTo(0,0); break;
+    case 'app-filter': ui.appFilter = t.dataset.f; render(); break;
+    case 'open-resume': {
+      const w = window.open('', '_blank');
+      const { data, error } = await sb.storage.from('resumes').createSignedUrl(id, 300);
+      if (error || !data){ if (w) w.close(); toast('Couldn’t open the resume: ' + errMsg(error)); break; }
+      if (w) w.location = data.signedUrl; else location.href = data.signedUrl;
+      break; }
+    case 'avail-cell': {
+      const d = availDraft(); d.has(id) ? d.delete(id) : d.add(id);
+      const on = d.has(id); t.classList.toggle('on', on); t.setAttribute('aria-pressed', on); t.textContent = on ? '✓' : '';
+      break; }
+    case 'avail-clear': availDraft().clear(); render(); break;
+    case 'avail-save':
+      await act(async () => { must(await sb.from('availability').upsert({ email: session, slots: [...availDraft()], updated_at: new Date().toISOString() })); ui.availDraft = null; }, 'Availability saved');
+      break;
+    case 'bulk-add': ui.bulk.push(bulkRow()); render(); break;
+    case 'bulk-rm': ui.bulk.splice(+t.dataset.i, 1); if (!ui.bulk.length) ui.bulk.push(bulkRow()); render(); break;
+    case 'bulk-go': await bulkAdd(); break;
     case 'rm-member':
       await act(async () => must(await sb.rpc('remove_member', { p_email: id })), 'Removed ' + id); break;
     case 'member-view':
@@ -1592,6 +1861,7 @@ function updateAnnPreview(){
 }
 document.addEventListener('input', e => {
   const id = e.target.id;
+  if (e.target.dataset.bulk){ const [i, k] = e.target.dataset.bulk.split(':'); ui.bulk[+i][k] = e.target.value; }
   if (id === 'mem-search'){ ui.memberSearch = e.target.value; rerenderKeepFocus(id); }
   if (id === 'log-search'){ ui.logSearch = e.target.value; rerenderKeepFocus(id); }
   if (['an-title','an-body'].includes(id)) updateAnnPreview();
@@ -1602,6 +1872,12 @@ document.addEventListener('change', async e => {
   if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
   if (['ml-aud','ml-ev'].includes(id)){ readMail(); render(); }
   if (id === 'tk-mine'){ ui.tasksMine = e.target.checked; render(); }
+  if (id === 'bulk-send') ui.bulkSend = e.target.checked;
+  if (e.target.dataset.bulk){ const [i, k] = e.target.dataset.bulk.split(':'); ui.bulk[+i][k] = e.target.value; }
+  if (e.target.dataset.appStatus){
+    const aid = e.target.dataset.appStatus, st = e.target.value, x = db.apps.find(a => a.id === aid);
+    await act(async () => { must(await sb.from('applications').update({ status: st, updated_at: new Date().toISOString() }).eq('id', aid)); await logChange('Marked ' + userName(x.email) + '’s application ' + APP_STATUS[st].toLowerCase()); }, 'Status updated');
+  }
   if (e.target.dataset.dues){
     const em = e.target.dataset.dues, s = e.target.value;
     await act(async () => { must(await sb.from('dues').upsert({ email: em, status: s, updated: todayIso() })); await logChange('Marked ' + userName(em) + '’s dues ' + s); }, userName(em) + ': ' + s);
@@ -1800,6 +2076,53 @@ async function handleSubmit(f, v, err){
     await act(async () => { must(await sb.from('tasks').insert(t)); await logChange('Added task “' + t.title + '” for ' + userName(t.owner)); }, 'Task added');
   }
 
+  if (f.dataset.appNote){
+    const aid = f.dataset.appNote, notes = f.querySelector('textarea').value;
+    await act(async () => must(await sb.from('applications').update({ notes }).eq('id', aid)), 'Notes saved');
+  }
+
+  if (f.id === 'f-appset'){
+    const open = document.getElementById('as-open').checked;
+    const branches = [...f.querySelectorAll('[data-branch]')].filter(c => c.checked).map(c => c.dataset.branch);
+    const deadline = v('as-deadline') || null;
+    if (open && !branches.length) return err('as-err', 'Pick at least one branch before opening applications.');
+    if (open && deadline && deadline < todayIso()) return err('as-err', 'That deadline has passed. Pick a later date or clear it.');
+    const opening = open && !db.app.open;
+    const notifyEl = document.getElementById('as-notify'), notify = opening && notifyEl && notifyEl.checked;
+    const upd = { open, branches, deadline };
+    if (opening) upd.opened_at = new Date().toISOString();
+    must(await sb.from('app_settings').update(upd).eq('id', 1));
+    await logChange(opening ? 'Opened officer applications' : (!open && db.app.open) ? 'Closed officer applications' : 'Updated officer application settings');
+    await load(); render(); toast(opening ? 'Applications are open' : 'Settings saved');
+    if (notify) await notifyApplicationsOpen();
+  }
+
+  if (f.id === 'f-apply'){
+    if (!appsOpen()) return err('ap-err', 'Applications just closed.');
+    let branches;
+    if (db.app.branches.length === 1) branches = [...db.app.branches];
+    else {
+      const picks = [...f.querySelectorAll('[data-rank]')].map(sel => ({ b: sel.dataset.rank, r: +sel.value })).filter(x => x.r > 0).sort((a, b) => a.r - b.r);
+      if (!picks.length) return err('ap-err', 'Rank at least one branch.');
+      if (picks.some((x, i) => x.r !== i + 1)) return err('ap-err', 'Use each choice once, starting with 1st choice.');
+      branches = picks.map(x => x.b);
+    }
+    const year = v('ap-year'), grad = v('ap-grad-term') + ' ' + v('ap-grad-year'), why = v('ap-why'), ideas = v('ap-ideas'), linkedin = v('ap-linkedin'), other = v('ap-other');
+    const file = document.getElementById('ap-resume').files[0];
+    if (!year) return err('ap-err', 'Choose your year in school.');
+    if (!why || !ideas) return err('ap-err', 'Answer both questions about the role.');
+    if (!file) return err('ap-err', 'Attach your resume as a PDF.');
+    if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') return err('ap-err', 'Your resume needs to be a PDF.');
+    if (file.size > 5 * 1024 * 1024) return err('ap-err', 'That PDF is over 5 MB. Try saving a smaller copy.');
+    if (linkedin && !/^https?:\/\//i.test(linkedin)) return err('ap-err', 'The LinkedIn link must start with https://');
+    const path = authUser.id + '/' + crypto.randomUUID() + '.pdf';
+    const up = await sb.storage.from('resumes').upload(path, file, { contentType: 'application/pdf' });
+    if (up.error) return err('ap-err', 'Your resume didn’t upload: ' + errMsg(up.error));
+    const ins = await sb.from('applications').insert({ cycle: db.app.opened_at, branches, year, grad, why, ideas, linkedin, other, resume_path: path });
+    if (ins.error){ await sb.storage.from('resumes').remove([path]); return err('ap-err', errMsg(ins.error)); }
+    await load(); toast('Application submitted'); render(); window.scrollTo(0,0);
+  }
+
   if (f.id === 'f-semester'){
     const sem = v('sem-name'); if (!sem) return;
     await act(async () => { must(await sb.from('settings').update({ semester: sem }).eq('id', 1)); await logChange('Set the semester to ' + sem); }, 'Semester saved');
@@ -1844,6 +2167,13 @@ async function handleSubmit(f, v, err){
     if (contact && !EMAIL_RE.test(contact)) return err('of-err', 'Enter a valid contact email.');
     if (linkedin && !/^https?:\/\//i.test(linkedin)) return err('of-err', 'LinkedIn link must start with https://');
 
+    if (level === 'member'){
+      must(await sb.from('access_list').delete().eq('email', email));
+      await sb.from('officer_profiles').delete().eq('email', email);
+      await logChange('Changed ' + email + ' back to a member');
+      ui.editOfficer = null; await load(); render(); toast(userName(email) + ' is now a member');
+      return;
+    }
     if (pw){
       // Creating accounts and sending email needs the server function.
       const { data, error } = await sb.functions.invoke('invite-officer', { body: { email, first, last, role: level, title, tier, branch, contact, hours, linkedin, bio, password: pw, send } });
@@ -1853,6 +2183,7 @@ async function handleSubmit(f, v, err){
         if (/Failed to send a request|not found|404/i.test(m)) m = 'The invite-officer function isn’t set up yet. Leave the password blank for now, or finish step 4 of the setup guide.';
         return err('of-err', m);
       }
+      if (tier === 'honorary' || tier === 'advisor') await sb.from('officer_profiles').update({ tier }).eq('email', email);
       ui.editOfficer = null; await load(); render();
       toast(data.emailed ? 'Saved. Login details emailed to ' + email : (data.warning || 'Saved ' + email + ' as ' + level));
       return;
