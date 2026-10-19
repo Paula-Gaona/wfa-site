@@ -47,7 +47,8 @@ function mdBlock(lines: string[], tight = false) {
   const flushL = () => { if (list) { out.push('<ul style="margin:0 0 6px;padding-left:22px">' + list.join('') + '</ul>'); list = null; } };
   for (const raw of lines) {
     const line = raw.trimEnd(), b = line.match(/^\s*[-\u2022*]\s+(.*)$/), h = line.match(/^(#{1,3})\s+(.*)$/);
-    if (b) { flushP(); (list = list || []).push('<li style="margin:0 0 2px">' + mdInline(b[1]) + '</li>'); }
+    if (line === '---') { flushP(); flushL(); out.push('<div style="height:22px"></div>'); }
+    else if (b) { flushP(); (list = list || []).push('<li style="margin:0 0 2px">' + mdInline(b[1]) + '</li>'); }
     else if (h) { flushP(); flushL(); out.push(h[1] === '###'
       ? '<p style="margin:32px 0 6px;font-size:16px;font-weight:bold">' + mdInline(h[2]) + '</p>'
       : '<p style="margin:18px 0 8px;font-size:17px;font-weight:bold;color:#275D38">' + mdInline(h[2]) + '</p>'); }
