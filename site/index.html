@@ -288,6 +288,7 @@ table.bulk input,table.bulk select{padding:6px 8px;min-width:120px}
 .career .facts{grid-template-columns:auto 1fr}
 .cat-head{font-size:1.35rem;text-transform:uppercase;color:var(--brand-text)}
 .mail-pre{white-space:pre-wrap;font-size:.95rem;overflow-wrap:anywhere}
+.mail-html{font-size:.95rem;overflow-wrap:anywhere;line-height:1.55}
 
 /* About, officers, resources, recaps */
 .pillars{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:24px}
@@ -1581,25 +1582,58 @@ function fillMerge(s){
   return s.replace(/\{event\}/g, e ? e.title : '{event}').replace(/\{date\}/g, e ? fmtDay(e.date) : '{date}').replace(/\{time\}/g, e ? fmtTime(e.start) : '{time}')
     .replace(/\{location\}/g, e ? e.loc : '{location}').replace(/\{semester\}/g, db.settings.semester).replace(/\{dues\}/g, db.settings.dues);
 }
+/* ---------- Email formatting: **bold**, *italic*, "- " bullets, "## " headings, links ---------- */
+function mdInline(s){
+  return esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1<em>$2</em>')
+    .replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" style="color:#275D38">$1</a>');
+}
+function mdToHtml(src){
+  const out = []; let list = null, para = [];
+  const flushP = () => { if (para.length){ out.push('<p style="margin:0 0 12px">' + para.join('<br>') + '</p>'); para = []; } };
+  const flushL = () => { if (list){ out.push('<ul style="margin:0 0 12px;padding-left:22px">' + list.join('') + '</ul>'); list = null; } };
+  for (const raw of String(src || '').split('\n')){
+    const line = raw.trimEnd(), b = line.match(/^\s*[-•*]\s+(.*)$/), h = line.match(/^#{1,3}\s+(.*)$/);
+    if (b){ flushP(); (list = list || []).push('<li style="margin:0 0 4px">' + mdInline(b[1]) + '</li>'); }
+    else if (h){ flushP(); flushL(); out.push('<p style="margin:18px 0 8px;font-size:17px;font-weight:bold;color:#275D38">' + mdInline(h[1]) + '</p>'); }
+    else if (!line.trim()){ flushP(); flushL(); }
+    else { flushL(); para.push(mdInline(line)); }
+  }
+  flushP(); flushL(); return out.join('');
+}
+function mdToPlain(src){
+  return String(src || '').split('\n').map(l => l.replace(/^\s*[-*]\s+/, '• ').replace(/^#{1,3}\s+/, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1').replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1$2')).join('\n');
+}
+// Copies the message with its formatting, so it pastes into Outlook bold and bulleted.
+async function copyRich(){
+  const md = mailText();
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([mdToHtml(md)], { type: 'text/html' }), 'text/plain': new Blob([mdToPlain(md)], { type: 'text/plain' }) })]);
+    return true;
+  } catch(e){ return false; }
+}
 // Outlook on the web compose links, split into groups so each link stays a reasonable length.
 const OUTLOOK_BATCH = 50;
+function outlookUrl(i, body){
+  const part = audienceEmails(ui.mail.aud).slice(i * OUTLOOK_BATCH, (i + 1) * OUTLOOK_BATCH);
+  return 'https://outlook.office.com/mail/deeplink/compose?bcc=' + encodeURIComponent(part.join(';')) + '&subject=' + encodeURIComponent(fillMerge(ui.mail.subject)) + (body ? '&body=' + encodeURIComponent(body) : '');
+}
 function outlookButtons(to){
   if (!to.length) return '<span class="hint">Pick who to send to first.</span>';
-  const subject = fillMerge(ui.mail.subject), body = mailText(), n = Math.ceil(to.length / OUTLOOK_BATCH);
+  const n = Math.ceil(to.length / OUTLOOK_BATCH);
   return Array.from({ length: n }, (_, i) => {
-    const part = to.slice(i * OUTLOOK_BATCH, (i + 1) * OUTLOOK_BATCH);
-    const href = 'https://outlook.office.com/mail/deeplink/compose?bcc=' + encodeURIComponent(part.join(';')) + '&subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
-    const label = n === 1 ? `Open in Outlook (${part.length} in BCC)` : `Open email ${i + 1} of ${n} (${part.length} in BCC)`;
-    return `<a class="btn" href="${esc(href)}" target="_blank" rel="noopener">${label}</a>`;
+    const size = to.slice(i * OUTLOOK_BATCH, (i + 1) * OUTLOOK_BATCH).length;
+    const label = n === 1 ? `Open in Outlook (${size} in BCC)` : `Open email ${i + 1} of ${n} (${size} in BCC)`;
+    return `<button type="button" class="btn" data-act="mail-outlook" data-i="${i}">${label}</button>`;
   }).join('');
 }
 // Event details appended to the message for the events picked under "Add events to this email".
 function eventBlock(){
   const list = sortedEvents().filter(e => (ui.mail.evs || []).includes(e.id));
   if (!list.length) return '';
-  return '\n\n' + (list.length === 1 ? 'EVENT' : 'UPCOMING EVENTS') + '\n' + list.map(e =>
-    '\n' + e.title + '\n' + fmtDay(e.date) + (e.start ? ', ' + fmtTime(e.start) + (e.end ? ' to ' + fmtTime(e.end) : '') : '') +
-    (e.loc ? '\n' + e.loc : '') + (e.desc ? '\n' + e.desc.trim() : '')).join('\n');
+  return '\n\n## ' + (list.length === 1 ? 'Event' : 'Upcoming events') + '\n' + list.map(e =>
+    '\n**' + e.title + '**\n- When: ' + fmtDay(e.date) + (e.start ? ', ' + fmtTime(e.start) + (e.end ? ' to ' + fmtTime(e.end) : '') : '') +
+    (e.loc ? '\n- Where: ' + e.loc : '') + (e.desc ? '\n' + e.desc.trim() : '')).join('\n');
 }
 function mailText(){ return (fillMerge(ui.mail.body).trim() + eventBlock()).trim(); }
 function mailPreview(){
@@ -1607,7 +1641,7 @@ function mailPreview(){
   return `<div class="stack" style="gap:10px">
     <dl class="facts"><dt>To (BCC)</dt><dd>${to.length} recipient${to.length===1?'':'s'}${to.length ? ': ' + esc(to.slice(0,3).join(', ')) + (to.length>3?` and ${to.length-3} more`:'') : ''}</dd>
     <dt>Subject</dt><dd><strong>${esc(fillMerge(ui.mail.subject)) || '<span class="muted">No subject yet</span>'}</strong></dd></dl>
-    <div class="mail-pre">${esc(mailText()) || '<span class="muted">Message preview appears here.</span>'}</div>
+    <div class="mail-html">${mdToHtml(mailText()) || '<span class="muted">Message preview appears here.</span>'}</div>
   </div>`;
 }
 function thumbsHtml(){
@@ -1660,7 +1694,8 @@ function viewOfficer(){
           <label>Starts<input id="ev-start" type="time" required value="${esc(e?.start || '18:00')}"></label>
           <label>Ends<input id="ev-end" type="time" required value="${esc(e?.end || '19:00')}"></label>
         </div>
-        <label>Location<input id="ev-loc" required value="${esc(e?.loc)}" placeholder="Building and room"></label>
+        <label>Location<input id="ev-loc" required value="${esc(e?.loc)}" placeholder="Building and room">
+          <span class="hint">Need a room? <a href="https://www.uvu.edu/woodbury/current-students.html" target="_blank" rel="noopener">Reserve one through Woodbury ↗</a></span></label>
         <label>Seat limit<input id="ev-cap" type="number" min="0" value="${esc(e?.cap || 0)}"><span class="hint">0 means no limit. RSVPs close when the limit is reached.</span></label>
         <label>Check-in code <span class="hint">(optional)</span>
           <span class="row" style="gap:8px;flex-wrap:nowrap"><input id="ev-code" maxlength="8" autocomplete="off" value="${esc(e?.code || '')}" placeholder="e.g. BULL" style="font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;flex:1;min-width:0"><button type="button" class="btn ghost small" data-act="ev-gen-code">Generate</button></span>
@@ -1804,8 +1839,15 @@ function viewOfficer(){
         <label>Send to<select id="ml-aud">${mailAudiences().map(([g, opts]) => opts.length ? `<optgroup label="${esc(g)}">${opts.map(([k,l]) => `<option value="${k}" ${ui.mail.aud===k?'selected':''}>${esc(l)}</option>`).join('')}</optgroup>` : '').join('')}</select></label>
         <label>Event <span class="hint">(optional)</span><select id="ml-ev">${eventOptions(sortedEvents(), ui.mail.ev, 'None')}</select><span class="hint">Only needed if the message uses {event}, {date}, {time}, or {location}.</span></label>
         <label>Subject<input id="ml-subject" value="${esc(ui.mail.subject)}"></label>
-        <label>Message<textarea id="ml-body" style="min-height:200px">${esc(ui.mail.body)}</textarea>
-          <span class="hint">Placeholders: {event} {date} {time} {location} {semester}${DUES_ENABLED ? ' {dues}' : ''}</span></label>
+        <label for="ml-body">Message</label>
+        <div class="row" style="gap:4px;margin-bottom:-8px" role="toolbar" aria-label="Formatting">
+          <button type="button" class="btn ghost small" data-act="fmt" data-f="b" title="Bold"><strong>B</strong></button>
+          <button type="button" class="btn ghost small" data-act="fmt" data-f="i" title="Italic"><em>I</em></button>
+          <button type="button" class="btn ghost small" data-act="fmt" data-f="ul" title="Bulleted list">• List</button>
+          <button type="button" class="btn ghost small" data-act="fmt" data-f="h" title="Heading">Heading</button>
+        </div>
+        <label><textarea id="ml-body" style="min-height:200px" aria-label="Message">${esc(ui.mail.body)}</textarea>
+          <span class="hint">Select text and use the buttons, or type **bold**, *italic*, “- ” at the start of a line for a bullet, and “## ” for a heading. Placeholders: {event} {date} {time} {location} {semester}${DUES_ENABLED ? ' {dues}' : ''}</span></label>
         <fieldset class="stack" style="gap:6px">
           <legend>Add events to this email <span class="hint">(optional)</span></legend>
           <span class="hint">Each event’s date, time, location, and description are added below your message.</span>
@@ -1817,7 +1859,7 @@ function viewOfficer(){
         <div class="preview" id="ml-preview">${mailPreview()}</div>
         <div class="panel stack" style="gap:8px">
           <strong>Send from your UVU Outlook (recommended for @uvu.edu)</strong>
-          <span class="hint">UVU deletes club-domain emails right after they arrive, so emails to @uvu.edu addresses should come from your own UVU account. Each button opens a new Outlook message with the subject, message, and recipients in BCC filled in; you just click Send.</span>
+          <span class="hint">UVU deletes club-domain emails right after they arrive, so emails to @uvu.edu addresses should come from your own UVU account. Each button opens a new Outlook message with the subject and recipients in BCC filled in, and copies your formatted message. Click in the message body, press Ctrl+V (⌘V on Mac), and send.</span>
           <div class="row" style="gap:6px" id="ml-outlook">${outlookButtons(to)}</div>
         </div>
         <div class="row">
@@ -2139,7 +2181,26 @@ document.addEventListener('click', async ev => {
       const w = t.dataset.what;
       if (w === 'to') copyText(audienceEmails(ui.mail.aud).join(', '), 'recipients');
       else if (w === 'subject') copyText(fillMerge(ui.mail.subject), 'subject');
-      else copyText(mailText(), 'message');
+      else { readMail(); if (await copyRich()) toast('Message copied with formatting'); else copyText(mdToPlain(mailText()), 'message'); }
+      break; }
+    case 'mail-outlook': {
+      readMail();
+      const i = +t.dataset.i, rich = await copyRich();
+      window.open(outlookUrl(i, rich ? '' : mdToPlain(mailText())), '_blank', 'noopener');
+      toast(rich ? 'Message copied. Click in the Outlook message body and press Ctrl+V (⌘V on Mac) to paste it with formatting.' : 'Opened in Outlook without formatting.');
+      break; }
+    case 'fmt': {
+      const ta = document.getElementById('ml-body'), f = t.dataset.f, a = ta.selectionStart, z = ta.selectionEnd, v = ta.value;
+      if (f === 'b' || f === 'i'){
+        const m = f === 'b' ? '**' : '*', sel = v.slice(a, z) || (f === 'b' ? 'bold text' : 'italic text');
+        ta.setRangeText(m + sel + m, a, z, 'end'); ta.setSelectionRange(a + m.length, a + m.length + sel.length);
+      } else {
+        // Add (or remove) the prefix on every line the selection touches.
+        const p = f === 'ul' ? '- ' : '## ', s0 = v.lastIndexOf('\n', a - 1) + 1, lines = v.slice(s0, z).split('\n');
+        const off = lines.every(l => l.startsWith(p)), nb = lines.map(l => off ? l.slice(p.length) : p + l).join('\n');
+        ta.setRangeText(nb, s0, z, 'end'); ta.setSelectionRange(s0, s0 + nb.length);
+      }
+      ta.focus(); ta.dispatchEvent(new Event('input', { bubbles: true }));
       break; }
     case 'mail-send': await sendMail(); break;
     case 'pf-photo-rm': ui.profilePhoto = ''; document.getElementById('pf-photo-row').innerHTML = photoPreview(db.profiles[session] || {}); break;
@@ -2225,12 +2286,12 @@ document.addEventListener('keydown', e => {
 });
 async function sendMail(){
   readMail();
-  const to = audienceEmails(ui.mail.aud), subject = fillMerge(ui.mail.subject).trim(), text = mailText();
+  const to = audienceEmails(ui.mail.aud), subject = fillMerge(ui.mail.subject).trim(), md = mailText(), text = mdToPlain(md);
   if (!to.length) return toast('No one is in that group.');
   if (!subject || !text) return toast('Add a subject and a message.');
   if (/\{(event|date|time|location)\}/.test(subject + text)) return toast('Pick an event, or remove {event}, {date}, {time}, and {location} from the message.');
   toast('Sending…');
-  const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to, subject, text } });
+  const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to, subject, text, md } });
   if (error){ let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch(_){} return toast('Not sent: ' + m); }
   toast(data.failed ? `Sent to ${data.sent}. ${data.failed} couldn’t be sent.` : `Sent to ${data.sent} ${data.sent === 1 ? 'person' : 'people'}`);
   await load(); render();

@@ -25,9 +25,27 @@ const TIERS = ['president', 'vice_president', 'advisor', 'officer', 'honorary'];
 const BRANCHES = ['', 'communications', 'operations', 'financial_applications'];
 
 const escHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
-// Wraps plain text in a simple branded HTML email (UVU green header).
-function htmlEmail(text: string, button?: { label: string; url: string }) {
-  const body = escHtml(text).replace(/\n/g, '<br>');
+// Email builder formatting: **bold**, *italic*, "- " bullets, "## " headings, links. Same rules as the site.
+function mdInline(s: string) {
+  return escHtml(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1<em>$2</em>')
+    .replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" style="color:#275D38">$1</a>');
+}
+function mdToHtml(src: string) {
+  const out: string[] = []; let list: string[] | null = null, para: string[] = [];
+  const flushP = () => { if (para.length) { out.push('<p style="margin:0 0 12px">' + para.join('<br>') + '</p>'); para = []; } };
+  const flushL = () => { if (list) { out.push('<ul style="margin:0 0 12px;padding-left:22px">' + list.join('') + '</ul>'); list = null; } };
+  for (const raw of src.split('\n')) {
+    const line = raw.trimEnd(), b = line.match(/^\s*[-\u2022*]\s+(.*)$/), h = line.match(/^#{1,3}\s+(.*)$/);
+    if (b) { flushP(); (list = list || []).push('<li style="margin:0 0 4px">' + mdInline(b[1]) + '</li>'); }
+    else if (h) { flushP(); flushL(); out.push('<p style="margin:18px 0 8px;font-size:17px;font-weight:bold;color:#275D38">' + mdInline(h[1]) + '</p>'); }
+    else if (!line.trim()) { flushP(); flushL(); }
+    else { flushL(); para.push(mdInline(line)); }
+  }
+  flushP(); flushL(); return out.join('');
+}
+// Wraps plain text (or already-built HTML) in a simple branded HTML email (UVU green header).
+function htmlEmail(text: string, button?: { label: string; url: string }, bodyHtml?: string) {
+  const body = bodyHtml ?? escHtml(text).replace(/\n/g, '<br>');
   const btn = button
     ? `<p style="margin:24px 0"><a href="${escHtml(button.url)}" style="background:#275D38;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block">${escHtml(button.label)}</a></p>`
     : '';
@@ -66,7 +84,7 @@ Deno.serve(async (req) => {
     // ---------- Email builder ----------
     if (b.action === 'send') {
       if (me?.role !== 'admin' && me?.role !== 'officer') return json({ error: 'Only officers can send club emails.' }, 403);
-      const subject = String(b.subject || '').trim(), text = String(b.text || '').trim();
+      const subject = String(b.subject || '').trim(), text = String(b.text || '').trim(), md = String(b.md || '').trim();
       const to = [...new Set((Array.isArray(b.to) ? b.to : []).map((e: unknown) => String(e).trim().toLowerCase()))]
         .filter((e) => EMAIL_RE.test(e as string)) as string[];
       if (!to.length) return json({ error: 'No valid recipients.' }, 400);
@@ -81,7 +99,7 @@ Deno.serve(async (req) => {
       let sent = 0, failed = 0, lastError = '';
       for (let i = 0; i < to.length; i += 45) {
         const chunk = to.slice(i, i + 45);
-        const r = await resend({ to: [fromAddr], bcc: chunk, reply_to: replyTo, subject, text, html: htmlEmail(text) });
+        const r = await resend({ to: [fromAddr], bcc: chunk, reply_to: replyTo, subject, text, html: htmlEmail(text, undefined, md ? mdToHtml(md) : undefined) });
         if (r.ok) sent += chunk.length; else { failed += chunk.length; lastError = r.detail; }
         if (i + 45 < to.length) await new Promise((res) => setTimeout(res, 600));   // stay under Resend's rate limit
       }
