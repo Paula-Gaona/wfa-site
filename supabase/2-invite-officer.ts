@@ -30,11 +30,20 @@ function mdInline(s: string) {
   return escHtml(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1<em>$2</em>')
     .replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" style="color:#275D38">$1</a>');
 }
+// Lines starting with "> " are indented (used for event descriptions).
 function mdToHtml(src: string) {
+  const groups: { q: boolean; lines: string[] }[] = [];
+  for (const raw of src.split('\n')) {
+    const q = /^>\s?/.test(raw), line = raw.replace(/^>\s?/, ''), g = groups[groups.length - 1];
+    if (g && g.q === q) g.lines.push(line); else groups.push({ q, lines: [line] });
+  }
+  return groups.map((g) => g.q ? '<div style="margin:0 0 12px 24px">' + mdBlock(g.lines) + '</div>' : mdBlock(g.lines)).join('');
+}
+function mdBlock(lines: string[]) {
   const out: string[] = []; let list: string[] | null = null, para: string[] = [];
   const flushP = () => { if (para.length) { out.push('<p style="margin:0 0 12px">' + para.join('<br>') + '</p>'); para = []; } };
   const flushL = () => { if (list) { out.push('<ul style="margin:0 0 12px;padding-left:22px">' + list.join('') + '</ul>'); list = null; } };
-  for (const raw of src.split('\n')) {
+  for (const raw of lines) {
     const line = raw.trimEnd(), b = line.match(/^\s*[-\u2022*]\s+(.*)$/), h = line.match(/^#{1,3}\s+(.*)$/);
     if (b) { flushP(); (list = list || []).push('<li style="margin:0 0 4px">' + mdInline(b[1]) + '</li>'); }
     else if (h) { flushP(); flushL(); out.push('<p style="margin:18px 0 8px;font-size:17px;font-weight:bold;color:#275D38">' + mdInline(h[1]) + '</p>'); }
