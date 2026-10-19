@@ -288,6 +288,17 @@ table.bulk input,table.bulk select{padding:6px 8px;min-width:120px}
 .career .facts{grid-template-columns:auto 1fr}
 .cat-head{font-size:1.35rem;text-transform:uppercase;color:var(--brand-text)}
 .mail-pre{white-space:pre-wrap;font-size:.95rem;overflow-wrap:anywhere}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr));gap:20px}
+.stats-grid .panel{display:flex;flex-direction:column;gap:14px;min-width:0}
+.hbars{display:flex;flex-direction:column;gap:10px}
+.hbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 10px;align-items:center}
+.hbar .lbl{font-size:.88rem;overflow-wrap:anywhere}
+.hbar .val{font-size:.88rem;font-weight:700;font-variant-numeric:tabular-nums}
+.hbar .track{grid-column:1/-1;height:10px}
+.hbar .fill{display:block;height:100%;min-width:3px;background:var(--brand-text);border-radius:0 4px 4px 0}
+.hbar:hover .fill{opacity:.8}
+.tile .s{font-size:.8rem;color:var(--muted)}
+.checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr));gap:4px 16px}
 .mail-html{font-size:.95rem;overflow-wrap:anywhere;line-height:1.55}
 
 /* About, officers, resources, recaps */
@@ -397,7 +408,7 @@ function buildTitle(tier, branch){
   if (tier === 'honorary') return 'Honorary Officer';
   return b ? b + ' Officer' : 'Officer';
 }
-const OFFICER_TABS = [['events','Events'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members']];
+const OFFICER_TABS = [['stats','Statistics'],['events','Events'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members']];
 const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
@@ -464,7 +475,7 @@ async function load(){
   }
   db.users = (R.members || []).map(m => {
     const majors = (m.majors && m.majors.length) ? m.majors : (m.major ? [m.major] : []);
-    return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(' & '), email:m.email, joined:m.joined };
+    return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(' & '), email:m.email, joined:m.joined, interests:m.interests || [] };
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null }));
@@ -975,10 +986,11 @@ function viewAccount(){
           <dt>UVU ID</dt><dd class="num">${esc(u.uvuid)}</dd>
           <dt>Major${u.majors && u.majors.length > 1 ? 's' : ''}</dt><dd>${esc(u.major) || '—'}</dd>
           <dt>Minor</dt><dd>${esc(u.minor) || '—'}</dd>
+          <dt>Career interests</dt><dd>${(u.interests || []).length ? esc(u.interests.join(', ')) : '<span class="muted">None picked yet</span>'}</dd>
           <dt>Email</dt><dd>${esc(u.email)}</dd>
           <dt>Joined</dt><dd>${fmtDay(u.joined)}</dd>
         </dl>
-        ${ui.editMajors ? majorEditForm(u) : '<div><button class="btn ghost small" data-act="edit-majors">Edit majors and minor</button></div>'}
+        ${ui.editMajors ? majorEditForm(u) : ui.editInterests ? interestsForm(u) : `<div class="row" style="gap:8px"><button class="btn ghost small" data-act="edit-majors">Edit majors and minor</button><button class="btn ${(u.interests || []).length ? 'ghost ' : ''}small" data-act="edit-interests">${(u.interests || []).length ? 'Edit career interests' : 'Pick your career interests'}</button></div>`}
         ${DUES_ENABLED && d === 'unpaid' && db.settings.dues ? `<p class="hint">Pay $${db.settings.dues} to any officer. They'll mark you paid here.</p>` : ''}
       </section>
     </div>
@@ -1017,7 +1029,8 @@ function viewAuth(mode){
         <label>Last name<input id="su-last" autocomplete="family-name" required></label>
       </div>
       ${majorPicker('su', ui.picks.su || [], '')}
-      <label>Preferred email<input id="su-email" type="email" autocomplete="email" required><span class="hint">We’ll send a confirmation link here. If you’re an officer, use the email on the officer list.</span></label>
+      ${careerChecklist('su', [])}
+      <label>Preferred email<input id="su-email" type="email" autocomplete="email" required><span class="hint">If you’re an officer, use the email on the officer list.</span></label>
       <div class="grid2">
         <label>Password<input id="su-pw" type="password" autocomplete="new-password" required><span class="hint">At least 8 characters.</span></label>
         <label>Confirm password<input id="su-pw2" type="password" autocomplete="new-password" required></label>
@@ -1116,6 +1129,28 @@ function majorEditForm(u){
     ${majorPicker('ac', ui.picks.ac || [], u.minor || '')}
     <div class="err" id="ac-err"></div>
     <div class="row"><button class="btn small" type="submit">Save</button><button class="btn ghost small" type="button" data-act="cancel-majors">Cancel</button></div>
+  </form>`;
+}
+
+/* ---------- Career interests checklist (careers come from the Resources page) ---------- */
+const NOT_SURE = 'Not sure yet';
+function careerChecklist(p, selected){
+  const sel = selected || [], box = t => `<label class="check"><input type="checkbox" class="${p}-int" value="${esc(t)}" ${sel.includes(t) ? 'checked' : ''}> ${esc(t)}</label>`;
+  return `<fieldset class="stack" style="gap:10px">
+    <legend>Which finance careers interest you? <span class="hint">(optional, check all that apply)</span></legend>
+    ${Object.entries(CAREER_CATS).map(([k, l]) => {
+      const list = (db.careers || []).filter(c => c.category === k);
+      return list.length ? `<div class="stack" style="gap:4px"><span class="hint" style="font-weight:700">${l}</span><div class="checks">${list.map(c => box(c.title)).join('')}</div></div>` : '';
+    }).join('')}
+    <div class="checks">${box(NOT_SURE)}</div>
+  </fieldset>`;
+}
+function readInterests(p){ return [...document.querySelectorAll('.' + p + '-int:checked')].map(c => c.value); }
+function interestsForm(u){
+  return `<form class="stack" id="f-interests" style="gap:12px;border-top:1px solid var(--line);padding-top:14px" novalidate>
+    ${careerChecklist('ci', u.interests)}
+    <div class="err" id="ci-err"></div>
+    <div class="row"><button class="btn small" type="submit">Save</button><button class="btn ghost small" type="button" data-act="cancel-interests">Cancel</button></div>
   </form>`;
 }
 
@@ -1672,6 +1707,91 @@ function thumbsHtml(){
   return ui.recapPhotos.map((p,i) => `<div class="thumb"><img src="${esc(p)}" alt="Selected photo ${i+1}"><button type="button" data-act="rm-photo" data-i="${i}" aria-label="Remove photo">×</button></div>`).join('');
 }
 
+/* ---------- Statistics dashboard (Officer tools) ---------- */
+// Semesters start Jan 1, May 1, and Aug 1.
+function semesterStart(){ const d = new Date(), y = d.getFullYear(), m = d.getMonth(); return y + (m >= 7 ? '-08-01' : m >= 4 ? '-05-01' : '-01-01'); }
+// Horizontal bar list. rows: [label, value, hover text]
+function hbars(rows, suffix = ''){
+  if (!rows.length) return '<div class="empty">No data yet.</div>';
+  const max = Math.max(1, ...rows.map(r => r[1]));
+  return `<div class="hbars">${rows.map(([l, v, tip]) => `<div class="hbar" title="${esc(tip || l + ': ' + v + suffix)}">
+    <span class="lbl">${esc(l)}</span><span class="val">${v}${suffix}</span>
+    <span class="track"><span class="fill" style="width:${(v / max * 100).toFixed(1)}%"></span></span></div>`).join('')}</div>`;
+}
+function pct(a, b){ return b ? Math.round(a / b * 100) : 0; }
+function statsBody(){
+  const all = ui.statsRange === 'all', from = all ? '' : semesterStart();
+  const staff = new Set(staffEmails()), members = db.users.filter(u => !staff.has(u.email));
+  const held = sortedEvents().filter(e => e.cat !== 'officer_meeting' && e.date <= todayIso() && e.date >= from);
+  let checkins = 0, rsvps = 0, showed = 0;
+  const perMember = {};
+  held.forEach(e => {
+    const at = attended(e.id), rs = going(e.id);
+    checkins += at.length; rsvps += rs.length; showed += rs.filter(x => at.includes(x)).length;
+    at.forEach(x => { if (!staff.has(x)) perMember[x] = (perMember[x] || 0) + 1; });
+  });
+  const active = members.filter(u => perMember[u.email]).length;
+  const joined = members.filter(u => !from || (u.joined || '') >= from);
+  const range = all ? 'all time' : 'this semester';
+
+  // Average attendance by event type
+  const byCat = {};
+  held.forEach(e => { const c = byCat[e.cat] = byCat[e.cat] || { n: 0, att: 0 }; c.n++; c.att += attended(e.id).length; });
+  const catRows = Object.entries(byCat).map(([k, c]) => [catName(k), Math.round(c.att / c.n), `${catName(k)}: ${Math.round(c.att / c.n)} on average across ${c.n} event${c.n === 1 ? '' : 's'}`]).sort((a, b) => b[1] - a[1]);
+
+  // New members by month (oldest first)
+  const months = {};
+  joined.forEach(u => { const k = (u.joined || '').slice(0, 7); if (k) months[k] = (months[k] || 0) + 1; });
+  const monthRows = Object.keys(months).sort().slice(-12).map(k => { const [y, m] = k.split('-'); const l = MONTHS[+m - 1] + ' ' + y; return [l, months[k], `${l}: ${months[k]} new member${months[k] === 1 ? '' : 's'}`]; });
+
+  // Majors (people with two majors count once for each)
+  const maj = {};
+  members.forEach(u => (u.majors || []).forEach(m => maj[m] = (maj[m] || 0) + 1));
+  const majRows = Object.entries(maj).sort((a, b) => b[1] - a[1]);
+  const majTop = majRows.slice(0, 10).map(([m, n]) => [m, n, `${m}: ${n} member${n === 1 ? '' : 's'}`]);
+  const majOther = majRows.slice(10).reduce((s, r) => s + r[1], 0);
+  if (majOther) majTop.push(['Other majors', majOther, `${majRows.length - 10} other majors: ${majOther} members`]);
+
+  // Career interests
+  const answered = members.filter(u => (u.interests || []).length);
+  const intCount = {};
+  answered.forEach(u => u.interests.forEach(t => intCount[t] = (intCount[t] || 0) + 1));
+  const intRows = [...(db.careers || []).map(c => c.title), NOT_SURE].map(t => [t, intCount[t] || 0, `${t}: ${intCount[t] || 0} of ${answered.length} members who answered`]).filter(r => r[1]).sort((a, b) => b[1] - a[1]);
+
+  const top = Object.entries(perMember).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([e, n]) => [userName(e), n, `${userName(e)} attended ${n} event${n === 1 ? '' : 's'}`]);
+  const recent = [...held].reverse().slice(0, 10).map(e => { const a = attended(e.id).length, r = going(e.id).length; return [fmtDay(e.date) + ' · ' + e.title, a, `${e.title}: ${a} checked in, ${r} RSVP’d`]; });
+  const next = upcoming().filter(e => e.cat !== 'officer_meeting').slice(0, 6).map(e => [fmtDay(e.date) + ' · ' + e.title, rsvpCount(e.id), `${e.title}: ${rsvpCount(e.id)} RSVPs${e.cap ? ' of ' + e.cap + ' spots' : ''}`]);
+
+  const tile = (v, l, s) => `<div class="tile"><span class="v">${v}</span><span class="l">${l}</span>${s ? `<span class="s">${s}</span>` : ''}</div>`;
+  const panel = (h, sub, inner) => `<section class="panel"><div><h3>${h}</h3>${sub ? `<span class="hint">${sub}</span>` : ''}</div>${inner}</section>`;
+  return `<div class="stack" style="gap:20px">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <span class="muted">Officers are left out of member counts. Officer meetings are left out of event counts.</span>
+      <span class="row" style="gap:6px" role="group" aria-label="Time range">
+        <button class="btn ${all ? 'ghost ' : ''}small" data-act="stats-range" data-r="sem" aria-pressed="${!all}">This semester</button>
+        <button class="btn ${all ? '' : 'ghost '}small" data-act="stats-range" data-r="all" aria-pressed="${all}">All time</button>
+      </span>
+    </div>
+    <div class="tiles">
+      ${tile(members.length, 'Members', `${joined.length} joined ${range}`)}
+      ${tile(active, 'Active members', `${pct(active, members.length)}% attended an event ${range}`)}
+      ${tile(held.length, 'Events held', range)}
+      ${tile(checkins, 'Check-ins', held.length ? `${Math.round(checkins / held.length)} per event on average` : '')}
+      ${tile(rsvps ? pct(showed, rsvps) + '%' : '—', 'Show-up rate', rsvps ? `${showed} of ${rsvps} RSVPs checked in` : 'No RSVPs yet')}
+      ${tile(answered.length, 'Career interests', `${pct(answered.length, members.length)}% of members answered`)}
+    </div>
+    <div class="stats-grid">
+      ${panel('Attendance by event', 'Check-ins at the 10 most recent events. Hover for RSVPs.', hbars(recent))}
+      ${panel('Upcoming RSVPs', 'Next events on the calendar', hbars(next))}
+      ${panel('Average attendance by event type', range, hbars(catRows))}
+      ${panel('Most engaged members', 'Events attended ' + range, hbars(top))}
+      ${panel('Career interests', `${answered.length} of ${members.length} members picked at least one`, hbars(intRows))}
+      ${panel('Majors', 'All members. Double majors count once for each.', hbars(majTop))}
+      ${panel('New members by month', range, hbars(monthRows))}
+    </div>
+  </div>`;
+}
+
 // Officers and admins edit their public Officers-page profile from My account.
 function officerProfileSection(){
   const p = db.profiles[session] || {};
@@ -1704,7 +1824,9 @@ function viewOfficer(){
   const T = ui.officerTab;
   let body = '';
 
-  if (T === 'events'){
+  if (T === 'stats'){ body = statsBody(); }
+
+  else if (T === 'events'){
     const e = ui.editEvent ? evById(ui.editEvent) : null;
     body = `<div class="split">
       <form class="panel stack" id="f-event">
@@ -2283,8 +2405,11 @@ document.addEventListener('click', async ev => {
       render(); break;
     case 'add-major': addMajor(t.dataset.p); break;
     case 'rm-major': { const l = ui.picks[t.dataset.p] || []; l.splice(+t.dataset.i, 1); document.getElementById(t.dataset.p + '-picks').innerHTML = pickChips(t.dataset.p, l); break; }
-    case 'edit-majors': ui.editMajors = true; ui.picks.ac = [...(me().majors || [])]; render(); break;
+    case 'edit-majors': ui.editMajors = true; ui.editInterests = false; ui.picks.ac = [...(me().majors || [])]; render(); break;
     case 'cancel-majors': ui.editMajors = false; render(); break;
+    case 'edit-interests': ui.editInterests = true; ui.editMajors = false; render(); break;
+    case 'cancel-interests': ui.editInterests = false; render(); break;
+    case 'stats-range': ui.statsRange = t.dataset.r; render(); break;
     case 'dues-filter': ui.duesFilter = t.dataset.f; render(); break;
     case 'export': copyText(exportTsv(), 'member list'); break;
     case 'csv': downloadCsv(); break;
@@ -2431,7 +2556,7 @@ async function handleSubmit(f, v, err){
     if (pw.length < 8) return err('su-err', 'Password needs at least 8 characters.');
     if (pw !== pw2) return err('su-err', 'Passwords don’t match.');
     const { data, error } = await sb.auth.signUp({ email: d.email, password: pw,
-      options: { data: { uvuid: d.uvuid, first: d.first, last: d.last, majors: pick.majors, minor: pick.minor, major: pick.majors[0] }, emailRedirectTo: location.origin + location.pathname } });
+      options: { data: { uvuid: d.uvuid, first: d.first, last: d.last, majors: pick.majors, minor: pick.minor, major: pick.majors[0], interests: readInterests('su') }, emailRedirectTo: location.origin + location.pathname } });
     if (error) return err('su-err', errMsg(error));
     if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) return err('su-err', 'An account already uses this email. Sign in instead.');
     if (data.session){ await afterLogin(); toast('Welcome to the WFA, ' + d.first); }
@@ -2466,6 +2591,12 @@ async function handleSubmit(f, v, err){
     const r = await sb.from('members').update({ majors: pick.majors, minor: pick.minor, major: pick.majors[0] }).eq('id', authUser.id);
     if (r.error) return err('ac-err', errMsg(r.error));
     ui.editMajors = false; await load(); toast('Profile saved'); render();
+  }
+
+  if (f.id === 'f-interests'){
+    const r = await sb.from('members').update({ interests: readInterests('ci') }).eq('id', authUser.id);
+    if (r.error) return err('ci-err', /interests/.test(r.error.message || '') ? 'Career interests aren’t set up yet. An admin needs to run the 14-career-interests.sql update.' : errMsg(r.error));
+    ui.editInterests = false; await load(); toast('Career interests saved'); render();
   }
 
   if (f.id === 'f-setup'){
