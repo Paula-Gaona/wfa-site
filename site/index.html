@@ -49,7 +49,8 @@
 body{margin:0}
 [hidden]{display:none!important}
 img{max-width:100%}
-body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.55}
+html{font-size:clamp(16px, calc(8px + 0.6vw), 24px)}   /* grows on big screens: 16px up to ~1330px wide, 20px at 2000px, 24px at 2660px+ */
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:1rem;line-height:1.55}
 a{color:var(--brand-text)}
 h1,h2,h3{font-family:var(--display);line-height:1.05;text-wrap:balance;margin:0;letter-spacing:.01em}
 h1{font-size:clamp(2.6rem,7vw,4.6rem);font-weight:800;text-transform:uppercase}
@@ -57,19 +58,19 @@ h1.page{font-size:clamp(2.2rem,5vw,3.2rem)}
 h2{font-size:2rem;font-weight:700;text-transform:uppercase}
 h3{font-size:1.3rem;font-weight:700}
 p{margin:0}
-.wrap{max-width:1120px;margin:0 auto;padding-inline:20px}
+.wrap{max-width:70rem;margin:0 auto;padding-inline:20px}
 .eyebrow{font-family:var(--mono);font-size:.75rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .muted{color:var(--muted)}
 .stack{display:flex;flex-direction:column;gap:16px}
 .row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
-.page-head{display:flex;flex-direction:column;gap:6px;max-width:720px}
+.page-head{display:flex;flex-direction:column;gap:6px;max-width:45rem}
 :focus-visible{outline:3px solid var(--up);outline-offset:2px}
 
 /* Header */
 .site-head{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--header-bg);color:var(--on-brand)}
 .head-in{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:10px 0}
 .brand{display:flex;align-items:center;gap:10px;color:inherit;text-decoration:none}
-.mark{width:40px;height:40px;border:2px solid currentColor;display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.05rem;letter-spacing:.02em}
+.mark{width:2.5rem;height:2.5rem;border:2px solid currentColor;display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.05rem;letter-spacing:.02em}
 .brand-name{font-family:var(--display);font-weight:700;font-size:1.15rem;text-transform:uppercase;line-height:1}
 .brand-name small{display:block;font-family:var(--mono);font-size:.62rem;letter-spacing:.14em;opacity:.8;font-weight:500}
 .nav{display:flex;gap:2px;overflow-x:auto;flex-basis:100%;min-width:0;scrollbar-width:none;order:3;margin-inline:-12px}
@@ -93,7 +94,7 @@ p{margin:0}
 .who .name{font-weight:600}
 
 /* Wider header; on desktop the menu wraps to a second line instead of scrolling sideways */
-.site-head .wrap{max-width:1440px}
+.site-head .wrap{max-width:90rem}
 @media (min-width:761px){.nav{flex-wrap:wrap;overflow:visible}}
 
 /* Buttons & inputs */
@@ -113,7 +114,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--brand-text);outline:n
 textarea{min-height:120px;resize:vertical}
 .check{flex-direction:row;align-items:center;gap:8px;font-weight:600}
 .check input{width:auto}
-.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(12.5rem,1fr));gap:14px}
 .hint{font-size:.85rem;color:var(--muted);font-weight:400}
 .err{color:var(--danger);font-weight:600;font-size:.92rem}
 .err:empty{display:none}
@@ -133,7 +134,7 @@ main{padding-block:36px 64px}
 .view{display:flex;flex-direction:column;gap:40px}
 .section-head{display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap;border-bottom:2px solid var(--ink);padding-bottom:8px}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(10rem,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
 .tile{background:var(--surface);padding:16px 18px;display:flex;flex-direction:column;gap:2px}
 .tile .v{font-family:var(--display);font-weight:800;font-size:2.2rem;line-height:1;font-variant-numeric:tabular-nums}
 .tile .l{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
@@ -209,8 +210,8 @@ main{padding-block:36px 64px}
 
 /* Modal */
 .backdrop{position:fixed;inset:0;background:rgba(5,10,7,.6);display:grid;place-items:center;padding:16px;z-index:50}
-.modal{background:var(--surface);color:var(--ink);border-radius:var(--radius);max-width:560px;width:100%;max-height:90vh;overflow:auto;border-top:6px solid var(--c,var(--brand))}
-.modal.wide{max-width:900px}
+.modal{background:var(--surface);color:var(--ink);border-radius:var(--radius);max-width:35rem;width:100%;max-height:90vh;overflow:auto;border-top:6px solid var(--c,var(--brand))}
+.modal.wide{max-width:56.25rem}
 .modal-in{padding:24px;display:flex;flex-direction:column;gap:16px}
 .modal-x{float:right;font:inherit;font-size:1.4rem;line-height:1;background:none;border:0;color:var(--muted);cursor:pointer;padding:4px 8px}
 .facts{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:.95rem}
@@ -268,15 +269,15 @@ td select{padding:5px 8px;width:auto}
 .avail th{border:0;padding:4px 6px;text-align:center}
 .avail th[scope="row"]{text-align:right;white-space:nowrap}
 .avail td{padding:0;border:0}
-.slot{width:56px;height:40px;border:1.5px solid var(--line);border-radius:4px;background:var(--surface);color:var(--on-brand);font:inherit;font-weight:700;cursor:pointer}
+.slot{width:3.5rem;height:2.5rem;border:1.5px solid var(--line);border-radius:4px;background:var(--surface);color:var(--on-brand);font:inherit;font-weight:700;cursor:pointer}
 .slot:hover{border-color:var(--brand-text)}
 .slot.on{background:var(--brand);border-color:var(--brand)}
-.heat{width:64px;height:40px;border-radius:4px;display:grid;place-items:center;font-family:var(--mono);font-size:.8rem;border:1px solid var(--line);color:var(--ink);background:color-mix(in srgb, var(--brand) calc(var(--a) * 100%), var(--surface))}
+.heat{width:4rem;height:2.5rem;border-radius:4px;display:grid;place-items:center;font-family:var(--mono);font-size:.8rem;border:1px solid var(--line);color:var(--ink);background:color-mix(in srgb, var(--brand) calc(var(--a) * 100%), var(--surface))}
 .avail.q{border-spacing:3px 1px}
 .avail.q th[scope="row"]{font-family:var(--mono);font-size:.72rem;color:var(--muted);font-weight:500;vertical-align:top;line-height:1;padding:0 8px 0 0}
 .avail.q tr.hr td,.avail.q tr.hr th{padding-top:5px}
-.avail.q .slot{width:56px;height:14px;border-radius:2px;border-width:1px;touch-action:none;display:block}
-.avail.q .heat{width:56px;height:14px;border-radius:2px;border:0;padding:0;display:block;cursor:pointer}
+.avail.q .slot{width:3.5rem;height:14px;border-radius:2px;border-width:1px;touch-action:none;display:block}
+.avail.q .heat{width:3.5rem;height:14px;border-radius:2px;border:0;padding:0;display:block;cursor:pointer}
 .avail.q .heat.picked{outline:2px solid var(--ink);outline-offset:1px}
 .best{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:6px}
 .best li span{margin-left:10px}
@@ -294,7 +295,7 @@ table.bulk input,table.bulk select{padding:6px 8px;min-width:120px}
 .pw-wrap input{padding-right:64px}
 .pw-toggle{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--brand-text);font:inherit;font-size:.85rem;font-weight:700;padding:6px 10px;cursor:pointer;border-radius:var(--radius)}
 .pw-toggle:hover{text-decoration:underline}
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr));gap:20px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(21.25rem,100%),1fr));gap:20px}
 .stats-grid .panel{display:flex;flex-direction:column;gap:14px;min-width:0}
 .hbars{display:flex;flex-direction:column;gap:10px}
 .hbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 10px;align-items:center}
@@ -304,34 +305,34 @@ table.bulk input,table.bulk select{padding:6px 8px;min-width:120px}
 .hbar .fill{display:block;height:100%;min-width:3px;background:var(--brand-text);border-radius:0 4px 4px 0}
 .hbar:hover .fill{opacity:.8}
 .tile .s{font-size:.8rem;color:var(--muted)}
-.checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr));gap:4px 16px}
+.checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(13.75rem,100%),1fr));gap:4px 16px}
 .mail-html{font-size:.95rem;overflow-wrap:anywhere;line-height:1.55}
 
 /* About, officers, resources, recaps */
-.pillars{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:24px}
+.pillars{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:24px}
 .pillar{border-top:4px solid var(--brand);padding-top:14px;display:flex;flex-direction:column;gap:8px}
-.officers{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:20px}
+.officers{display:grid;grid-template-columns:repeat(auto-fill,minmax(16.25rem,1fr));gap:20px}
 .officer{display:flex;flex-direction:column;gap:10px;padding:20px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
 .officer-top{display:flex;gap:14px;align-items:center}
-.avatar{width:64px;height:64px;flex:none;background:var(--brand);color:var(--on-brand);display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.5rem}
+.avatar{width:4rem;height:4rem;flex:none;background:var(--brand);color:var(--on-brand);display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.5rem}
 img.avatar{object-fit:cover;display:block}
 .officer .title{font-family:var(--mono);font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--brand-text)}
 .contact{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:10px;margin-top:auto;font-size:.92rem}
 .contact .line{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .contact .line span{overflow-wrap:anywhere;min-width:0}
-.res-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
+.res-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(16.25rem,1fr));gap:20px}
 .res{display:flex;flex-direction:column;gap:6px;padding:18px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);text-decoration:none;color:var(--ink)}
 .res:hover{border-color:var(--brand-text)}
 .res .go{color:var(--brand-text);font-weight:700;margin-top:auto}
 .lock{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:var(--tint);padding:18px 20px;border-radius:var(--radius)}
 .empty{padding:24px;text-align:center;color:var(--muted);border:1.5px dashed var(--line);border-radius:var(--radius)}
 .recap{display:flex;flex-direction:column;gap:12px;padding-bottom:32px;border-bottom:1px solid var(--line)}
-.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(11.25rem,1fr));gap:8px}
 .photos button{padding:0;border:0;background:none;cursor:zoom-in}
 .photos img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;border-radius:3px}
 .thumbs{display:flex;gap:8px;flex-wrap:wrap}
 .thumb{position:relative}
-.thumb img{width:84px;height:64px;object-fit:cover;border-radius:3px;display:block}
+.thumb img{width:5.25rem;height:4rem;object-fit:cover;border-radius:3px;display:block}
 .thumb button{position:absolute;top:2px;right:2px;font:inherit;font-size:.75rem;background:var(--ink);color:var(--paper);border:0;border-radius:3px;cursor:pointer;padding:0 6px}
 .arch{display:grid;grid-template-columns:110px 1fr auto;gap:16px;align-items:start;padding:16px 0;border-bottom:1px solid var(--line)}
 .arch>div{min-width:0}
@@ -868,7 +869,7 @@ function viewPartners(){
       </div></section>` : '';
   if (ui.pSent) return `<div class="view"><div class="notice"><strong>Thank you.</strong> We got your message and an officer will email ${esc(ui.pSent)} within a few days. <a href="#home">Back to home</a></div></div>`;
   return `<div class="view">
-    <section class="stack" style="max-width:760px">
+    <section class="stack" style="max-width:47.5rem">
       <div class="eyebrow">Partner with us</div>
       <h1 class="page">Meet UVU’s future finance professionals</h1>
       <p style="font-size:1.15rem">The Wolverine Finance Association connects firms and professionals with Utah Valley University students preparing for careers in investment banking, private equity, corporate finance, wealth management, and more. Whether you have an hour or a recruiting season, there’s a way to get involved.</p>
@@ -934,7 +935,7 @@ function questionsBody(){
 
 function viewAbout(){
   return `<div class="view">
-    <section class="stack" style="max-width:720px">
+    <section class="stack" style="max-width:45rem">
       <div class="eyebrow">About the club</div>
       <h1 class="page">Built for students who want to work in finance</h1>
       <p style="font-size:1.15rem">The Wolverine Finance Association connects UVU students with the skills, competitions, and people that lead to careers in investment banking, corporate finance, asset management, and financial planning. Any UVU student can join, whatever their major.</p>
@@ -1030,7 +1031,7 @@ function viewResources(){
       <p class="muted">Free sources officers use to prepare workshops and stock pitches. Members can find past slides and recordings in the <a href="#archive">Archive</a>.</p></section>
     <div class="res-grid">${links.map(r => `<div class="res"><h3>${esc(r.title)}</h3>${r.descr ? `<p class="muted">${esc(r.descr)}</p>` : ''}
       <div class="row" style="margin-top:auto;justify-content:space-between"><a class="go" href="${esc(r.url)}" target="_blank" rel="noopener">Open site ↗</a>${can('officer') ? delBtn('res-' + r.id, 'Delete', 'del-resource', r.id) : ''}</div></div>`).join('') || '<div class="empty">No resources yet.</div>'}</div>
-    ${can('officer') ? `<form class="panel stack" id="f-resource" novalidate style="max-width:640px">
+    ${can('officer') ? `<form class="panel stack" id="f-resource" novalidate style="max-width:40rem">
       <h3>Add a resource</h3>
       <div class="grid2">
         <label>Name<input id="rs-title" placeholder="e.g. Wall Street Prep"></label>
@@ -1331,7 +1332,7 @@ function viewApply(){
         ${br.map((b, bi) => `<label class="rank-row"><span>${esc(BRANCHES[b])}</span><select data-rank="${b}">${br.map((_, i) => `<option value="${i + 1}" ${i === bi ? 'selected' : ''}>${ordinal(i + 1)} choice</option>`).join('')}<option value="0">Not interested</option></select></label>`).join('')}
       </fieldset>`;
   return `<div class="view">${head}
-    <form class="panel stack" id="f-apply" novalidate style="max-width:760px">
+    <form class="panel stack" id="f-apply" novalidate style="max-width:47.5rem">
       <div class="stack" style="gap:6px"><h3>Your details</h3>
         <dl class="facts"><dt>Name</dt><dd>${esc(u.first)} ${esc(u.last)}</dd><dt>Email</dt><dd>${esc(u.email)}</dd><dt>UVU ID</dt><dd>${esc(u.uvuid) || '—'}</dd><dt>Major(s)</dt><dd>${esc(u.major) || '—'}</dd><dt>Minor</dt><dd>${esc(u.minor) || '—'}</dd></dl>
         <span class="hint">Something wrong? Update it on <a href="#account">My account</a> first.</span></div>
@@ -1371,7 +1372,7 @@ function adminApplicationsBody(){
       <fieldset class="pwset"><legend>Branches taking applications</legend>
         ${Object.entries(BRANCHES).map(([k, l]) => `<label class="check"><input type="checkbox" data-branch="${k}" ${a.branches.includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}
         <span class="hint">If two or more are open, applicants rank them. Presidents aren’t chosen through this form.</span></fieldset>
-      <label style="max-width:260px">Deadline <span class="hint">(optional)</span><input id="as-deadline" type="date" value="${esc(a.deadline)}"><span class="hint">The form closes after this day.</span></label>
+      <label style="max-width:16.25rem">Deadline <span class="hint">(optional)</span><input id="as-deadline" type="date" value="${esc(a.deadline)}"><span class="hint">The form closes after this day.</span></label>
       ${a.open ? '' : '<label class="check"><input id="as-notify" type="checkbox" checked> When I open applications, email all members a link to apply</label>'}
       <div class="err" id="as-err"></div>
       <div class="row"><button class="btn" type="submit">Save settings</button>${appsOpen() ? '<a href="#apply">See the application page</a>' : ''}</div>
@@ -1453,7 +1454,7 @@ function bulkBody(){
       </tr>`).join('')}
     </tbody></table></div>
     <div><button class="btn ghost small" data-act="bulk-add">+ Add row</button></div>
-    <label style="max-width:560px">Sign-in setup<select id="bulk-mode">${setupOptions(ui.bulkMode || 'password', false)}</select></label>
+    <label style="max-width:35rem">Sign-in setup<select id="bulk-mode">${setupOptions(ui.bulkMode || 'password', false)}</select></label>
     <span class="hint">With a temporary password, each person chooses their own password the first time they sign in. The free email plan sends up to 100 emails a day.</span>
     <div><button class="btn" data-act="bulk-go" ${ui.bulkBusy ? 'disabled' : ''}>${ui.bulkBusy ? 'Adding…' : 'Add all officers'}</button></div>
     ${ui.bulkResults ? `<div class="panel stack" style="gap:6px"><h3>Results</h3>${ui.bulkResults.map(x => `<div class="${x.ok ? '' : 'err'}">${esc(x.email)}: ${esc(x.msg)}</div>`).join('')}</div>` : ''}
@@ -1887,7 +1888,7 @@ function eventStatsSection(){
   return `<section class="stack" style="gap:16px">
     <div class="section-head"><h2>Event breakdown</h2></div>
     <div class="row" style="gap:12px;align-items:end">
-      <label style="flex:1;min-width:min(280px,100%)">Event<select id="stats-ev">${evs.map(x => `<option value="${x.id}" ${x.id === e.id ? 'selected' : ''}>${fmtDay(x.date)} · ${esc(x.title)}${x.date > todayIso() ? ' (upcoming)' : ''}</option>`).join('')}</select></label>
+      <label style="flex:1;min-width:min(17.5rem,100%)">Event<select id="stats-ev">${evs.map(x => `<option value="${x.id}" ${x.id === e.id ? 'selected' : ''}>${fmtDay(x.date)} · ${esc(x.title)}${x.date > todayIso() ? ' (upcoming)' : ''}</option>`).join('')}</select></label>
       ${past ? `<span class="row" style="gap:6px" role="group" aria-label="Break down">
         <button class="btn ${who === 'att' ? '' : 'ghost '}small" data-act="stats-who" data-w="att" aria-pressed="${who === 'att'}">Attendees</button>
         <button class="btn ${who === 'rsvp' ? '' : 'ghost '}small" data-act="stats-who" data-w="rsvp" aria-pressed="${who === 'rsvp'}">RSVPs</button></span>` : ''}
@@ -2225,8 +2226,8 @@ function viewOfficer(){
     const c = { paid:0, unpaid:0, waived:0 }; db.users.forEach(u => c[duesOf(u.email)]++);
     body = `<div class="stack" style="gap:24px">
       <form class="row" id="f-dues-set" style="align-items:end">
-        <label style="width:180px">Semester<input id="ds-sem" value="${esc(db.settings.semester)}"></label>
-        <label style="width:140px">Dues ($)<input id="ds-amt" type="number" min="0" value="${esc(db.settings.dues)}"></label>
+        <label style="width:11.25rem">Semester<input id="ds-sem" value="${esc(db.settings.semester)}"></label>
+        <label style="width:8.75rem">Dues ($)<input id="ds-amt" type="number" min="0" value="${esc(db.settings.dues)}"></label>
         <button class="btn ghost" type="submit">Save</button>
       </form>
       <div class="tiles">
@@ -2298,7 +2299,7 @@ function viewAdmin(){
         <div class="ev-sub" style="overflow-wrap:anywhere">${esc(email)}${hasAcct?'':' · no account yet'}</div></div>
         <div class="row" style="gap:6px"><button class="btn ghost small" data-act="edit-officer" data-id="${esc(email)}">Change role</button>${delBtn(list+'-'+email,'Remove','rm-access',email)}</div></div>`;
     };
-    body = `<form class="row" id="f-semester" style="align-items:end"><label style="width:220px">Current semester<input id="sem-name" value="${esc(db.settings.semester)}"></label><button class="btn ghost" type="submit">Save</button><span class="hint" style="padding-bottom:10px">Shown on the Officers page and leaderboard.</span></form>
+    body = `<form class="row" id="f-semester" style="align-items:end"><label style="width:13.75rem">Current semester<input id="sem-name" value="${esc(db.settings.semester)}"></label><button class="btn ghost" type="submit">Save</button><span class="hint" style="padding-bottom:10px">Shown on the Officers page and leaderboard.</span></form>
     <p class="muted" style="max-width:62ch">Access is set by email. Anyone who signs in with an email on the admin list sees admin tools; officer list emails see officer tools. Everyone else is a member.</p>
     <div class="split">
       <form class="panel stack" id="f-officer">
