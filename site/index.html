@@ -447,7 +447,7 @@ function buildTitle(tier, branch){
   if (tier === 'honorary') return 'Honorary Officer';
   return b ? b + ' Officer' : 'Officer';
 }
-const OFFICER_TABS = [['stats','Statistics'],['questions','Questions'],['events','Events'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
+const OFFICER_TABS = [['stats','Statistics'],['questions','Questions'],['events','Events'],['plan','Event planning'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
 const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
@@ -521,7 +521,7 @@ async function load(){
       resumePath:m.resume_path || '', resumeBook:!!m.resume_book, resumeUpdated:m.resume_updated || null, emailOptIn:m.email_opt_in !== false };
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
-  db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft }));
+  db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '' }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -2169,6 +2169,60 @@ function thumbsHtml(){
   return ui.recapPhotos.map((p,i) => `<div class="thumb"><img src="${esc(p)}" alt="Selected photo ${i+1}"><button type="button" data-act="rm-photo" data-i="${i}" aria-label="Remove photo">×</button></div>`).join('');
 }
 
+/* ---------- Event planning (Officer tools): a logistics checklist per event, drafts included ---------- */
+// The standard checklist: [task, days relative to the event (negative = before)].
+const PLAN_TEMPLATE = [
+  ['Reserve a room through Woodbury', -21], ['Confirm the speaker, host, or partner', -21], ['Coordinate with the faculty advisor', -14],
+  ['Publish the event on the site', -14], ['Make a flyer and post it on social media', -10], ['Email members about the event', -7],
+  ['Order food and supplies', -7], ['Set the check-in code', -1], ['Send a reminder email', -1],
+  ['Send a thank-you to the speaker or host', 1], ['Post a recap with photos', 2]
+];
+function shiftDay(dateIso, n){ const d = parseDay(dateIso); d.setDate(d.getDate() + n); return iso(d); }
+function planBody(){
+  // Upcoming events first (soonest at the top), then past ones, drafts included.
+  const all = [...db.events].sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  const list = [...all.filter(e => !isPast(e)), ...all.filter(isPast).reverse()];
+  if (!list.length) return '<div class="empty">No events yet. Create one (or a draft) under Events, then plan it here.</div>';
+  const e = evById(ui.planEv) || list[0];
+  const tasks = db.tasks.filter(t => t.eventId === e.id).sort((a, b) => (a.done - b.done) || a.due.localeCompare(b.due));
+  const done = tasks.filter(t => t.done).length, staff = staffEmails();
+  const days = Math.round((parseDay(e.date) - parseDay(todayIso())) / 864e5);
+  const when = days === 0 ? 'Today' : days > 0 ? `In ${days} day${days === 1 ? '' : 's'}` : `${-days} day${days === -1 ? '' : 's'} ago`;
+  return `<div class="stack" style="gap:18px">
+    <label style="max-width:40rem">Event<select id="plan-ev">${list.map(x => `<option value="${x.id}" ${x.id === e.id ? 'selected' : ''}>${fmtDay(x.date)} · ${esc(x.title)}${x.draft ? ' (draft)' : ''}${isPast(x) ? ' (past)' : ''}</option>`).join('')}</select></label>
+    <section class="panel stack" style="gap:8px">
+      <div class="row" style="justify-content:space-between;align-items:start">
+        <div><h3 style="margin:0">${esc(e.title)} ${e.draft ? '<span class="tag">Draft</span>' : '<span class="tag ok">Published</span>'}</h3>
+          <div class="ev-sub">${catName(e.cat)} · ${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc) || 'No location yet'} · ${when}${e.draft ? '' : ` · ${rsvpCount(e.id)} RSVP${rsvpCount(e.id) === 1 ? '' : 's'}`}</div></div>
+        <button class="btn ghost small" data-act="edit-event" data-id="${e.id}">Edit event</button>
+      </div>
+      ${tasks.length ? `<div class="hbar" title="${done} of ${tasks.length} done"><span class="lbl">${done} of ${tasks.length} done</span><span class="val">${pct(done, tasks.length)}%</span><span class="track"><span class="fill" style="width:${pct(done, tasks.length)}%"></span></span></div>` : ''}
+    </section>
+    <section class="stack" style="gap:10px">
+      <div class="section-head"><h3>Checklist</h3>${tasks.length ? '' : `<button class="btn small" data-act="plan-template" data-id="${e.id}">Add the standard checklist</button>`}</div>
+      ${tasks.length ? `<div class="table-wrap"><table><thead><tr><th style="width:2.5rem"></th><th>Task</th><th>Owner</th><th>Due</th><th></th></tr></thead><tbody>
+        ${tasks.map(t => { const late = !t.done && t.due < todayIso();
+          return `<tr${t.done ? ' style="opacity:.6"' : ''}><td><input type="checkbox" data-act="toggle-task" data-id="${t.id}" ${t.done ? 'checked' : ''} aria-label="Mark done"></td>
+          <td${t.done ? ' style="text-decoration:line-through"' : ''}>${esc(t.title)}${late ? ' <span class="tag bad">Overdue</span>' : ''}</td>
+          <td><select class="plan-owner" data-id="${t.id}" aria-label="Owner">${staff.map(s => `<option value="${esc(s)}" ${s === t.who ? 'selected' : ''}>${esc(userName(s))}</option>`).join('')}</select></td>
+          <td><input type="date" class="plan-due" data-id="${t.id}" value="${esc(t.due)}" aria-label="Due date"></td>
+          <td>${delBtn('tk-' + t.id, 'Delete', 'del-task', t.id)}</td></tr>`; }).join('')}
+      </tbody></table></div>` : '<p class="muted" style="margin:0">No checklist yet. Add the standard one (room, speaker, faculty, flyer, emails, food, check-in, thank-you, recap) with due dates counted back from the event, or add your own items below.</p>'}
+      <form class="row" id="f-plan-task" data-ev="${e.id}" style="gap:8px;align-items:end">
+        <label style="flex:2;min-width:min(16rem,100%)">Add an item<input id="pt-title" placeholder="e.g. Print name tags"></label>
+        <label style="flex:1;min-width:min(10rem,100%)">Owner<select id="pt-who">${staff.map(s => `<option value="${esc(s)}" ${s === session ? 'selected' : ''}>${esc(userName(s))}</option>`).join('')}</select></label>
+        <label style="flex:1;min-width:min(9rem,100%)">Due<input id="pt-due" type="date" value="${esc(isPast(e) ? todayIso() : shiftDay(e.date, -3) < todayIso() ? todayIso() : shiftDay(e.date, -3))}"></label>
+        <button class="btn small" type="submit">Add</button>
+      </form>
+    </section>
+    <form class="stack" id="f-plan-notes" data-ev="${e.id}" style="gap:8px">
+      <label>Planning notes <span class="hint">(contacts, budget, room details, anything the team should know)</span><textarea id="pn-notes" style="min-height:140px">${esc(e.planNotes)}</textarea></label>
+      <div class="err" id="pn-err"></div>
+      <div><button class="btn ghost small" type="submit">Save notes</button></div>
+    </form>
+  </div>`;
+}
+
 /* ---------- Statistics dashboard (Officer tools) ---------- */
 // Semesters start Jan 1, May 1, and Aug 1.
 function semesterStart(){ const d = new Date(), y = d.getFullYear(), m = d.getMonth(); return y + (m >= 7 ? '-08-01' : m >= 4 ? '-05-01' : '-01-01'); }
@@ -2338,6 +2392,8 @@ function viewOfficer(){
   else if (T === 'questions'){ body = questionsBody(); }
 
   else if (T === 'resumes'){ body = resumeBookBody(); }
+
+  else if (T === 'plan'){ body = planBody(); }
 
   else if (T === 'events'){
     const e = ui.editEvent ? evById(ui.editEvent) : null;
@@ -2844,6 +2900,12 @@ document.addEventListener('click', async ev => {
     case 'atab': ui.adminTab = t.dataset.tab; history.pushState(null, '', ui._hash = '#admin/' + ui.adminTab); render(); break;
     case 'edit-event': closeModal(); ui.officerTab = 'events'; ui.editEvent = id; if (route() !== 'officer') location.hash = 'officer'; else render(); window.scrollTo(0,0); break;
     case 'cancel-edit': ui.editEvent = null; render(); break;
+    case 'plan-template': {
+      const e = evById(id);
+      const rows = PLAN_TEMPLATE.map(([title, n]) => { let due = shiftDay(e.date, n); if (n < 0 && due < todayIso()) due = todayIso();
+        return { title, event_id: id, owner: session, due, done: false }; });
+      await act(async () => { must(await sb.from('tasks').insert(rows)); await logChange('Added the planning checklist for “' + e.title + '”'); }, 'Checklist added. Assign owners below.');
+      break; }
     case 'branch-edit': ui.editBranch = t.dataset.k; render(); break;
     case 'branch-cancel': ui.editBranch = null; render(); break;
     case 'branch-reset': {
@@ -3059,6 +3121,12 @@ document.addEventListener('change', async e => {
   if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
   if (['ml-aud','ml-ev'].includes(id)){ readMail(); render(); }
   if (id === 'stats-ev'){ ui.statsEv = e.target.value; render(); }
+  if (id === 'plan-ev'){ ui.planEv = e.target.value; render(); }
+  if (e.target.classList.contains('plan-owner') || e.target.classList.contains('plan-due')){
+    const owner = e.target.classList.contains('plan-owner'), upd = owner ? { owner: e.target.value } : { due: e.target.value || todayIso() };
+    const r = await sb.from('tasks').update(upd).eq('id', e.target.dataset.id);
+    if (r.error) toast(errMsg(r.error)); else { await load(); render(); toast(owner ? 'Assigned to ' + userName(e.target.value) : 'Due date changed'); }
+  }
   if (id === 'rb-type'){ ui.rbType = e.target.value; render(); }
   if (id === 'rb-general'){ ui.rbGeneral = e.target.checked; render(); }
   if (id === 'tailored-file' && e.target.files[0]) await uploadTailored(document.getElementById('tailored-cat').value, e.target.files[0]);
@@ -3338,6 +3406,19 @@ async function handleSubmit(f, v, err){
     if (a.url && !/^https?:\/\//i.test(a.url)) return err('ar-err', 'Links must start with https://');
     const e = evById(a.event_id); a.date = e ? e.date : todayIso();
     await act(async () => { must(await sb.from('archive').insert(a)); await logChange('Added “' + a.title + '” to the archive'); }, 'Added to the archive');
+  }
+
+  if (f.id === 'f-plan-task'){
+    const t = { title: v('pt-title'), event_id: f.dataset.ev, owner: v('pt-who'), due: v('pt-due') || todayIso(), done: false };
+    if (!t.title) return;
+    await act(async () => { must(await sb.from('tasks').insert(t)); await logChange('Added task “' + t.title + '” for ' + userName(t.owner)); }, 'Added');
+  }
+
+  if (f.id === 'f-plan-notes'){
+    const evId = f.dataset.ev, notes = document.getElementById('pn-notes').value;
+    const r = await sb.from('events').update({ plan_notes: notes }).eq('id', evId);
+    if (r.error) return err('pn-err', /plan_notes/.test(r.error.message || '') ? 'Notes aren’t set up yet. Run the 23-event-planning.sql update in Supabase.' : errMsg(r.error));
+    await load(); toast('Notes saved'); render();
   }
 
   if (f.id === 'f-task'){
