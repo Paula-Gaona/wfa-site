@@ -1749,7 +1749,8 @@ function appCard(x){
       <div><div class="eyebrow">What they’d start or change</div><p class="ann-body">${esc(x.ideas)}</p></div>
       ${x.other ? `<div><div class="eyebrow">Anything else</div><p class="ann-body">${esc(x.other)}</p></div>` : ''}
     </div></details>
-    <div class="row">${x.resume_path ? `<button class="btn ghost small" data-act="open-resume" data-id="${esc(x.resume_path)}">Open resume (PDF)</button>` : ''}${x.linkedin ? `<a class="btn ghost small" href="${esc(x.linkedin)}" target="_blank" rel="noopener">LinkedIn ↗</a>` : ''}${x.status === 'accepted' && roleOf(x.email) === 'member' ? `<button class="btn small" data-act="change-status" data-id="${esc(x.email)}">Make officer</button>` : ''}</div>
+    <div class="row">${x.resume_path ? `<button class="btn ghost small" data-act="open-resume" data-id="${esc(x.resume_path)}">Open resume (PDF)</button>` : ''}${x.linkedin ? `<a class="btn ghost small" href="${esc(x.linkedin)}" target="_blank" rel="noopener">LinkedIn ↗</a>` : ''}${x.status === 'accepted' && roleOf(x.email) === 'member' ? `<button class="btn small" data-act="change-status" data-id="${esc(x.email)}">Make officer</button>` : ''}
+      <span style="margin-left:auto">${delBtn('app-' + x.id, 'Delete application', 'del-app', x.id)}</span></div>
     <form class="stack" id="f-appnote-${x.id}" data-app-note="${x.id}" style="gap:6px" novalidate><label>Private notes<textarea style="min-height:70px">${esc(x.notes)}</textarea></label><div><button class="btn ghost small" type="submit">Save notes</button></div></form>
   </article>`;
 }
@@ -3121,6 +3122,12 @@ document.addEventListener('click', async ev => {
     case 'pf-photo-rm': ui.profilePhoto = ''; document.getElementById('pf-photo-row').innerHTML = photoPreview(db.profiles[session] || {}); break;
     case 'change-status': ui.adminTab = 'access'; ui.editOfficer = id; if (route() !== 'admin') location.hash = 'admin'; else render(); window.scrollTo(0,0); break;
     case 'app-filter': ui.appFilter = t.dataset.f; render(); break;
+    case 'del-app': { const x = db.apps.find(a => a.id === id); if (!x) break;
+      await act(async () => {
+        must(await sb.from('applications').delete().eq('id', id));
+        if (x.resume_path) await sb.storage.from('resumes').remove([x.resume_path]);
+        await logChange('Deleted the officer application from ' + x.email);
+      }, 'Application deleted'); break; }
     case 'open-resume': {
       const w = window.open('', '_blank');
       const { data, error } = await sb.storage.from('resumes').createSignedUrl(id, 300);
