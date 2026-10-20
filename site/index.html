@@ -478,7 +478,7 @@ async function load(){
     return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(' & '), email:m.email, joined:m.joined, interests:m.interests || [], year:m.year || '', lbPublic:m.lb_public !== false };
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
-  db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null }));
+  db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -552,7 +552,8 @@ function isToday(ev){ return ev.date === todayIso(); }
 function catName(c){ return (CATS[c] || ['Event'])[0]; }
 function ptsText(c){ return PTS[c] ? '+' + PTS[c] + ' points' : 'no points'; }
 // Officer meetings are hidden from members, and from officers in member view.
-function visibleEvents(){ return can('officer') ? db.events : db.events.filter(e => e.cat !== 'officer_meeting'); }
+// Drafts only appear in Officer tools > Events until they're published.
+function visibleEvents(){ const ev = db.events.filter(e => !e.draft); return can('officer') ? ev : ev.filter(e => e.cat !== 'officer_meeting'); }
 function sortedEvents(){ return [...visibleEvents()].sort((a,b) => (a.date + a.start).localeCompare(b.date + b.start)); }
 function upcoming(){ return sortedEvents().filter(e => !isPast(e)); }
 function heldEvents(){ return sortedEvents().filter(e => e.date <= todayIso()).reverse(); }
@@ -1884,7 +1885,7 @@ function viewOfficer(){
     const e = ui.editEvent ? evById(ui.editEvent) : null;
     body = `<div class="split">
       <form class="panel stack" id="f-event">
-        <h3>${e ? 'Edit event' : 'Create an event'}</h3>
+        <h3>${e ? (e.draft ? 'Edit draft' : 'Edit event') : 'Create an event'}${e && e.draft ? ' <span class="tag">Draft</span>' : ''}</h3>
         <label>Title<input id="ev-title" required value="${esc(e?.title)}" placeholder="e.g. DCF Valuation Workshop"></label>
         <div class="grid2">
           <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${e?.cat===k?'selected':''}>${l} · ${PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select></label>
@@ -1902,12 +1903,22 @@ function viewOfficer(){
           <span class="hint">Members type this at the event to check in. It only works on the event’s date. Leave blank to make one on the day.</span></label>
         <label>Description<textarea id="ev-desc">${esc(e?.desc)}</textarea></label>
         <div class="err" id="ev-err"></div>
-        <div class="row"><button class="btn" type="submit">${e ? 'Save changes' : 'Add to calendar'}</button>${e ? '<button class="btn ghost" type="button" data-act="cancel-edit">Cancel</button>' : ''}</div>
+        <div class="row">
+          ${!e || e.draft
+            ? `<button class="btn" type="submit" data-mode="publish">Publish to calendar</button><button class="btn ghost" type="submit" data-mode="draft">${e ? 'Save draft' : 'Save as draft'}</button>`
+            : `<button class="btn" type="submit" data-mode="save">Save changes</button>`}
+          ${e ? '<button class="btn ghost" type="button" data-act="cancel-edit">Cancel</button>' : ''}
+        </div>
+        <span class="hint">Drafts are only visible to officers. Members see an event once it’s published.</span>
       </form>
       <section class="stack">
-        <div class="section-head"><h3>All events</h3><span class="muted">${db.events.length}</span></div>
+        ${(() => { const drafts = db.events.filter(x => x.draft).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+          return drafts.length ? `<div class="section-head"><h3>Drafts</h3><span class="muted">${drafts.length}</span></div>
+          <div>${drafts.map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)} <span class="tag">Draft</span></div><div class="ev-sub">${fmtDay(ev.date)} · ${esc(catName(ev.cat))}</div></div>
+            <div class="row" style="gap:6px"><button class="btn small" data-act="publish-event" data-id="${ev.id}">Publish</button><button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button>${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('')}</div>` : ''; })()}
+        <div class="section-head"><h3>Published events</h3><span class="muted">${sortedEvents().length}</span></div>
         <div>${sortedEvents().reverse().map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)}</div><div class="ev-sub">${fmtDay(ev.date)} · ${going(ev.id).length} RSVP${isPast(ev)?' · '+attended(ev.id).length+' attended':''}</div></div>
-          <div class="row" style="gap:6px"><button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button>${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('') || '<div class="empty">No events yet. Create the first one.</div>'}</div>
+          <div class="row" style="gap:6px"><button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button>${isPast(ev) ? '' : `<button class="btn ghost small ${ui.armed === 'unpub-' + ev.id ? 'armed' : ''}" data-act="unpublish-event" data-id="${ev.id}" data-key="unpub-${ev.id}">${ui.armed === 'unpub-' + ev.id ? 'Click again to unpublish' : 'Unpublish'}</button>`}${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('') || '<div class="empty">No published events yet.</div>'}</div>
       </section></div>`;
   }
 
@@ -2365,6 +2376,10 @@ document.addEventListener('click', async ev => {
     case 'atab': ui.adminTab = t.dataset.tab; history.pushState(null, '', ui._hash = '#admin/' + ui.adminTab); render(); break;
     case 'edit-event': closeModal(); ui.officerTab = 'events'; ui.editEvent = id; if (route() !== 'officer') location.hash = 'officer'; else render(); window.scrollTo(0,0); break;
     case 'cancel-edit': ui.editEvent = null; render(); break;
+    case 'publish-event': case 'unpublish-event': {
+      const e = evById(id), pub = t.dataset.act === 'publish-event';
+      await act(async () => { must(await sb.from('events').update({ draft: !pub }).eq('id', id)); await logChange((pub ? 'Published “' : 'Moved back to drafts: “') + e.title + '”'); },
+        pub ? 'Published to the calendar' : 'Moved back to drafts. Members can’t see it now.'); break; }
     case 'del-event': { const e = evById(id); if (ui.editEvent === id) ui.editEvent = null;
       await act(async () => { must(await sb.from('events').delete().eq('id', id)); await logChange('Deleted event “' + e.title + '”'); }, 'Event deleted'); break; }
     case 'show-code': await showCode(id); break;
@@ -2605,6 +2620,7 @@ document.addEventListener('submit', async ev => {
   const err = (id, msg) => { const el = document.getElementById(id); if (el) el.textContent = msg; };
   const btn = f.querySelector('button[type="submit"]');
   if (btn){ if (btn.disabled) return; btn.disabled = true; }
+  f._submitter = ev.submitter;   // which button was clicked, for forms with more than one
   try { await handleSubmit(f, v, err); }
   catch(e){ const el = f.querySelector('.err'); if (el) el.textContent = errMsg(e); else toast(errMsg(e)); }
   finally { if (btn && document.body.contains(btn)) btn.disabled = false; }
@@ -2718,15 +2734,21 @@ async function handleSubmit(f, v, err){
     if (e.end_time <= e.start_time) return err('ev-err', 'End time must be after the start time.');
     const code = v('ev-code').toUpperCase().replace(/\s+/g, '');
     if (code && !/^[A-Z0-9]{3,8}$/.test(code)) return err('ev-err', 'Check-in codes use 3–8 letters or numbers.');
-    const editing = ui.editEvent;
+    const editing = ui.editEvent, wasDraft = editing && (evById(editing) || {}).draft;
+    // draft = save as a draft, publish = put on the calendar, save = keep a published event published
+    const mode = (f._submitter && f._submitter.dataset.mode) || (wasDraft ? 'draft' : 'publish');
+    if (mode === 'draft') e.draft = true; else if (wasDraft) e.draft = false;
     const ok = await act(async () => {
       let evId = editing;
-      if (editing){ must(await sb.from('events').update(e).eq('id', editing)); await logChange('Edited event “' + e.title + '”'); }
-      else { evId = must(await sb.from('events').insert(e).select('id').single()).id; await logChange('Added event “' + e.title + '” on ' + fmtDay(e.date)); }
+      try {
+        if (editing) must(await sb.from('events').update(e).eq('id', editing));
+        else evId = must(await sb.from('events').insert(e).select('id').single()).id;
+      } catch(x){ throw /draft/.test(x.message || '') ? new Error('Drafts aren’t set up yet. An admin needs to run the 16-event-drafts.sql update.') : x; }
+      await logChange((mode === 'draft' ? (editing ? 'Edited draft “' : 'Saved draft “') : wasDraft ? 'Published “' : editing ? 'Edited event “' : 'Added event “') + e.title + '”' + (editing ? '' : ' on ' + fmtDay(e.date)));
       if (code) must(await sb.from('checkin_codes').upsert({ event_id: evId, code }));
       else if (editing && (evById(editing) || {}).code) must(await sb.from('checkin_codes').delete().eq('event_id', editing));
       ui.editEvent = null;
-    }, editing ? 'Event updated' : 'Added to the calendar');
+    }, mode === 'draft' ? 'Saved as a draft. Only officers can see it.' : wasDraft || !editing ? 'Published to the calendar' : 'Event updated');
   }
 
   if (f.id === 'f-ann'){
