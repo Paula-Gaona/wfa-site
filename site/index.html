@@ -1288,7 +1288,6 @@ async function notifyApplicationsOpen(){
 // Sign-in setup choices shared by the single and bulk officer forms.
 function setupOptions(selected, existing){
   return [
-    ['invite', 'Email a setup link, no password in the email (recommended)'],
     ['password', 'Email a temporary password'],
     ['manual', 'Set a temporary password I’ll share myself (no email)'],
     ['skip', existing ? 'Don’t change how they sign in' : 'Don’t create an account (they’ll sign up themselves)']
@@ -1322,8 +1321,8 @@ function bulkBody(){
       </tr>`).join('')}
     </tbody></table></div>
     <div><button class="btn ghost small" data-act="bulk-add">+ Add row</button></div>
-    <label style="max-width:560px">Sign-in setup<select id="bulk-mode">${setupOptions(ui.bulkMode || 'invite', false)}</select></label>
-    <span class="hint">The setup email has no password in it, which university email filters block less often. The free email plan sends up to 100 emails a day.</span>
+    <label style="max-width:560px">Sign-in setup<select id="bulk-mode">${setupOptions(ui.bulkMode || 'password', false)}</select></label>
+    <span class="hint">With a temporary password, each person chooses their own password the first time they sign in. The free email plan sends up to 100 emails a day.</span>
     <div><button class="btn" data-act="bulk-go" ${ui.bulkBusy ? 'disabled' : ''}>${ui.bulkBusy ? 'Adding…' : 'Add all officers'}</button></div>
     ${ui.bulkResults ? `<div class="panel stack" style="gap:6px"><h3>Results</h3>${ui.bulkResults.map(x => `<div class="${x.ok ? '' : 'err'}">${esc(x.email)}: ${esc(x.msg)}</div>`).join('')}</div>` : ''}
   </section>`;
@@ -1442,7 +1441,7 @@ async function bulkAdd(){
   for (const r of rows){
     const prev = db.profiles[r.email] || {};
     try {
-      const mode = ui.bulkMode || 'invite';
+      const mode = ui.bulkMode || 'password';
       if (mode !== 'skip'){
         const pw = (mode === 'password' || mode === 'manual') ? tempPw() : '';
         const { data, error } = await sb.functions.invoke('invite-officer', { body: { email: r.email, first: r.first, last: r.last, role: r.level, title: r.title, tier: r.tier, branch: r.branch,
@@ -2183,9 +2182,9 @@ function viewAdmin(){
         </div>
         <fieldset class="pwset">
           <legend>Sign-in setup</legend>
-          <select id="of-setup" aria-label="Sign-in setup">${setupOptions(acct ? 'skip' : 'invite', !!acct)}</select>
+          <select id="of-setup" aria-label="Sign-in setup">${setupOptions(acct ? 'skip' : 'password', !!acct)}</select>
           <div class="row" style="gap:8px;flex-wrap:nowrap"><input id="of-pw" autocomplete="off" spellcheck="false" style="font-family:var(--mono);flex:1;min-width:0" placeholder="Temporary password (only for the password options)"><button type="button" class="btn ghost small" data-act="gen-pw">Generate</button></div>
-          <span class="hint">The setup email has no password in it. It tells them to set their own password with a code from “Forgot your password?”. University email filters block it less often than emails containing a password.</span>
+          <span class="hint">With a temporary password, they choose their own password the first time they sign in. Leave the box blank and one is generated for you.</span>
         </fieldset>
         <div class="grid2">
           <label>Public contact email<input id="of-contact" type="email" value="${esc(p.contact || '')}" placeholder="Defaults to login email"></label>
