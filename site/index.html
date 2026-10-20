@@ -505,7 +505,7 @@ async function load(){
   const R = {};
   keys.forEach((k, i) => { if (res[i].error) console.warn(k, res[i].error.message); R[k] = res[i].data; });
 
-  db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0) };
+  db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0), about: R.settings?.about || {} };
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
   (R.profiles || []).forEach(p => {
     db.profiles[p.email] = { name:p.name, title:buildTitle(p.tier, p.branch), bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '', majors:p.majors || [], minor:p.minor || '' };
@@ -1022,29 +1022,69 @@ function questionsBody(){
   </div>`;
 }
 
+// About page text. Officers edit it with "Edit page"; edits are saved in settings.about.
+const ABOUT_DEFAULTS = {
+  title: 'Built for students who want to work in finance',
+  intro: 'The Wolverine Finance Association connects UVU students with the skills, competitions, and people that lead to careers in investment banking, corporate finance, asset management, and financial planning. Any UVU student can join, whatever their major.',
+  pillars: [
+    { title: 'Learn the tools', text: 'Bloomberg Terminal sessions, Excel modeling nights, and valuation workshops taught by students who have done the internships.' },
+    { title: 'Compete', text: 'An internal stock pitch competition each semester and teams for outside challenges like the CFA Institute Research Challenge.' },
+    { title: 'Meet the industry', text: 'Speaker nights, alumni socials, and firm visits that turn into referrals and interviews.' }],
+  stepsTitle: 'How membership works',
+  steps: [
+    { title: 'Join online', text: 'Create an account with your UVU ID and preferred email.' },
+    { title: 'RSVP and check in', text: 'RSVP from the calendar, then check in at the event with the code on screen. Check-ins earn leaderboard points.' },
+    { title: 'Run for office', text: 'Officer elections happen each spring. Active members near the top of the leaderboard are encouraged to run.' }]
+};
+function aboutContent(){ const a = db.settings.about || {}; return { ...ABOUT_DEFAULTS, ...Object.fromEntries(Object.entries(a).filter(([, v]) => Array.isArray(v) ? v.length : v)) }; }
 function viewAbout(){
+  if (ui.aboutDraft && can('officer')) return aboutEditor();
+  const a = aboutContent(), para = s => esc(s).replace(/\n/g, '<br>');
   return `<div class="view">
+    ${can('officer') ? `<div class="row" style="justify-content:flex-end"><button class="btn ghost small" data-act="about-edit">Edit page</button></div>` : ''}
     <section class="stack" style="max-width:45rem">
       <div class="eyebrow">About the club</div>
-      <h1 class="page">Built for students who want to work in finance</h1>
-      <p style="font-size:1.15rem">The Wolverine Finance Association connects UVU students with the skills, competitions, and people that lead to careers in investment banking, corporate finance, asset management, and financial planning. Any UVU student can join, whatever their major.</p>
+      <h1 class="page">${esc(a.title)}</h1>
+      <p style="font-size:1.15rem">${para(a.intro)}</p>
       <div><a class="btn ghost" href="#officers">Meet the officers</a></div>
     </section>
-    <section class="pillars">
-      <div class="pillar"><h3>Learn the tools</h3><p class="muted">Bloomberg Terminal sessions, Excel modeling nights, and valuation workshops taught by students who have done the internships.</p></div>
-      <div class="pillar"><h3>Compete</h3><p class="muted">An internal stock pitch competition each semester and teams for outside challenges like the CFA Institute Research Challenge.</p></div>
-      <div class="pillar"><h3>Meet the industry</h3><p class="muted">Speaker nights, alumni socials, and firm visits that turn into referrals and interviews.</p></div>
-    </section>
+    <section class="pillars">${a.pillars.map(p => `<div class="pillar"><h3>${esc(p.title)}</h3><p class="muted">${para(p.text)}</p></div>`).join('')}</section>
     <section class="stack">
-      <div class="section-head"><h2>How membership works</h2></div>
-      <div class="grid2">
-        <div class="stack" style="gap:6px"><h3>Join online</h3><p class="muted">Create an account with your UVU ID and preferred email. ${DUES_ENABLED && db.settings.dues ? `Semester dues are $${db.settings.dues}, paid to an officer.` : ''}</p></div>
-        <div class="stack" style="gap:6px"><h3>RSVP and check in</h3><p class="muted">RSVP from the calendar, then check in at the event with the code on screen. Check-ins earn leaderboard points.</p></div>
-        <div class="stack" style="gap:6px"><h3>Run for office</h3><p class="muted">Officer elections happen each spring. Active members near the top of the leaderboard are encouraged to run.</p></div>
-      </div>
+      <div class="section-head"><h2>${esc(a.stepsTitle)}</h2></div>
+      <div class="grid2">${a.steps.map(p => `<div class="stack" style="gap:6px"><h3>${esc(p.title)}</h3><p class="muted">${para(p.text)}</p></div>`).join('')}</div>
       ${can('member') ? '' : '<div><a class="btn" href="#signup">Become a member</a></div>'}
     </section>
   </div>`;
+}
+function aboutEditor(){
+  const d = ui.aboutDraft;
+  const list = (key, label) => `<fieldset class="stack" style="gap:10px"><legend>${label}</legend>
+    ${d[key].map((p, i) => `<div class="panel stack" style="gap:8px;padding:14px">
+      <div class="row" style="justify-content:space-between;align-items:center"><strong>${i + 1}</strong><div class="row" style="gap:4px">
+        <button type="button" class="btn ghost small" data-act="about-move" data-k="${key}" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+        <button type="button" class="btn ghost small" data-act="about-move" data-k="${key}" data-i="${i}" data-d="1" ${i === d[key].length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+        <button type="button" class="btn ghost small" data-act="about-rm" data-k="${key}" data-i="${i}" aria-label="Remove">×</button></div></div>
+      <label>Heading<input data-ab="${key}:${i}:title" value="${esc(p.title)}"></label>
+      <label>Text<textarea data-ab="${key}:${i}:text" style="min-height:70px">${esc(p.text)}</textarea></label>
+    </div>`).join('')}
+    <div><button type="button" class="btn ghost small" data-act="about-add" data-k="${key}">+ Add one</button></div></fieldset>`;
+  return `<div class="view"><form class="stack" id="f-about" style="gap:20px;max-width:50rem" novalidate>
+    <div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">Edit the About page</h2>
+      <button type="button" class="btn ghost small" data-act="about-cancel">Cancel</button></div>
+    <label>Page heading<input id="ab-title" value="${esc(d.title)}"></label>
+    <label>Intro paragraph<textarea id="ab-intro" style="min-height:110px">${esc(d.intro)}</textarea></label>
+    ${list('pillars', 'Feature boxes')}
+    <label>Section heading<input id="ab-steps-title" value="${esc(d.stepsTitle)}"></label>
+    ${list('steps', 'Section items')}
+    <div class="err" id="ab-err"></div>
+    <div class="row" style="gap:8px"><button class="btn" type="submit">Save page</button><button type="button" class="btn ghost small" data-act="about-reset">Reset to the original text</button></div>
+  </form></div>`;
+}
+// Copies the editor's fields back into the draft before adding, removing, or moving boxes.
+function readAboutDraft(){
+  const d = ui.aboutDraft; if (!d || !document.getElementById('ab-title')) return;
+  d.title = document.getElementById('ab-title').value; d.intro = document.getElementById('ab-intro').value; d.stepsTitle = document.getElementById('ab-steps-title').value;
+  document.querySelectorAll('[data-ab]').forEach(el => { const [k, i, f] = el.dataset.ab.split(':'); if (d[k][+i]) d[k][+i][f] = el.value; });
 }
 
 const CAREER_CATS = { high: 'High finance', corporate: 'Corporate finance' };
@@ -2995,6 +3035,14 @@ document.addEventListener('click', async ev => {
         return { title, event_id: id, owner: session, due, done: false }; });
       await act(async () => { must(await sb.from('tasks').insert(rows)); await logChange('Added the planning checklist for “' + e.title + '”'); }, 'Checklist added. Assign owners below.');
       break; }
+    case 'about-edit': { const a = aboutContent(); ui.aboutDraft = { ...a, pillars: a.pillars.map(p => ({ ...p })), steps: a.steps.map(p => ({ ...p })) }; render(); window.scrollTo(0, 0); break; }
+    case 'about-cancel': ui.aboutDraft = null; render(); break;
+    case 'about-add': readAboutDraft(); ui.aboutDraft[t.dataset.k].push({ title: '', text: '' }); render(); break;
+    case 'about-rm': readAboutDraft(); ui.aboutDraft[t.dataset.k].splice(+t.dataset.i, 1); render(); break;
+    case 'about-move': { readAboutDraft(); const l = ui.aboutDraft[t.dataset.k], i = +t.dataset.i, j = i + +t.dataset.d; [l[i], l[j]] = [l[j], l[i]]; render(); break; }
+    case 'about-reset':
+      await act(async () => { must(await sb.from('settings').update({ about: {} }).eq('id', 1)); ui.aboutDraft = null; await logChange('Reset the About page'); }, 'About page back to the original text');
+      break;
     case 'branch-edit': ui.editBranch = t.dataset.k; render(); break;
     case 'branch-cancel': ui.editBranch = null; render(); break;
     case 'branch-reset': {
@@ -3520,6 +3568,17 @@ async function handleSubmit(f, v, err){
   if (f.dataset.appNote){
     const aid = f.dataset.appNote, notes = f.querySelector('textarea').value;
     await act(async () => must(await sb.from('applications').update({ notes }).eq('id', aid)), 'Notes saved');
+  }
+
+  if (f.id === 'f-about'){
+    readAboutDraft();
+    const d = ui.aboutDraft, clean = l => l.map(p => ({ title: p.title.trim(), text: p.text.trim() })).filter(p => p.title || p.text);
+    const about = { title: d.title.trim(), intro: d.intro.trim(), stepsTitle: d.stepsTitle.trim(), pillars: clean(d.pillars), steps: clean(d.steps) };
+    if (!about.title || !about.intro) return err('ab-err', 'Add a page heading and an intro paragraph.');
+    const r = await sb.from('settings').update({ about }).eq('id', 1);
+    if (r.error) return err('ab-err', /about/.test(r.error.message || '') ? 'This isn’t set up yet. Run the 25-about-page.sql update in Supabase.' : errMsg(r.error));
+    await logChange('Edited the About page');
+    ui.aboutDraft = null; await load(); toast('About page saved'); render(); window.scrollTo(0, 0);
   }
 
   if (f.id === 'f-branch'){
