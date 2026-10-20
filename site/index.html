@@ -518,6 +518,13 @@ async function load(){
   db.apps = (R.apps || []).map(a => ({ ...a, date: iso(new Date(a.created_at)) }));
   db.avail = {}; (R.avail || []).forEach(a => db.avail[a.email] = [...normSlots(a.slots)]);
   db.log = (R.log || []).map(l => ({ ts:l.ts, who:l.who, text:l.text }));
+  // Officers added by an admin: if their account has no name yet, use the name the admin entered.
+  const mine = db.users.find(u => u.email === session), pname = ((db.profiles[session] || {}).name || '').trim();
+  if (mine && !mine.first && !mine.last && pname.includes(' ')){
+    const first = pname.split(/\s+/)[0], last = pname.slice(first.length).trim();
+    const r = await sb.from('members').update({ first, last }).eq('id', authUser.id);
+    if (!r.error){ mine.first = first; mine.last = last; }
+  }
 }
 
 const must = r => { if (r.error) throw r.error; return r.data; };
