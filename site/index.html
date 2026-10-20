@@ -1180,6 +1180,11 @@ function viewAccount(){
       <section class="panel stack">
         <h3>Profile</h3>
         <dl class="facts">
+          <dt>Name</dt><dd>${ui.editName ? `<form class="stack" id="f-name" style="gap:8px" novalidate>
+              <div class="grid2"><label>First name<input id="nm-first" autocomplete="given-name" maxlength="60" value="${esc(u.first)}"></label><label>Last name<input id="nm-last" autocomplete="family-name" maxlength="60" value="${esc(u.last)}"></label></div>
+              <div class="err" id="nm-err"></div>
+              <div class="row" style="gap:6px"><button class="btn small" type="submit">Save</button><button class="btn ghost small" type="button" data-act="cancel-name">Cancel</button></div></form>`
+            : `${esc((u.first + ' ' + u.last).trim()) || '<span class="muted">Not set</span>'} <button class="btn ghost small" data-act="edit-name" style="margin-left:6px">Edit</button>`}</dd>
           <dt>UVU ID</dt><dd class="num">${esc(u.uvuid)}</dd>
           <dt>Major${u.majors && u.majors.length > 1 ? 's' : ''}</dt><dd>${esc(u.major) || '—'}</dd>
           <dt>Minor</dt><dd>${esc(u.minor) || '—'}</dd>
@@ -2864,6 +2869,8 @@ document.addEventListener('click', async ev => {
     case 'add-major': addMajor(t.dataset.p); break;
     case 'rm-major': { const l = ui.picks[t.dataset.p] || []; l.splice(+t.dataset.i, 1); document.getElementById(t.dataset.p + '-picks').innerHTML = pickChips(t.dataset.p, l); break; }
     case 'edit-majors': ui.editMajors = true; ui.editInterests = false; ui.picks.ac = [...(me().majors || [])]; render(); break;
+    case 'edit-name': ui.editName = true; render(); document.getElementById('nm-first')?.focus(); break;
+    case 'cancel-name': ui.editName = false; render(); break;
     case 'cancel-majors': ui.editMajors = false; render(); break;
     case 'edit-interests': ui.editInterests = true; ui.editMajors = false; render(); break;
     case 'cancel-interests': ui.editInterests = false; render(); break;
@@ -3117,6 +3124,14 @@ async function handleSubmit(f, v, err){
     if (r.error) return err('q-err', /questions/.test(r.error.message || '') && /exist|schema/.test(r.error.message || '') ? 'The question form isn’t set up yet. Please try again later.' : errMsg(r.error));
     ui.qSent = q.email; render(); window.scrollTo(0, 0);
     return;
+  }
+
+  if (f.id === 'f-name'){
+    const first = v('nm-first'), last = v('nm-last');
+    if (!first || !last) return err('nm-err', 'Enter your first and last name.');
+    const r = await sb.from('members').update({ first, last }).eq('id', authUser.id);
+    if (r.error) return err('nm-err', errMsg(r.error));
+    ui.editName = false; await load(); toast('Name saved'); render();
   }
 
   if (f.id === 'f-interests'){
