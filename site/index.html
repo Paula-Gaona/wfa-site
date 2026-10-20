@@ -915,12 +915,19 @@ function viewPartners(){
       <div class="stack"><h2>Get in touch</h2><p>Tell us a little about yourself and what you have in mind. An officer will email you back, usually within a few days.</p>
         <p class="hint">Students with questions about the club can use the <a href="#contact">Contact page</a>.</p></div>
       <form class="panel stack" id="f-partner" novalidate>
+        <fieldset class="stack" style="gap:6px"><legend>I’m reaching out as</legend>
+          <div class="row" style="gap:18px">
+            <label class="check"><input type="radio" name="p-type" value="professional" checked> An industry professional</label>
+            <label class="check"><input type="radio" name="p-type" value="firm"> A firm or organization</label>
+          </div>
+          <span class="hint" id="p-type-hint">Speaking, mentoring, or helping students one-on-one.</span>
+        </fieldset>
         <div class="grid2">
           <label>Your name<input id="p-name" autocomplete="name" required maxlength="120"></label>
           <label>Title<input id="p-title" autocomplete="organization-title" maxlength="160" placeholder="e.g. Vice President"></label>
         </div>
         <div class="grid2">
-          <label>Firm or organization<input id="p-company" autocomplete="organization" required maxlength="160"></label>
+          <label><span id="p-company-label">Where you work <span class="hint">(optional)</span></span><input id="p-company" autocomplete="organization" maxlength="160"></label>
           <label>Email<input id="p-email" type="email" autocomplete="email" required maxlength="254"></label>
         </div>
         <fieldset class="stack" style="gap:6px"><legend>I’m interested in <span class="hint">(check any)</span></legend>
@@ -952,7 +959,7 @@ function questionsBody(){
     ${list.map(q => `<article class="panel stack" style="gap:10px">
       <div class="row" style="justify-content:space-between;align-items:start">
         <div><strong>${esc(q.name || 'No name given')}</strong>${q.kind === 'partner' ? `${q.job_title ? ', ' + esc(q.job_title) : ''} · <strong>${esc(q.company)}</strong>` : ''} · <a href="mailto:${esc(q.email)}">${esc(q.email)}</a>
-          <div class="hint">${q.kind === 'partner' ? '<span class="tag pinned">Industry partner</span>' : esc(q.topic)} · ${fmtStamp(q.created_at)}${q.status === 'answered' ? ` · <span class="tag ok">Answered${q.answered_by ? ' by ' + esc(userName(q.answered_by)) : ''}</span>` : ' · <span class="tag warn">New</span>'}</div></div>
+          <div class="hint">${q.kind === 'partner' ? `<span class="tag pinned">${q.topic === 'Firm or organization' ? 'Firm' : q.topic === 'Industry professional' ? 'Industry professional' : 'Industry partner'}</span>` : esc(q.topic)} · ${fmtStamp(q.created_at)}${q.status === 'answered' ? ` · <span class="tag ok">Answered${q.answered_by ? ' by ' + esc(userName(q.answered_by)) : ''}</span>` : ' · <span class="tag warn">New</span>'}</div></div>
       </div>
       ${(q.ways || []).length ? `<div class="hint"><strong>Interested in:</strong> ${esc(q.ways.join(', '))}</div>` : ''}
       <p style="white-space:pre-wrap;margin:0">${esc(q.message)}</p>
@@ -2749,6 +2756,12 @@ document.addEventListener('change', async e => {
   if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
   if (['ml-aud','ml-ev'].includes(id)){ readMail(); render(); }
   if (id === 'stats-ev'){ ui.statsEv = e.target.value; render(); }
+  if (e.target.name === 'p-type'){   // Partner form: a firm must name itself; a professional's employer is optional
+    const firm = e.target.value === 'firm';
+    document.getElementById('p-company-label').innerHTML = firm ? 'Firm or organization' : 'Where you work <span class="hint">(optional)</span>';
+    document.getElementById('p-company').required = firm;
+    document.getElementById('p-type-hint').textContent = firm ? 'Recruiting, career fairs, office visits, sponsorships, or case competitions.' : 'Speaking, mentoring, or helping students one-on-one.';
+  }
   if (e.target.classList && e.target.classList.contains('ml-evs')){ readMail(); document.getElementById('ml-preview').innerHTML = mailPreview(); document.getElementById('ml-outlook').innerHTML = outlookButtons(audienceEmails(ui.mail.aud)); }
   if (id === 'avail-who'){ ui.availWho = e.target.value; ui.availPick = null; render(); }
   if (id === 'tk-mine'){ ui.tasksMine = e.target.checked; render(); }
@@ -2881,9 +2894,11 @@ async function handleSubmit(f, v, err){
 
   if (f.id === 'f-partner'){
     if (v('p-hp')) { ui.pSent = v('p-email'); render(); return; }   // bot filled the hidden field: pretend it worked
-    const q = { kind: 'partner', topic: 'Industry partner', name: v('p-name'), job_title: v('p-title'), company: v('p-company'), email: v('p-email').toLowerCase(),
+    const firm = (document.querySelector('input[name="p-type"]:checked') || {}).value === 'firm';
+    const q = { kind: 'partner', topic: firm ? 'Firm or organization' : 'Industry professional', name: v('p-name'), job_title: v('p-title'), company: v('p-company'), email: v('p-email').toLowerCase(),
       ways: [...document.querySelectorAll('.p-way:checked')].map(c => c.value), message: v('p-msg') };
-    if (!q.name || !q.company) return err('p-err', 'Add your name and firm.');
+    if (!q.name) return err('p-err', 'Add your name.');
+    if (firm && !q.company) return err('p-err', 'Add the name of your firm or organization.');
     if (!EMAIL_RE.test(q.email)) return err('p-err', 'Enter a valid email address so we can reply.');
     if (!q.message) return err('p-err', 'Add a short message.');
     const r = await sb.from('questions').insert(q);
