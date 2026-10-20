@@ -537,7 +537,7 @@ async function load(){
   db.questions = R.questions || [];
   db.mres = {}; (R.mres || []).forEach(r => (db.mres[r.member_id] = db.mres[r.member_id] || {})[r.category] = { path: r.path, updated: r.updated_at });
   db.pstats = R.pstats || null;
-  db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null, info: R.appset?.branch_info || {} };
+  db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null, info: R.appset?.branch_info || {}, planTpl: R.appset?.plan_templates || {} };
   db.apps = (R.apps || []).map(a => ({ ...a, date: iso(new Date(a.created_at)) }));
   db.avail = {}; (R.avail || []).forEach(a => db.avail[a.email] = [...normSlots(a.slots)]);
   db.log = (R.log || []).map(l => ({ ts:l.ts, who:l.who, text:l.text }));
@@ -2170,26 +2170,99 @@ function thumbsHtml(){
 }
 
 /* ---------- Event planning (Officer tools): a logistics checklist per event, drafts included ---------- */
-// The standard checklist: [task, days relative to the event (negative = before)].
-const PLAN_TEMPLATE = [
-  ['Reserve a room through Woodbury', -21], ['Confirm the speaker, host, or partner', -21], ['Coordinate with the faculty advisor', -14],
-  ['Publish the event on the site', -14], ['Make a flyer and post it on social media', -10], ['Email members about the event', -7],
-  ['Order food and supplies', -7], ['Set the check-in code', -1], ['Send a reminder email', -1],
-  ['Send a thank-you to the speaker or host', 1], ['Post a recap with photos', 2]
-];
+// Standard checklist for each event type: [task, days relative to the event (negative = before, 0 = day of)].
+// Admins can replace these from Event planning > Edit standard checklists; edits are saved in app_settings.plan_templates.
+const PLAN_DEFAULTS = {
+  guest_speaker: [
+    ['Confirm the speaker and date', -28], ['Reserve a room through Woodbury', -21], ['Coordinate with the faculty advisor', -14],
+    ['Get the speaker’s bio, headshot, and talk title', -14], ['Publish the event on the site', -14], ['Make a flyer and post it on social media', -10],
+    ['Email members about the event', -7], ['Order food or refreshments', -7], ['Prepare the introduction and audience questions', -3],
+    ['Confirm parking, AV, and arrival time with the speaker', -2], ['Set the check-in code', -1], ['Send a reminder email', -1],
+    ['Send a thank-you to the speaker', 1], ['Post a recap with photos', 2]],
+  workshop: [
+    ['Confirm the presenter and topic', -21], ['Reserve a room or computer lab through Woodbury', -21], ['Publish the event on the site', -14],
+    ['Make a flyer and post it on social media', -10], ['Prepare slides, templates, and practice files', -7], ['Email members about the event', -7],
+    ['Order snacks', -5], ['Test the software and lab access', -3], ['Set the check-in code', -1], ['Send a reminder email', -1],
+    ['Upload the materials to the archive', 2], ['Post a recap with photos', 2]],
+  case_competition: [
+    ['Set the date, format, and team size', -56], ['Coordinate with the faculty advisor and department', -42], ['Recruit judges', -42],
+    ['Write or source the case', -35], ['Reserve presentation rooms through Woodbury', -35], ['Secure sponsors and prizes', -35],
+    ['Publish the event and open team registration', -28], ['Promote it (flyers, social media, class announcements)', -21],
+    ['Close team registration', -10], ['Release the case to teams', -7], ['Finalize the schedule and judging rubric', -7],
+    ['Order food for teams and judges', -7], ['Confirm logistics with judges', -3], ['Set the check-in code', -1],
+    ['Announce winners and award prizes', 1], ['Thank judges and sponsors', 2], ['Post a recap with photos', 3]],
+  career_fair: [
+    ['Coordinate with the UVU Career Center', -42], ['Confirm which firms are attending', -35], ['Reserve space and tables', -35],
+    ['Coordinate with the faculty advisor', -28], ['Collect each firm’s info and open roles', -21], ['Publish the event on the site', -21],
+    ['Hold a resume review session for members', -14], ['Make a flyer and post it on social media', -10], ['Email members about the event', -7],
+    ['Print the firm list and name tags', -3], ['Set the check-in code', -1], ['Send a reminder email', -1], ['Set up tables and signage', 0],
+    ['Send thank-yous to the firms', 1], ['Send firms the resume book for their area', 3], ['Post a recap with photos', 3]],
+  excursion: [
+    ['Confirm the host firm and date', -42], ['Coordinate with the faculty advisor and get UVU travel approval', -35],
+    ['Arrange transportation', -28], ['Publish the event and open sign-ups', -21], ['Collect waivers and travel forms', -10],
+    ['Share the itinerary and dress code', -5], ['Confirm the headcount with the host', -3], ['Send a reminder email', -1],
+    ['Set the check-in code', -1], ['Send a thank-you to the host', 1], ['Post a recap with photos', 2]],
+  social: [
+    ['Reserve a space', -14], ['Publish the event on the site', -14], ['Plan activities', -10], ['Make a flyer and post it on social media', -10],
+    ['Email members about the event', -7], ['Order food', -5], ['Buy supplies and decorations', -3], ['Set the check-in code', -1],
+    ['Send a reminder email', -1], ['Post a recap with photos', 2]],
+  officer_meeting: [
+    ['Reserve a room', -7], ['Write the agenda', -3], ['Send the agenda to officers', -1], ['Take notes and post action items', 0],
+    ['Assign follow-up tasks', 1]]
+};
+function planTemplate(cat){ const t = ((db.app || {}).planTpl || {})[cat]; return Array.isArray(t) && t.length ? t : (PLAN_DEFAULTS[cat] || PLAN_DEFAULTS.workshop); }
+// Admin editor for the standard checklists: one event type at a time.
+function templateEditor(){
+  const d = ui.tplDraft;
+  return `<div class="stack" style="gap:16px">
+    <div class="row" style="justify-content:space-between;align-items:end;gap:12px">
+      <label style="min-width:min(18rem,100%)">Event type<select id="tpl-cat">${Object.entries(CATS).map(([k, [l]]) => `<option value="${k}" ${k === d.cat ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <button class="btn ghost small" data-act="tpl-close">← Back to planning</button>
+    </div>
+    <p class="muted" style="margin:0">This is the checklist added when someone clicks “Add the ${esc(catName(d.cat))} checklist” for a ${esc(catName(d.cat).toLowerCase())}. Changes only affect checklists added from now on.</p>
+    <div class="table-wrap"><table><thead><tr><th>Task</th><th style="width:7rem">Days</th><th style="width:9rem">When</th><th style="width:8rem"></th></tr></thead><tbody>
+      ${d.rows.map(([title, n], i) => `<tr>
+        <td><input data-tpl="${i}:title" value="${esc(title)}" aria-label="Task ${i + 1}"></td>
+        <td><input data-tpl="${i}:num" type="number" min="0" max="365" value="${Math.abs(n)}" aria-label="Days for task ${i + 1}"></td>
+        <td><select data-tpl="${i}:dir" aria-label="Before or after for task ${i + 1}"><option value="-1" ${n < 0 ? 'selected' : ''}>before</option><option value="0" ${n === 0 ? 'selected' : ''}>day of</option><option value="1" ${n > 0 ? 'selected' : ''}>after</option></select></td>
+        <td><div class="row" style="gap:4px;flex-wrap:nowrap">
+          <button class="btn ghost small" data-act="tpl-move" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+          <button class="btn ghost small" data-act="tpl-move" data-i="${i}" data-d="1" ${i === d.rows.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+          <button class="btn ghost small" data-act="tpl-rm" data-i="${i}" aria-label="Remove">×</button></div></td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="row" style="gap:8px">
+      <button class="btn ghost small" data-act="tpl-add">+ Add a task</button>
+      <button class="btn" data-act="tpl-save">Save ${esc(catName(d.cat))} checklist</button>
+      <button class="btn ghost small" data-act="tpl-reset">Reset to default</button>
+    </div>
+  </div>`;
+}
+// Reads the editor's inputs back into the draft before any change to the list.
+function readTplDraft(){
+  const d = ui.tplDraft; if (!d) return;
+  document.querySelectorAll('[data-tpl]').forEach(el => {
+    const [i, f] = el.dataset.tpl.split(':'), row = d.rows[+i]; if (!row) return;
+    if (f === 'title') row[0] = el.value;
+    else { const num = +(document.querySelector(`[data-tpl="${i}:num"]`).value || 0), dir = +document.querySelector(`[data-tpl="${i}:dir"]`).value; row[1] = dir === 0 ? 0 : dir * Math.max(1, num); }
+  });
+}
 function shiftDay(dateIso, n){ const d = parseDay(dateIso); d.setDate(d.getDate() + n); return iso(d); }
 function planBody(){
+  if (ui.tplDraft && can('admin')) return templateEditor();
+  const editBtn = can('admin') ? `<div><button class="btn ghost small" data-act="tpl-open">Edit standard checklists</button></div>` : '';
   // Upcoming events first (soonest at the top), then past ones, drafts included.
   const all = [...db.events].sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
   const list = [...all.filter(e => !isPast(e)), ...all.filter(isPast).reverse()];
-  if (!list.length) return '<div class="empty">No events yet. Create one (or a draft) under Events, then plan it here.</div>';
+  if (!list.length) return `<div class="stack" style="gap:12px"><div class="empty">No events yet. Create one (or a draft) under Events, then plan it here.</div>${editBtn}</div>`;
   const e = evById(ui.planEv) || list[0];
   const tasks = db.tasks.filter(t => t.eventId === e.id).sort((a, b) => (a.done - b.done) || a.due.localeCompare(b.due));
   const done = tasks.filter(t => t.done).length, staff = staffEmails();
   const days = Math.round((parseDay(e.date) - parseDay(todayIso())) / 864e5);
   const when = days === 0 ? 'Today' : days > 0 ? `In ${days} day${days === 1 ? '' : 's'}` : `${-days} day${days === -1 ? '' : 's'} ago`;
   return `<div class="stack" style="gap:18px">
-    <label style="max-width:40rem">Event<select id="plan-ev">${list.map(x => `<option value="${x.id}" ${x.id === e.id ? 'selected' : ''}>${fmtDay(x.date)} · ${esc(x.title)}${x.draft ? ' (draft)' : ''}${isPast(x) ? ' (past)' : ''}</option>`).join('')}</select></label>
+    <div class="row" style="justify-content:space-between;align-items:end;gap:12px">
+    <label style="flex:1;max-width:40rem">Event<select id="plan-ev">${list.map(x => `<option value="${x.id}" ${x.id === e.id ? 'selected' : ''}>${fmtDay(x.date)} · ${esc(x.title)}${x.draft ? ' (draft)' : ''}${isPast(x) ? ' (past)' : ''}</option>`).join('')}</select></label>
+    ${editBtn}</div>
     <section class="panel stack" style="gap:8px">
       <div class="row" style="justify-content:space-between;align-items:start">
         <div><h3 style="margin:0">${esc(e.title)} ${e.draft ? '<span class="tag">Draft</span>' : '<span class="tag ok">Published</span>'}</h3>
@@ -2199,7 +2272,7 @@ function planBody(){
       ${tasks.length ? `<div class="hbar" title="${done} of ${tasks.length} done"><span class="lbl">${done} of ${tasks.length} done</span><span class="val">${pct(done, tasks.length)}%</span><span class="track"><span class="fill" style="width:${pct(done, tasks.length)}%"></span></span></div>` : ''}
     </section>
     <section class="stack" style="gap:10px">
-      <div class="section-head"><h3>Checklist</h3>${tasks.length ? '' : `<button class="btn small" data-act="plan-template" data-id="${e.id}">Add the standard checklist</button>`}</div>
+      <div class="section-head"><h3>Checklist</h3>${tasks.length ? '' : `<button class="btn small" data-act="plan-template" data-id="${e.id}">Add the ${esc(catName(e.cat))} checklist</button>`}</div>
       ${tasks.length ? `<div class="table-wrap"><table><thead><tr><th style="width:2.5rem"></th><th>Task</th><th>Owner</th><th>Due</th><th></th></tr></thead><tbody>
         ${tasks.map(t => { const late = !t.done && t.due < todayIso();
           return `<tr${t.done ? ' style="opacity:.6"' : ''}><td><input type="checkbox" data-act="toggle-task" data-id="${t.id}" ${t.done ? 'checked' : ''} aria-label="Mark done"></td>
@@ -2207,7 +2280,7 @@ function planBody(){
           <td><select class="plan-owner" data-id="${t.id}" aria-label="Owner">${staff.map(s => `<option value="${esc(s)}" ${s === t.who ? 'selected' : ''}>${esc(userName(s))}</option>`).join('')}</select></td>
           <td><input type="date" class="plan-due" data-id="${t.id}" value="${esc(t.due)}" aria-label="Due date"></td>
           <td>${delBtn('tk-' + t.id, 'Delete', 'del-task', t.id)}</td></tr>`; }).join('')}
-      </tbody></table></div>` : '<p class="muted" style="margin:0">No checklist yet. Add the standard one (room, speaker, faculty, flyer, emails, food, check-in, thank-you, recap) with due dates counted back from the event, or add your own items below.</p>'}
+      </tbody></table></div>` : `<p class="muted" style="margin:0">No checklist yet. The ${esc(catName(e.cat).toLowerCase())} checklist adds ${planTemplate(e.cat).length} items with due dates counted back from the event. Or add your own items below.</p>`}
       <form class="row" id="f-plan-task" data-ev="${e.id}" style="gap:8px;align-items:end">
         <label style="flex:2;min-width:min(16rem,100%)">Add an item<input id="pt-title" placeholder="e.g. Print name tags"></label>
         <label style="flex:1;min-width:min(10rem,100%)">Owner<select id="pt-who">${staff.map(s => `<option value="${esc(s)}" ${s === session ? 'selected' : ''}>${esc(userName(s))}</option>`).join('')}</select></label>
@@ -2900,9 +2973,25 @@ document.addEventListener('click', async ev => {
     case 'atab': ui.adminTab = t.dataset.tab; history.pushState(null, '', ui._hash = '#admin/' + ui.adminTab); render(); break;
     case 'edit-event': closeModal(); ui.officerTab = 'events'; ui.editEvent = id; if (route() !== 'officer') location.hash = 'officer'; else render(); window.scrollTo(0,0); break;
     case 'cancel-edit': ui.editEvent = null; render(); break;
+    case 'tpl-open': { const cat = (evById(ui.planEv) || {}).cat || 'guest_speaker'; ui.tplDraft = { cat, rows: planTemplate(cat).map(r => [...r]) }; render(); window.scrollTo(0, 0); break; }
+    case 'tpl-close': ui.tplDraft = null; render(); break;
+    case 'tpl-add': readTplDraft(); ui.tplDraft.rows.push(['', -7]); render(); { const ins = document.querySelectorAll('[data-tpl$=":title"]'); ins[ins.length - 1]?.focus(); } break;
+    case 'tpl-rm': readTplDraft(); ui.tplDraft.rows.splice(+t.dataset.i, 1); render(); break;
+    case 'tpl-move': { readTplDraft(); const r = ui.tplDraft.rows, i = +t.dataset.i, j = i + +t.dataset.d; [r[i], r[j]] = [r[j], r[i]]; render(); break; }
+    case 'tpl-save': case 'tpl-reset': {
+      const reset = t.dataset.act === 'tpl-reset'; readTplDraft();
+      const d = ui.tplDraft, rows = d.rows.map(([title, n]) => [String(title).trim(), +n || 0]).filter(r => r[0]);
+      if (!reset && !rows.length) { toast('Add at least one task.'); break; }
+      const all = { ...((db.app || {}).planTpl || {}) };
+      if (reset) delete all[d.cat]; else all[d.cat] = rows;
+      const r = await sb.from('app_settings').update({ plan_templates: all }).eq('id', 1);
+      if (r.error) { toast(/plan_templates/.test(r.error.message || '') ? 'This isn’t set up yet. Run the 24-plan-templates.sql update in Supabase.' : errMsg(r.error)); break; }
+      await logChange((reset ? 'Reset' : 'Edited') + ' the ' + catName(d.cat) + ' planning checklist');
+      await load(); ui.tplDraft = { cat: d.cat, rows: planTemplate(d.cat).map(x => [...x]) }; render();
+      toast(reset ? 'Back to the default checklist' : catName(d.cat) + ' checklist saved'); break; }
     case 'plan-template': {
       const e = evById(id);
-      const rows = PLAN_TEMPLATE.map(([title, n]) => { let due = shiftDay(e.date, n); if (n < 0 && due < todayIso()) due = todayIso();
+      const rows = planTemplate(e.cat).map(([title, n]) => { let due = shiftDay(e.date, n); if (n < 0 && due < todayIso()) due = todayIso();
         return { title, event_id: id, owner: session, due, done: false }; });
       await act(async () => { must(await sb.from('tasks').insert(rows)); await logChange('Added the planning checklist for “' + e.title + '”'); }, 'Checklist added. Assign owners below.');
       break; }
@@ -3122,6 +3211,7 @@ document.addEventListener('change', async e => {
   if (['ml-aud','ml-ev'].includes(id)){ readMail(); render(); }
   if (id === 'stats-ev'){ ui.statsEv = e.target.value; render(); }
   if (id === 'plan-ev'){ ui.planEv = e.target.value; render(); }
+  if (id === 'tpl-cat'){ const cat = e.target.value; ui.tplDraft = { cat, rows: planTemplate(cat).map(r => [...r]) }; render(); }
   if (e.target.classList.contains('plan-owner') || e.target.classList.contains('plan-due')){
     const owner = e.target.classList.contains('plan-owner'), upd = owner ? { owner: e.target.value } : { due: e.target.value || todayIso() };
     const r = await sb.from('tasks').update(upd).eq('id', e.target.dataset.id);
