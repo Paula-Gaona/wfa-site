@@ -447,6 +447,7 @@ async function load(){
     anns: t('announcements'),
     recaps: t('recaps'),
     archive: signed && t('archive'),
+    pstats: sb.rpc('public_stats'),
     questions: off && sb.from('questions').select('*').order('created_at', { ascending: false }),
     members: signed && t('members'),
     rsvps: signed && t('rsvps'),
@@ -498,6 +499,7 @@ async function load(){
   db.timeline = R.timeline || [];
   db.careers = R.careers || [];
   db.questions = R.questions || [];
+  db.pstats = R.pstats || null;
   db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null };
   db.apps = (R.apps || []).map(a => ({ ...a, date: iso(new Date(a.created_at)) }));
   db.avail = {}; (R.avail || []).forEach(a => db.avail[a.email] = [...normSlots(a.slots)]);
@@ -610,7 +612,7 @@ function setPendingRsvp(id){ ui._pending = id; try { id ? sessionStorage.setItem
 
 /* ---------- Chrome: nav, ticker ---------- */
 function renderChrome(route){
-  const links = [['home','Home'],['calendar','Calendar'],['recaps','Recaps'],['officers','Officers'],['about','About'],['resources','Resources'],['contact','Contact']];
+  const links = [['home','Home'],['calendar','Calendar'],['recaps','Recaps'],['officers','Officers'],['about','About'],['resources','Resources'],['partners','Partner with us'],['contact','Contact']];
   if (appsOpen()) links.push(['apply','Apply']);
   const mem = [['archive','Archive'],['leaderboard','Leaderboard'],['availability','Availability'],['account','My account']];
   const staff = [];
@@ -825,25 +827,85 @@ function viewContact(){
       <div class="row"><button class="btn" type="submit">Send question</button></div>
     </form></div></div>`;
 }
+/* ---------- Partner with us: for firms and industry professionals ---------- */
+const PARTNER_WAYS = [
+  ['Guest speaker or panel', 'Share your career path and what your work actually looks like.'],
+  ['Workshop or technical training', 'Teach a hands-on session: modeling, valuation, Excel, Bloomberg, or interview prep.'],
+  ['Office visit or excursion', 'Host members at your office for a tour, a panel, and time with your team.'],
+  ['Career fairs and recruiting events', 'Meet members at UVU career fairs, info sessions, or a recruiting night we host for you.'],
+  ['Share internships and jobs', 'Send openings and we’ll get them to members whose interests match.'],
+  ['Coffee chats and mentoring', 'Give a student 20 minutes of advice, or mentor someone through recruiting season.'],
+  ['Case competition sponsor or judge', 'Write a case, judge finalists, or sponsor prizes.'],
+  ['Sponsorship', 'Help cover event costs, software, travel to competitions, or treks.']
+];
+function viewPartners(){
+  const s = db.pstats, tile = (v, l) => `<div class="tile"><span class="v">${v}</span><span class="l">${l}</span></div>`;
+  const ans = s ? s.answered : 0;
+  const stats = s && s.members ? `<section class="stack" style="gap:16px">
+      <div class="section-head"><h2>Who our members are</h2><span class="muted">Live from our member profiles</span></div>
+      <div class="tiles">${tile(s.members, 'Members')}${tile(s.events, 'Events held')}${tile(s.avg_attendance, 'Average attendance')}</div>
+      <div class="stats-grid">
+        ${s.interests.length ? `<section class="panel"><div><h3>Career interests</h3><span class="hint">Share of the ${ans} members who told us. Members can pick more than one.</span></div>
+          ${hbars(s.interests.map(x => [x.name, pct(x.n, ans), `${x.name}: ${x.n} members`]), '%')}</section>` : ''}
+        ${s.majors.length ? `<section class="panel"><div><h3>Top majors</h3><span class="hint">Number of members. Double majors count once for each.</span></div>
+          ${hbars(s.majors.map(x => [x.name, x.n]))}</section>` : ''}
+      </div></section>` : '';
+  if (ui.pSent) return `<div class="view"><div class="notice"><strong>Thank you.</strong> We got your message and an officer will email ${esc(ui.pSent)} within a few days. <a href="#home">Back to home</a></div></div>`;
+  return `<div class="view">
+    <section class="stack" style="max-width:760px">
+      <div class="eyebrow">Partner with us</div>
+      <h1 class="page">Meet UVU’s future finance professionals</h1>
+      <p style="font-size:1.15rem">The Wolverine Finance Association connects firms and professionals with Utah Valley University students preparing for careers in investment banking, private equity, corporate finance, wealth management, and more. Whether you have an hour or a recruiting season, there’s a way to get involved.</p>
+    </section>
+    ${stats}
+    <section class="stack" style="gap:16px">
+      <div class="section-head"><h2>Ways to work with us</h2></div>
+      <div class="careers">${PARTNER_WAYS.map(([t, d]) => `<article class="panel stack" style="gap:6px"><h3>${esc(t)}</h3><p class="muted" style="margin:0">${esc(d)}</p></article>`).join('')}</div>
+    </section>
+    <section class="split">
+      <div class="stack"><h2>Get in touch</h2><p>Tell us a little about yourself and what you have in mind. An officer will email you back, usually within a few days.</p>
+        <p class="hint">Students with questions about the club can use the <a href="#contact">Contact page</a>.</p></div>
+      <form class="panel stack" id="f-partner" novalidate>
+        <div class="grid2">
+          <label>Your name<input id="p-name" autocomplete="name" required maxlength="120"></label>
+          <label>Title<input id="p-title" autocomplete="organization-title" maxlength="160" placeholder="e.g. Vice President"></label>
+        </div>
+        <div class="grid2">
+          <label>Firm or organization<input id="p-company" autocomplete="organization" required maxlength="160"></label>
+          <label>Email<input id="p-email" type="email" autocomplete="email" required maxlength="254"></label>
+        </div>
+        <fieldset class="stack" style="gap:6px"><legend>I’m interested in <span class="hint">(check any)</span></legend>
+          <div class="checks">${PARTNER_WAYS.map(([t]) => `<label class="check"><input type="checkbox" class="p-way" value="${esc(t)}"> ${esc(t)}</label>`).join('')}</div>
+        </fieldset>
+        <label>Message<textarea id="p-msg" required maxlength="5000" style="min-height:120px" placeholder="Dates you have in mind, roles you’re hiring for, or anything else."></textarea></label>
+        <label class="hp" aria-hidden="true">Leave this blank<input id="p-hp" tabindex="-1" autocomplete="off"></label>
+        <div class="err" id="p-err"></div>
+        <div class="row"><button class="btn" type="submit">Send</button></div>
+      </form>
+    </section>
+  </div>`;
+}
+
 // Reply from the officer's own Outlook: opens a new message to the asker with their question quoted.
 function questionReplyUrl(q){
   const body = `Hi${q.name ? ' ' + q.name.split(' ')[0] : ''},\n\n\n\n---\nYou asked (${fmtStamp(q.created_at)}):\n${q.message}`;
   return 'https://outlook.office.com/mail/deeplink/compose?to=' + encodeURIComponent(q.email) +
-    '&subject=' + encodeURIComponent('Re: your question for the Wolverine Finance Association' + (q.topic && q.topic !== 'Other' ? ' (' + q.topic + ')' : '')) + '&body=' + encodeURIComponent(body);
+    '&subject=' + encodeURIComponent(q.kind === 'partner' ? 'Partnering with the Wolverine Finance Association' : 'Re: your question for the Wolverine Finance Association' + (q.topic && q.topic !== 'Other' ? ' (' + q.topic + ')' : '')) + '&body=' + encodeURIComponent(body);
 }
 function questionsBody(){
   const f = ui.qFilter || 'new', list = db.questions.filter(q => f === 'all' || q.status === f);
   const n = s => db.questions.filter(q => s === 'all' || q.status === s).length;
   return `<div class="stack" style="gap:16px">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <span class="muted">Questions sent from the <a href="#contact">Contact page</a>. Reply opens a message in your UVU Outlook.</span>
+      <span class="muted">Questions from the <a href="#contact">Contact page</a> and firms from <a href="#partners">Partner with us</a>. Reply opens a message in your UVU Outlook.</span>
       <span class="row" style="gap:6px" role="group" aria-label="Show">${[['new','New'],['answered','Answered'],['all','All']].map(([k,l]) => `<button class="btn ${f === k ? '' : 'ghost '}small" data-act="q-filter" data-f="${k}" aria-pressed="${f === k}">${l} (${n(k)})</button>`).join('')}</span>
     </div>
     ${list.map(q => `<article class="panel stack" style="gap:10px">
       <div class="row" style="justify-content:space-between;align-items:start">
-        <div><strong>${esc(q.name || 'No name given')}</strong> · <a href="mailto:${esc(q.email)}">${esc(q.email)}</a>
-          <div class="hint">${esc(q.topic)} · ${fmtStamp(q.created_at)}${q.status === 'answered' ? ` · <span class="tag ok">Answered${q.answered_by ? ' by ' + esc(userName(q.answered_by)) : ''}</span>` : ' · <span class="tag warn">New</span>'}</div></div>
+        <div><strong>${esc(q.name || 'No name given')}</strong>${q.kind === 'partner' ? `${q.job_title ? ', ' + esc(q.job_title) : ''} · <strong>${esc(q.company)}</strong>` : ''} · <a href="mailto:${esc(q.email)}">${esc(q.email)}</a>
+          <div class="hint">${q.kind === 'partner' ? '<span class="tag pinned">Industry partner</span>' : esc(q.topic)} · ${fmtStamp(q.created_at)}${q.status === 'answered' ? ` · <span class="tag ok">Answered${q.answered_by ? ' by ' + esc(userName(q.answered_by)) : ''}</span>` : ' · <span class="tag warn">New</span>'}</div></div>
       </div>
+      ${(q.ways || []).length ? `<div class="hint"><strong>Interested in:</strong> ${esc(q.ways.join(', '))}</div>` : ''}
       <p style="white-space:pre-wrap;margin:0">${esc(q.message)}</p>
       <div class="row" style="gap:6px">
         <a class="btn small" href="${esc(questionReplyUrl(q))}" target="_blank" rel="noopener">Reply in Outlook</a>
@@ -2352,7 +2414,7 @@ async function showCode(id, fresh){
 /* ---------- Render ---------- */
 const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources,
   archive:viewArchive, leaderboard:viewLeaderboard, account:viewAccount, apply:viewApply, availability:viewAvailability,
-  contact:viewContact, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
+  contact:viewContact, partners:viewPartners, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
 function route(){ const r = location.hash.slice(1).split('/')[0]; return VIEWS[r] ? r : 'home'; }
 // Officer and admin tabs live in the address (#officer/stats, #admin/applications), so a refresh,
 // a bookmark, or the back button lands on the same tab.
@@ -2766,6 +2828,19 @@ async function handleSubmit(f, v, err){
     const r = await sb.from('members').update({ majors: pick.majors, minor: pick.minor, major: pick.majors[0] }).eq('id', authUser.id);
     if (r.error) return err('ac-err', errMsg(r.error));
     ui.editMajors = false; await load(); toast('Profile saved'); render();
+  }
+
+  if (f.id === 'f-partner'){
+    if (v('p-hp')) { ui.pSent = v('p-email'); render(); return; }   // bot filled the hidden field: pretend it worked
+    const q = { kind: 'partner', topic: 'Industry partner', name: v('p-name'), job_title: v('p-title'), company: v('p-company'), email: v('p-email').toLowerCase(),
+      ways: [...document.querySelectorAll('.p-way:checked')].map(c => c.value), message: v('p-msg') };
+    if (!q.name || !q.company) return err('p-err', 'Add your name and firm.');
+    if (!EMAIL_RE.test(q.email)) return err('p-err', 'Enter a valid email address so we can reply.');
+    if (!q.message) return err('p-err', 'Add a short message.');
+    const r = await sb.from('questions').insert(q);
+    if (r.error) return err('p-err', /kind|company|ways|job_title|questions/.test(r.error.message || '') ? 'This form isn’t set up yet. Please try again later.' : errMsg(r.error));
+    ui.pSent = q.email; render(); window.scrollTo(0, 0);
+    return;
   }
 
   if (f.id === 'f-question'){
