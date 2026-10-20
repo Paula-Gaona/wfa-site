@@ -2171,6 +2171,36 @@ const PLACEHOLDERS = [['{first}', 'First name'], ['{event}', 'Event name'], ['{d
 function insertBar(){
   return `<div class="row" style="gap:4px;align-items:center" role="toolbar" aria-label="Insert"><span class="hint">Insert:</span>${PLACEHOLDERS.map(([p, l]) => `<button type="button" class="btn ghost small" data-act="ins" data-ph="${p}" title="Inserts ${p}">${l}</button>`).join('')}</div>`;
 }
+// Outlook mail merge: an Excel list of the recipients (Email, FirstName, LastName) plus the message on the clipboard,
+// with {first} shown as «FirstName» so it's easy to swap for the merge field.
+async function mailMergeExport(){
+  const to = audienceEmails(ui.mail.aud); if (!to.length) return;
+  try {
+    const ExcelJS = await loadExcelJS();
+    const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Recipients');
+    ws.columns = [{ header: 'Email', key: 'email', width: 34 }, { header: 'FirstName', key: 'first', width: 16 }, { header: 'LastName', key: 'last', width: 18 }];
+    ws.getRow(1).font = { bold: true };
+    to.forEach(email => { const u = db.users.find(x => x.email === email) || {}, n = (userName(email) || '').split(' ');
+      ws.addRow({ email, first: u.first || (n[0] && !n[0].includes('@') ? n[0] : ''), last: u.last || (n.length > 1 ? n.slice(1).join(' ') : '') }); });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    a.download = 'WFA mail merge - ' + todayIso() + '.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+  } catch(e){ return toast(errMsg(e)); }
+  const md = withFirst(mailText(), '«FirstName»');
+  let copied = false;
+  try { await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([mdToHtml(md)], { type: 'text/html' }), 'text/plain': new Blob([mdToPlain(md)], { type: 'text/plain' }) })]); copied = true; } catch(e){}
+  showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3>Mail merge from Outlook</h3></div>
+    <p>Downloaded <strong>WFA mail merge - ${todayIso()}.xlsx</strong> with ${to.length} recipient${to.length === 1 ? '' : 's'} (Email, FirstName, LastName). ${copied ? 'Your message is copied, with «FirstName» where the name goes.' : ''}</p>
+    <ol class="stack" style="gap:6px;margin:0;padding-left:20px">
+      <li>In <strong>Word</strong> (desktop): <strong>Mailings → Start Mail Merge → E-mail Messages</strong>. Or in classic <strong>Outlook</strong>: <strong>People → Home → Mail Merge</strong>, which opens the same thing in Word.</li>
+      <li><strong>Select Recipients → Use an Existing List</strong>, and pick the downloaded file.</li>
+      <li>Paste your message (Ctrl+V). Select each «FirstName» and replace it with <strong>Insert Merge Field → FirstName</strong>.</li>
+      <li><strong>Finish &amp; Merge → Send Email Messages</strong>. Set <strong>To</strong> to <em>Email</em>, type the subject${ui.mail.subject ? ` (“${esc(withFirst(fillMerge(ui.mail.subject), 'there'))}”)` : ''}, choose <strong>HTML</strong>, and click OK.</li>
+    </ol>
+    <p class="hint" style="margin:0">Each person gets their own email from your account. Needs desktop Word with classic Outlook; the web versions can’t mail merge. If your Outlook has a built-in mail merge or “personalize” option, it can use the same file.</p>
+    ${copied ? '' : `<label>Your message (copy it)<textarea readonly style="min-height:160px">${esc(mdToPlain(md))}</textarea></label>`}
+    <div class="row"><button class="btn" data-act="close">Done</button></div></div>`, null, 'wide');
+}
 function fillMerge(s){
   const [, id] = ui.mail.aud.split(':');
   const e = evById(ui.mail.ev || (id || ''));
@@ -2757,9 +2787,11 @@ function viewOfficer(){
         <div class="section-head"><h3>Preview</h3><span class="muted">${to.length} recipients${optedOutCount(ui.mail.aud) ? ` · ${optedOutCount(ui.mail.aud)} opted out of club emails and won’t get it` : ''}</span></div>
         <div class="preview" id="ml-preview">${mailPreview()}</div>
         <div class="panel stack" style="gap:8px">
-          <strong>Send from your UVU Outlook (recommended for @uvu.edu)</strong>
-          <span class="hint">UVU deletes club-domain emails right after they arrive, so emails to @uvu.edu addresses should come from your own UVU account. Each button opens a new Outlook message with the subject and recipients in BCC filled in, and copies your formatted message. Click in the message body, press Ctrl+V (⌘V on Mac), and send.</span>
+          <strong>Send from your own Outlook</strong>
+          <span class="hint">Doesn’t count toward the club’s daily email limit. “Open in Outlook” starts one message with everyone in BCC and copies your formatted message: click in the message body, press Ctrl+V (⌘V on Mac), and send.</span>
           <div class="row" style="gap:6px" id="ml-outlook">${outlookButtons(to)}</div>
+          <span class="hint">Want each email to say the person’s name? Use a mail merge: it sends a separate email from your Outlook to each person.</span>
+          <div><button type="button" class="btn ghost small" data-act="mail-merge" ${to.length ? '' : 'disabled'}>Download for mail merge</button></div>
         </div>
         <div class="row">
           <button class="btn ${ui.armed==='mail-send'?'danger armed':''}" data-act="mail-send" data-key="mail-send" ${to.length?'':'disabled'}>${ui.armed==='mail-send' ? `Click again to send to ${to.length}` : `Send from the club address to ${to.length}`}</button>
@@ -3160,6 +3192,7 @@ document.addEventListener('click', async ev => {
       else if (w === 'subject') copyText(fillMerge(ui.mail.subject), 'subject');
       else { readMail(); if (await copyRich()) toast('Message copied with formatting'); else copyText(mdToPlain(mailText()), 'message'); }
       break; }
+    case 'mail-merge': readMail(); await mailMergeExport(); break;
     case 'mail-outlook': {
       readMail();
       const i = +t.dataset.i, rich = await copyRich();
