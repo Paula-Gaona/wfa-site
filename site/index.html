@@ -424,7 +424,7 @@ function buildTitle(tier, branch){
   if (tier === 'honorary') return 'Honorary Officer';
   return b ? b + ' Officer' : 'Officer';
 }
-const OFFICER_TABS = [['stats','Statistics'],['questions','Questions'],['events','Events'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members']];
+const OFFICER_TABS = [['stats','Statistics'],['questions','Questions'],['events','Events'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
 const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
@@ -493,7 +493,8 @@ async function load(){
   }
   db.users = (R.members || []).map(m => {
     const majors = (m.majors && m.majors.length) ? m.majors : (m.major ? [m.major] : []);
-    return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(' & '), email:m.email, joined:m.joined, interests:m.interests || [], year:m.year || '', lbPublic:m.lb_public !== false };
+    return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(' & '), email:m.email, joined:m.joined, interests:m.interests || [], year:m.year || '', lbPublic:m.lb_public !== false,
+      resumePath:m.resume_path || '', resumeBook:!!m.resume_book, resumeUpdated:m.resume_updated || null };
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft }));
@@ -877,6 +878,13 @@ function viewContact(){
     </form></div></div>`;
 }
 /* ---------- Partner with us: for firms and industry professionals ---------- */
+// Checkbox choices on the Partner form, depending on who's reaching out.
+const PRO_WAYS = ['Guest speaker or panel', 'Workshop or technical training', 'Coffee chats and informational interviews',
+  'Mentoring a student through recruiting season', 'Resume reviews or mock interviews', 'Judging a case or stock pitch competition',
+  'Referring students or sharing openings at my firm', 'Introducing the club to my firm', 'Something else (tell us below)'];
+const FIRM_WAYS = ['Career fairs and recruiting events', 'Info session or recruiting night', 'Sharing internships and full-time jobs',
+  'Office visit or excursion', 'Firm-led workshop or training', 'Sponsoring a case competition', 'Event sponsorship (food, venue, materials)',
+  'Funding for competitions, travel, software, or treks', 'Something else (tell us below)'];
 const PARTNER_WAYS = [
   ['Guest speaker or panel', 'Share your career path and what your work actually looks like.'],
   ['Workshop or technical training', 'Teach a hands-on session: modeling, valuation, Excel, Bloomberg, or interview prep.'],
@@ -931,7 +939,7 @@ function viewPartners(){
           <label>Email<input id="p-email" type="email" autocomplete="email" required maxlength="254"></label>
         </div>
         <fieldset class="stack" style="gap:6px"><legend>I’m interested in <span class="hint">(check any)</span></legend>
-          <div class="checks">${PARTNER_WAYS.map(([t]) => `<label class="check"><input type="checkbox" class="p-way" value="${esc(t)}"> ${esc(t)}</label>`).join('')}</div>
+          ${[['professional', PRO_WAYS, false], ['firm', FIRM_WAYS, true]].map(([k, list, hide]) => `<div class="checks" data-ways="${k}" ${hide ? 'hidden' : ''}>${list.map(t => `<label class="check"><input type="checkbox" class="p-way" value="${esc(t)}"> ${esc(t)}</label>`).join('')}</div>`).join('')}
         </fieldset>
         <label>Message<textarea id="p-msg" required maxlength="5000" style="min-height:120px" placeholder="Dates you have in mind, roles you’re hiring for, or anything else."></textarea></label>
         <label class="hp" aria-hidden="true">Leave this blank<input id="p-hp" tabindex="-1" autocomplete="off"></label>
@@ -1171,6 +1179,7 @@ function viewAccount(){
         </dl>
         ${ui.editMajors ? majorEditForm(u) : ui.editInterests ? interestsForm(u) : `<div class="row" style="gap:8px"><button class="btn ghost small" data-act="edit-majors">Edit majors and minor</button><button class="btn ${(u.interests || []).length && u.year ? 'ghost ' : ''}small" data-act="edit-interests">${(u.interests || []).length && u.year ? 'Edit year and career interests' : 'Add your year and career interests'}</button></div>`}
         ${DUES_ENABLED && d === 'unpaid' && db.settings.dues ? `<p class="hint">Pay $${db.settings.dues} to any officer. They'll mark you paid here.</p>` : ''}
+        ${resumeSection(u)}
       </section>
     </div>
     ${can('officer') ? `<section class="stack"><div class="section-head"><h2>Officer profile</h2><a href="#officers">See the Officers page</a></div>${officerProfileSection()}</section>` : ''}
@@ -1337,6 +1346,53 @@ function interestsForm(u){
     <div class="err" id="ci-err"></div>
     <div class="row"><button class="btn small" type="submit">Save</button><button class="btn ghost small" type="button" data-act="cancel-interests">Cancel</button></div>
   </form>`;
+}
+
+/* ---------- Resume and resume book ---------- */
+// My account: upload a PDF resume and choose whether officers may share it in the resume book.
+function resumeSection(u){
+  const has = !!u.resumePath;
+  return `<div class="stack" style="gap:8px;border-top:1px solid var(--line);padding-top:14px">
+    <h3 style="margin:0">Resume</h3>
+    ${has ? `<div class="row" style="gap:8px;align-items:center"><span>Uploaded${u.resumeUpdated ? ' ' + fmtDay(iso(new Date(u.resumeUpdated))) : ''}</span>
+      <button class="btn ghost small" data-act="open-resume" data-id="${esc(u.resumePath)}">View</button>${delBtn('resume-rm', 'Remove', 'resume-rm', 'mine')}</div>`
+      : '<span class="muted">No resume uploaded yet.</span>'}
+    <label>${has ? 'Replace it with a new PDF' : 'Upload your resume (PDF, up to 5 MB)'}<input id="resume-file" type="file" accept="application/pdf,.pdf"></label>
+    <label class="check"><input type="checkbox" id="resume-book" ${u.resumeBook ? 'checked' : ''} ${has ? '' : 'disabled'}> Include me in the WFA resume book</label>
+    <span class="hint">Officers share the resume book with recruiters and partner firms. Only officers can open your resume, and only if this is checked. You can opt out anytime.</span>
+  </div>`;
+}
+async function uploadResume(file){
+  if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') return toast('Your resume needs to be a PDF.');
+  if (file.size > 5 * 1024 * 1024) return toast('That PDF is over 5 MB. Try saving a smaller copy.');
+  const old = me().resumePath, path = authUser.id + '/resume-' + crypto.randomUUID() + '.pdf';
+  toast('Uploading…');
+  const up = await sb.storage.from('resumes').upload(path, file, { contentType: 'application/pdf' });
+  if (up.error) return toast('Your resume didn’t upload: ' + errMsg(up.error));
+  const r = await sb.from('members').update({ resume_path: path, resume_updated: new Date().toISOString() }).eq('id', authUser.id);
+  if (r.error){ await sb.storage.from('resumes').remove([path]); return toast(/resume_/.test(r.error.message || '') ? 'Resumes aren’t set up yet. An admin needs to run the 19-resume-book.sql update.' : errMsg(r.error)); }
+  if (old) await sb.storage.from('resumes').remove([old]);
+  await load(); render(); toast('Resume uploaded');
+}
+// Officer tools > Resume book: members who opted in, filterable by career interest and year.
+function resumeBookBody(){
+  const all = db.users.filter(u => u.resumeBook && u.resumePath);
+  const fi = ui.rbInterest || '', fy = ui.rbYear || '';
+  const list = all.filter(u => (!fi || (u.interests || []).includes(fi)) && (!fy || u.year === fy)).sort((a, b) => (a.last + a.first).localeCompare(b.last + b.first));
+  const interests = [...(db.careers || []).map(c => c.title), NOT_SURE];
+  return `<div class="stack" style="gap:16px">
+    <p class="muted" style="margin:0">Members who uploaded a resume and opted in from My account. ${all.length} in the book.</p>
+    <div class="row" style="gap:12px;align-items:end">
+      <label style="min-width:min(16rem,100%)">Career interest<select id="rb-interest"><option value="">All</option>${interests.map(t => `<option ${t === fi ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+      <label style="min-width:min(12rem,100%)">Year<select id="rb-year"><option value="">All</option>${YEARS.map(y => `<option ${y === fy ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
+      <button class="btn ghost small" data-act="rb-copy" ${list.length ? '' : 'disabled'}>Copy ${list.length} email${list.length === 1 ? '' : 's'}</button>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Name</th><th>Year</th><th>Major</th><th>Career interests</th><th>Updated</th><th></th></tr></thead><tbody>
+      ${list.map(u => `<tr><td>${esc(u.first)} ${esc(u.last)}<div class="hint">${esc(u.email)}</div></td><td>${esc(u.year) || '—'}</td><td>${esc(u.major) || '—'}</td>
+        <td>${esc((u.interests || []).join(', ')) || '—'}</td><td>${u.resumeUpdated ? fmtDay(iso(new Date(u.resumeUpdated))) : '—'}</td>
+        <td><button class="btn small" data-act="open-resume" data-id="${esc(u.resumePath)}">View resume</button></td></tr>`).join('') || `<tr><td colspan="6" class="muted">${all.length ? 'No one matches those filters.' : 'No one has opted in yet.'}</td></tr>`}
+    </tbody></table></div>
+  </div>`;
 }
 
 /* ---------- Officer applications ---------- */
@@ -2059,6 +2115,8 @@ function viewOfficer(){
 
   else if (T === 'questions'){ body = questionsBody(); }
 
+  else if (T === 'resumes'){ body = resumeBookBody(); }
+
   else if (T === 'events'){
     const e = ui.editEvent ? evById(ui.editEvent) : null;
     body = `<div class="split">
@@ -2696,6 +2754,13 @@ document.addEventListener('click', async ev => {
     case 'cancel-interests': ui.editInterests = false; render(); break;
     case 'stats-range': ui.statsRange = t.dataset.r; render(); break;
     case 'stats-who': ui.statsWho = t.dataset.w; render(); break;
+    case 'resume-rm': {
+      const old = me().resumePath;
+      await act(async () => { must(await sb.from('members').update({ resume_path: '', resume_book: false, resume_updated: null }).eq('id', authUser.id)); if (old) await sb.storage.from('resumes').remove([old]); }, 'Resume removed');
+      break; }
+    case 'rb-copy': {
+      const list = db.users.filter(u => u.resumeBook && u.resumePath && (!ui.rbInterest || (u.interests || []).includes(ui.rbInterest)) && (!ui.rbYear || u.year === ui.rbYear));
+      copyText(list.map(u => u.email).join(', '), 'emails'); break; }
     case 'lb-toggle': {
       const show = me().lbPublic === false, r = await sb.from('members').update({ lb_public: show }).eq('id', authUser.id);
       if (r.error) { toast(/lb_public/.test(r.error.message || '') ? 'This isn’t set up yet. An admin needs to run the 15-profile-updates.sql update.' : errMsg(r.error)); break; }
@@ -2756,10 +2821,19 @@ document.addEventListener('change', async e => {
   if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
   if (['ml-aud','ml-ev'].includes(id)){ readMail(); render(); }
   if (id === 'stats-ev'){ ui.statsEv = e.target.value; render(); }
+  if (id === 'rb-interest'){ ui.rbInterest = e.target.value; render(); }
+  if (id === 'rb-year'){ ui.rbYear = e.target.value; render(); }
+  if (id === 'resume-file' && e.target.files[0]) await uploadResume(e.target.files[0]);
+  if (id === 'resume-book'){
+    const on = e.target.checked, r = await sb.from('members').update({ resume_book: on }).eq('id', authUser.id);
+    if (r.error){ e.target.checked = !on; toast(errMsg(r.error)); }
+    else { await load(); render(); toast(on ? 'You’re in the resume book' : 'You’re out of the resume book'); }
+  }
   if (e.target.name === 'p-type'){   // Partner form: a firm must name itself; a professional's employer is optional
     const firm = e.target.value === 'firm';
     document.getElementById('p-company-label').innerHTML = firm ? 'Firm or organization' : 'Where you work <span class="hint">(optional)</span>';
     document.getElementById('p-company').required = firm;
+    document.querySelectorAll('[data-ways]').forEach(d => d.hidden = d.dataset.ways !== (firm ? 'firm' : 'professional'));
     document.getElementById('p-type-hint').textContent = firm ? 'Recruiting, career fairs, office visits, sponsorships, or case competitions.' : 'Speaking, mentoring, or helping students one-on-one.';
   }
   if (e.target.classList && e.target.classList.contains('ml-evs')){ readMail(); document.getElementById('ml-preview').innerHTML = mailPreview(); document.getElementById('ml-outlook').innerHTML = outlookButtons(audienceEmails(ui.mail.aud)); }
@@ -2896,7 +2970,7 @@ async function handleSubmit(f, v, err){
     if (v('p-hp')) { ui.pSent = v('p-email'); render(); return; }   // bot filled the hidden field: pretend it worked
     const firm = (document.querySelector('input[name="p-type"]:checked') || {}).value === 'firm';
     const q = { kind: 'partner', topic: firm ? 'Firm or organization' : 'Industry professional', name: v('p-name'), job_title: v('p-title'), company: v('p-company'), email: v('p-email').toLowerCase(),
-      ways: [...document.querySelectorAll('.p-way:checked')].map(c => c.value), message: v('p-msg') };
+      ways: [...document.querySelectorAll(`[data-ways="${firm ? 'firm' : 'professional'}"] .p-way:checked`)].map(c => c.value), message: v('p-msg') };
     if (!q.name) return err('p-err', 'Add your name.');
     if (firm && !q.company) return err('p-err', 'Add the name of your firm or organization.');
     if (!EMAIL_RE.test(q.email)) return err('p-err', 'Enter a valid email address so we can reply.');
