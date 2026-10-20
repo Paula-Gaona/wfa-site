@@ -63,7 +63,7 @@ function htmlEmail(text: string, button?: { label: string; url: string }, bodyHt
   const btn = button
     ? `<p style="margin:24px 0"><a href="${escHtml(button.url)}" style="background:#275D38;color:#ffffff;padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block">${escHtml(button.label)}</a></p>`
     : '';
-  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#0f1511">
+  return `<div style="font-family:Arial,Helvetica,sans-serif;width:100%;color:#0f1511">
   <div style="background:#275D38;color:#ffffff;padding:14px 20px;font-weight:bold;letter-spacing:.04em">WOLVERINE FINANCE ASSOCIATION</div>
   <div style="padding:20px;font-size:15px;line-height:1.55">${body}${btn}</div>
   <div style="padding:0 20px 20px;font-size:12px;color:#56655a">Wolverine Finance Association &middot; Utah Valley University</div>
