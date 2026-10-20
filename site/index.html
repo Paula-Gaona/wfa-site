@@ -50,7 +50,8 @@ body{margin:0}
 html,body{overflow-x:clip}   /* nothing can make the page scroll sideways */
 [hidden]{display:none!important}
 img{max-width:100%}
-html{font-size:clamp(16px, calc(10.5px + 0.3vw), 17px)}   /* 16px on phones and most laptops; up to 17px on very wide monitors */
+html{font-size:clamp(15px, calc(10px + 0.3vw), 16px)}   /* computers: 15px, up to 16px on very wide monitors */
+@media (max-width:760px){html{font-size:16px}}   /* phones stay at 16px for readability */
 body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:1rem;line-height:1.55}
 a{color:var(--brand-text)}
 h1,h2,h3{font-family:var(--display);line-height:1.05;text-wrap:balance;margin:0;letter-spacing:.01em}
