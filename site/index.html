@@ -1434,7 +1434,7 @@ function resumeBookBody(){
       <button class="btn ghost small" data-act="rb-copy" ${rows.length ? '' : 'disabled'}>Copy ${rows.length} email${rows.length === 1 ? '' : 's'}</button>
     </div>
     <div class="table-wrap"><table><thead><tr><th>Name</th><th>Year</th><th>Major</th><th>Career interests</th><th>Resume</th><th></th></tr></thead><tbody>
-      ${rows.map(({ u, path, label }) => `<tr><td>${esc(u.first)} ${esc(u.last)}<div class="hint">${esc(u.email)}</div></td><td>${esc(u.year) || '—'}</td><td>${esc(u.major) || '—'}</td>
+      ${rows.map(({ u, path, label }) => `<tr><td>${esc(userName(u.email))}<div class="hint">${esc(u.email)}</div></td><td>${esc(u.year) || '—'}</td><td>${esc(u.major) || '—'}</td>
         <td>${esc((u.interests || []).join(', ')) || '—'}</td><td>${label === 'Tailored' ? `<span class="tag ok">Tailored</span>` : esc(label)}</td>
         <td><button class="btn small" data-act="open-resume" data-id="${esc(path)}">View</button></td></tr>`).join('') || `<tr><td colspan="6" class="muted">${all.length ? 'No one matches.' : 'No one has opted in yet.'}</td></tr>`}
     </tbody></table></div>
@@ -1470,7 +1470,7 @@ async function downloadResumeBook(){
     let skipped = 0;
     rows.forEach((r, i) => {
       if (y < 60){ page = book.addPage([612, 792]); y = 740; }
-      page.drawText(plain(`${i + 1}. ${r.u.first} ${r.u.last}`), { x: 48, y: (y -= 18), size: 11, font: bold });
+      page.drawText(plain(`${i + 1}. ${userName(r.u.email)}`), { x: 48, y: (y -= 18), size: 11, font: bold });
       page.drawText(plain([r.u.year, r.u.major, r.u.email].filter(Boolean).join('  |  ')).slice(0, 110), { x: 64, y: (y -= 14), size: 9, font });
     });
     for (let i = 0; i < rows.length; i++){
