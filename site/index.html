@@ -1494,7 +1494,16 @@ async function downloadResumeBook(){
     cover.drawText(plain(fmtDay(todayIso())) + ' - ' + rows.length + ' candidate' + (rows.length === 1 ? '' : 's') + '. Click a name to jump to that resume.', { x: 48, y: 678, size: 11, font });
     rows.forEach((r, i) => {
       const { pg, y } = spots[i], page = covers[pg], start = starts[i];
-      page.drawText(plain(`${i + 1}. ${userName(r.u.email)}`), { x: 48, y, size: 11, font: bold, color: start == null ? rgb(0.5, 0.5, 0.5) : green });
+      const label = plain(`${i + 1}. ${userName(r.u.email)}`), w = bold.widthOfTextAtSize(label, 11);
+      page.drawText(label, { x: 48, y, size: 11, font: bold, color: start == null ? rgb(0.5, 0.5, 0.5) : green });
+      if (start != null){
+        // Underline and a small arrow so it reads as a link.
+        page.drawLine({ start: { x: 48, y: y - 2 }, end: { x: 48 + w, y: y - 2 }, thickness: 0.8, color: green });
+        const ax = 48 + w + 7, ay = y + 3.5;
+        page.drawLine({ start: { x: ax, y: ay }, end: { x: ax + 10, y: ay }, thickness: 1.2, color: green });
+        page.drawLine({ start: { x: ax + 6, y: ay + 3.5 }, end: { x: ax + 10.4, y: ay }, thickness: 1.2, color: green });
+        page.drawLine({ start: { x: ax + 6, y: ay - 3.5 }, end: { x: ax + 10.4, y: ay }, thickness: 1.2, color: green });
+      }
       page.drawText(start == null ? "(couldn't be included)" : 'p. ' + (start + 1), { x: start == null ? 460 : 520, y, size: 10, font });
       page.drawText(plain([r.u.year, r.u.major, r.u.email].filter(Boolean).join('  |  ')).slice(0, 110), { x: 64, y: y - 14, size: 9, font });
       if (start != null){
