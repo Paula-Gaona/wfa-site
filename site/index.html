@@ -475,7 +475,7 @@ async function load(){
   }
   db.users = (R.members || []).map(m => {
     const majors = (m.majors && m.majors.length) ? m.majors : (m.major ? [m.major] : []);
-    return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(' & '), email:m.email, joined:m.joined, interests:m.interests || [] };
+    return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(' & '), email:m.email, joined:m.joined, interests:m.interests || [], year:m.year || '', lbPublic:m.lb_public !== false };
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null }));
@@ -565,7 +565,7 @@ function catVar(c){ return 'var(' + (CATS[c] || CATS.meeting)[1] + ')'; }
 function points(email){ return db.events.reduce((s, e) => s + (attended(e.id).includes(email) ? PTS[e.cat] || 0 : 0), 0); }
 function attendCount(email){ return db.events.filter(e => attended(e.id).includes(email)).length; }
 function leaderboard(){
-  return db.leader.map(x => ({ u:{ first:x.first, last:x.last, major:x.major, email:x.email }, pts:x.points, n:x.events }))
+  return db.leader.map(x => ({ u:{ first:x.first, last:x.last, major:x.major, email:x.email }, pts:x.points, n:x.events, anon:!!x.anon }))
     .sort((a,b) => b.pts - a.pts || b.n - a.n || (a.u.last || '').localeCompare(b.u.last || ''));
 }
 function duesOf(email){ return (db.dues[email] || { status:'unpaid' }).status; }
@@ -948,10 +948,10 @@ function viewLeaderboard(){
   const lb = leaderboard();
   return `<div class="view">
     <section class="page-head"><div class="eyebrow">${esc(db.settings.semester)} · members only</div><h1 class="page">Leaderboard</h1>
-      <p class="muted">Points come from checking in at events with the code shown on screen. RSVPs alone don't count. Officers and admins aren't ranked.</p></section>
+      <p class="muted">Points come from checking in at events with the code shown on screen. RSVPs alone don't count. Officers and admins aren't ranked. Want to stay off the board by name? Choose “Anonymous” in <a href="#account">My account</a>.</p></section>
     <div class="tiles">${Object.entries(PTS).filter(([,v]) => v).map(([k,v]) => `<div class="tile"><span class="v">${v}</span><span class="l">${catName(k)}</span></div>`).join('')}</div>
     <div class="table-wrap"><table><thead><tr><th class="num">Rank</th><th>Member</th><th>Major</th><th class="num">Events</th><th class="num">Points</th></tr></thead><tbody>
-      ${lb.map((x,i) => `<tr class="${x.u.email===session?'me':''}"><td class="num"><span class="rank">${i+1}</span></td><td>${esc(x.u.first)} ${esc(x.u.last)}${x.u.email===session?' (you)':''}</td><td>${esc(x.u.major)}</td><td class="num">${x.n}</td><td class="num">${x.pts}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No members yet.</td></tr>'}
+      ${lb.map((x,i) => `<tr class="${x.u.email===session?'me':''}"><td class="num"><span class="rank">${i+1}</span></td><td>${esc(x.u.first)} ${esc(x.u.last)}${x.u.email===session ? ' (you' + (x.anon ? ', shown to others as Anonymous Member' : '') + ')' : x.anon && can('officer') ? ' <span class="tag">Anonymous to members</span>' : ''}</td><td>${esc(x.u.major)}</td><td class="num">${x.n}</td><td class="num">${x.pts}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No members yet.</td></tr>'}
     </tbody></table></div>
   </div>`;
 }
@@ -986,11 +986,13 @@ function viewAccount(){
           <dt>UVU ID</dt><dd class="num">${esc(u.uvuid)}</dd>
           <dt>Major${u.majors && u.majors.length > 1 ? 's' : ''}</dt><dd>${esc(u.major) || '—'}</dd>
           <dt>Minor</dt><dd>${esc(u.minor) || '—'}</dd>
+          <dt>Year in school</dt><dd>${esc(u.year) || '<span class="muted">Not set</span>'}</dd>
           <dt>Career interests</dt><dd>${(u.interests || []).length ? esc(u.interests.join(', ')) : '<span class="muted">None picked yet</span>'}</dd>
+          ${isStaff() ? '' : `<dt>Leaderboard</dt><dd>${u.lbPublic === false ? 'Anonymous Member' : 'Shown by name'} <button class="btn ghost small" data-act="lb-toggle" style="margin-left:6px">${u.lbPublic === false ? 'Show my name' : 'Go anonymous'}</button></dd>`}
           <dt>Email</dt><dd>${esc(u.email)}</dd>
           <dt>Joined</dt><dd>${fmtDay(u.joined)}</dd>
         </dl>
-        ${ui.editMajors ? majorEditForm(u) : ui.editInterests ? interestsForm(u) : `<div class="row" style="gap:8px"><button class="btn ghost small" data-act="edit-majors">Edit majors and minor</button><button class="btn ${(u.interests || []).length ? 'ghost ' : ''}small" data-act="edit-interests">${(u.interests || []).length ? 'Edit career interests' : 'Pick your career interests'}</button></div>`}
+        ${ui.editMajors ? majorEditForm(u) : ui.editInterests ? interestsForm(u) : `<div class="row" style="gap:8px"><button class="btn ghost small" data-act="edit-majors">Edit majors and minor</button><button class="btn ${(u.interests || []).length && u.year ? 'ghost ' : ''}small" data-act="edit-interests">${(u.interests || []).length && u.year ? 'Edit year and career interests' : 'Add your year and career interests'}</button></div>`}
         ${DUES_ENABLED && d === 'unpaid' && db.settings.dues ? `<p class="hint">Pay $${db.settings.dues} to any officer. They'll mark you paid here.</p>` : ''}
       </section>
     </div>
@@ -1029,7 +1031,9 @@ function viewAuth(mode){
         <label>Last name<input id="su-last" autocomplete="family-name" required></label>
       </div>
       ${majorPicker('su', ui.picks.su || [], '')}
+      ${yearSelect('su', '')}
       ${careerChecklist('su', [])}
+      <label class="check"><input type="checkbox" id="su-lb" checked> Show my name on the leaderboard <span class="hint">(uncheck to appear as “Anonymous Member”)</span></label>
       <label>Preferred email<input id="su-email" type="email" autocomplete="email" required><span class="hint">If you’re an officer, use the email on the officer list.</span></label>
       <div class="grid2">
         <label>Password<input id="su-pw" type="password" autocomplete="new-password" required><span class="hint">At least 8 characters.</span></label>
@@ -1145,9 +1149,13 @@ function careerChecklist(p, selected){
     <div class="checks">${box(NOT_SURE)}</div>
   </fieldset>`;
 }
+function yearSelect(p, val){
+  return `<label>Year in school<select id="${p}-year"><option value="">Choose one</option>${YEARS.map(y => `<option ${y === val ? 'selected' : ''}>${y}</option>`).join('')}</select></label>`;
+}
 function readInterests(p){ return [...document.querySelectorAll('.' + p + '-int:checked')].map(c => c.value); }
 function interestsForm(u){
   return `<form class="stack" id="f-interests" style="gap:12px;border-top:1px solid var(--line);padding-top:14px" novalidate>
+    ${yearSelect('ci', u.year)}
     ${careerChecklist('ci', u.interests)}
     <div class="err" id="ci-err"></div>
     <div class="row"><button class="btn small" type="submit">Save</button><button class="btn ghost small" type="button" data-act="cancel-interests">Cancel</button></div>
@@ -1719,6 +1727,50 @@ function hbars(rows, suffix = ''){
     <span class="track"><span class="fill" style="width:${(v / max * 100).toFixed(1)}%"></span></span></div>`).join('')}</div>`;
 }
 function pct(a, b){ return b ? Math.round(a / b * 100) : 0; }
+// Counts people by a profile field that can hold several values. Unknown people and blanks go under `none`.
+function breakdown(emails, values, order, none){
+  const c = {}, total = emails.length;
+  emails.forEach(e => { const u = db.users.find(x => x.email === e), vals = u ? values(u).filter(Boolean) : [];
+    (vals.length ? vals : [none]).forEach(v => c[v] = (c[v] || 0) + 1); });
+  const keys = Object.keys(c).sort((a, b) => a === none ? 1 : b === none ? -1 : order ? order.indexOf(a) - order.indexOf(b) : c[b] - c[a]);
+  return keys.map(k => [k, c[k], `${k}: ${c[k]} of ${total} (${pct(c[k], total)}%)`]);
+}
+function eventStatsSection(){
+  const evs = sortedEvents().filter(e => e.cat !== 'officer_meeting').reverse();
+  if (!evs.length) return '';
+  const held = evs.filter(e => e.date <= todayIso());
+  const e = evById(ui.statsEv) || held[0] || evs[0];
+  const rs = going(e.id), at = attended(e.id), came = rs.filter(x => at.includes(x)), walkins = at.filter(x => !rs.includes(x));
+  const past = e.date <= todayIso(), who = past && ui.statsWho !== 'rsvp' ? 'att' : 'rsvp';
+  const people = who === 'att' ? at : rs, label = who === 'att' ? 'attendees' : 'people who RSVP’d';
+  const tile = (v, l, s) => `<div class="tile"><span class="v">${v}</span><span class="l">${l}</span>${s ? `<span class="s">${s}</span>` : ''}</div>`;
+  const panel = (h, inner) => `<section class="panel"><h3>${h}</h3>${inner}</section>`;
+  const majRows = breakdown(people, u => u.majors || [], null, 'No major listed'), majTop = majRows.slice(0, 8);
+  const rest = majRows.slice(8).reduce((s, r) => s + r[1], 0);
+  if (rest) majTop.push(['Other majors', rest, `Other majors: ${rest}`]);
+  return `<section class="stack" style="gap:16px">
+    <div class="section-head"><h2>Event breakdown</h2></div>
+    <div class="row" style="gap:12px;align-items:end">
+      <label style="flex:1;min-width:min(280px,100%)">Event<select id="stats-ev">${evs.map(x => `<option value="${x.id}" ${x.id === e.id ? 'selected' : ''}>${fmtDay(x.date)} · ${esc(x.title)}${x.date > todayIso() ? ' (upcoming)' : ''}</option>`).join('')}</select></label>
+      ${past ? `<span class="row" style="gap:6px" role="group" aria-label="Break down">
+        <button class="btn ${who === 'att' ? '' : 'ghost '}small" data-act="stats-who" data-w="att" aria-pressed="${who === 'att'}">Attendees</button>
+        <button class="btn ${who === 'rsvp' ? '' : 'ghost '}small" data-act="stats-who" data-w="rsvp" aria-pressed="${who === 'rsvp'}">RSVPs</button></span>` : ''}
+    </div>
+    <div class="tiles">
+      ${tile(rs.length, 'RSVPs', e.cap ? `${e.cap} spots` : '')}
+      ${past ? tile(at.length, 'Checked in', catName(e.cat)) : ''}
+      ${past ? tile(rs.length ? pct(came.length, rs.length) + '%' : '—', 'RSVPs who came', `${came.length} of ${rs.length}`) : ''}
+      ${past ? tile(rs.length - came.length, 'No-shows', 'RSVP’d but didn’t check in') : ''}
+      ${past ? tile(walkins.length, 'Walk-ins', 'Checked in without an RSVP') : ''}
+    </div>
+    ${people.length ? `<p class="hint">Breakdowns below are for the ${people.length} ${label}${past ? '' : '. Attendance shows up after the event'}. People can pick more than one career or major, so bars can add up to more than ${people.length}.</p>
+    <div class="stats-grid">
+      ${panel('Career interests', hbars(breakdown(people, u => u.interests || [], null, 'Didn’t answer')))}
+      ${panel('Year in school', hbars(breakdown(people, u => [u.year], YEARS, 'Not set')))}
+      ${panel('Major', hbars(majTop))}
+    </div>` : `<div class="empty">No ${label} yet.</div>`}
+  </section>`;
+}
 function statsBody(){
   const all = ui.statsRange === 'all', from = all ? '' : semesterStart();
   const staff = new Set(staffEmails()), members = db.users.filter(u => !staff.has(u.email));
@@ -1765,6 +1817,8 @@ function statsBody(){
   const tile = (v, l, s) => `<div class="tile"><span class="v">${v}</span><span class="l">${l}</span>${s ? `<span class="s">${s}</span>` : ''}</div>`;
   const panel = (h, sub, inner) => `<section class="panel"><div><h3>${h}</h3>${sub ? `<span class="hint">${sub}</span>` : ''}</div>${inner}</section>`;
   return `<div class="stack" style="gap:20px">
+    ${eventStatsSection()}
+    <div class="section-head" style="margin-top:12px"><h2>Club overview</h2></div>
     <div class="row" style="justify-content:space-between;align-items:center">
       <span class="muted">Officers are left out of member counts. Officer meetings are left out of event counts.</span>
       <span class="row" style="gap:6px" role="group" aria-label="Time range">
@@ -2410,6 +2464,11 @@ document.addEventListener('click', async ev => {
     case 'edit-interests': ui.editInterests = true; ui.editMajors = false; render(); break;
     case 'cancel-interests': ui.editInterests = false; render(); break;
     case 'stats-range': ui.statsRange = t.dataset.r; render(); break;
+    case 'stats-who': ui.statsWho = t.dataset.w; render(); break;
+    case 'lb-toggle': {
+      const show = me().lbPublic === false, r = await sb.from('members').update({ lb_public: show }).eq('id', authUser.id);
+      if (r.error) { toast(/lb_public/.test(r.error.message || '') ? 'This isn’t set up yet. An admin needs to run the 15-profile-updates.sql update.' : errMsg(r.error)); break; }
+      await load(); render(); toast(show ? 'Your name now shows on the leaderboard' : 'You now show as Anonymous Member on the leaderboard'); break; }
     case 'dues-filter': ui.duesFilter = t.dataset.f; render(); break;
     case 'export': copyText(exportTsv(), 'member list'); break;
     case 'csv': downloadCsv(); break;
@@ -2465,6 +2524,7 @@ document.addEventListener('change', async e => {
   const id = e.target.id;
   if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
   if (['ml-aud','ml-ev'].includes(id)){ readMail(); render(); }
+  if (id === 'stats-ev'){ ui.statsEv = e.target.value; render(); }
   if (e.target.classList && e.target.classList.contains('ml-evs')){ readMail(); document.getElementById('ml-preview').innerHTML = mailPreview(); document.getElementById('ml-outlook').innerHTML = outlookButtons(audienceEmails(ui.mail.aud)); }
   if (id === 'avail-who'){ ui.availWho = e.target.value; ui.availPick = null; render(); }
   if (id === 'tk-mine'){ ui.tasksMine = e.target.checked; render(); }
@@ -2552,11 +2612,12 @@ async function handleSubmit(f, v, err){
     if (!/^\d{8}$/.test(d.uvuid)) return err('su-err', 'UVU ID must be 8 digits.');
     if (!d.first || !d.last) return err('su-err', 'Enter your first and last name.');
     if (!pick.majors.length) return err('su-err', 'Add at least one major. Use “Undeclared” if you haven’t picked one.');
+    const year = v('su-year'); if (!year) return err('su-err', 'Choose your year in school.');
     if (!EMAIL_RE.test(d.email)) return err('su-err', 'Enter a valid email address.');
     if (pw.length < 8) return err('su-err', 'Password needs at least 8 characters.');
     if (pw !== pw2) return err('su-err', 'Passwords don’t match.');
     const { data, error } = await sb.auth.signUp({ email: d.email, password: pw,
-      options: { data: { uvuid: d.uvuid, first: d.first, last: d.last, majors: pick.majors, minor: pick.minor, major: pick.majors[0], interests: readInterests('su') }, emailRedirectTo: location.origin + location.pathname } });
+      options: { data: { uvuid: d.uvuid, first: d.first, last: d.last, majors: pick.majors, minor: pick.minor, major: pick.majors[0], interests: readInterests('su'), year, lb_public: document.getElementById('su-lb').checked }, emailRedirectTo: location.origin + location.pathname } });
     if (error) return err('su-err', errMsg(error));
     if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) return err('su-err', 'An account already uses this email. Sign in instead.');
     if (data.session){ await afterLogin(); toast('Welcome to the WFA, ' + d.first); }
@@ -2594,9 +2655,9 @@ async function handleSubmit(f, v, err){
   }
 
   if (f.id === 'f-interests'){
-    const r = await sb.from('members').update({ interests: readInterests('ci') }).eq('id', authUser.id);
-    if (r.error) return err('ci-err', /interests/.test(r.error.message || '') ? 'Career interests aren’t set up yet. An admin needs to run the 14-career-interests.sql update.' : errMsg(r.error));
-    ui.editInterests = false; await load(); toast('Career interests saved'); render();
+    const r = await sb.from('members').update({ interests: readInterests('ci'), year: v('ci-year') }).eq('id', authUser.id);
+    if (r.error) return err('ci-err', /interests|year/.test(r.error.message || '') ? 'This isn’t set up yet. An admin needs to run the 15-profile-updates.sql update.' : errMsg(r.error));
+    ui.editInterests = false; await load(); toast('Profile saved'); render();
   }
 
   if (f.id === 'f-setup'){
