@@ -537,7 +537,7 @@ async function load(){
   db.questions = R.questions || [];
   db.mres = {}; (R.mres || []).forEach(r => (db.mres[r.member_id] = db.mres[r.member_id] || {})[r.category] = { path: r.path, updated: r.updated_at });
   db.pstats = R.pstats || null;
-  db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null, info: R.appset?.branch_info || {}, planTpl: R.appset?.plan_templates || {} };
+  db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null, info: R.appset?.branch_info || {}, planTpl: R.appset?.plan_templates || {}, declineTpl: R.appset?.decline_template || {} };
   db.apps = (R.apps || []).map(a => ({ ...a, date: iso(new Date(a.created_at)) }));
   db.avail = {}; (R.avail || []).forEach(a => db.avail[a.email] = [...normSlots(a.slots)]);
   db.log = (R.log || []).map(l => ({ ts:l.ts, who:l.who, text:l.text }));
@@ -1726,6 +1726,8 @@ function adminApplicationsBody(){
     </form>
     <section class="stack">
       <div class="section-head"><h3>Applications</h3><span class="muted">${db.apps.length}</span></div>
+      ${(() => { const n = db.apps.filter(x => x.status === 'declined' && !x.decline_emailed_at).length;
+        return n ? `<div class="row" style="gap:8px;align-items:center"><button class="btn ghost small" data-act="decline-email" data-id="all">Email all ${n} declined applicant${n === 1 ? '' : 's'} who haven’t been emailed</button></div>` : ''; })()}
       <div class="filters">${[['all', 'All'], ...Object.entries(APP_STATUS)].map(([k, l]) => `<button class="chip" aria-pressed="${ui.appFilter === k}" data-act="app-filter" data-f="${k}">${l} (${k === 'all' ? db.apps.length : db.apps.filter(x => x.status === k).length})</button>`).join('')}</div>
       ${list.map(appCard).join('') || '<div class="empty">No applications yet.</div>'}
     </section></div>`;
@@ -1750,9 +1752,56 @@ function appCard(x){
       ${x.other ? `<div><div class="eyebrow">Anything else</div><p class="ann-body">${esc(x.other)}</p></div>` : ''}
     </div></details>
     <div class="row">${x.resume_path ? `<button class="btn ghost small" data-act="open-resume" data-id="${esc(x.resume_path)}">Open resume (PDF)</button>` : ''}${x.linkedin ? `<a class="btn ghost small" href="${esc(x.linkedin)}" target="_blank" rel="noopener">LinkedIn ↗</a>` : ''}${x.status === 'accepted' && roleOf(x.email) === 'member' ? `<button class="btn small" data-act="change-status" data-id="${esc(x.email)}">Make officer</button>` : ''}
+      ${x.status === 'declined' ? (x.decline_emailed_at
+        ? `<span class="hint">Decline email sent ${fmtDay(iso(new Date(x.decline_emailed_at)))}</span><button class="btn ghost small" data-act="decline-email" data-id="${x.id}">Send again</button>`
+        : `<button class="btn small" data-act="decline-email" data-id="${x.id}">Send decline email</button>`) : ''}
       <span style="margin-left:auto">${delBtn('app-' + x.id, 'Delete application', 'del-app', x.id)}</span></div>
     <form class="stack" id="f-appnote-${x.id}" data-app-note="${x.id}" style="gap:6px" novalidate><label>Private notes<textarea style="min-height:70px">${esc(x.notes)}</textarea></label><div><button class="btn ghost small" type="submit">Save notes</button></div></form>
   </article>`;
+}
+// Decline emails: one personal email per applicant, from the club address. {first} and {branches} fill in for each person.
+const DECLINE_DEFAULT = {
+  subject: 'Your Wolverine Finance Association officer application',
+  body: 'Hi {first},\n\nThank you for applying to join the Wolverine Finance Association officer team for the {branches}, and for the time you put into your application.\n\nWe had a strong group of applicants this cycle, and after careful consideration we won’t be moving forward with your application this time.\n\nWe’d love to keep seeing you at WFA events, and we encourage you to apply again in a future cycle. If you’d like feedback on your application, feel free to reach out to any officer.\n\nBest,\nThe Wolverine Finance Association officers'
+};
+function declineTemplate(){ const t = (db.app || {}).declineTpl || {}; return { subject: t.subject || DECLINE_DEFAULT.subject, body: t.body || DECLINE_DEFAULT.body }; }
+function fillDecline(s, x){
+  const u = db.users.find(m => m.email === x.email) || {};
+  const first = u.first || (userName(x.email) || '').split(' ')[0] || 'there';
+  return s.replace(/\{first\}/g, first).replace(/\{branches\}/g, listText(x.branches.map(b => BRANCHES[b] || b)) + (x.branches.length > 1 ? ' branches' : ' branch'));
+}
+function openDeclineModal(target){
+  const list = target === 'all' ? db.apps.filter(x => x.status === 'declined' && !x.decline_emailed_at) : db.apps.filter(x => x.id === target);
+  if (!list.length) return;
+  ui.declineList = list.map(x => x.id);
+  const t = declineTemplate(), names = list.map(x => userName(x.email));
+  showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3>Send a decline email</h3></div>
+    <p class="muted" style="margin:0">To ${list.length === 1 ? `<strong>${esc(names[0])}</strong> (${esc(list[0].email)})` : `${list.length} applicants: ${esc(names.join(', '))}`}. Each person gets their own email from the club address.</p>
+    <label>Subject<input id="dc-subject" value="${esc(t.subject)}"></label>
+    <label>Message<textarea id="dc-body" style="min-height:260px">${esc(t.body)}</textarea>
+      <span class="hint">{first} becomes their first name and {branches} the branches they applied for. Your wording is saved for next time.</span></label>
+    <div class="preview mail-pre" style="max-height:12rem;overflow:auto" id="dc-preview">${esc(fillDecline(t.body, list[0]))}</div>
+    <div class="err" id="dc-err"></div>
+    <div class="row"><button class="btn" data-act="decline-send">Send ${list.length === 1 ? 'email' : list.length + ' emails'}</button><button class="btn ghost" data-act="close">Cancel</button></div>
+  </div>`, null, 'wide');
+}
+async function sendDeclines(){
+  const subject = document.getElementById('dc-subject').value.trim(), body = document.getElementById('dc-body').value.trim();
+  const err = m => { document.getElementById('dc-err').textContent = m; };
+  if (!subject || !body) return err('Add a subject and a message.');
+  const list = db.apps.filter(x => (ui.declineList || []).includes(x.id));
+  const btn = document.querySelector('[data-act=decline-send]'); btn.disabled = true; btn.textContent = 'Sending…';
+  let sent = 0, failed = 0;
+  for (const x of list){
+    const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to: [x.email], subject: fillDecline(subject, x), text: fillDecline(body, x) } });
+    if (error || !data || !data.sent){ failed++; continue; }
+    sent++;
+    await sb.from('applications').update({ decline_emailed_at: new Date().toISOString() }).eq('id', x.id);
+  }
+  await sb.from('app_settings').update({ decline_template: { subject, body } }).eq('id', 1);   // remember the wording
+  await logChange(`Sent decline emails to ${sent} applicant${sent === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''}`);
+  closeModal(); await load(); render();
+  toast(failed ? `Sent ${sent}. ${failed} couldn’t be sent; try again in a minute.` : `Decline email${sent === 1 ? '' : 's'} sent`);
 }
 async function notifyApplicationsOpen(){
   const to = audienceEmails('members');
@@ -3122,6 +3171,8 @@ document.addEventListener('click', async ev => {
     case 'pf-photo-rm': ui.profilePhoto = ''; document.getElementById('pf-photo-row').innerHTML = photoPreview(db.profiles[session] || {}); break;
     case 'change-status': ui.adminTab = 'access'; ui.editOfficer = id; if (route() !== 'admin') location.hash = 'admin'; else render(); window.scrollTo(0,0); break;
     case 'app-filter': ui.appFilter = t.dataset.f; render(); break;
+    case 'decline-email': openDeclineModal(id); break;
+    case 'decline-send': await sendDeclines(); break;
     case 'del-app': { const x = db.apps.find(a => a.id === id); if (!x) break;
       await act(async () => {
         must(await sb.from('applications').delete().eq('id', id));
@@ -3259,6 +3310,7 @@ document.addEventListener('input', e => {
   if (id === 'log-search'){ ui.logSearch = e.target.value; rerenderKeepFocus(id); }
   if (['an-title','an-body'].includes(id)) updateAnnPreview();
   if (['ml-subject','ml-body','ml-closing'].includes(id)){ readMail(); document.getElementById('ml-preview').innerHTML = mailPreview(); document.getElementById('ml-outlook').innerHTML = outlookButtons(audienceEmails(ui.mail.aud)); }
+  if (id === 'dc-body'){ const x = db.apps.find(a => a.id === (ui.declineList || [])[0]); if (x) document.getElementById('dc-preview').textContent = fillDecline(e.target.value, x); }
 });
 document.addEventListener('change', async e => {
   const id = e.target.id;
@@ -3304,7 +3356,8 @@ document.addEventListener('change', async e => {
   if (e.target.dataset.bulk){ const [i, k] = e.target.dataset.bulk.split(':'); ui.bulk[+i][k] = e.target.value; }
   if (e.target.dataset.appStatus){
     const aid = e.target.dataset.appStatus, st = e.target.value, x = db.apps.find(a => a.id === aid);
-    await act(async () => { must(await sb.from('applications').update({ status: st, updated_at: new Date().toISOString() }).eq('id', aid)); await logChange('Marked ' + userName(x.email) + '’s application ' + APP_STATUS[st].toLowerCase()); }, 'Status updated');
+    await act(async () => { must(await sb.from('applications').update({ status: st, updated_at: new Date().toISOString() }).eq('id', aid)); await logChange('Marked ' + userName(x.email) + '’s application ' + APP_STATUS[st].toLowerCase()); },
+      st === 'declined' && !x.decline_emailed_at ? 'Marked declined. Use “Send decline email” on their card to let them know.' : 'Status updated');
   }
   if (e.target.dataset.dues){
     const em = e.target.dataset.dues, s = e.target.value;
