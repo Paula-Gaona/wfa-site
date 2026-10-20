@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Wolverine Finance Association</title>
 <meta name="description" content="The Wolverine Finance Association is Utah Valley University's student finance club: workshops, guest speakers, case competitions, career fairs, and recruiting help for careers in investment banking, private equity, and corporate finance.">
+<!-- Link previews (iMessage, LinkedIn, Slack, GroupMe) -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Wolverine Finance Association">
+<meta property="og:title" content="Wolverine Finance Association | UVU">
+<meta property="og:description" content="Utah Valley University's student finance club: workshops, guest speakers, case competitions, career fairs, and recruiting help for careers in finance.">
+<meta property="og:url" content="https://wolverinefinanceassociation.org/">
+<meta property="og:image" content="https://wolverinefinanceassociation.org/icon-512.png">
+<meta name="twitter:card" content="summary">
 <!-- Site icon (browser tabs, Google search results, phone home screens): the green WFA badge -->
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -374,7 +382,15 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
 <div class="navmenu" id="navmenu" role="menu" hidden></div>
 <div class="safebar" id="safebar" role="status" hidden></div>
 <div class="ticker" aria-label="Upcoming events"><div class="ticker-track" id="ticker"></div></div>
-<main class="wrap" id="app"><div class="empty">Loading club data…</div></main>
+<main class="wrap" id="app">
+  <!-- Shown for a moment while the site loads, and read by search engines. Replaced once club data loads. -->
+  <section class="stack" style="max-width:47.5rem;padding-block:32px">
+    <div class="eyebrow">Utah Valley University · Student club</div>
+    <h1 class="page">Wolverine Finance Association</h1>
+    <p>The Wolverine Finance Association (WFA) is Utah Valley University’s student finance club. We help UVU students of any major break into finance with hands-on workshops in financial modeling, valuation, Excel, and the Bloomberg Terminal; guest speakers and panels from industry professionals; case and stock pitch competitions; career fairs and office visits; and recruiting help for internships and full-time roles in investment banking, private equity, asset management, and corporate finance.</p>
+    <p class="muted">Loading club events and announcements…</p>
+  </section>
+</main>
 <footer><div class="wrap row" style="justify-content:space-between">
   <span>Wolverine Finance Association · A student club at Utah Valley University</span>
   <span id="foot-role"></span>
