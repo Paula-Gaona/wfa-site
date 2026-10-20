@@ -2378,7 +2378,10 @@ document.addEventListener('click', async ev => {
     case 'cancel-edit': ui.editEvent = null; render(); break;
     case 'publish-event': case 'unpublish-event': {
       const e = evById(id), pub = t.dataset.act === 'publish-event';
-      await act(async () => { must(await sb.from('events').update({ draft: !pub }).eq('id', id)); await logChange((pub ? 'Published “' : 'Moved back to drafts: “') + e.title + '”'); },
+      await act(async () => {
+        const r = await sb.from('events').update({ draft: !pub }).eq('id', id);
+        if (r.error) throw /draft/.test(r.error.message || '') ? new Error('Drafts aren’t set up yet. An admin needs to run the 16-event-drafts.sql update in Supabase.') : r.error;
+        await logChange((pub ? 'Published “' : 'Moved back to drafts: “') + e.title + '”'); },
         pub ? 'Published to the calendar' : 'Moved back to drafts. Members can’t see it now.'); break; }
     case 'del-event': { const e = evById(id); if (ui.editEvent === id) ui.editEvent = null;
       await act(async () => { must(await sb.from('events').delete().eq('id', id)); await logChange('Deleted event “' + e.title + '”'); }, 'Event deleted'); break; }
