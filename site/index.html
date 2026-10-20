@@ -288,6 +288,7 @@ table.bulk input,table.bulk select{padding:6px 8px;min-width:120px}
 .career .facts{grid-template-columns:auto 1fr}
 .cat-head{font-size:1.35rem;text-transform:uppercase;color:var(--brand-text)}
 .mail-pre{white-space:pre-wrap;font-size:.95rem;overflow-wrap:anywhere}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
 .pw-wrap{position:relative;display:block}
 .pw-wrap input{padding-right:64px}
 .pw-toggle{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--brand-text);font:inherit;font-size:.85rem;font-weight:700;padding:6px 10px;cursor:pointer;border-radius:var(--radius)}
@@ -412,7 +413,7 @@ function buildTitle(tier, branch){
   if (tier === 'honorary') return 'Honorary Officer';
   return b ? b + ' Officer' : 'Officer';
 }
-const OFFICER_TABS = [['stats','Statistics'],['events','Events'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members']];
+const OFFICER_TABS = [['stats','Statistics'],['questions','Questions'],['events','Events'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members']];
 const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
@@ -446,6 +447,7 @@ async function load(){
     anns: t('announcements'),
     recaps: t('recaps'),
     archive: signed && t('archive'),
+    questions: off && sb.from('questions').select('*').order('created_at', { ascending: false }),
     members: signed && t('members'),
     rsvps: signed && t('rsvps'),
     att: signed && t('attendance'),
@@ -495,6 +497,7 @@ async function load(){
   db.resources = R.resources || [];
   db.timeline = R.timeline || [];
   db.careers = R.careers || [];
+  db.questions = R.questions || [];
   db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null };
   db.apps = (R.apps || []).map(a => ({ ...a, date: iso(new Date(a.created_at)) }));
   db.avail = {}; (R.avail || []).forEach(a => db.avail[a.email] = [...normSlots(a.slots)]);
@@ -607,7 +610,7 @@ function setPendingRsvp(id){ ui._pending = id; try { id ? sessionStorage.setItem
 
 /* ---------- Chrome: nav, ticker ---------- */
 function renderChrome(route){
-  const links = [['home','Home'],['calendar','Calendar'],['recaps','Recaps'],['officers','Officers'],['about','About'],['resources','Resources']];
+  const links = [['home','Home'],['calendar','Calendar'],['recaps','Recaps'],['officers','Officers'],['about','About'],['resources','Resources'],['contact','Contact']];
   if (appsOpen()) links.push(['apply','Apply']);
   const mem = [['archive','Archive'],['leaderboard','Leaderboard'],['availability','Availability'],['account','My account']];
   const staff = [];
@@ -797,6 +800,57 @@ function viewOfficers(){
       <p class="muted">Questions about events or getting involved? Email the officer who runs that area, or stop by during office hours.</p></section>
     ${officerSections(staff)}
     ${can('officer') ? '<p class="hint">Officers: update your picture, bio, and contact info under My account.</p>' : ''}
+  </div>`;
+}
+
+/* ---------- Contact: anyone can send a question; officers answer from Officer tools > Questions ---------- */
+const Q_TOPICS = ['Joining the club', 'Events', 'Officer applications', 'Careers and recruiting', 'Partnerships and sponsors', 'Other'];
+function viewContact(){
+  const u = me();
+  if (ui.qSent) return `<div class="view"><div class="auth"><div class="auth-side"><div class="stack"><div class="eyebrow">Contact</div><h2>Thanks, we got it</h2>
+      <p>An officer will reply to <strong>${esc(ui.qSent)}</strong>, usually within a few days. Check your spam or junk folder if you don’t see it.</p></div></div>
+    <div class="auth-form"><h2>Question sent</h2><p>Have another one?</p><div class="row"><button class="btn" data-act="q-again">Ask another question</button><a class="btn ghost" href="#home">Back to home</a></div></div></div></div>`;
+  return `<div class="view"><div class="auth">
+    <div class="auth-side"><div class="stack"><div class="eyebrow">Contact</div><h2>Ask us anything</h2>
+      <p>Questions about joining, events, officer applications, or recruiting? Send them here and an officer will email you back.</p></div>
+      <p style="opacity:.8;font-size:.9rem">You don’t need an account. Check your spam or junk folder for our reply.</p></div>
+    <form class="auth-form" id="f-question" novalidate>
+      <h2>Send a question</h2>
+      <label>Your name <span class="hint">(optional)</span><input id="q-name" autocomplete="name" maxlength="120" value="${esc(u ? (u.first + ' ' + u.last).trim() : '')}"></label>
+      <label>Email for our reply<input id="q-email" type="email" autocomplete="email" required maxlength="254" value="${esc(u ? u.email : '')}"><span class="hint">Required. This is where we’ll send our answer.</span></label>
+      <label>Topic<select id="q-topic">${Q_TOPICS.map(t => `<option>${t}</option>`).join('')}</select></label>
+      <label>Your question<textarea id="q-msg" required maxlength="5000" style="min-height:140px"></textarea></label>
+      <label class="hp" aria-hidden="true">Leave this blank<input id="q-hp" tabindex="-1" autocomplete="off"></label>
+      <div class="err" id="q-err"></div>
+      <div class="row"><button class="btn" type="submit">Send question</button></div>
+    </form></div></div>`;
+}
+// Reply from the officer's own Outlook: opens a new message to the asker with their question quoted.
+function questionReplyUrl(q){
+  const body = `Hi${q.name ? ' ' + q.name.split(' ')[0] : ''},\n\n\n\n---\nYou asked (${fmtStamp(q.created_at)}):\n${q.message}`;
+  return 'https://outlook.office.com/mail/deeplink/compose?to=' + encodeURIComponent(q.email) +
+    '&subject=' + encodeURIComponent('Re: your question for the Wolverine Finance Association' + (q.topic && q.topic !== 'Other' ? ' (' + q.topic + ')' : '')) + '&body=' + encodeURIComponent(body);
+}
+function questionsBody(){
+  const f = ui.qFilter || 'new', list = db.questions.filter(q => f === 'all' || q.status === f);
+  const n = s => db.questions.filter(q => s === 'all' || q.status === s).length;
+  return `<div class="stack" style="gap:16px">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <span class="muted">Questions sent from the <a href="#contact">Contact page</a>. Reply opens a message in your UVU Outlook.</span>
+      <span class="row" style="gap:6px" role="group" aria-label="Show">${[['new','New'],['answered','Answered'],['all','All']].map(([k,l]) => `<button class="btn ${f === k ? '' : 'ghost '}small" data-act="q-filter" data-f="${k}" aria-pressed="${f === k}">${l} (${n(k)})</button>`).join('')}</span>
+    </div>
+    ${list.map(q => `<article class="panel stack" style="gap:10px">
+      <div class="row" style="justify-content:space-between;align-items:start">
+        <div><strong>${esc(q.name || 'No name given')}</strong> · <a href="mailto:${esc(q.email)}">${esc(q.email)}</a>
+          <div class="hint">${esc(q.topic)} · ${fmtStamp(q.created_at)}${q.status === 'answered' ? ` · <span class="tag ok">Answered${q.answered_by ? ' by ' + esc(userName(q.answered_by)) : ''}</span>` : ' · <span class="tag warn">New</span>'}</div></div>
+      </div>
+      <p style="white-space:pre-wrap;margin:0">${esc(q.message)}</p>
+      <div class="row" style="gap:6px">
+        <a class="btn small" href="${esc(questionReplyUrl(q))}" target="_blank" rel="noopener">Reply in Outlook</a>
+        <button class="btn ghost small" data-act="q-status" data-id="${q.id}">${q.status === 'answered' ? 'Mark as new' : 'Mark answered'}</button>
+        ${delBtn('q-' + q.id, 'Delete', 'q-del', q.id)}
+      </div>
+    </article>`).join('') || `<div class="empty">${f === 'new' ? 'No new questions.' : 'Nothing here yet.'}</div>`}
   </div>`;
 }
 
@@ -1878,11 +1932,14 @@ function officerProfileSection(){
 function viewOfficer(){
   if (!can('officer')) return gate('officer');
   const openTasks = db.tasks.filter(t => !t.done).length;
-  const tabs = OFFICER_TABS.map(([k,l]) => [k, l, k === 'tasks' ? openTasks : '']);
+  const newQs = db.questions.filter(q => q.status === 'new').length;
+  const tabs = OFFICER_TABS.map(([k,l]) => [k, l, k === 'tasks' ? openTasks : k === 'questions' ? newQs : '']);
   const T = ui.officerTab;
   let body = '';
 
   if (T === 'stats'){ body = statsBody(); }
+
+  else if (T === 'questions'){ body = questionsBody(); }
 
   else if (T === 'events'){
     const e = ui.editEvent ? evById(ui.editEvent) : null;
@@ -2295,7 +2352,7 @@ async function showCode(id, fresh){
 /* ---------- Render ---------- */
 const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources,
   archive:viewArchive, leaderboard:viewLeaderboard, account:viewAccount, apply:viewApply, availability:viewAvailability,
-  signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
+  contact:viewContact, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
 function route(){ const r = location.hash.slice(1).split('/')[0]; return VIEWS[r] ? r : 'home'; }
 // Officer and admin tabs live in the address (#officer/stats, #admin/applications), so a refresh,
 // a bookmark, or the back button lands on the same tab.
@@ -2389,6 +2446,12 @@ document.addEventListener('click', async ev => {
     case 'atab': ui.adminTab = t.dataset.tab; history.pushState(null, '', ui._hash = '#admin/' + ui.adminTab); render(); break;
     case 'edit-event': closeModal(); ui.officerTab = 'events'; ui.editEvent = id; if (route() !== 'officer') location.hash = 'officer'; else render(); window.scrollTo(0,0); break;
     case 'cancel-edit': ui.editEvent = null; render(); break;
+    case 'q-again': ui.qSent = ''; render(); break;
+    case 'q-filter': ui.qFilter = t.dataset.f; render(); break;
+    case 'q-status': { const q = db.questions.find(x => x.id === id), done = q.status !== 'answered';
+      await act(async () => { must(await sb.from('questions').update(done ? { status: 'answered', answered_by: session, answered_at: new Date().toISOString() } : { status: 'new', answered_by: '', answered_at: null }).eq('id', id)); },
+        done ? 'Marked answered' : 'Marked as new'); break; }
+    case 'q-del': await act(async () => { must(await sb.from('questions').delete().eq('id', id)); }, 'Question deleted'); break;
     case 'toggle-pw': {
       const inp = t.parentElement.querySelector('input'), show = inp.type === 'password';
       inp.type = show ? 'text' : 'password'; t.textContent = show ? 'Hide' : 'Show';
@@ -2703,6 +2766,17 @@ async function handleSubmit(f, v, err){
     const r = await sb.from('members').update({ majors: pick.majors, minor: pick.minor, major: pick.majors[0] }).eq('id', authUser.id);
     if (r.error) return err('ac-err', errMsg(r.error));
     ui.editMajors = false; await load(); toast('Profile saved'); render();
+  }
+
+  if (f.id === 'f-question'){
+    if (v('q-hp')) { ui.qSent = v('q-email'); render(); return; }   // bot filled the hidden field: pretend it worked
+    const q = { name: v('q-name'), email: v('q-email').toLowerCase(), topic: v('q-topic'), message: v('q-msg') };
+    if (!EMAIL_RE.test(q.email)) return err('q-err', 'Enter a valid email address so we can reply.');
+    if (!q.message) return err('q-err', 'Type your question.');
+    const r = await sb.from('questions').insert(q);
+    if (r.error) return err('q-err', /questions/.test(r.error.message || '') && /exist|schema/.test(r.error.message || '') ? 'The question form isn’t set up yet. Please try again later.' : errMsg(r.error));
+    ui.qSent = q.email; render(); window.scrollTo(0, 0);
+    return;
   }
 
   if (f.id === 'f-interests'){
