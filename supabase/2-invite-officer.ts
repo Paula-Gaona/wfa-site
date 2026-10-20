@@ -6,7 +6,8 @@
 //
 // Needs these Edge Function secrets (Supabase -> Edge Functions -> Secrets):
 //   RESEND_API_KEY   your Resend API key
-//   MAIL_FROM        Wolverine Finance Association <noreply@wolverinefinanceassociation.org>
+//   MAIL_FROM        Wolverine Finance Association <communications@wolverinefinanceassociation.org>
+//                    (a real mailbox people can reply to; avoid noreply addresses)
 //   SITE_URL         https://wolverinefinanceassociation.org
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided automatically.
 // Keep this file plain ASCII: pasting curly quotes into the editor can garble them.
@@ -70,6 +71,15 @@ function htmlEmail(text: string, button?: { label: string; url: string }, bodyHt
 </div>`;
 }
 
+// The sending address, without the display name.
+const fromAddress = () => ((Deno.env.get('MAIL_FROM') || '').match(/<([^>]+)>/)?.[1] || Deno.env.get('MAIL_FROM') || '').trim();
+// Reply-to only when it's on the same domain as the sender. A no-reply sender with a reply-to on
+// another domain (like @uvu.edu) is a common phishing pattern, and university filters delete it.
+function sameDomainReplyTo(addr: string) {
+  const domain = fromAddress().split('@')[1]?.toLowerCase();
+  return domain && addr && addr.toLowerCase().endsWith('@' + domain) ? addr : undefined;
+}
+
 async function resend(payload: Record<string, unknown>) {
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -105,10 +115,10 @@ Deno.serve(async (req) => {
       if (to.length > 500) return json({ error: 'That is more than 500 recipients. Send to a smaller group.' }, 400);
       if (!subject || !text) return json({ error: 'Add a subject and a message.' }, 400);
 
-      // Replies go to the sender's public contact email when they have one.
+      // Replies go to the sender's contact email only if it's on the club domain (see sameDomainReplyTo).
       const { data: prof } = await admin.from('officer_profiles').select('contact').eq('email', caller).maybeSingle();
-      const replyTo = prof?.contact || caller;
-      const fromAddr = (Deno.env.get('MAIL_FROM') || '').match(/<([^>]+)>/)?.[1] || Deno.env.get('MAIL_FROM');
+      const replyTo = sameDomainReplyTo(prof?.contact || caller);
+      const fromAddr = fromAddress();
 
       let sent = 0, failed = 0, lastError = '';
       for (let i = 0; i < to.length; i += 45) {
@@ -175,9 +185,9 @@ Deno.serve(async (req) => {
     const sendEmail = mode === 'invite' || (mode === 'password' && b.send !== false);
     if (sendEmail) {
       const title = String(b.title || '') || (role === 'admin' ? 'an admin' : 'an officer');
-      // Replies go to the admin's public contact email, which mail filters trust more than a no-reply address.
+      // Replies go to the admin's contact email only if it's on the club domain (see sameDomainReplyTo).
       const { data: prof2 } = await admin.from('officer_profiles').select('contact').eq('email', caller).maybeSingle();
-      const replyTo = prof2?.contact || caller;
+      const replyTo = sameDomainReplyTo(prof2?.contact || caller);
       let intro: string, link: string, label: string;
       if (mode === 'invite') {
         link = `${site}/#reset`; label = 'Set up your account';
