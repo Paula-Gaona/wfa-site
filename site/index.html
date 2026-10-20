@@ -1384,7 +1384,7 @@ function resumeSection(u){
     ${has ? `<div class="row" style="gap:8px;align-items:center"><span>Uploaded${u.resumeUpdated ? ' ' + fmtDay(iso(new Date(u.resumeUpdated))) : ''}</span>
       <button class="btn ghost small" data-act="open-resume" data-id="${esc(u.resumePath)}">View</button>${delBtn('resume-rm', 'Remove', 'resume-rm', 'mine')}</div>`
       : '<span class="muted">No resume uploaded yet.</span>'}
-    <label>${has ? 'Replace it with a new PDF' : 'Upload your resume (PDF, up to 5 MB)'}<input id="resume-file" type="file" accept="application/pdf,.pdf"></label>
+    <label>${has ? 'Replace it with a new one-page PDF' : 'Upload your resume (one-page PDF, up to 5 MB)'}<input id="resume-file" type="file" accept="application/pdf,.pdf"></label>
     ${has ? tailoredResumes(u) : ''}
     <label class="check"><input type="checkbox" id="resume-book" ${u.resumeBook ? 'checked' : ''} ${has ? '' : 'disabled'}> Include me in the WFA resume book</label>
     <span class="hint">Officers share the resume book with recruiters and partner firms. Only officers can open your resumes, and only if this is checked. You can opt out anytime.</span>
@@ -1401,13 +1401,12 @@ function tailoredResumes(u){
       <button class="btn ghost small" data-act="open-resume" data-id="${esc(mine[c].path)}">View</button>${delBtn('tr-' + c, 'Remove', 'tailored-rm', c)}</div>`).join('')}
     ${open.length ? `<div class="row" style="gap:8px;align-items:end">
       <label style="flex:1;min-width:min(14rem,100%)">Firm type<select id="tailored-cat">${open.map(c => `<option>${esc(c)}</option>`).join('')}</select></label>
-      <label style="flex:1;min-width:min(14rem,100%)">PDF<input id="tailored-file" type="file" accept="application/pdf,.pdf"></label>
+      <label style="flex:1;min-width:min(14rem,100%)">One-page PDF<input id="tailored-file" type="file" accept="application/pdf,.pdf"></label>
     </div>` : ''}
   </div>`;
 }
 async function uploadTailored(category, file){
-  if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') return toast('Your resume needs to be a PDF.');
-  if (file.size > 5 * 1024 * 1024) return toast('That PDF is over 5 MB. Try saving a smaller copy.');
+  const bad = await checkResume(file); if (bad) return toast(bad);
   const old = (db.mres[authUser.id] || {})[category], path = authUser.id + '/resume-' + crypto.randomUUID() + '.pdf';
   toast('Uploading…');
   const up = await sb.storage.from('resumes').upload(path, file, { contentType: 'application/pdf' });
@@ -1522,9 +1521,19 @@ async function downloadResumeBook(){
     toast(skipped ? `Downloaded. ${skipped === 1 ? '1 resume couldn’t be read and was' : skipped + ' resumes couldn’t be read and were'} left out.` : 'Resume book downloaded');
   } catch(e){ toast(errMsg(e)); }
 }
+// Every resume upload must be a one-page PDF under 5 MB. Returns what's wrong, or '' if it's fine.
+async function checkResume(file){
+  if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') return 'Your resume needs to be a PDF. In Word or Google Docs, use File → Save as / Download → PDF.';
+  if (file.size > 5 * 1024 * 1024) return 'That PDF is over 5 MB. Try saving a smaller copy.';
+  try {
+    const { PDFDocument } = await loadPdfLib();
+    const n = (await PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true })).getPageCount();
+    if (n !== 1) return `Your resume is ${n} pages. Resumes need to fit on one page.`;
+  } catch(e){ return 'That PDF couldn’t be read. Try exporting it again, without a password.'; }
+  return '';
+}
 async function uploadResume(file){
-  if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') return toast('Your resume needs to be a PDF.');
-  if (file.size > 5 * 1024 * 1024) return toast('That PDF is over 5 MB. Try saving a smaller copy.');
+  const bad = await checkResume(file); if (bad) return toast(bad);
   const old = me().resumePath, path = authUser.id + '/resume-' + crypto.randomUUID() + '.pdf';
   toast('Uploading…');
   const up = await sb.storage.from('resumes').upload(path, file, { contentType: 'application/pdf' });
@@ -1579,7 +1588,7 @@ function viewApply(){
       <label>Why do you want this role?<textarea id="ap-why"></textarea></label>
       <label>What would you start or change in WFA?<textarea id="ap-ideas"></textarea></label>
       <div class="grid2">
-        <label>Resume (PDF, up to 5 MB)<input id="ap-resume" type="file" accept="application/pdf,.pdf"><span class="hint">Only admins can open it.</span></label>
+        <label>Resume (one-page PDF, up to 5 MB)<input id="ap-resume" type="file" accept="application/pdf,.pdf"><span class="hint">Only admins can open it.</span></label>
         <label>LinkedIn <span class="hint">(optional)</span><input id="ap-linkedin" type="url" placeholder="https://www.linkedin.com/in/…"></label>
       </div>
       <label>Anything else you’d like us to know? <span class="hint">(optional)</span><textarea id="ap-other" style="min-height:80px"></textarea></label>
@@ -3304,8 +3313,7 @@ async function handleSubmit(f, v, err){
     if (!year) return err('ap-err', 'Choose your year in school.');
     if (!why || !ideas) return err('ap-err', 'Answer both questions about the role.');
     if (!file) return err('ap-err', 'Attach your resume as a PDF.');
-    if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') return err('ap-err', 'Your resume needs to be a PDF.');
-    if (file.size > 5 * 1024 * 1024) return err('ap-err', 'That PDF is over 5 MB. Try saving a smaller copy.');
+    const bad = await checkResume(file); if (bad) return err('ap-err', bad);
     if (linkedin && !/^https?:\/\//i.test(linkedin)) return err('ap-err', 'The LinkedIn link must start with https://');
     const path = authUser.id + '/' + crypto.randomUUID() + '.pdf';
     const up = await sb.storage.from('resumes').upload(path, file, { contentType: 'application/pdf' });
