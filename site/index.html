@@ -2282,11 +2282,24 @@ async function showCode(id, fresh){
 const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources,
   archive:viewArchive, leaderboard:viewLeaderboard, account:viewAccount, apply:viewApply, availability:viewAvailability,
   signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
-function route(){ const r = location.hash.slice(1); return VIEWS[r] ? r : 'home'; }
+function route(){ const r = location.hash.slice(1).split('/')[0]; return VIEWS[r] ? r : 'home'; }
+// Officer and admin tabs live in the address (#officer/stats, #admin/applications), so a refresh,
+// a bookmark, or the back button lands on the same tab.
+const TAB_KEY = { officer: ['officerTab', OFFICER_TABS], admin: ['adminTab', ADMIN_TABS] };
+function syncTabHash(r){
+  const tk = TAB_KEY[r]; if (!tk || /access_token|error_description/.test(location.hash)) return;
+  const [key, tabs] = tk, sub = location.hash.slice(1).split('/')[1];
+  // The address changed (refresh, back button, pasted link): it decides the tab.
+  if (location.hash !== ui._hash && sub && tabs.some(([k]) => k === sub)) ui[key] = sub;
+  const want = '#' + r + '/' + ui[key];
+  if (location.hash !== want) history.replaceState(null, '', want);
+  ui._hash = want;
+}
 function render(){
   if (!loaded) return;
   let r = route();
   if (session && (needsPassword() || needsProfile())) r = 'setup';   // finish the account before anything else
+  syncTabHash(r);
   renderChrome(r); document.getElementById('app').innerHTML = VIEWS[r]();
 }
 window.addEventListener('hashchange', () => {
@@ -2347,8 +2360,9 @@ document.addEventListener('click', async ev => {
       break;
     case 'photo': { const r = db.recaps.find(x => x.id === id); showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3>${esc(r.title)}</h3></div><img src="${esc(r.photos[+t.dataset.i])}" alt="" style="width:100%;border-radius:3px"></div>`, null, 'wide'); break; }
     case 'arch-type': ui.archType = t.dataset.type; render(); break;
-    case 'otab': ui.officerTab = t.dataset.tab; render(); break;
-    case 'atab': ui.adminTab = t.dataset.tab; render(); break;
+    // pushState so the back button returns to the previous tab
+    case 'otab': ui.officerTab = t.dataset.tab; history.pushState(null, '', ui._hash = '#officer/' + ui.officerTab); render(); break;
+    case 'atab': ui.adminTab = t.dataset.tab; history.pushState(null, '', ui._hash = '#admin/' + ui.adminTab); render(); break;
     case 'edit-event': closeModal(); ui.officerTab = 'events'; ui.editEvent = id; if (route() !== 'officer') location.hash = 'officer'; else render(); window.scrollTo(0,0); break;
     case 'cancel-edit': ui.editEvent = null; render(); break;
     case 'del-event': { const e = evById(id); if (ui.editEvent === id) ui.editEvent = null;
