@@ -884,10 +884,12 @@ function viewContact(){
 const PRO_WAYS = ['Guest speaker or panel', 'Workshop or technical training', 'Coffee chats and informational interviews',
   'Mentoring a student through recruiting season', 'Resume reviews or mock interviews', 'Judging a case or stock pitch competition',
   'Referring students or sharing openings at my firm', 'Introducing the club to my firm', 'Something else (tell us below)'];
-const FIRM_WAYS = ['Career fairs and recruiting events', 'Info session or recruiting night', 'Sharing internships and full-time jobs',
+const RESUME_BOOK_WAY = 'Receiving our resume book';
+const FIRM_WAYS = [RESUME_BOOK_WAY, 'Career fairs and recruiting events', 'Info session or recruiting night', 'Sharing internships and full-time jobs',
   'Office visit or excursion', 'Firm-led workshop or training', 'Sponsoring a case competition', 'Event sponsorship (food, venue, materials)',
   'Funding for competitions, travel, software, or treks', 'Something else (tell us below)'];
 const PARTNER_WAYS = [
+  ['Resume book', 'Get resumes from members who opted in, sorted by finance function, so you only see candidates for your area. Check “Receiving our resume book” below.'],
   ['Guest speaker or panel', 'Share your career path and what your work actually looks like.'],
   ['Workshop or technical training', 'Teach a hands-on session: modeling, valuation, Excel, Bloomberg, or interview prep.'],
   ['Office visit or excursion', 'Host members at your office for a tour, a panel, and time with your team.'],
@@ -975,8 +977,10 @@ function questionsBody(){
         <div><strong>${esc(q.name || 'No name given')}</strong>${q.kind === 'partner' ? `${q.job_title ? ', ' + esc(q.job_title) : ''} · <strong>${esc(q.company)}</strong>` : ''} · <a href="mailto:${esc(q.email)}">${esc(q.email)}</a>
           <div class="hint">${q.kind === 'partner' ? `<span class="tag pinned">${q.topic === 'Firm or organization' ? 'Firm' : q.topic === 'Industry professional' ? 'Industry professional' : 'Industry partner'}</span>` : esc(q.topic)} · ${fmtStamp(q.created_at)}${q.status === 'answered' ? ` · <span class="tag ok">Answered${q.answered_by ? ' by ' + esc(userName(q.answered_by)) : ''}</span>` : ' · <span class="tag warn">New</span>'}</div></div>
       </div>
-      ${(q.functions || []).length ? `<div class="hint"><strong>Works in:</strong> ${esc(q.functions.join(', '))}</div>
-        <div class="row" style="gap:6px">${q.functions.map(f => `<button class="btn ghost small" data-act="rb-for" data-type="${esc(f)}">Resume book: ${esc(f)}</button>`).join('')}</div>` : ''}
+      ${(q.functions || []).length ? `<div class="hint"><strong>Works in:</strong> ${esc(q.functions.join(', '))}</div>` : ''}
+      ${(q.ways || []).includes(RESUME_BOOK_WAY) ? `<div class="row" style="gap:6px;align-items:center"><span class="tag warn">Wants the resume book</span>
+        ${((q.functions || []).length ? q.functions : ['']).map(f => `<button class="btn ghost small" data-act="rb-for" data-type="${esc(f)}">Open resume book${f ? ': ' + esc(f) : ''}</button>`).join('')}</div>`
+        : (q.functions || []).length ? `<div class="row" style="gap:6px">${q.functions.map(f => `<button class="btn ghost small" data-act="rb-for" data-type="${esc(f)}">Resume book: ${esc(f)}</button>`).join('')}</div>` : ''}
       ${(q.ways || []).length ? `<div class="hint"><strong>Interested in:</strong> ${esc(q.ways.join(', '))}</div>` : ''}
       <p style="white-space:pre-wrap;margin:0">${esc(q.message)}</p>
       <div class="row" style="gap:6px">
