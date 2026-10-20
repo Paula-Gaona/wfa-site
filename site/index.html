@@ -288,6 +288,10 @@ table.bulk input,table.bulk select{padding:6px 8px;min-width:120px}
 .career .facts{grid-template-columns:auto 1fr}
 .cat-head{font-size:1.35rem;text-transform:uppercase;color:var(--brand-text)}
 .mail-pre{white-space:pre-wrap;font-size:.95rem;overflow-wrap:anywhere}
+.pw-wrap{position:relative;display:block}
+.pw-wrap input{padding-right:64px}
+.pw-toggle{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--brand-text);font:inherit;font-size:.85rem;font-weight:700;padding:6px 10px;cursor:pointer;border-radius:var(--radius)}
+.pw-toggle:hover{text-decoration:underline}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr));gap:20px}
 .stats-grid .panel{display:flex;flex-direction:column;gap:14px;min-width:0}
 .hbars{display:flex;flex-direction:column;gap:10px}
@@ -1035,7 +1039,7 @@ function viewAuth(mode){
       ${yearSelect('su', '')}
       ${careerChecklist('su', [])}
       <label class="check"><input type="checkbox" id="su-lb" checked> Show my name on the leaderboard <span class="hint">(uncheck to appear as “Anonymous Member”)</span></label>
-      <label>Preferred email<input id="su-email" type="email" autocomplete="email" required><span class="hint">If you’re an officer, use the email on the officer list.</span></label>
+      <label>Preferred email<input id="su-email" type="email" autocomplete="email" required><span class="hint">We’ll email you a link to confirm your account. If you’re an officer, use the email on the officer list.</span></label>
       <div class="grid2">
         <label>Password<input id="su-pw" type="password" autocomplete="new-password" required><span class="hint">At least 8 characters.</span></label>
         <label>Confirm password<input id="su-pw2" type="password" autocomplete="new-password" required></label>
@@ -2312,6 +2316,16 @@ function render(){
   if (session && (needsPassword() || needsProfile())) r = 'setup';   // finish the account before anything else
   syncTabHash(r);
   renderChrome(r); document.getElementById('app').innerHTML = VIEWS[r]();
+  addPasswordToggles();
+}
+// Puts a Show/Hide button inside every password box.
+function addPasswordToggles(){
+  document.querySelectorAll('#app input[type="password"]').forEach(inp => {
+    if (inp.parentElement.classList.contains('pw-wrap')) return;
+    const wrap = document.createElement('span'); wrap.className = 'pw-wrap';
+    inp.replaceWith(wrap); wrap.appendChild(inp);
+    wrap.insertAdjacentHTML('beforeend', '<button type="button" class="pw-toggle" data-act="toggle-pw" aria-pressed="false" aria-label="Show password">Show</button>');
+  });
 }
 window.addEventListener('hashchange', () => {
   if (/access_token|error_description/.test(location.hash)) return;
@@ -2376,6 +2390,11 @@ document.addEventListener('click', async ev => {
     case 'atab': ui.adminTab = t.dataset.tab; history.pushState(null, '', ui._hash = '#admin/' + ui.adminTab); render(); break;
     case 'edit-event': closeModal(); ui.officerTab = 'events'; ui.editEvent = id; if (route() !== 'officer') location.hash = 'officer'; else render(); window.scrollTo(0,0); break;
     case 'cancel-edit': ui.editEvent = null; render(); break;
+    case 'toggle-pw': {
+      const inp = t.parentElement.querySelector('input'), show = inp.type === 'password';
+      inp.type = show ? 'text' : 'password'; t.textContent = show ? 'Hide' : 'Show';
+      t.setAttribute('aria-pressed', show); t.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      break; }
     case 'publish-event': case 'unpublish-event': {
       const e = evById(id), pub = t.dataset.act === 'publish-event';
       await act(async () => {
