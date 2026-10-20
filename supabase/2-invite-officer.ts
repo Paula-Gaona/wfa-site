@@ -6,8 +6,7 @@
 //
 // Needs these Edge Function secrets (Supabase -> Edge Functions -> Secrets):
 //   RESEND_API_KEY   your Resend API key
-//   MAIL_FROM        Wolverine Finance Association <communications@wolverinefinanceassociation.org>
-//                    (a real mailbox people can reply to; avoid noreply addresses)
+//   MAIL_FROM        Wolverine Finance Association <noreply@wolverinefinanceassociation.org>
 //   SITE_URL         https://wolverinefinanceassociation.org
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided automatically.
 // Keep this file plain ASCII: pasting curly quotes into the editor can garble them.
