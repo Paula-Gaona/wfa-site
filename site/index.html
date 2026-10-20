@@ -537,7 +537,7 @@ async function load(){
   db.questions = R.questions || [];
   db.mres = {}; (R.mres || []).forEach(r => (db.mres[r.member_id] = db.mres[r.member_id] || {})[r.category] = { path: r.path, updated: r.updated_at });
   db.pstats = R.pstats || null;
-  db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null };
+  db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null, info: R.appset?.branch_info || {} };
   db.apps = (R.apps || []).map(a => ({ ...a, date: iso(new Date(a.created_at)) }));
   db.avail = {}; (R.avail || []).forEach(a => db.avail[a.email] = [...normSlots(a.slots)]);
   db.log = (R.log || []).map(l => ({ ts:l.ts, who:l.who, text:l.text }));
@@ -1584,9 +1584,48 @@ function appsBanner(){
     <a class="btn small" href="#apply">${session && myApplication() ? 'View your application' : 'Apply'}</a></div>`;
 }
 
+// What each officer branch does. Admins can edit these on the Apply page; until then these defaults show.
+const BRANCH_DEFAULTS = {
+  communications: { summary: 'Connects the WFA with students and with the finance industry.',
+    items: 'Reach out to students to promote events and grow membership\nReach out to industry professionals and firms to bring in speakers, panelists, and partners\nReach out to sponsors to support club events and competitions\nWrite the club’s emails, announcements, and event descriptions\nUse social media and the website to get the word out',
+    fit: 'Great fit if you like networking, writing, and reaching out to people you don’t know yet.' },
+  operations: { summary: 'Makes the events happen.',
+    items: 'Book rooms and handle event logistics, food, and supplies\nCoordinate with faculty and UVU staff, including the club’s faculty advisor and the department\nRun check-in at events and keep track of attendance and member data\nManage the budget, reimbursements, and UVU club paperwork\nHandle logistics for speakers, office visits, and career fairs',
+    fit: 'Great fit if you’re organized, reliable, and like being the person who keeps everything on track.' },
+  financial_applications: { summary: 'Runs the club’s technical, hands-on finance programming.',
+    items: 'Teach or help run workshops in Excel, financial modeling, valuation, and Bloomberg\nHelp prepare and run the club’s case competitions\nPrepare members for case and stock pitch competitions\nBuild templates and guides for the archive\nHelp members prep for technical interviews',
+    fit: 'Great fit if you enjoy the technical side of finance and like teaching what you learn.' }
+};
+function branchInfo(k){ return { ...BRANCH_DEFAULTS[k], ...((db.app.info || {})[k] || {}) }; }
+function branchCards(){
+  const open = appsOpen() ? db.app.branches : [];
+  return `<section class="stack" style="gap:16px">
+    <div class="section-head"><h2>The branches</h2></div>
+    <div class="careers">${Object.keys(BRANCHES).map(k => {
+      const b = branchInfo(k);
+      if (ui.editBranch === k) return `<form class="panel stack" id="f-branch" data-k="${k}" style="gap:10px">
+        <h3>${esc(BRANCHES[k])}</h3>
+        <label>One-line summary<input id="br-summary" maxlength="200" value="${esc(b.summary)}"></label>
+        <label>What you’d do <span class="hint">(one per line)</span><textarea id="br-items" style="min-height:150px">${esc(b.items)}</textarea></label>
+        <label>Who it’s a great fit for<textarea id="br-fit" style="min-height:60px">${esc(b.fit)}</textarea></label>
+        <div class="err" id="br-err"></div>
+        <div class="row" style="gap:6px"><button class="btn small" type="submit">Save</button><button class="btn ghost small" type="button" data-act="branch-cancel">Cancel</button>
+          <button class="btn ghost small" type="button" data-act="branch-reset" data-k="${k}">Reset to default</button></div>
+      </form>`;
+      return `<article class="panel stack" style="gap:10px">
+        <div class="row" style="justify-content:space-between;align-items:start;gap:8px"><h3 style="margin:0">${esc(BRANCHES[k])}</h3>
+          ${open.includes(k) ? '<span class="tag ok">Accepting applications</span>' : ''}</div>
+        <strong>${esc(b.summary)}</strong>
+        <ul style="margin:0;padding-left:20px">${String(b.items || '').split('\n').map(s => s.trim()).filter(Boolean).map(s => `<li>${esc(s)}</li>`).join('')}</ul>
+        ${b.fit ? `<p class="muted" style="margin:0;font-style:italic">${esc(b.fit)}</p>` : ''}
+        ${can('admin') ? `<div><button class="btn ghost small" data-act="branch-edit" data-k="${k}">Edit</button></div>` : ''}
+      </article>`;
+    }).join('')}</div>
+  </section>`;
+}
 function viewApply(){
   const head = `<section class="page-head"><div class="eyebrow">Officer applications</div><h1 class="page">Join the officer team</h1>
-    <p class="muted">Officers plan events, run workshops, and keep the club running.${appsOpen() ? ` Now accepting applications for the ${esc(branchList())}.${db.app.deadline ? ' Applications close at the end of ' + fmtDay(db.app.deadline) + '.' : ''}` : ''}</p></section>`;
+    <p class="muted">Officers plan events, run workshops, and keep the club running.${appsOpen() ? ` Now accepting applications for the ${esc(branchList())}.${db.app.deadline ? ' Applications close at the end of ' + fmtDay(db.app.deadline) + '.' : ''}` : ''}</p></section>${branchCards()}`;
   if (!appsOpen()) return `<div class="view">${head}<div class="empty">Officer applications are closed right now. Watch the announcements for the next opening.</div></div>`;
   if (!session) return `<div class="view">${head}<div class="lock"><span>Sign in or create a member account to apply.</span><div class="row"><a class="btn small ghost" href="#signup">Join</a><a class="btn small" href="#signin">Sign in</a></div></div></div>`;
   const mine = myApplication();
@@ -1640,6 +1679,7 @@ function adminApplicationsBody(){
         ${Object.entries(BRANCHES).map(([k, l]) => `<label class="check"><input type="checkbox" data-branch="${k}" ${a.branches.includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}
         <span class="hint">If two or more are open, applicants rank them. Presidents aren’t chosen through this form.</span></fieldset>
       <label style="max-width:16.25rem">Deadline <span class="hint">(optional)</span><input id="as-deadline" type="date" value="${esc(a.deadline)}"><span class="hint">The form closes after this day.</span></label>
+      <span class="hint">Applicants see a description of each branch on the <a href="#apply">Apply page</a>. Edit them there.</span>
       ${a.open ? '' : '<label class="check"><input id="as-notify" type="checkbox" checked> When I open applications, email all members a link to apply</label>'}
       <div class="err" id="as-err"></div>
       <div class="row"><button class="btn" type="submit">Save settings</button>${appsOpen() ? '<a href="#apply">See the application page</a>' : ''}</div>
@@ -2804,6 +2844,12 @@ document.addEventListener('click', async ev => {
     case 'atab': ui.adminTab = t.dataset.tab; history.pushState(null, '', ui._hash = '#admin/' + ui.adminTab); render(); break;
     case 'edit-event': closeModal(); ui.officerTab = 'events'; ui.editEvent = id; if (route() !== 'officer') location.hash = 'officer'; else render(); window.scrollTo(0,0); break;
     case 'cancel-edit': ui.editEvent = null; render(); break;
+    case 'branch-edit': ui.editBranch = t.dataset.k; render(); break;
+    case 'branch-cancel': ui.editBranch = null; render(); break;
+    case 'branch-reset': {
+      const k = t.dataset.k, info = { ...(db.app.info || {}) }; delete info[k];
+      await act(async () => { must(await sb.from('app_settings').update({ branch_info: info }).eq('id', 1)); ui.editBranch = null; await logChange('Reset the ' + BRANCHES[k] + ' description'); }, 'Back to the default description');
+      break; }
     case 'q-again': ui.qSent = ''; render(); break;
     case 'q-filter': ui.qFilter = t.dataset.f; render(); break;
     case 'q-status': { const q = db.questions.find(x => x.id === id), done = q.status !== 'answered';
@@ -3303,6 +3349,16 @@ async function handleSubmit(f, v, err){
   if (f.dataset.appNote){
     const aid = f.dataset.appNote, notes = f.querySelector('textarea').value;
     await act(async () => must(await sb.from('applications').update({ notes }).eq('id', aid)), 'Notes saved');
+  }
+
+  if (f.id === 'f-branch'){
+    const k = f.dataset.k, entry = { summary: v('br-summary'), items: v('br-items'), fit: v('br-fit') };
+    if (!entry.summary || !entry.items) return err('br-err', 'Add a summary and at least one thing they’d do.');
+    const info = { ...(db.app.info || {}), [k]: entry };
+    const r = await sb.from('app_settings').update({ branch_info: info }).eq('id', 1);
+    if (r.error) return err('br-err', /branch_info/.test(r.error.message || '') ? 'This isn’t set up yet. Run the 22-branch-descriptions.sql update in Supabase.' : errMsg(r.error));
+    await logChange('Edited the ' + BRANCHES[k] + ' description');
+    ui.editBranch = null; await load(); toast('Description saved'); render();
   }
 
   if (f.id === 'f-appset'){
