@@ -191,6 +191,7 @@ main{padding-block:36px 64px}
 .chip::before{content:"";width:8px;height:8px;border-radius:2px;background:var(--c,var(--muted))}
 .chip[aria-pressed="false"]{opacity:.5}
 .cal-scroll{overflow-x:auto}
+.cal-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(32rem,100%),1fr));gap:28px;align-items:start}
 .cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-top:1px solid var(--line);border-left:1px solid var(--line);background:var(--surface)}
 .cal .dow{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;padding:8px;border-right:1px solid var(--line);border-bottom:2px solid var(--ink);color:var(--muted)}
 .cal .cell{min-height:112px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:6px;display:flex;flex-direction:column;gap:4px;min-width:0}
@@ -742,36 +743,42 @@ function viewHome(){
   </div>`;
 }
 
-function viewCalendar(){
-  const m = ui.cal, y = m.getFullYear(), mo = m.getMonth();
-  const start = new Date(y, mo, 1 - m.getDay());
-  const end = new Date(y, mo + 1, 0);
-  const weeks = Math.ceil((m.getDay() + end.getDate()) / 7);
-  const byDay = {};
-  visibleEvents().filter(e => ui.catsOn.has(e.cat)).forEach(e => (byDay[e.date] = byDay[e.date] || []).push(e));
-  Object.values(byDay).forEach(l => l.sort((a,b) => a.start.localeCompare(b.start)));
+// One month's grid. Days from the neighboring months are shown faded and left empty.
+function monthGrid(y, mo, byDay){
+  const first = new Date(y, mo, 1), start = new Date(y, mo, 1 - first.getDay());
+  const weeks = Math.ceil((first.getDay() + new Date(y, mo + 1, 0).getDate()) / 7);
   let cells = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="dow">${d}</div>`).join('');
   for (let i = 0; i < weeks * 7; i++){
     const d = new Date(start); d.setDate(start.getDate() + i);
-    const k = iso(d), evs = byDay[k] || [];
-    cells += `<div class="cell ${d.getMonth()!==mo?'out':''} ${k===todayIso()?'today':''}">
+    const k = iso(d), inMonth = d.getMonth() === mo, evs = inMonth ? byDay[k] || [] : [];
+    cells += `<div class="cell ${inMonth ? '' : 'out'} ${inMonth && k === todayIso() ? 'today' : ''}">
       <span class="num">${d.getDate()}</span>
       ${evs.map(e => `<button class="cal-ev" style="--c:${catVar(e.cat)}" data-act="open-event" data-id="${e.id}" title="${esc(e.title)}"><span class="t">${fmtTime(e.start).replace(':00','')}</span>${esc(e.title)}</button>`).join('')}
     </div>`;
   }
-  const monthEvents = sortedEvents().filter(e => ui.catsOn.has(e.cat) && parseDay(e.date).getMonth() === mo && parseDay(e.date).getFullYear() === y);
+  return `<section class="stack" style="gap:10px;min-width:0"><h2>${MONTHS[mo]} ${y}</h2><div class="cal-scroll"><div class="cal">${cells}</div></div></section>`;
+}
+// Shows two months: the one being viewed and the next.
+function viewCalendar(){
+  const m = ui.cal, y = m.getFullYear(), mo = m.getMonth(), next = new Date(y, mo + 1, 1);
+  const byDay = {};
+  visibleEvents().filter(e => ui.catsOn.has(e.cat)).forEach(e => (byDay[e.date] = byDay[e.date] || []).push(e));
+  Object.values(byDay).forEach(l => l.sort((a,b) => a.start.localeCompare(b.start)));
+  const inRange = e => { const d = parseDay(e.date); return d >= m && d < new Date(y, mo + 2, 1); };
+  const listEvents = sortedEvents().filter(e => ui.catsOn.has(e.cat) && inRange(e));
+  const sameYear = y === next.getFullYear();
+  const label = MONTHS[mo] + (sameYear ? '' : ' ' + y) + ' – ' + MONTHS[next.getMonth()] + ' ' + next.getFullYear();
   return `<div class="view">
     <div class="cal-bar">
-      <div class="row"><h2>${MONTHS[mo]} ${y}</h2>
-        <div class="row" style="gap:6px"><button class="btn ghost small" data-act="cal" data-d="-1" aria-label="Previous month">←</button><button class="btn ghost small" data-act="cal" data-d="0">Today</button><button class="btn ghost small" data-act="cal" data-d="1" aria-label="Next month">→</button></div>
-      </div>
+      <div class="row"><div class="row" style="gap:6px"><button class="btn ghost small" data-act="cal" data-d="-1" aria-label="Previous month">←</button><button class="btn ghost small" data-act="cal" data-d="0">Today</button><button class="btn ghost small" data-act="cal" data-d="1" aria-label="Next month">→</button></div>
+        <span class="muted">${label}</span></div>
       ${can('officer')?'<a class="btn small" href="#officer" data-tab="events">+ Add event</a>':''}
     </div>
     <div class="filters" aria-label="Filter by type">${Object.entries(CATS).filter(([k]) => k !== 'officer_meeting' || can('officer')).map(([k,[l,v]]) => `<button class="chip" style="--c:var(${v})" aria-pressed="${ui.catsOn.has(k)}" data-act="cat" data-cat="${k}">${l}</button>`).join('')}</div>
-    <div class="cal-scroll"><div class="cal">${cells}</div></div>
+    <div class="cal-pair">${monthGrid(y, mo, byDay)}${monthGrid(next.getFullYear(), next.getMonth(), byDay)}</div>
     <section class="stack">
-      <div class="section-head"><h2>This month</h2><span class="muted">${monthEvents.length} event${monthEvents.length===1?'':'s'}</span></div>
-      <div class="ev-list">${monthEvents.map(evRow).join('') || '<div class="empty">Nothing scheduled this month.</div>'}</div>
+      <div class="section-head"><h2>Events in ${MONTHS[mo]} and ${MONTHS[next.getMonth()]}</h2><span class="muted">${listEvents.length} event${listEvents.length===1?'':'s'}</span></div>
+      <div class="ev-list">${listEvents.map(evRow).join('') || '<div class="empty">Nothing scheduled these two months.</div>'}</div>
     </section>
   </div>`;
 }
