@@ -495,7 +495,7 @@ async function load(){
   db.users = (R.members || []).map(m => {
     const majors = (m.majors && m.majors.length) ? m.majors : (m.major ? [m.major] : []);
     return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(' & '), email:m.email, joined:m.joined, interests:m.interests || [], year:m.year || '', lbPublic:m.lb_public !== false,
-      resumePath:m.resume_path || '', resumeBook:!!m.resume_book, resumeUpdated:m.resume_updated || null };
+      resumePath:m.resume_path || '', resumeBook:!!m.resume_book, resumeUpdated:m.resume_updated || null, emailOptIn:m.email_opt_in !== false };
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft }));
@@ -1181,6 +1181,8 @@ function viewAccount(){
           <dt>Minor</dt><dd>${esc(u.minor) || '—'}</dd>
           <dt>Year in school</dt><dd>${esc(u.year) || '<span class="muted">Not set</span>'}</dd>
           <dt>Career interests</dt><dd>${(u.interests || []).length ? esc(u.interests.join(', ')) : '<span class="muted">None picked yet</span>'}</dd>
+          <dt>Club emails</dt><dd>${u.emailOptIn === false ? 'Off' : 'On'} <button class="btn ghost small" data-act="mail-optin" style="margin-left:6px">${u.emailOptIn === false ? 'Turn on' : 'Turn off'}</button>
+            <div class="hint">Events and announcements. Account emails like password resets always send.</div></dd>
           ${isStaff() ? '' : `<dt>Leaderboard</dt><dd>${u.lbPublic === false ? 'Anonymous Member' : 'Shown by name'} <button class="btn ghost small" data-act="lb-toggle" style="margin-left:6px">${u.lbPublic === false ? 'Show my name' : 'Go anonymous'}</button></dd>`}
           <dt>Email</dt><dd>${esc(u.email)}</dd>
           <dt>Joined</dt><dd>${fmtDay(u.joined)}</dd>
@@ -1228,6 +1230,7 @@ function viewAuth(mode){
       ${yearSelect('su', '')}
       ${careerChecklist('su', [])}
       <label class="check"><input type="checkbox" id="su-lb" checked> Show my name on the leaderboard <span class="hint">(uncheck to appear as “Anonymous Member”)</span></label>
+      <label class="check"><input type="checkbox" id="su-mail" checked> Email me about club events and announcements <span class="hint">(you’ll still get account emails like confirmations and password resets)</span></label>
       <label>Preferred email<input id="su-email" type="email" autocomplete="email" required><span class="hint">We’ll email you a link to confirm your account. If you’re an officer, use the email on the officer list.</span></label>
       <div class="grid2">
         <label>Password<input id="su-pw" type="password" autocomplete="new-password" required><span class="hint">At least 8 characters.</span></label>
@@ -1600,7 +1603,7 @@ function appCard(x){
   </article>`;
 }
 async function notifyApplicationsOpen(){
-  const to = db.users.filter(u => roleOf(u.email) === 'member').map(u => u.email);
+  const to = audienceEmails('members');
   if (!to.length) return toast('Applications are open. There are no members to email yet.');
   const text = `Hi,\n\nApplications are open for WFA officer positions in the ${branchList()}.` +
     (db.app.deadline ? `\n\nApply by ${fmtDay(db.app.deadline)}.` : '') +
@@ -1938,7 +1941,15 @@ function mailAudiences(){
     ['RSVP’d but missed…', ev.filter(isPast).map(e => ['noshow:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])]
   ];
 }
+// Club emails skip members who turned them off in My account. Emails to the officer team always go.
 function audienceEmails(key){
+  const list = audienceAll(key);
+  if (key === 'staff') return list;
+  const off = new Set(db.users.filter(u => u.emailOptIn === false).map(u => u.email));
+  return list.filter(e => !off.has(e));
+}
+function optedOutCount(key){ return key === 'staff' ? 0 : audienceAll(key).length - audienceEmails(key).length; }
+function audienceAll(key){
   const [k, id] = key.split(':');
   if (k === 'all') return db.users.map(u => u.email);
   if (k === 'members') return db.users.filter(u => roleOf(u.email) === 'member').map(u => u.email);
@@ -2025,7 +2036,9 @@ function eventBlock(){
 function mailText(){
   const closing = fillMerge(ui.mail.closing || '').trim();
   // "---" is a spacer line, so the conclusion stands apart from the last event.
-  return (fillMerge(ui.mail.body).trim() + eventBlock() + (closing ? '\n\n---\n' + closing : '')).trim();
+  // Member emails end with how to turn club emails off. Officer-team emails don't need it.
+  const footer = ui.mail.aud === 'staff' ? '' : `\n\n---\n*You’re getting this because you’re a Wolverine Finance Association member. To stop club emails, turn them off in My account: ${location.origin}/#account*`;
+  return (fillMerge(ui.mail.body).trim() + eventBlock() + (closing ? '\n\n---\n' + closing : '') + footer).trim();
 }
 // Formatting buttons for one of the email builder's text boxes.
 function fmtBar(target){
@@ -2399,7 +2412,7 @@ function viewOfficer(){
           <span class="hint">Added at the end of the email, after the events.</span></label>
       </form>
       <section class="stack">
-        <div class="section-head"><h3>Preview</h3><span class="muted">${to.length} recipients</span></div>
+        <div class="section-head"><h3>Preview</h3><span class="muted">${to.length} recipients${optedOutCount(ui.mail.aud) ? ` · ${optedOutCount(ui.mail.aud)} opted out of club emails and won’t get it` : ''}</span></div>
         <div class="preview" id="ml-preview">${mailPreview()}</div>
         <div class="panel stack" style="gap:8px">
           <strong>Send from your UVU Outlook (recommended for @uvu.edu)</strong>
@@ -2856,6 +2869,10 @@ document.addEventListener('click', async ev => {
       const old = me().resumePath;
       await act(async () => { must(await sb.from('members').update({ resume_path: '', resume_book: false, resume_updated: null }).eq('id', authUser.id)); if (old) await sb.storage.from('resumes').remove([old]); }, 'Resume removed');
       break; }
+    case 'mail-optin': {
+      const on = me().emailOptIn === false, r = await sb.from('members').update({ email_opt_in: on }).eq('id', authUser.id);
+      if (r.error) { toast(/email_opt_in/.test(r.error.message || '') ? 'This isn’t set up yet. An admin needs to run the 21-email-opt-in.sql update.' : errMsg(r.error)); break; }
+      await load(); render(); toast(on ? 'Club emails turned on' : 'Club emails turned off. You’ll still get account emails.'); break; }
     case 'rb-copy': copyText(resumeBookRows().map(r => r.u.email).join(', '), 'emails'); break;
     case 'rb-download': await downloadResumeBook(); break;
     case 'rb-for': ui.rbType = t.dataset.type; ui.officerTab = 'resumes'; history.pushState(null, '', ui._hash = '#officer/resumes'); render(); window.scrollTo(0, 0); break;
@@ -3033,7 +3050,7 @@ async function handleSubmit(f, v, err){
     if (pw.length < 8) return err('su-err', 'Password needs at least 8 characters.');
     if (pw !== pw2) return err('su-err', 'Passwords don’t match.');
     const { data, error } = await sb.auth.signUp({ email: d.email, password: pw,
-      options: { data: { uvuid: d.uvuid, first: d.first, last: d.last, majors: pick.majors, minor: pick.minor, major: pick.majors[0], interests: readInterests('su'), year, lb_public: document.getElementById('su-lb').checked }, emailRedirectTo: location.origin + location.pathname } });
+      options: { data: { uvuid: d.uvuid, first: d.first, last: d.last, majors: pick.majors, minor: pick.minor, major: pick.majors[0], interests: readInterests('su'), year, lb_public: document.getElementById('su-lb').checked, email_opt_in: document.getElementById('su-mail').checked }, emailRedirectTo: location.origin + location.pathname } });
     if (error) return err('su-err', errMsg(error));
     if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) return err('su-err', 'An account already uses this email. Sign in instead.');
     if (data.session){ await afterLogin(); toast('Welcome to the WFA, ' + d.first); }
