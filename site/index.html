@@ -447,7 +447,7 @@ function buildTitle(tier, branch){
   if (tier === 'honorary') return 'Honorary Officer';
   return b ? b + ' Officer' : 'Officer';
 }
-const OFFICER_TABS = [['stats','Statistics'],['questions','Questions'],['events','Events'],['plan','Event planning'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
+const OFFICER_TABS = [['stats','Statistics'],['approvals','Approvals'],['questions','Questions'],['events','Events'],['plan','Event planning'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
 const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
@@ -463,7 +463,7 @@ function parseDay(s){ const [y,m,d] = s.split('-').map(Number); return new Date(
 let authUser = null, session = null, myRole = 'guest', loaded = false;
 const db = { settings:{ semester:'', dues:0 }, adminEmails:[], officerEmails:[], profiles:{}, users:[], events:[], stats:{},
   rsvps:{}, attendance:{}, announcements:[], recaps:[], archive:[], tasks:[], dues:{}, leader:[], log:[],
-  app:{ open:false, branches:[], deadline:'', opened_at:null }, apps:[], avail:{} };
+  app:{ open:false, branches:[], deadline:'', opened_at:null }, apps:[], avail:{}, pending:[], questions:[] };
 
 async function load(){
   const { data: { session: s } } = await sb.auth.getSession();
@@ -482,6 +482,7 @@ async function load(){
     recaps: t('recaps'),
     archive: signed && t('archive'),
     pstats: sb.rpc('public_stats'),
+    pending: off && sb.from('pending_changes').select('*').order('created_at', { ascending: false }).limit(200),
     questions: off && sb.from('questions').select('*').order('created_at', { ascending: false }),
     members: signed && t('members'),
     rsvps: signed && t('rsvps'),
@@ -508,7 +509,7 @@ async function load(){
   db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0), about: R.settings?.about || {} };
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
   (R.profiles || []).forEach(p => {
-    db.profiles[p.email] = { name:p.name, title:buildTitle(p.tier, p.branch), bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '', majors:p.majors || [], minor:p.minor || '' };
+    db.profiles[p.email] = { name:p.name, title:buildTitle(p.tier, p.branch), bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '', majors:p.majors || [], minor:p.minor || '', canPublish:!!p.can_publish };
     (p.role === 'admin' ? db.adminEmails : db.officerEmails).push(p.email);
   });
   if (R.access){
@@ -537,6 +538,7 @@ async function load(){
   db.questions = R.questions || [];
   db.mres = {}; (R.mres || []).forEach(r => (db.mres[r.member_id] = db.mres[r.member_id] || {})[r.category] = { path: r.path, updated: r.updated_at });
   db.pstats = R.pstats || null;
+  db.pending = R.pending || [];
   db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null, info: R.appset?.branch_info || {}, planTpl: R.appset?.plan_templates || {}, declineTpl: R.appset?.decline_template || {} };
   db.apps = (R.apps || []).map(a => ({ ...a, date: iso(new Date(a.created_at)) }));
   db.avail = {}; (R.avail || []).forEach(a => db.avail[a.email] = [...normSlots(a.slots)]);
@@ -1077,7 +1079,7 @@ function aboutEditor(){
     <label>Section heading<input id="ab-steps-title" value="${esc(d.stepsTitle)}"></label>
     ${list('steps', 'Section items')}
     <div class="err" id="ab-err"></div>
-    <div class="row" style="gap:8px"><button class="btn" type="submit">Save page</button><button type="button" class="btn ghost small" data-act="about-reset">Reset to the original text</button></div>
+    <div class="row" style="gap:8px"><button class="btn" type="submit">${canPublish() ? 'Save page' : 'Submit for approval'}</button><button type="button" class="btn ghost small" data-act="about-reset">Reset to the original text</button></div>
   </form></div>`;
 }
 // Copies the editor's fields back into the draft before adding, removing, or moving boxes.
@@ -2427,6 +2429,95 @@ function planBody(){
   </div>`;
 }
 
+/* ---------- Approvals ----------
+   Presidents, vice presidents, faculty advisors, admins, and officers an admin allows can change member-visible
+   content directly. Everyone else's changes go to pending_changes for a president, vice president, or admin to approve.
+   The database enforces this (supabase/27-approvals.sql); these helpers keep the site in step. */
+const PUBLISH_TIERS = ['president', 'vice_president', 'advisor'], APPROVER_TIERS = ['president', 'vice_president'];
+function canPublish(){ if (myRole === 'admin') return true; const p = db.profiles[session] || {}; return myRole === 'officer' && (PUBLISH_TIERS.includes(p.tier) || !!p.canPublish); }
+function isApprover(){ if (myRole === 'admin') return true; return myRole === 'officer' && APPROVER_TIERS.includes((db.profiles[session] || {}).tier); }
+const CHANGE_TABLES = { announcement: 'announcements', recap: 'recaps', archive: 'archive', resource: 'resources', career: 'careers' };
+const CHANGE_NAMES = { event: 'Event', announcement: 'Announcement', recap: 'Recap', archive: 'Archive item', resource: 'Resource', career: 'Career', timeline: 'Recruiting timeline', about: 'About page', settings: 'Semester settings' };
+// Makes one member-visible change. Runs for publishers right away, and for approvers when they approve a submission.
+async function applyChange(kind, action, target, p){
+  p = p || {};
+  if (kind === 'event'){
+    if (action === 'publish' || action === 'unpublish') must(await sb.from('events').update({ draft: action === 'unpublish' }).eq('id', target));
+    else if (action === 'delete') must(await sb.from('events').delete().eq('id', target));
+    else {
+      let id = target;
+      if (action === 'add') id = must(await sb.from('events').insert({ ...p.row, draft: false }).select('id').single()).id;
+      else must(await sb.from('events').update(p.row).eq('id', target));
+      if (p.code) must(await sb.from('checkin_codes').upsert({ event_id: id, code: p.code }));
+      else if (p.code === '') await sb.from('checkin_codes').delete().eq('event_id', id);
+    }
+  } else if (kind === 'timeline'){
+    if ((p.gone || []).length) must(await sb.from('recruiting_timeline').delete().in('id', p.gone));
+    if ((p.rows || []).length) must(await sb.from('recruiting_timeline').upsert(p.rows));
+  } else if (kind === 'about') must(await sb.from('settings').update({ about: p.about || {} }).eq('id', 1));
+  else if (kind === 'settings') must(await sb.from('settings').update(p.row).eq('id', 1));
+  else {
+    const table = CHANGE_TABLES[kind]; if (!table) throw new Error('Unknown kind of change: ' + kind);
+    if (action === 'add') must(await sb.from(table).insert(p.row));
+    else if (action === 'edit') must(await sb.from(table).update(p.row).eq('id', target));
+    else if (action === 'delete'){
+      if (kind === 'recap' && (p.photos || []).length) await sb.storage.from('recap-photos').remove(p.photos);
+      must(await sb.from(table).delete().eq('id', target));
+    }
+  }
+}
+// Publishers: do it now. Everyone else: send it to the approval inbox.
+async function doOrPropose(kind, action, target, payload, summary, okMsg){
+  if (canPublish()) return act(async () => { await applyChange(kind, action, target, payload); await logChange(summary); }, okMsg);
+  if (db.pending.some(c => c.status === 'pending' && c.kind === kind && c.action === action && c.target_id && c.target_id === target && c.author === session))
+    { toast('That’s already waiting for approval.'); return false; }
+  return act(async () => {
+    const r = await sb.from('pending_changes').insert({ kind, action, target_id: target || '', payload: payload || {}, summary });
+    if (r.error) throw /pending_changes/.test(r.error.message || '') ? new Error('Approvals aren’t set up yet. An admin needs to run the 27-approvals.sql update.') : r.error;
+    await logChange('Sent for approval: ' + summary);
+  }, 'Sent to a president or vice president for approval');
+}
+function pendingFor(kind, target){ return db.pending.filter(c => c.status === 'pending' && c.kind === kind && c.target_id === target); }
+// A short, readable view of what a submission would change.
+function changePreview(c){
+  const p = c.payload || {}, r = p.row || {}, ev = c.kind === 'event' ? evById(c.target_id) : null;
+  const lines = [];
+  if (ev && !r.title) lines.push(`<strong>${esc(ev.title)}</strong> · ${fmtDay(ev.date)}${ev.draft ? ' (draft)' : ''}`);
+  if (r.title) lines.push(`<strong>${esc(r.title)}</strong>`);
+  if (r.date) lines.push(`${fmtDay(r.date)}${r.start_time ? ', ' + fmtTime(r.start_time) : ''}${r.loc ? ' · ' + esc(r.loc) : ''}`);
+  const text = r.body || r.descr || r.summary || r.url || '';
+  if (text) lines.push(`<span class="muted" style="white-space:pre-wrap">${esc(String(text).slice(0, 400))}${String(text).length > 400 ? '…' : ''}</span>`);
+  if (r.pinned !== undefined && Object.keys(r).length === 1) lines.push(r.pinned ? 'Pin it to the top' : 'Unpin it');
+  if (c.kind === 'timeline') lines.push(`${(p.rows || []).length} rows${(p.gone || []).length ? `, ${p.gone.length} removed` : ''}`);
+  if (c.kind === 'about') lines.push(`<strong>${esc((p.about || {}).title || 'Back to the original text')}</strong>`);
+  if (c.kind === 'settings') lines.push(Object.entries(r).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join(' · '));
+  if ((r.photos || []).length) lines.push(`${r.photos.length} photo${r.photos.length === 1 ? '' : 's'}`);
+  return lines.map(l => `<div>${l}</div>`).join('');
+}
+function approvalsBody(){
+  const pending = db.pending.filter(c => c.status === 'pending'), mine = db.pending.filter(c => c.author === session).slice(0, 25);
+  const label = c => `${CHANGE_NAMES[c.kind] || c.kind}: ${{ add: 'add', edit: 'edit', delete: 'delete', publish: 'publish', unpublish: 'unpublish' }[c.action]}`;
+  const card = (c, review) => `<article class="panel stack" style="gap:8px">
+      <div class="row" style="justify-content:space-between;align-items:start;gap:8px">
+        <div><span class="tag">${esc(label(c))}</span> <strong>${esc(c.summary)}</strong>
+          <div class="hint">${esc(userName(c.author))} · ${fmtStamp(c.created_at)}${c.status !== 'pending' ? ` · <span class="tag ${c.status === 'approved' ? 'ok' : 'bad'}">${c.status === 'approved' ? 'Approved' : 'Not approved'}</span>${c.reviewed_by ? ' by ' + esc(userName(c.reviewed_by)) : ''}` : ''}</div></div>
+      </div>
+      <div class="stack" style="gap:4px">${changePreview(c)}</div>
+      ${c.review_note ? `<div class="notice" style="margin:0">${esc(c.review_note)}</div>` : ''}
+      ${review ? `<div class="row" style="gap:6px;align-items:end">
+          <label style="flex:1;min-width:min(16rem,100%)">Note to ${esc(userName(c.author).split(' ')[0])} <span class="hint">(optional)</span><input id="rv-note-${c.id}" placeholder="e.g. Change the room to KB 101"></label>
+          <button class="btn small" data-act="ap-approve" data-id="${c.id}">Approve</button><button class="btn ghost small" data-act="ap-reject" data-id="${c.id}">Don’t approve</button></div>`
+        : c.status === 'pending' && c.author === session ? `<div>${delBtn('wd-' + c.id, 'Withdraw', 'ap-withdraw', c.id)}</div>` : ''}
+    </article>`;
+  return `<div class="stack" style="gap:24px">
+    <p class="muted" style="margin:0">${canPublish() ? 'You can publish changes directly.' : 'Changes members can see (events, announcements, recaps, the archive, resources, careers, the timeline, and the About page) go here for a president or vice president to approve.'}</p>
+    ${isApprover() ? `<section class="stack" style="gap:12px"><div class="section-head"><h2>Waiting for approval</h2><span class="muted">${pending.length}</span></div>
+      ${pending.map(c => card(c, true)).join('') || '<div class="empty">Nothing waiting. Nice.</div>'}</section>` : ''}
+    <section class="stack" style="gap:12px"><div class="section-head"><h2>Your submissions</h2></div>
+      ${mine.map(c => card(c, false)).join('') || '<div class="empty">You haven’t submitted anything for approval.</div>'}</section>
+  </div>`;
+}
+
 /* ---------- Statistics dashboard (Officer tools) ---------- */
 // Semesters start Jan 1, May 1, and Aug 1.
 function semesterStart(){ const d = new Date(), y = d.getFullYear(), m = d.getMonth(); return y + (m >= 7 ? '-08-01' : m >= 4 ? '-05-01' : '-01-01'); }
@@ -2587,11 +2678,14 @@ function viewOfficer(){
   if (!can('officer')) return gate('officer');
   const openTasks = db.tasks.filter(t => !t.done).length;
   const newQs = db.questions.filter(q => q.status === 'new').length;
-  const tabs = OFFICER_TABS.map(([k,l]) => [k, l, k === 'tasks' ? openTasks : k === 'questions' ? newQs : '']);
+  const waiting = db.pending.filter(c => c.status === 'pending' && (isApprover() || c.author === session)).length;
+  const tabs = OFFICER_TABS.map(([k,l]) => [k, l, k === 'tasks' ? openTasks : k === 'questions' ? newQs : k === 'approvals' ? (waiting || '') : '']);
   const T = ui.officerTab;
   let body = '';
 
   if (T === 'stats'){ body = statsBody(); }
+
+  else if (T === 'approvals'){ body = approvalsBody(); }
 
   else if (T === 'questions'){ body = questionsBody(); }
 
@@ -2623,7 +2717,7 @@ function viewOfficer(){
         <div class="err" id="ev-err"></div>
         <div class="row">
           ${!e || e.draft
-            ? `<button class="btn" type="submit" data-mode="publish">Publish to calendar</button><button class="btn ghost" type="submit" data-mode="draft">${e ? 'Save draft' : 'Save as draft'}</button>`
+            ? `<button class="btn" type="submit" data-mode="publish">${canPublish() ? 'Publish to calendar' : 'Submit for approval'}</button><button class="btn ghost" type="submit" data-mode="draft">${e ? 'Save draft' : 'Save as draft'}</button>`
             : `<button class="btn" type="submit" data-mode="save">Save changes</button>`}
           ${e ? '<button class="btn ghost" type="button" data-act="cancel-edit">Cancel</button>' : ''}
         </div>
@@ -2632,8 +2726,8 @@ function viewOfficer(){
       <section class="stack">
         ${(() => { const drafts = db.events.filter(x => x.draft).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
           return drafts.length ? `<div class="section-head"><h3>Drafts</h3><span class="muted">${drafts.length}</span></div>
-          <div>${drafts.map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)} <span class="tag">Draft</span></div><div class="ev-sub">${fmtDay(ev.date)} · ${esc(catName(ev.cat))}</div></div>
-            <div class="row" style="gap:6px"><button class="btn small" data-act="publish-event" data-id="${ev.id}">Publish</button><button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button>${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('')}</div>` : ''; })()}
+          <div>${drafts.map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)} <span class="tag">Draft</span>${pendingFor('event', ev.id).length ? ' <span class="tag warn">Waiting for approval</span>' : ''}</div><div class="ev-sub">${fmtDay(ev.date)} · ${esc(catName(ev.cat))}</div></div>
+            <div class="row" style="gap:6px"><button class="btn small" data-act="publish-event" data-id="${ev.id}">${canPublish() ? 'Publish' : 'Submit for approval'}</button><button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button>${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('')}</div>` : ''; })()}
         <div class="section-head"><h3>Published events</h3><span class="muted">${sortedEvents().length}</span></div>
         <div>${sortedEvents().reverse().map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)}</div><div class="ev-sub">${fmtDay(ev.date)} · ${going(ev.id).length} RSVP${isPast(ev)?' · '+attended(ev.id).length+' attended':''}</div></div>
           <div class="row" style="gap:6px"><button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button>${isPast(ev) ? '' : `<button class="btn ghost small ${ui.armed === 'unpub-' + ev.id ? 'armed' : ''}" data-act="unpublish-event" data-id="${ev.id}" data-key="unpub-${ev.id}">${ui.armed === 'unpub-' + ev.id ? 'Click again to unpublish' : 'Unpublish'}</button>`}${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('') || '<div class="empty">No published events yet.</div>'}</div>
@@ -2685,7 +2779,7 @@ function viewOfficer(){
           <label class="check" style="align-self:end;padding-bottom:10px"><input id="an-pin" type="checkbox"> Pin to top</label>
         </div>
         <div class="err" id="an-err"></div>
-        <div class="row"><button class="btn" type="submit">Post announcement</button></div>
+        <div class="row"><button class="btn" type="submit">${canPublish() ? 'Post announcement' : 'Submit for approval'}</button></div>
         <div class="eyebrow">Live preview</div>
         <div class="preview" id="an-preview">${annHtml({ title:'Your headline', body:'Your message will appear here.', aud:'all', pinned:false, date:todayIso(), author:session })}</div>
       </form>
@@ -2707,7 +2801,7 @@ function viewOfficer(){
         <label>Photos<input id="rc-photos" type="file" accept="image/*" multiple><span class="hint">Up to 6. Photos are resized before uploading.</span></label>
         <div class="thumbs" id="rc-thumbs">${thumbsHtml()}</div>
         <div class="err" id="rc-err"></div>
-        <div class="row"><button class="btn" type="submit" id="rc-submit">Publish recap</button></div>
+        <div class="row"><button class="btn" type="submit" id="rc-submit">${canPublish() ? 'Publish recap' : 'Submit for approval'}</button></div>
       </form>
       <section class="stack">
         <div class="section-head"><h3>Published</h3><span class="muted">${db.recaps.length}</span></div>
@@ -2898,6 +2992,8 @@ function viewAdmin(){
           <label>Rank on Officers page<select id="of-tier">${Object.entries(TIERS).map(([k,l]) => `<option value="${k}" ${(p.tier || 'officer')===k?'selected':''}>${l}</option>`).join('')}</select></label>
           <label>Branch<select id="of-branch"><option value="">No branch</option>${Object.entries(BRANCHES).map(([k,l]) => `<option value="${k}" ${p.branch===k?'selected':''}>${l}</option>`).join('')}</select></label>
         </div>
+        <label class="check"><input type="checkbox" id="of-publish" ${p.canPublish ? 'checked' : ''}> Can publish without approval</label>
+        <span class="hint" style="margin-top:-8px">Presidents, vice presidents, faculty advisors, and admins always can. Other officers’ changes that members can see go to the Approvals inbox unless this is checked.</span>
         <fieldset class="pwset">
           <legend>Sign-in setup</legend>
           <select id="of-setup" aria-label="Sign-in setup">${setupOptions(acct ? 'skip' : 'password', !!acct)}</select>
@@ -3135,7 +3231,7 @@ document.addEventListener('click', async ev => {
     case 'about-rm': readAboutDraft(); ui.aboutDraft[t.dataset.k].splice(+t.dataset.i, 1); render(); break;
     case 'about-move': { readAboutDraft(); const l = ui.aboutDraft[t.dataset.k], i = +t.dataset.i, j = i + +t.dataset.d; [l[i], l[j]] = [l[j], l[i]]; render(); break; }
     case 'about-reset':
-      await act(async () => { must(await sb.from('settings').update({ about: {} }).eq('id', 1)); ui.aboutDraft = null; await logChange('Reset the About page'); }, 'About page back to the original text');
+      if (await doOrPropose('about', 'edit', 'about', { about: {} }, 'Reset the About page to the original text', 'About page back to the original text')) { ui.aboutDraft = null; render(); }
       break;
     case 'branch-edit': ui.editBranch = t.dataset.k; render(); break;
     case 'branch-cancel': ui.editBranch = null; render(); break;
@@ -3154,32 +3250,38 @@ document.addEventListener('click', async ev => {
       inp.type = show ? 'text' : 'password'; t.textContent = show ? 'Hide' : 'Show';
       t.setAttribute('aria-pressed', show); t.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
       break; }
+    case 'ap-approve': case 'ap-reject': {
+      const c = db.pending.find(x => x.id === id); if (!c) break;
+      const ok = t.dataset.act === 'ap-approve', note = (document.getElementById('rv-note-' + id) || {}).value || '';
+      await act(async () => {
+        if (ok) await applyChange(c.kind, c.action, c.target_id, c.payload);
+        must(await sb.from('pending_changes').update({ status: ok ? 'approved' : 'rejected', reviewed_by: session, reviewed_at: new Date().toISOString(), review_note: note.trim() }).eq('id', id));
+        await logChange((ok ? 'Approved' : 'Didn’t approve') + ' ' + userName(c.author) + '’s change: ' + c.summary);
+      }, ok ? 'Approved and published' : 'Marked as not approved');
+      break; }
+    case 'ap-withdraw': await act(async () => { must(await sb.from('pending_changes').delete().eq('id', id)); }, 'Withdrawn'); break;
     case 'publish-event': case 'unpublish-event': {
       const e = evById(id), pub = t.dataset.act === 'publish-event';
-      await act(async () => {
-        const r = await sb.from('events').update({ draft: !pub }).eq('id', id);
-        if (r.error) throw /draft/.test(r.error.message || '') ? new Error('Drafts aren’t set up yet. An admin needs to run the 16-event-drafts.sql update in Supabase.') : r.error;
-        await logChange((pub ? 'Published “' : 'Moved back to drafts: “') + e.title + '”'); },
+      await doOrPropose('event', pub ? 'publish' : 'unpublish', id, {}, (pub ? 'Publish “' : 'Move back to drafts: “') + e.title + '”',
         pub ? 'Published to the calendar' : 'Moved back to drafts. Members can’t see it now.'); break; }
     case 'del-event': { const e = evById(id); if (ui.editEvent === id) ui.editEvent = null;
-      await act(async () => { must(await sb.from('events').delete().eq('id', id)); await logChange('Deleted event “' + e.title + '”'); }, 'Event deleted'); break; }
+      if (e.draft) await act(async () => { must(await sb.from('events').delete().eq('id', id)); await logChange('Deleted draft “' + e.title + '”'); }, 'Draft deleted');
+      else await doOrPropose('event', 'delete', id, {}, 'Delete event “' + e.title + '”', 'Event deleted');
+      break; }
     case 'show-code': await showCode(id); break;
     case 'refresh-code': await showCode(id); break;
     case 'new-code': await showCode(id, true); break;
     case 'report-ev': ui.reportEvent = id; render(); break;
     case 'pin-ann': { const x = db.announcements.find(n => n.id === id);
-      await act(async () => { must(await sb.from('announcements').update({ pinned: !x.pinned }).eq('id', id)); await logChange((x.pinned ? 'Unpinned' : 'Pinned') + ' announcement “' + x.title + '”'); }); break; }
+      await doOrPropose('announcement', 'edit', id, { row: { pinned: !x.pinned } }, (x.pinned ? 'Unpin' : 'Pin') + ' announcement “' + x.title + '”', x.pinned ? 'Unpinned' : 'Pinned'); break; }
     case 'del-ann': { const x = db.announcements.find(n => n.id === id);
-      await act(async () => { must(await sb.from('announcements').delete().eq('id', id)); await logChange('Deleted announcement “' + x.title + '”'); }, 'Announcement deleted'); break; }
+      await doOrPropose('announcement', 'delete', id, { row: { title: x.title } }, 'Delete announcement “' + x.title + '”', 'Announcement deleted'); break; }
     case 'rm-photo': ui.recapPhotos.splice(+t.dataset.i, 1); document.getElementById('rc-thumbs').innerHTML = thumbsHtml(); break;
     case 'del-recap': { const x = db.recaps.find(n => n.id === id);
-      await act(async () => {
-        const paths = x.photos.map(u => u.split('/recap-photos/')[1]).filter(Boolean);
-        if (paths.length) await sb.storage.from('recap-photos').remove(paths);
-        must(await sb.from('recaps').delete().eq('id', id)); await logChange('Deleted recap “' + x.title + '”');
-      }, 'Recap deleted'); break; }
+      const photos = x.photos.map(u => u.split('/recap-photos/')[1]).filter(Boolean);
+      await doOrPropose('recap', 'delete', id, { photos, row: { title: x.title } }, 'Delete recap “' + x.title + '”', 'Recap deleted'); break; }
     case 'del-arch': { const x = db.archive.find(n => n.id === id);
-      await act(async () => { must(await sb.from('archive').delete().eq('id', id)); await logChange('Removed “' + x.title + '” from the archive'); }); break; }
+      await doOrPropose('archive', 'delete', id, { row: { title: x.title } }, 'Remove “' + x.title + '” from the archive', 'Removed from the archive'); break; }
     case 'toggle-task': { const x = db.tasks.find(n => n.id === id);
       await act(async () => { must(await sb.from('tasks').update({ done: !x.done }).eq('id', id)); await logChange((x.done ? 'Reopened' : 'Completed') + ' task “' + x.title + '”'); }); break; }
     case 'del-task': { const x = db.tasks.find(n => n.id === id);
@@ -3245,12 +3347,12 @@ document.addEventListener('click', async ev => {
     case 'bulk-go': await bulkAdd(); break;
     case 'bulk-template': downloadBulkTemplate(); break;
     case 'del-resource': { const x = (db.resources || []).find(r => r.id === id);
-      await act(async () => { must(await sb.from('resources').delete().eq('id', id)); await logChange('Deleted resource “' + (x ? x.title : id) + '”'); }, 'Resource deleted'); break; }
+      await doOrPropose('resource', 'delete', id, { row: { title: x ? x.title : '' } }, 'Delete resource “' + (x ? x.title : id) + '”', 'Resource deleted'); break; }
     case 'career-edit': ui.editCareer = id; render(); break;
     case 'career-new': ui.editCareer = 'new-' + t.dataset.cat; render(); break;
     case 'career-cancel': ui.editCareer = null; render(); break;
     case 'career-del': { const c = (db.careers || []).find(x => x.id === id);
-      await act(async () => { must(await sb.from('careers').delete().eq('id', id)); await logChange('Deleted career “' + (c ? c.title : id) + '”'); }, 'Career deleted'); break; }
+      await doOrPropose('career', 'delete', id, { row: { title: c ? c.title : '' } }, 'Delete career “' + (c ? c.title : id) + '”', 'Career deleted'); break; }
     case 'ev-gen-code': document.getElementById('ev-code').value = newCode(); break;
     case 'tl-edit': ui.tlDraft = (db.timeline || []).map(r => ({ ...r })); render(); break;
     case 'tl-cancel': ui.tlDraft = null; render(); break;
@@ -3262,11 +3364,7 @@ document.addEventListener('click', async ev => {
         .filter(r => r.when_text || r.what_text);
       if (rows.some(r => !r.when_text || !r.what_text)) { toast('Fill in both columns on each row, or delete the row.'); break; }
       const keep = new Set(rows.map(r => r.id)), gone = (db.timeline || []).filter(r => !keep.has(r.id)).map(r => r.id);
-      await act(async () => {
-        if (gone.length) must(await sb.from('recruiting_timeline').delete().in('id', gone));
-        if (rows.length) must(await sb.from('recruiting_timeline').upsert(rows));
-        ui.tlDraft = null; await logChange('Updated the recruiting timeline');
-      }, 'Timeline saved');
+      if (await doOrPropose('timeline', 'edit', 'timeline', { rows, gone }, 'Update the recruiting timeline', 'Timeline saved')) { ui.tlDraft = null; render(); }
       break; }
     case 'rm-member':
       await act(async () => must(await sb.rpc('remove_member', { p_email: id })), 'Removed ' + id); break;
@@ -3628,6 +3726,23 @@ async function handleSubmit(f, v, err){
     const editing = ui.editEvent, wasDraft = editing && (evById(editing) || {}).draft;
     // draft = save as a draft, publish = put on the calendar, save = keep a published event published
     const mode = (f._submitter && f._submitter.dataset.mode) || (wasDraft ? 'draft' : 'publish');
+    if (!canPublish() && mode !== 'draft'){
+      // Not a publisher: edits to a published event go to the approval inbox. New events and drafts are saved as drafts, then sent for approval to publish.
+      if (editing && !wasDraft){
+        if (await doOrPropose('event', 'edit', editing, { row: e, code }, 'Edit event “' + e.title + '”', 'Event updated')) { ui.editEvent = null; render(); }
+        return;
+      }
+      e.draft = true;
+      let evId = editing;
+      const saved = await act(async () => {
+        if (editing) must(await sb.from('events').update(e).eq('id', editing));
+        else evId = must(await sb.from('events').insert(e).select('id').single()).id;
+        if (code) must(await sb.from('checkin_codes').upsert({ event_id: evId, code }));
+        await logChange((editing ? 'Edited draft “' : 'Saved draft “') + e.title + '”');
+      });
+      if (saved && await doOrPropose('event', 'publish', evId, {}, 'Publish “' + e.title + '” (' + fmtDay(e.date) + ')', '')) { ui.editEvent = null; render(); }
+      return;
+    }
     if (mode === 'draft') e.draft = true; else if (wasDraft) e.draft = false;
     const ok = await act(async () => {
       let evId = editing;
@@ -3645,7 +3760,7 @@ async function handleSubmit(f, v, err){
   if (f.id === 'f-ann'){
     const a = { title: v('an-title'), body: v('an-body'), aud: v('an-aud'), pinned: document.getElementById('an-pin').checked };
     if (!a.title || !a.body) return err('an-err', 'Add a headline and a message.');
-    await act(async () => { must(await sb.from('announcements').insert(a)); await logChange('Posted announcement “' + a.title + '”'); }, 'Announcement posted');
+    await doOrPropose('announcement', 'add', '', { row: a }, 'Post announcement “' + a.title + '”', 'Announcement posted');
   }
 
   if (f.id === 'f-recap'){
@@ -3661,8 +3776,8 @@ async function handleSubmit(f, v, err){
       urls.push(sb.storage.from('recap-photos').getPublicUrl(path).data.publicUrl);
     }
     r.photos = urls;
-    const ok = await act(async () => { must(await sb.from('recaps').insert(r)); await logChange('Published recap “' + r.title + '”'); }, 'Recap published');
-    if (ok) ui.recapPhotos = [];
+    const ok = await doOrPropose('recap', 'add', '', { row: r }, 'Publish recap “' + r.title + '”', 'Recap published');
+    if (ok){ ui.recapPhotos = []; render(); }
   }
 
   if (f.id === 'f-arch'){
@@ -3670,7 +3785,7 @@ async function handleSubmit(f, v, err){
     if (!a.title) return err('ar-err', 'Add a title.');
     if (a.url && !/^https?:\/\//i.test(a.url)) return err('ar-err', 'Links must start with https://');
     const e = evById(a.event_id); a.date = e ? e.date : todayIso();
-    await act(async () => { must(await sb.from('archive').insert(a)); await logChange('Added “' + a.title + '” to the archive'); }, 'Added to the archive');
+    await doOrPropose('archive', 'add', '', { row: a }, 'Add “' + a.title + '” to the archive', 'Added to the archive');
   }
 
   if (f.id === 'f-plan-task'){
@@ -3681,7 +3796,9 @@ async function handleSubmit(f, v, err){
 
   if (f.id === 'f-plan-notes'){
     const evId = f.dataset.ev, notes = document.getElementById('pn-notes').value;
-    const r = await sb.from('events').update({ plan_notes: notes }).eq('id', evId);
+    // Through a database function, so officers who can't edit published events can still keep planning notes.
+    let r = await sb.rpc('set_plan_notes', { ev: evId, notes });
+    if (r.error && /set_plan_notes/.test(r.error.message || '')) r = await sb.from('events').update({ plan_notes: notes }).eq('id', evId);
     if (r.error) return err('pn-err', /plan_notes/.test(r.error.message || '') ? 'Notes aren’t set up yet. Run the 23-event-planning.sql update in Supabase.' : errMsg(r.error));
     await load(); toast('Notes saved'); render();
   }
@@ -3702,10 +3819,7 @@ async function handleSubmit(f, v, err){
     const d = ui.aboutDraft, clean = l => l.map(p => ({ title: p.title.trim(), text: p.text.trim() })).filter(p => p.title || p.text);
     const about = { title: d.title.trim(), intro: d.intro.trim(), stepsTitle: d.stepsTitle.trim(), pillars: clean(d.pillars), steps: clean(d.steps) };
     if (!about.title || !about.intro) return err('ab-err', 'Add a page heading and an intro paragraph.');
-    const r = await sb.from('settings').update({ about }).eq('id', 1);
-    if (r.error) return err('ab-err', /about/.test(r.error.message || '') ? 'This isn’t set up yet. Run the 25-about-page.sql update in Supabase.' : errMsg(r.error));
-    await logChange('Edited the About page');
-    ui.aboutDraft = null; await load(); toast('About page saved'); render(); window.scrollTo(0, 0);
+    if (await doOrPropose('about', 'edit', 'about', { about }, 'Edit the About page', 'About page saved')) { ui.aboutDraft = null; render(); window.scrollTo(0, 0); }
   }
 
   if (f.id === 'f-branch'){
@@ -3763,30 +3877,26 @@ async function handleSubmit(f, v, err){
     const c = { title: v('cr-title'), category: v('cr-cat'), summary: v('cr-summary'), pay: v('cr-pay'), hours: v('cr-hours'), path: v('cr-path') };
     if (!c.title) return err('cr-err', 'Give the career a name.');
     const id = f.dataset.id;
-    await act(async () => {
-      if (id) must(await sb.from('careers').update(c).eq('id', id));
-      else must(await sb.from('careers').insert({ ...c, sort: (db.careers || []).filter(x => x.category === c.category).length }));
-      ui.editCareer = null;
-      await logChange((id ? 'Edited' : 'Added') + ' career “' + c.title + '”');
-    }, 'Career saved');
+    const row = id ? c : { ...c, sort: (db.careers || []).filter(x => x.category === c.category).length };
+    if (await doOrPropose('career', id ? 'edit' : 'add', id || '', { row }, (id ? 'Edit' : 'Add') + ' career “' + c.title + '”', 'Career saved')) { ui.editCareer = null; render(); }
   }
 
   if (f.id === 'f-resource'){
     const r = { title: v('rs-title'), url: v('rs-url'), descr: v('rs-descr') };
     if (!r.title) return err('rs-err', 'Give the resource a name.');
     if (!/^https?:\/\/\S+\.\S+/i.test(r.url)) return err('rs-err', 'Enter the full link, starting with https://');
-    await act(async () => { must(await sb.from('resources').insert(r)); await logChange('Added resource “' + r.title + '”'); }, 'Resource added');
+    await doOrPropose('resource', 'add', '', { row: r }, 'Add resource “' + r.title + '”', 'Resource added');
   }
 
   if (f.id === 'f-semester'){
     const sem = v('sem-name'); if (!sem) return;
-    await act(async () => { must(await sb.from('settings').update({ semester: sem }).eq('id', 1)); await logChange('Set the semester to ' + sem); }, 'Semester saved');
+    await doOrPropose('settings', 'edit', 'settings', { row: { semester: sem } }, 'Set the semester to ' + sem, 'Semester saved');
   }
 
   if (f.id === 'f-dues-set'){
     const sem = v('ds-sem'), amt = Math.max(0, parseFloat(v('ds-amt')) || 0);
     if (!sem) return;
-    await act(async () => { must(await sb.from('settings').update({ semester: sem, dues: amt }).eq('id', 1)); await logChange('Set dues to $' + amt + ' for ' + sem); }, 'Dues settings saved');
+    await doOrPropose('settings', 'edit', 'settings', { row: { semester: sem, dues: amt } }, 'Set dues to $' + amt + ' for ' + sem, 'Dues settings saved');
   }
 
   if (f.id === 'f-profile'){
@@ -3814,7 +3924,7 @@ async function handleSubmit(f, v, err){
 
   if (f.id === 'f-officer'){
     const email = v('of-email').toLowerCase(), level = v('of-level'), contact = v('of-contact'), linkedin = v('of-linkedin');
-    const first = v('of-first'), last = v('of-last'), mode = v('of-setup');
+    const first = v('of-first'), last = v('of-last'), mode = v('of-setup'), canPub = !!(document.getElementById('of-publish') || {}).checked;
     let pw = (mode === 'password' || mode === 'manual') ? v('of-pw') : '';
     if ((mode === 'password' || mode === 'manual') && !pw){ pw = tempPw(); document.getElementById('of-pw').value = pw; }
     const hours = v('of-hours'), bio = v('of-bio'), tier = v('of-tier'), branch = v('of-branch'), title = buildTitle(tier, branch);
@@ -3841,6 +3951,7 @@ async function handleSubmit(f, v, err){
         return err('of-err', m);
       }
       if (!['president', 'officer'].includes(tier)) await sb.from('officer_profiles').update({ tier }).eq('email', email);
+      await sb.from('officer_profiles').update({ can_publish: canPub }).eq('email', email);
       ui.editOfficer = null; await load(); render();
       if (mode === 'manual') showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3>Share this temporary password</h3></div>
         <p>${esc(first)} can sign in with <strong>${esc(email)}</strong> and this temporary password, then choose their own:</p>
@@ -3852,6 +3963,7 @@ async function handleSubmit(f, v, err){
     const before = roleOf(email);
     must(await sb.from('access_list').upsert({ email, role: level }));
     must(await sb.from('officer_profiles').upsert({ email, name: first + ' ' + last, title, tier, branch, contact, hours, linkedin, bio }));
+    await sb.from('officer_profiles').update({ can_publish: canPub }).eq('email', email);   // ignored until 27-approvals.sql is run
     if (db.users.some(u => u.email === email)) await sb.from('members').update({ first, last }).eq('email', email);
     await logChange(before === level ? 'Edited officer profile for ' + email : 'Gave ' + email + ' ' + level + ' access');
     ui.editOfficer = null; await load(); render(); toast('Saved ' + email + ' as ' + level);
