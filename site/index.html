@@ -1473,30 +1473,44 @@ async function downloadResumeBook(){
     const book = await PDFDocument.create(), font = await book.embedFont(StandardFonts.Helvetica), bold = await book.embedFont(StandardFonts.HelveticaBold);
     const plain = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7E]/g, '');   // the built-in PDF font is ASCII only
     const title = (ui.rbType || 'All members') + (ui.rbYear ? ' - ' + ui.rbYear + 's' : '');
-    let page = book.addPage([612, 792]), y = 720;
-    page.drawRectangle({ x: 0, y: 742, width: 612, height: 50, color: rgb(0.153, 0.365, 0.22) });
-    page.drawText('WOLVERINE FINANCE ASSOCIATION', { x: 48, y: 760, size: 14, font: bold, color: rgb(1, 1, 1) });
-    page.drawText('Resume book: ' + plain(title), { x: 48, y: (y -= 20), size: 20, font: bold });
-    page.drawText(plain(fmtDay(todayIso())) + ' - ' + rows.length + ' candidate' + (rows.length === 1 ? '' : 's'), { x: 48, y: (y -= 22), size: 11, font });
-    y -= 18;
-    let skipped = 0;
-    rows.forEach((r, i) => {
-      if (y < 60){ page = book.addPage([612, 792]); y = 740; }
-      page.drawText(plain(`${i + 1}. ${userName(r.u.email)}`), { x: 48, y: (y -= 18), size: 11, font: bold });
-      page.drawText(plain([r.u.year, r.u.major, r.u.email].filter(Boolean).join('  |  ')).slice(0, 110), { x: 64, y: (y -= 14), size: 9, font });
-    });
+    // Lay out the table of contents first so we know how many cover pages it needs.
+    const spots = []; let pg = 0, y = 660;
+    rows.forEach(() => { if (y < 92){ pg++; y = 740; } spots.push({ pg, y: y - 18 }); y -= 32; });
+    const covers = Array.from({ length: pg + 1 }, () => book.addPage([612, 792]));
+    // Then the resumes, remembering where each one starts.
+    const starts = []; let skipped = 0;
     for (let i = 0; i < rows.length; i++){
       const url = signed[i] && signed[i].signedUrl;
       try {
         const doc = await PDFDocument.load(await (await fetch(url)).arrayBuffer(), { ignoreEncryption: true });
-        (await book.copyPages(doc, doc.getPageIndices())).forEach(p => book.addPage(p));
-      } catch(e){ skipped++; }
+        const pages = await book.copyPages(doc, doc.getPageIndices());
+        starts[i] = book.getPageCount(); pages.forEach(p => book.addPage(p));
+      } catch(e){ skipped++; starts[i] = null; }
     }
+    const green = rgb(0.153, 0.365, 0.22), cover = covers[0];
+    cover.drawRectangle({ x: 0, y: 742, width: 612, height: 50, color: green });
+    cover.drawText('WOLVERINE FINANCE ASSOCIATION', { x: 48, y: 760, size: 14, font: bold, color: rgb(1, 1, 1) });
+    cover.drawText('Resume book: ' + plain(title), { x: 48, y: 700, size: 20, font: bold });
+    cover.drawText(plain(fmtDay(todayIso())) + ' - ' + rows.length + ' candidate' + (rows.length === 1 ? '' : 's') + '. Click a name to jump to that resume.', { x: 48, y: 678, size: 11, font });
+    rows.forEach((r, i) => {
+      const { pg, y } = spots[i], page = covers[pg], start = starts[i];
+      page.drawText(plain(`${i + 1}. ${userName(r.u.email)}`), { x: 48, y, size: 11, font: bold, color: start == null ? rgb(0.5, 0.5, 0.5) : green });
+      page.drawText(start == null ? "(couldn't be included)" : 'p. ' + (start + 1), { x: start == null ? 460 : 520, y, size: 10, font });
+      page.drawText(plain([r.u.year, r.u.major, r.u.email].filter(Boolean).join('  |  ')).slice(0, 110), { x: 64, y: y - 14, size: 9, font });
+      if (start != null){
+        // Clickable area over the name and page number that jumps to the resume's first page.
+        const link = book.context.register(book.context.obj({
+          Type: 'Annot', Subtype: 'Link', Rect: [44, y - 4, 568, y + 13], Border: [0, 0, 0],
+          Dest: [book.getPage(start).ref, 'XYZ', null, null, null]
+        }));
+        page.node.addAnnot(link);
+      }
+    });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([await book.save()], { type: 'application/pdf' }));
     a.download = 'WFA Resume Book - ' + plain(title).replace(/[\\/:*?"<>|]/g, '') + '.pdf';
     document.body.appendChild(a); a.click(); a.remove();
-    toast(skipped ? `Downloaded. ${skipped} resume${skipped === 1 ? '' : 's'} couldn’t be read and were left out.` : 'Resume book downloaded');
+    toast(skipped ? `Downloaded. ${skipped === 1 ? '1 resume couldn’t be read and was' : skipped + ' resumes couldn’t be read and were'} left out.` : 'Resume book downloaded');
   } catch(e){ toast(errMsg(e)); }
 }
 async function uploadResume(file){
