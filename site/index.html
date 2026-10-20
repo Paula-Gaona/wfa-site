@@ -2713,7 +2713,7 @@ function viewOfficer(){
         <label>Check-in code <span class="hint">(optional)</span>
           <span class="row" style="gap:8px;flex-wrap:nowrap"><input id="ev-code" maxlength="8" autocomplete="off" value="${esc(e?.code || '')}" placeholder="e.g. BULL" style="font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;flex:1;min-width:0"><button type="button" class="btn ghost small" data-act="ev-gen-code">Generate</button></span>
           <span class="hint">Members type this at the event to check in. It only works on the event’s date. Leave blank to make one on the day.</span></label>
-        <label>Description<textarea id="ev-desc">${esc(e?.desc)}</textarea></label>
+        <label>Description <span class="hint">(required to publish)</span><textarea id="ev-desc" placeholder="What members will do or learn, who it’s for, and anything to bring">${esc(e?.desc)}</textarea></label>
         <div class="err" id="ev-err"></div>
         <div class="row">
           ${!e || e.draft
@@ -3262,6 +3262,7 @@ document.addEventListener('click', async ev => {
     case 'ap-withdraw': await act(async () => { must(await sb.from('pending_changes').delete().eq('id', id)); }, 'Withdrawn'); break;
     case 'publish-event': case 'unpublish-event': {
       const e = evById(id), pub = t.dataset.act === 'publish-event';
+      if (pub && !(e.desc || '').trim()){ ui.editEvent = id; render(); window.scrollTo(0, 0); toast('Add a description first. It’s required to publish an event.'); break; }
       await doOrPropose('event', pub ? 'publish' : 'unpublish', id, {}, (pub ? 'Publish “' : 'Move back to drafts: “') + e.title + '”',
         pub ? 'Published to the calendar' : 'Moved back to drafts. Members can’t see it now.'); break; }
     case 'del-event': { const e = evById(id); if (ui.editEvent === id) ui.editEvent = null;
@@ -3726,6 +3727,7 @@ async function handleSubmit(f, v, err){
     const editing = ui.editEvent, wasDraft = editing && (evById(editing) || {}).draft;
     // draft = save as a draft, publish = put on the calendar, save = keep a published event published
     const mode = (f._submitter && f._submitter.dataset.mode) || (wasDraft ? 'draft' : 'publish');
+    if (mode !== 'draft' && !e.descr) return err('ev-err', 'Add a description before ' + (canPublish() ? 'publishing.' : 'submitting it for approval.') + ' Drafts can be saved without one.');
     if (!canPublish() && mode !== 'draft'){
       // Not a publisher: edits to a published event go to the approval inbox. New events and drafts are saved as drafts, then sent for approval to publish.
       if (editing && !wasDraft){
