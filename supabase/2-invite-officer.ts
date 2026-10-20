@@ -71,13 +71,9 @@ function htmlEmail(text: string, button?: { label: string; url: string }, bodyHt
 }
 
 // The sending address, without the display name.
+// Emails have no Reply-To: a no-reply sender with a reply-to on another domain (like @uvu.edu)
+// is a common phishing pattern, and university filters delete it.
 const fromAddress = () => ((Deno.env.get('MAIL_FROM') || '').match(/<([^>]+)>/)?.[1] || Deno.env.get('MAIL_FROM') || '').trim();
-// Reply-to only when it's on the same domain as the sender. A no-reply sender with a reply-to on
-// another domain (like @uvu.edu) is a common phishing pattern, and university filters delete it.
-function sameDomainReplyTo(addr: string) {
-  const domain = fromAddress().split('@')[1]?.toLowerCase();
-  return domain && addr && addr.toLowerCase().endsWith('@' + domain) ? addr : undefined;
-}
 
 async function resend(payload: Record<string, unknown>) {
   const r = await fetch('https://api.resend.com/emails', {
@@ -114,15 +110,12 @@ Deno.serve(async (req) => {
       if (to.length > 500) return json({ error: 'That is more than 500 recipients. Send to a smaller group.' }, 400);
       if (!subject || !text) return json({ error: 'Add a subject and a message.' }, 400);
 
-      // Replies go to the sender's contact email only if it's on the club domain (see sameDomainReplyTo).
-      const { data: prof } = await admin.from('officer_profiles').select('contact').eq('email', caller).maybeSingle();
-      const replyTo = sameDomainReplyTo(prof?.contact || caller);
       const fromAddr = fromAddress();
 
       let sent = 0, failed = 0, lastError = '';
       for (let i = 0; i < to.length; i += 45) {
         const chunk = to.slice(i, i + 45);
-        const r = await resend({ to: [fromAddr], bcc: chunk, reply_to: replyTo, subject, text, html: htmlEmail(text, undefined, md ? mdToHtml(md) : undefined) });
+        const r = await resend({ to: [fromAddr], bcc: chunk, subject, text, html: htmlEmail(text, undefined, md ? mdToHtml(md) : undefined) });
         if (r.ok) sent += chunk.length; else { failed += chunk.length; lastError = r.detail; }
         if (i + 45 < to.length) await new Promise((res) => setTimeout(res, 600));   // stay under Resend's rate limit
       }
@@ -184,9 +177,6 @@ Deno.serve(async (req) => {
     const sendEmail = mode === 'invite' || (mode === 'password' && b.send !== false);
     if (sendEmail) {
       const title = String(b.title || '') || (role === 'admin' ? 'an admin' : 'an officer');
-      // Replies go to the admin's contact email only if it's on the club domain (see sameDomainReplyTo).
-      const { data: prof2 } = await admin.from('officer_profiles').select('contact').eq('email', caller).maybeSingle();
-      const replyTo = sameDomainReplyTo(prof2?.contact || caller);
       let intro: string, link: string, label: string;
       if (mode === 'invite') {
         link = `${site}/#reset`; label = 'Set up your account';
@@ -201,7 +191,7 @@ Deno.serve(async (req) => {
           `The first time you sign in, you will choose your own password.`;
       }
       const r = await resend({
-        to: [email], reply_to: replyTo, subject: `You've been added to the Wolverine Finance Association officer team`,
+        to: [email], subject: `You've been added to the Wolverine Finance Association officer team`,
         text: `${intro}\n\n${label}: ${link}`,
         html: htmlEmail(intro, { label, url: link }),
       });
