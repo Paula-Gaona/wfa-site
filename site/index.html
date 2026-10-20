@@ -120,8 +120,9 @@ textarea{min-height:120px;resize:vertical}
 
 /* Ticker */
 .ticker{background:var(--ticker-bg);color:var(--ticker-fg);font-family:var(--mono);font-size:.8rem;overflow:hidden;white-space:nowrap;border-bottom:3px solid var(--brand)}
-.ticker-track{display:inline-flex;gap:44px;padding-block:9px;padding-left:20px;animation:tick 48s linear infinite}
-.ticker-item{display:inline-flex;gap:10px}
+.ticker-track{display:inline-flex;padding-block:9px;animation:tick 48s linear infinite}
+.ticker-group{display:inline-flex}
+.ticker-item{display:inline-flex;gap:10px;padding-right:44px}
 .ticker .sym{color:#fff;font-weight:500}
 .ticker .up{color:#5fd08a}
 @keyframes tick{to{transform:translateX(-50%)}}
@@ -635,8 +636,23 @@ function renderChrome(route){
     const d = parseDay(e.date);
     return `<span class="ticker-item"><span class="sym">WFA.${e.cat.slice(0,3).toUpperCase()}</span><span>${isToday(e) ? 'TODAY' : MON[d.getMonth()].toUpperCase() + ' ' + String(d.getDate()).padStart(2,'0')}</span><span>${esc(e.title.toUpperCase())}</span><span class="up">▲ ${rsvpCount(e.id)} RSVP</span></span>`;
   }).join('');
-  document.getElementById('ticker').innerHTML = items ? items + items : '<span class="ticker-item">NO UPCOMING EVENTS POSTED</span>';
+  setTicker(items);
 }
+// The ticker scrolls two identical groups by exactly one group's width, so it loops without a gap.
+// Each group repeats the events until it's at least as wide as the screen.
+function setTicker(items){
+  const el = document.getElementById('ticker');
+  if (!items){ el.innerHTML = '<span class="ticker-item" style="padding-left:20px">NO UPCOMING EVENTS POSTED</span>'; el.style.animation = 'none'; setTicker.last = ''; return; }
+  const key = items + '|' + window.innerWidth;
+  if (setTicker.last === key) return;   // unchanged: don't restart the animation on every page change
+  setTicker.last = key; el.style.animation = '';
+  el.innerHTML = `<span class="ticker-group">${items}</span>`;
+  const one = el.firstChild.offsetWidth || 1, copies = Math.max(1, Math.ceil(window.innerWidth / one));
+  const group = `<span class="ticker-group">${items.repeat(copies)}</span>`;
+  el.innerHTML = group + group;
+  el.style.animationDuration = Math.max(20, one * copies / 60) + 's';   // about 60 pixels a second at any width
+}
+window.addEventListener('resize', () => { clearTimeout(setTicker.t); setTicker.t = setTimeout(() => loaded && renderChrome(route()), 200); });
 
 /* ---------- Shared pieces ---------- */
 function annHtml(a){
