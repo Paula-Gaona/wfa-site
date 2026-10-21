@@ -57,6 +57,18 @@ begin
 end $$;
 grant execute on function public.survey_results() to authenticated;
 
+-- For survey reminders: who checked in to an event with an open survey and hasn't answered yet.
+create or replace function public.survey_pending()
+returns table (event_id uuid, email text)
+language sql stable security definer set search_path = public as $$
+  select a.event_id, a.email from attendance a join events e on e.id = a.event_id
+  where public.is_officer() and e.cat <> 'officer_meeting' and not e.draft
+    and now() >= (e.date + e.end_time) at time zone 'America/Denver'
+    and now() <  (e.date + e.end_time) at time zone 'America/Denver' + interval '7 days'
+    and not exists (select 1 from event_surveys s where s.event_id = a.event_id and s.email = a.email);
+$$;
+grant execute on function public.survey_pending() to authenticated;
+
 -- Leaderboard: each completed survey is worth 2 points, counted in the season it was first submitted.
 create or replace function public.lb_standings(since timestamptz, until timestamptz)
 returns table (email text, first text, last text, major text, events int, points int, anon boolean)

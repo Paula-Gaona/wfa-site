@@ -416,7 +416,7 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
 const SUPABASE_URL = 'https://razxymbbfsnnnguyaalp.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_G9Ct3sh1zfK2peRadj-nzg_SSLCr2Sn';
 const SAFE_MSG = 'Safe view is on. Switch to Edit view to make changes.';
-const READ_RPCS = ['my_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results'];   // database functions that only read
+const READ_RPCS = ['my_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending'];   // database functions that only read
 function safeFetch(input, init){
   const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
   let safe = false;
@@ -524,6 +524,7 @@ async function load(){
     mres: signed && t('member_resumes'),
     mySurveys: signed && t('event_surveys'),
     surveyResults: off && sb.rpc('survey_results'),
+    surveyPending: off && sb.rpc('survey_pending'),
     access: off && t('access_list'),
     codes: off && t('checkin_codes'),
     tasks: off && t('tasks'),
@@ -567,6 +568,7 @@ async function load(){
   db.careers = R.careers || [];
   db.questions = R.questions || [];
   db.mySurveys = R.mySurveys || []; db.surveyResults = Array.isArray(R.surveyResults) ? R.surveyResults : [];
+  db.surveyPending = Array.isArray(R.surveyPending) ? R.surveyPending : [];
   db.mres = {}; (R.mres || []).forEach(r => (db.mres[r.member_id] = db.mres[r.member_id] || {})[r.category] = { path: r.path, updated: r.updated_at });
   db.pstats = R.pstats || null;
   db.pending = R.pending || [];
@@ -2267,9 +2269,11 @@ function memberTable(rows){
   </tbody></table></div>`;
 }
 
+const SURVEY_POINTS = 2, SURVEY_DAYS = 7;
 const MAIL_TEMPLATES = {
   reminder: ['Event reminder', 'Reminder: {event} on {date}', 'Hi everyone,\n\nQuick reminder that {event} is on {date} at {time} in {location}.\n\nSee you there,\nWolverine Finance Association'],
   dues: ['Dues reminder', '{semester} WFA dues reminder', 'Hi,\n\nOur records show your {semester} dues (${dues}) are still outstanding. You can pay any officer at the next meeting.\n\nThanks,\nWolverine Finance Association'],
+  survey: ['Survey reminder', 'How was {event}? Quick survey', 'Hi {first},\n\nThanks for coming to {event} on {date}! We’d love to hear what you thought. The survey is one star rating and an optional comment, it earns you ' + SURVEY_POINTS + ' leaderboard points, and you can answer anonymously.\n\nFill it out in My account: ' + location.origin + '/#account\n\nIt closes 7 days after the event.\n\nThanks,\nWolverine Finance Association'],
   missed: ['We missed you', 'Sorry we missed you at {event}', 'Hi,\n\nWe missed you at {event} on {date}. Slides and notes are in the members archive on our site.\n\nHope to see you at the next one,\nWolverine Finance Association']
 };
 function mailAudiences(){
@@ -2278,8 +2282,13 @@ function mailAudiences(){
     ['General', [['all','All members'],['members','Members only (no officers)'],['staff','Officers and admins'], ...(DUES_ENABLED ? [['unpaid','Members with unpaid dues']] : [])]],
     ['RSVP’d to…', ev.map(e => ['rsvp:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
     ['Attended…', ev.filter(hasStarted).map(e => ['att:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
-    ['RSVP’d but missed…', ev.filter(isPast).map(e => ['noshow:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])]
+    ['RSVP’d but missed…', ev.filter(isPast).map(e => ['noshow:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
+    ['Hasn’t filled out the survey for…', surveyEvents().map(e => ['nosurvey:'+e.id, e.title + ' (' + fmtDay(e.date) + ', ' + surveyPendingFor(e.id).length + ' left)'])]
   ];
+}
+// Events whose survey is still open, for survey reminders. The list of who hasn't answered comes from the database.
+function surveyEvents(){ const n = Date.now(); return sortedEvents().filter(e => !e.draft && e.cat !== 'officer_meeting' && n >= evEndMs(e) && n < surveyCloses(e)); }
+function surveyPendingFor(id){ return (db.surveyPending || []).filter(r => r.event_id === id).map(r => r.email);
 }
 // Club emails skip members who turned them off in My account. Emails to the officer team always go.
 function audienceEmails(key){
@@ -2297,6 +2306,7 @@ function audienceAll(key){
   if (k === 'unpaid') return db.users.filter(u => duesOf(u.email) === 'unpaid').map(u => u.email);
   if (k === 'rsvp') return going(id);
   if (k === 'att') return attended(id);
+  if (k === 'nosurvey') return surveyPendingFor(id);
   if (k === 'noshow') { const e = evById(id); return e ? attendanceStats(e).noshows : []; }
   return [];
 }
@@ -2865,6 +2875,7 @@ function viewOfficer(){
           <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${e?.cat===k?'selected':''}>${l} · ${PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select></label>
           <label>Date<input id="ev-date" type="date" required value="${esc(e?.date || dayOffset(7))}"></label>
         </div>
+        <p class="notice" id="ev-case-note" ${e?.cat === 'case_competition' ? '' : 'hidden'}><span><strong>Heads up:</strong> team registration isn’t built yet. For now members RSVP and check in one by one, so collect team names and members separately (a form or email) until it’s added.</span></p>
         <div class="grid2">
           <label>Starts<input id="ev-start" type="time" required value="${esc(e?.start || '18:00')}"></label>
           <label>Ends<input id="ev-end" type="time" required value="${esc(e?.end || '19:00')}"></label>
@@ -3116,7 +3127,6 @@ function exportTsv(){
 /* ---------- Event surveys ----------
    After an event ends, members who checked in get a short survey (1-5 stars + thoughts) for 7 days. They can edit it
    while it's open, choose anonymous or named, and earn SURVEY_POINTS. The database enforces all of this (31-event-surveys.sql). */
-const SURVEY_POINTS = 2, SURVEY_DAYS = 7;
 function surveyCloses(ev){ return evEndMs(ev) + SURVEY_DAYS * 864e5; }
 function surveyOpen(ev){ const n = Date.now(); return n >= evEndMs(ev) && n < surveyCloses(ev); }
 function mySurveyFor(id){ return (db.mySurveys || []).find(s => s.event_id === id); }
@@ -3309,6 +3319,7 @@ function openEvent(id){
   const here = session && attended(id).includes(session);
   let action;
   if (isPast(e)) action = `<span class="muted">This event has ended.${here ? ' You attended.' : mine ? ' You RSVP’d.' : ''}</span>`;
+  else if (hasStarted(e)) action = `<span class="muted">${here ? 'You’re checked in.' : mine ? 'You RSVP’d. Check in with the code above.' : 'RSVPs closed when the event started. Here without an RSVP? Check in with the code above.'}</span>`;
   else if (!session) action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button><span class="hint">You’ll sign in first.</span>`;
   else if (mine) action = `<span class="going">You’re going.</span><button class="btn ghost small" data-act="unrsvp" data-id="${id}">Cancel RSVP</button>`;
   else if (full) action = `<span class="muted">All ${e.cap} seats are taken.</span>`;
@@ -3317,7 +3328,7 @@ function openEvent(id){
   if (isToday(e)){
     if (!session) checkin = `<div class="notice">At the event? <a href="#signin">Sign in</a> to check in${PTS[e.cat] ? ' and earn ' + PTS[e.cat] + ' points' : ''}.</div>`;
     else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e.cat)}.</div>`;
-    else checkin = `<form class="stack" id="f-checkin" data-id="${id}" style="gap:8px"><label for="ci-code">Check-in code <span class="hint">Shown on screen at the event · ${ptsText(e.cat)}</span></label>
+    else checkin = `<form class="stack" id="f-checkin" data-id="${id}" style="gap:8px"><label for="ci-code">Check-in code <span class="hint">Shown on screen at the event · ${ptsText(e.cat)}${mine ? '' : ' · No RSVP needed'}</span></label>
       <div class="checkin-form"><input id="ci-code" maxlength="8" autocomplete="off" placeholder="CODE"><button class="btn" type="submit">Check in</button></div><div class="err" id="ci-err"></div></form>`;
   }
   showModal(`<div class="modal-in">
@@ -3406,7 +3417,11 @@ async function afterLogin(){
   } else location.hash = myRole === 'admin' ? 'admin' : myRole === 'officer' ? 'officer' : 'home';
   render();
 }
-function useTemplate(k){ const [, s, b] = MAIL_TEMPLATES[k]; ui.mail.subject = s; ui.mail.body = b; }
+function useTemplate(k){
+  const [, s, b] = MAIL_TEMPLATES[k]; ui.mail.subject = s; ui.mail.body = b;
+  // A survey reminder goes to whoever hasn't answered for the most recent open survey.
+  if (k === 'survey' && !/^nosurvey:/.test(ui.mail.aud || '')){ const e = surveyEvents().pop(); if (e){ ui.mail.aud = 'nosurvey:' + e.id; ui.mail.ev = e.id; } }
+}
 
 /* ---------- Click handling ---------- */
 document.addEventListener('click', async ev => {
@@ -3772,7 +3787,8 @@ document.addEventListener('input', e => {
 document.addEventListener('change', async e => {
   const id = e.target.id;
   if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
-  if (['ml-aud','ml-ev'].includes(id)){ readMail(); render(); }
+  if (['ml-aud','ml-ev'].includes(id)){ readMail(); if (id === 'ml-aud' && /^(nosurvey|att|noshow|rsvp):/.test(ui.mail.aud)) ui.mail.ev = ui.mail.aud.split(':')[1]; render(); }
+  if (id === 'ev-cat'){ const n = document.getElementById('ev-case-note'); if (n) n.hidden = e.target.value !== 'case_competition'; }
   if (id === 'stats-ev'){ ui.statsEv = e.target.value; render(); }
   if (id === 'plan-ev'){ ui.planEv = e.target.value; render(); }
   if (id === 'lb-season'){ ui.lbSeason = e.target.value; render(); }
