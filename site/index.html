@@ -534,6 +534,7 @@ async function load(){
     surveyResults: off && sb.rpc('survey_results'),
     surveyPending: off && sb.rpc('survey_pending'),
     testAccounts: off && t('test_accounts'),
+    guests: off && t('guest_checkins'),
     access: off && t('access_list'),
     codes: off && t('checkin_codes'),
     tasks: off && t('tasks'),
@@ -579,6 +580,7 @@ async function load(){
   db.mySurveys = R.mySurveys || []; db.surveyResults = Array.isArray(R.surveyResults) ? R.surveyResults : [];
   db.surveyPending = Array.isArray(R.surveyPending) ? R.surveyPending : [];
   db.testAccounts = Array.isArray(R.testAccounts) ? R.testAccounts : [];
+  db.guests = {}; (Array.isArray(R.guests) ? R.guests : []).forEach(g => (db.guests[g.event_id] = db.guests[g.event_id] || []).push(g));
   // Real officers never see test accounts in member lists, attendance, applications, or questions.
   if (!testRole && db.testAccounts.length){
     const tst = new Set(db.testAccounts.map(a => a.email)), keep = e => !tst.has(e);
@@ -2305,6 +2307,10 @@ function availabilityChart(){
   </div>`;
 }
 /* ---------- Officer tools ---------- */
+function guestList(id){
+  const g = db.guests[id] || [];
+  return g.length ? g.map(x => `${esc(x.first)} ${esc(x.last)} <span class="hint">${esc(x.email)}</span>`).join(', ') : '<span class="muted">None</span>';
+}
 function attendanceStats(e){
   const r = going(e.id), a = attended(e.id);
   const showed = r.filter(x => a.includes(x));
@@ -2965,7 +2971,7 @@ function viewOfficer(){
     body = `<div class="stack" style="gap:32px">
       <section class="stack">
         <div class="section-head"><h3>Today’s check-in</h3></div>
-        ${today.length ? today.map(e => `<div class="today-bar"><div class="stack" style="gap:2px"><span class="live">${fmtTime(e.start)} · ${attended(e.id).length} checked in</span><strong>${esc(e.title)}</strong></div>
+        ${today.length ? today.map(e => `<div class="today-bar"><div class="stack" style="gap:2px"><span class="live">${fmtTime(e.start)} · ${attended(e.id).length} checked in${(db.guests[e.id] || []).length ? ' · ' + db.guests[e.id].length + ' guest' + (db.guests[e.id].length === 1 ? '' : 's') : ''}</span><strong>${esc(e.title)}</strong></div>
           <button class="btn small" data-act="show-code" data-id="${e.id}">${e.code ? 'Show code' : 'Start check-in'}</button></div>`).join('')
           : '<div class="empty">No events today. On the day of an event, start check-in here and put the code on the projector.</div>'}
       </section>
@@ -2975,16 +2981,18 @@ function viewOfficer(){
           <div class="tile"><span class="v">${all.r ? Math.round(all.s/all.r*100) + '%' : '—'}</span><span class="l">RSVPs who showed up</span></div>
           <div class="tile"><span class="v">${all.c}</span><span class="l">Total check-ins</span></div>
           <div class="tile"><span class="v">${all.w}</span><span class="l">Walk-ins (no RSVP)</span></div>
+          <div class="tile"><span class="v">${held.reduce((n, e) => n + (db.guests[e.id] || []).length, 0)}</span><span class="l">Guest check-ins</span></div>
           <div class="tile"><span class="v">${held.length ? (all.c/held.length).toFixed(1) : '—'}</span><span class="l">Avg per event</span></div>
         </div>
-        <div class="table-wrap"><table><thead><tr><th>Event</th><th>Date</th><th class="num">RSVP</th><th class="num">Came</th><th class="num">Walk-ins</th><th class="num">No-shows</th><th class="num">Show rate</th></tr></thead><tbody>
-          ${held.map(e => { const x = attendanceStats(e); return `<tr class="click ${sel&&sel.id===e.id?'sel':''}" data-act="report-ev" data-id="${e.id}"><td>${esc(e.title)}</td><td>${fmtDay(e.date)}</td><td class="num">${x.rsvp}</td><td class="num">${x.came}</td><td class="num">${x.walkins.length}</td><td class="num">${x.noshows.length}</td><td class="num">${x.rate===null?'—':x.rate+'%'}</td></tr>`; }).join('') || '<tr><td colspan="7" class="muted">No events held yet.</td></tr>'}
+        <div class="table-wrap"><table><thead><tr><th>Event</th><th>Date</th><th class="num">RSVP</th><th class="num">Came</th><th class="num">Walk-ins</th><th class="num">Guests</th><th class="num">No-shows</th><th class="num">Show rate</th></tr></thead><tbody>
+          ${held.map(e => { const x = attendanceStats(e); return `<tr class="click ${sel&&sel.id===e.id?'sel':''}" data-act="report-ev" data-id="${e.id}"><td>${esc(e.title)}</td><td>${fmtDay(e.date)}</td><td class="num">${x.rsvp}</td><td class="num">${x.came}</td><td class="num">${x.walkins.length}</td><td class="num">${(db.guests[e.id] || []).length}</td><td class="num">${x.noshows.length}</td><td class="num">${x.rate===null?'—':x.rate+'%'}</td></tr>`; }).join('') || '<tr><td colspan="8" class="muted">No events held yet.</td></tr>'}
         </tbody></table></div>
         ${sel ? `<div class="panel stack">
           <h3>${esc(sel.title)}</h3>
-          <dl class="facts"><dt>Checked in</dt><dd>${nameList(attended(sel.id))}</dd><dt>Walk-ins</dt><dd>${nameList(st.walkins)}</dd><dt>No-shows</dt><dd>${nameList(st.noshows)}</dd></dl>
+          <dl class="facts"><dt>Checked in</dt><dd>${nameList(attended(sel.id))}</dd><dt>Guests</dt><dd>${guestList(sel.id)}</dd><dt>Walk-ins</dt><dd>${nameList(st.walkins)}</dd><dt>No-shows</dt><dd>${nameList(st.noshows)}</dd></dl>
           <form class="row" id="f-mark" data-id="${sel.id}"><label style="flex:1;min-width:200px">Mark someone present<select id="mark-who">${db.users.filter(u => !attended(sel.id).includes(u.email)).map(u => `<option value="${esc(u.email)}">${esc(u.first)} ${esc(u.last)}</option>`).join('')}</select></label><button class="btn ghost" style="align-self:end" type="submit">Mark present</button></form>
-          ${st.noshows.length ? `<div><button class="btn ghost small" data-act="mail-to" data-aud="noshow:${sel.id}" data-tpl="missed">Email the no-shows</button></div>` : ''}
+          <div class="row" style="gap:6px">${st.noshows.length ? `<button class="btn ghost small" data-act="mail-to" data-aud="noshow:${sel.id}" data-tpl="missed">Email the no-shows</button>` : ''}${(db.guests[sel.id] || []).length ? `<button class="btn ghost small" data-act="copy-text" data-text="${esc((db.guests[sel.id] || []).map(g => g.email).join('; '))}">Copy guest emails</button>` : ''}</div>
+          ${(db.guests[sel.id] || []).length ? '<p class="hint" style="margin:0">Guests who join with the same email get these check-ins (and points) added to their account automatically. Copy their emails to invite them to join.</p>' : ''}
         </div>` : ''}
       </section></div>`;
   }
@@ -3379,7 +3387,7 @@ function eventInner(id, page){
   let checkin = '';
   if (isToday(e)){
     const pre = page ? decodeURIComponent(location.hash.slice(1).split('/')[2] || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) : '';
-    if (!session) checkin = `<div class="notice">At the event? <a href="#signin">Sign in</a> to check in${PTS[e.cat] ? ' and earn ' + PTS[e.cat] + ' points' : ''}.</div>`;
+    if (!session) checkin = guestCheckin(e, pre);
     else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e.cat)}.</div>`;
     else {
       const opens = checkinOpensMs(e), early = Date.now() < opens;
@@ -3405,7 +3413,7 @@ function eventInner(id, page){
     <h2>${esc(e.title)}</h2>
     <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} <span class="hint">Mountain Time</span></dd>
       <dt>Status</dt><dd>${{ upcoming: 'Upcoming', live: '<strong>Happening now</strong>', over: 'Over' }[evStatus(e)]}</dd>
-      <dt>Where</dt><dd>${esc(e.loc)}</dd><dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}${hasStarted(e)?` · ${attCount(id)} checked in`:''}</dd></dl>
+      <dt>Where</dt><dd>${esc(e.loc)}</dd><dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}${hasStarted(e)?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
     ${e.cap ? `<div class="meter"><span style="width:${Math.min(100,n/e.cap*100)}%"></span></div>` : ''}
     <p style="white-space:pre-wrap">${esc(e.desc)}</p>
     ${checkin}
@@ -3416,6 +3424,28 @@ function eventInner(id, page){
 function openEvent(id){
   const e = evById(id); if (!e) return;
   showModal(`<div class="modal-in"><button class="modal-x" data-act="close" aria-label="Close" style="float:right">×</button>${eventInner(id, false)}</div>`, null, '', catVar(e.cat));
+}
+// Check-in for visitors who aren't signed in: joining is the big, first option; checking in as a guest is tucked below.
+function guestDone(id){ try { return JSON.parse(localStorage.getItem('wfa-guest-' + id) || 'null'); } catch(e){ return null; } }
+function guestCheckin(e, pre){
+  const id = e.id, pts = PTS[e.cat] || 0, done = guestDone(id);
+  const join = `<div class="row" style="gap:8px"><button class="btn" data-act="event-auth" data-to="signup" data-id="${id}">Join WFA (free) and check in</button><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">I have an account: sign in</button></div>`;
+  if (done) return `<div class="panel stack" style="gap:10px"><div class="notice"><span><strong>You’re checked in as a guest, ${esc(done.first)}.</strong> Join with ${esc(done.email)} and this check-in moves to your account${pts ? `, with the ${pts} points` : ''}.</span></div>${join}</div>`;
+  const opens = checkinOpensMs(e), early = Date.now() < opens;
+  return `<div class="panel stack" style="gap:12px">
+    <strong style="font-size:1.1rem">At the event? Check in</strong>
+    <p style="margin:0">Members ${pts ? `earn <strong>${pts} points</strong> for this event, ` : ''}show up on the leaderboard, get event reminders, and can join the resume book we share with recruiters. Joining is free and takes about a minute.</p>
+    ${join}
+    <details ${ui.guestOpen === id ? 'open' : ''} data-guest="${id}"><summary style="cursor:pointer">Not ready to join? Check in as a guest</summary>
+      <form class="stack" id="f-guest" data-id="${id}" style="gap:8px;margin-top:10px">
+        <div class="grid2"><label>First name<input id="gc-first" autocomplete="given-name" required></label><label>Last name<input id="gc-last" autocomplete="family-name" required></label></div>
+        <label>Email<input id="gc-email" type="email" autocomplete="email" required></label>
+        <label>Check-in code <span class="hint">${pre ? 'Filled in from the QR code' : 'Shown on screen at the event'}</span></label>
+        <div class="checkin-form"><input id="gc-code" maxlength="8" autocomplete="off" placeholder="CODE" value="${esc(pre)}" aria-label="Check-in code"><button class="btn ghost" type="submit" data-opens="${opens}" ${early ? 'aria-disabled="true"' : ''}>Check in as a guest</button></div>
+        <span class="hint ci-opens" ${early ? '' : 'hidden'}>Check-in opens at ${fmtTime(mtClock(opens))}, 15 minutes before the event starts.</span>
+        <span class="hint">Guests don’t earn points. If you join later with this email, this check-in moves to your account and you get the points.</span>
+        <div class="err" id="gc-err"></div>
+      </form></details></div>`;
 }
 // Re-show an event after a change, on its page or in the pop-up.
 function refreshEvent(id){ if (route() === 'event') render(); else openEvent(id); }
@@ -3589,7 +3619,7 @@ window.addEventListener('hashchange', () => {
 });
 // Turn on a greyed-out Check in button once check-in opens, without redrawing the page (keeps a typed code).
 setInterval(() => {
-  document.querySelectorAll('#f-checkin [data-opens][aria-disabled="true"]').forEach(b => {
+  document.querySelectorAll('#f-checkin [data-opens][aria-disabled="true"], #f-guest [data-opens][aria-disabled="true"]').forEach(b => {
     if (Date.now() >= +b.dataset.opens){ b.removeAttribute('aria-disabled'); const h = b.closest('form').querySelector('.ci-opens'); if (h) h.hidden = true; }
   });
 }, 15000);
@@ -3644,6 +3674,11 @@ document.addEventListener('click', async ev => {
       m.querySelector('a').focus();
       break; }
     case 'open-event': openEvent(id); break;
+    case 'event-auth': {
+      const code = (document.getElementById('gc-code') || {}).value || '';
+      setReturnTo('event/' + id + (code ? '/' + encodeURIComponent(code.toUpperCase()) : ''));
+      closeModal(); location.hash = t.dataset.to; break;
+    }
     case 'reveal-code': ui.codeShown = ui.codeShown === id ? null : id; refreshEvent(id); break;
     case 'qr': await showQr(id, t.dataset.kind); break;
     case 'qr-style': await showQr(id, t.dataset.kind, t.dataset.style); break;
@@ -4225,6 +4260,21 @@ async function handleSubmit(f, v, err){
     }
     ui.recovery = false; await load(); toast('You’re all set');
     location.hash = myRole === 'admin' ? 'admin' : myRole === 'officer' ? 'officer' : 'home'; render();
+  }
+
+  if (f.id === 'f-guest'){
+    const id = f.dataset.id, e = evById(id), first = v('gc-first'), last = v('gc-last'), email = v('gc-email').toLowerCase(), code = v('gc-code').toUpperCase();
+    ui.guestOpen = id;
+    if (Date.now() < checkinOpensMs(e)) return err('gc-err', `Check-in opens at ${fmtTime(mtClock(checkinOpensMs(e)))}, 15 minutes before the event starts.`);
+    const r = await sb.rpc('guest_check_in', { p_event: id, p_code: code, p_first: first, p_last: last, p_email: email });
+    if (r.error) return err('gc-err', /guest_check_in/.test(r.error.message || '') ? 'Guest check-in isn’t set up yet. Ask an officer to check you in.' : errMsg(r.error));
+    const msg = { name: 'Enter your first and last name.', email: 'Enter a valid email address.', missing: 'This event isn’t open for guest check-in.',
+      closed: 'Check-in is only open on the day of the event.', early: `Check-in opens at ${fmtTime(mtClock(checkinOpensMs(e)))}, 15 minutes before the event starts.`,
+      notstarted: 'Check-in hasn’t started yet. Wait for an officer to show the code.', wrong: 'That code doesn’t match. Check the screen and try again.',
+      member: 'There’s already a WFA account with this email. Sign in to check in and get your points.' }[r.data];
+    if (msg) return err('gc-err', msg);
+    try { localStorage.setItem('wfa-guest-' + id, JSON.stringify({ first, email })); } catch(x){}
+    toast('Checked in as a guest. Join to get the points!'); refreshEvent(id);
   }
 
   if (f.id === 'f-checkin'){
