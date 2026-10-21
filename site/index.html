@@ -2381,16 +2381,33 @@ async function copyRich(){
 }
 // Outlook on the web compose links, split into groups so each link stays a reasonable length.
 const OUTLOOK_BATCH = 50;
+// Outlook's compose link can fill in the subject and body but ignores Bcc, so recipients are copied and pasted in a separate step.
+function outlookBatch(i){ return audienceEmails(ui.mail.aud).slice(i * OUTLOOK_BATCH, (i + 1) * OUTLOOK_BATCH); }
 function outlookUrl(i, body){
-  const part = audienceEmails(ui.mail.aud).slice(i * OUTLOOK_BATCH, (i + 1) * OUTLOOK_BATCH);
-  return 'https://outlook.office.com/mail/deeplink/compose?bcc=' + encodeURIComponent(part.join(';')) + '&subject=' + encodeURIComponent(withFirst(fillMerge(ui.mail.subject), 'there')) + (body ? '&body=' + encodeURIComponent(withFirst(body, 'there')) : '');
+  return 'https://outlook.office.com/mail/deeplink/compose?subject=' + encodeURIComponent(withFirst(fillMerge(ui.mail.subject), 'there')) + (body ? '&body=' + encodeURIComponent(withFirst(body, 'there')) : '');
+}
+// A mailto: link does support Bcc (plain text only); it opens whatever email app the computer uses by default.
+function mailtoUrl(i){
+  return 'mailto:?bcc=' + encodeURIComponent(outlookBatch(i).join(',')) + '&subject=' + encodeURIComponent(withFirst(fillMerge(ui.mail.subject), 'there')) + '&body=' + encodeURIComponent(withFirst(mdToPlain(mailText()), 'there'));
+}
+function outlookSteps(i){
+  const n = outlookBatch(i).length;
+  showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3>Finish the email in Outlook</h3></div>
+    <p class="muted" style="margin:0">Outlook opened a new message with the subject filled in. It can’t fill in Bcc from a link, so add the recipients and message from here:</p>
+    <ol class="stack" style="gap:10px;margin:0;padding-left:20px">
+      <li><button class="btn small" data-act="ol-copy-to" data-i="${i}">Copy ${n} recipient${n === 1 ? '' : 's'}</button><div class="hint">In Outlook, click <strong>Bcc</strong> (right side of the To line), click in the Bcc box, and press Ctrl+V (⌘V on Mac).</div></li>
+      <li><button class="btn small" data-act="ol-copy-msg">Copy message</button><div class="hint">Click in the message body and press Ctrl+V. Bold, bullets, and headings come with it.</div></li>
+      <li>Check it over and click <strong>Send</strong>.</li>
+    </ol>
+    <p class="hint" style="margin:0">Or <a href="${esc(mailtoUrl(i))}">open it in your email app instead</a>, with Bcc already filled in (plain text, no formatting).</p>
+    <div class="row"><button class="btn ghost" data-act="close">Done</button></div></div>`);
 }
 function outlookButtons(to){
   if (!to.length) return '<span class="hint">Pick who to send to first.</span>';
   const n = Math.ceil(to.length / OUTLOOK_BATCH);
   return Array.from({ length: n }, (_, i) => {
     const size = to.slice(i * OUTLOOK_BATCH, (i + 1) * OUTLOOK_BATCH).length;
-    const label = n === 1 ? `Open in Outlook (${size} in BCC)` : `Open email ${i + 1} of ${n} (${size} in BCC)`;
+    const label = n === 1 ? `Open in Outlook (${size} recipients)` : `Open email ${i + 1} of ${n} (${size} recipients)`;
     return `<button type="button" class="btn" data-act="mail-outlook" data-i="${i}">${label}</button>`;
   }).join('');
 }
@@ -3006,7 +3023,7 @@ function viewOfficer(){
         <div class="preview" id="ml-preview">${mailPreview()}</div>
         <div class="panel stack" style="gap:8px">
           <strong>Send from your own Outlook</strong>
-          <span class="hint">Doesn’t count toward the club’s daily email limit. “Open in Outlook” starts one message with everyone in BCC and copies your formatted message: click in the message body, press Ctrl+V (⌘V on Mac), and send.</span>
+          <span class="hint">Doesn’t count toward the club’s daily email limit. “Open in Outlook” starts a new message with the subject filled in, then walks you through pasting the recipients into Bcc and pasting your formatted message.</span>
           <div class="row" style="gap:6px" id="ml-outlook">${outlookButtons(to)}</div>
           <span class="hint">Want each email to say the person’s name? Use a mail merge: it sends a separate email from your Outlook to each person.</span>
           <div><button type="button" class="btn ghost small" data-act="mail-merge" ${to.length ? '' : 'disabled'}>Download for mail merge</button></div>
@@ -3455,10 +3472,14 @@ document.addEventListener('click', async ev => {
     case 'mail-merge': readMail(); await mailMergeExport(); break;
     case 'mail-outlook': {
       readMail();
-      const i = +t.dataset.i, rich = await copyRich();
-      window.open(outlookUrl(i, rich ? '' : mdToPlain(mailText())), '_blank', 'noopener');
-      toast(rich ? 'Message copied. Click in the Outlook message body and press Ctrl+V (⌘V on Mac) to paste it with formatting.' : 'Opened in Outlook without formatting.');
+      const i = +t.dataset.i;
+      window.open(outlookUrl(i, ''), '_blank', 'noopener');
+      outlookSteps(i);
       break; }
+    case 'ol-copy-to': copyText(outlookBatch(+t.dataset.i).join('; '), 'recipients'); t.textContent = 'Copied ✓'; break;
+    case 'ol-copy-msg': {
+      if (await copyRich()) toast('Message copied with formatting'); else copyText(withFirst(mdToPlain(mailText()), 'there'), 'message');
+      t.textContent = 'Copied ✓'; break; }
     case 'ins': {
       const el = document.getElementById(ui.mailField || 'ml-body'); if (!el) break;
       const a = el.selectionStart ?? el.value.length, z = el.selectionEnd ?? a;
