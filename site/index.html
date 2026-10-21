@@ -416,7 +416,7 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
 const SUPABASE_URL = 'https://razxymbbfsnnnguyaalp.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_G9Ct3sh1zfK2peRadj-nzg_SSLCr2Sn';
 const SAFE_MSG = 'Safe view is on. Switch to Edit view to make changes.';
-const READ_RPCS = ['my_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending'];   // database functions that only read
+const READ_RPCS = ['my_role', 'my_test_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending'];   // database functions that only read
 function safeFetch(input, init){
   const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
   let safe = false;
@@ -458,7 +458,7 @@ function buildTitle(tier, branch){
   return b ? b + ' Officer' : 'Officer';
 }
 const OFFICER_TABS = [['stats','Statistics'],['approvals','Approvals'],['questions','Questions'],['events','Events'],['plan','Event planning'],['checkin','Check-in & attendance'],['surveys','Event surveys'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
-const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['points','Award points'],['seasons','Leaderboard seasons'],['log','Change log']];
+const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['points','Award points'],['seasons','Leaderboard seasons'],['test','Test accounts'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
 const MAJORS = ["Undeclared","Accounting, A.S.","Accounting, B.S.","American Sign Language Secondary Education, B.A.","Animation and Game Development, B.S.","Anthropology, B.A.","Anthropology, B.S.","Applied Artificial Intelligence, M.S.","Applied Communication, B.A.","Applied Communication, B.S.","Architecture, B.Arch","Art Education, B.S.","Art History, B.A.","Art and Design - Graphic Design Emphasis, A.A.S.","Art and Design - Graphic Design Emphasis, B.F.A.","Art and Design - Illustration Emphasis, A.A.S.","Art and Design - Illustration Emphasis, B.F.A.","Art and Design - Painting/Drawing/Printmaking Emphasis, B.F.A.","Art and Design - Photography Emphasis, A.A.S.","Art and Design - Photography Emphasis, B.F.A.","Art and Design - Sculpture and Ceramics Emphasis, B.F.A.","Art and Design, A.A.","Art and Design, A.S.","Art and Design, B.S.","Associate in Pre-Engineering - Biological and Chemical Engineering Emphasis, A.P.E.","Associate in Pre-Engineering - Civil and Mechanical Engineering Emphasis, A.P.E.","Associate in Pre-Engineering - Computer and Electrical Engineering Emphasis, A.P.E.","Automotive Technology, A.A.S.","Aviation Management, B.S.","Aviation Science, A.A.S.","Aviation Science, A.S.","Bioinformatics, B.S.","Biology Education, B.S.","Biology, A.A.","Biology, A.S.","Biology, B.S.","Biomedical Science, B.S.","Botany, B.S.","Business Management, A.S.","Business Technologies and Education, B.S.","Business and Analysis, B.S.","Cabinetry and Architectural Woodwork, A.A.S.","Chemistry - Biochemistry Emphasis, B.S.","Chemistry - Professional Chemistry Emphasis, B.S.","Chemistry Education, B.S.","Civil Engineering, B.S.","Clinical Mental Health Counseling, M.S.","Commercial Music, B.M.","Computational Data Science, B.S.","Computer Engineering, B.S.","Computer Science Education, B.S.","Computer Science, A.S.","Computer Science, B.S.","Constitutional Government Civics and Law, M.A.","Construction Management, A.A.S.","Construction Management, B.S.","Criminal Justice, A.A.","Criminal Justice, A.S.","Criminal Justice, B.S.","Culinary Arts, A.A.S.","Curriculum and Instruction, M.Ed.","Cybersecurity, A.A.S","Cybersecurity, B.S.","Cybersecurity, M.S.","Dance - Ballet Emphasis, B.F.A.","Dance - Modern Dance Emphasis, B.F.A.","Dance Education, B.S.","Dance, A.S.","Dance, B.S.","Deaf Studies - General Deaf Studies Emphasis, B.A.","Deaf Studies - Interpreting Emphasis, B.A.","Dental Hygiene, A.A.S.","Dental Hygiene, B.S.","Diesel Mechanics Technology, A.A.S.","Digital Audio, A.A.S.","Digital Audio, B.S.","Digital Cinema Production, A.A.S.","Digital Cinema Production, B.S.","Digital Marketing, B.S.","Early Childhood Education, A.S.","Earth Science Education, B.S.","Electrical Engineering, B.S.","Electrical and Computer Engineering, A.A.S.","Elementary Education, B.S.","Emergency Services Administration, B.S.","Emergency Services Operations, A.A.S.","Emergency Services Supervision, B.A.P.","Emergency Services, A.S.","Engineering Design Technology, A.A.S.","Engineering Design Technology, A.S.","Engineering and Technology Management, M.S.","English - Creative Writing Emphasis, B.A.","English - Creative Writing Emphasis, B.S.","English - Literary Studies Emphasis, B.A.","English - Literary Studies Emphasis, B.S.","English - Writing Studies Emphasis, B.A.","English - Writing Studies Emphasis, B.S.","English Education, B.A.","English Education, B.S.","Entertainment Design, A.A.S.","Entertainment Design, B.F.A.","Environmental Science and Management, B.S.","Environmental Studies, B.S.","Event Management, B.S.","Exercise Science, A.S.","Exercise Science, B.S.","Family Science, B.A.","Family Science, B.S.","Finance, B.S.","Finance, M.S.","Financial Planning and Wealth Management, B.S.","Forensic Science - Forensic Investigation Emphasis, B.S.","Forensic Science - Forensic Laboratory Emphasis, B.S.","Forensic Science, A.S.","Geography, B.S.","Geology, B.S.","Health Science, B.S.","Healthcare Administration, B.S.","Healthcare Services, A.A.S.","History and Social Studies Education, B.S.","History, B.A.","Hospitality Management, A.A.S.","Hospitality Management, A.S.","Hospitality Management, B.S.","Human Resource Management, B.S.","Humanities and Social Sciences, A.A.","Humanities and Social Sciences, A.S.","Humanities, B.A.","Humanities, B.S.","Information Systems - Application Development Emphasis, B.S.","Information Systems - Applied Artificial Intelligence Emphasis, B.S.","Information Systems - Data Analytics Emphasis, B.S.","Information Systems - Information Security Management Emphasis, B.S.","Information Systems and Technology, A.A.S.","Information Systems and Technology, A.S.","Information Technology, B.S.","Integrated Studies, B.A.","Integrated Studies, B.S.","International Business, B.S.","Marketing, B.S.","Marriage and Family Therapy, M.A.","Master of Accountancy, M.Acc","Master of Business Administration, M.B.A.","Master of Computer Science, M.C.S.","Master of Education in Applied Behavioral Analysis, M.Ed.","Master of Education in Higher Education Leadership, M.Ed.","Master of Education in K-12 Education Leadership, M.Ed.","Master of Education in School Counseling, M.Ed.","Master of Physician Assistant Studies, M.P.A.S.","Master of Public Administration, M.P.A.","Master of Social Work Advanced Standing, M.S.W.","Master of Social Work, M.S.W.","Mathematics - Actuarial Science Emphasis, B.S.","Mathematics - Applied Mathematics Emphasis, B.S.","Mathematics - Mathematics Emphasis, B.S.","Mathematics Education, B.S.","Mathematics, A.S.","Mechanical Engineering, B.S.","Mechatronics Engineering Technology - Automation and Electrical Technology Emphasis, A.A.S.","Mechatronics Engineering Technology - Mechatronics Emphasis, A.A.S.","Mechatronics Engineering Technology, B.S.","Microbiology, B.S.","Molecular Biosciences and Biotechnology, B.S.","Music Education, B.S.","Music, A.S.","Music, B.A.","Music, B.S.","National Security Studies, B.A.","National Security Studies, B.S.","Nursing, A.S.N.","Nursing, B.S.","Occupational Therapy Assistant, B.S.","Operations and Supply Chain Management, B.S.","Outdoor Recreation Management, A.S.","Outdoor Recreation Management, B.S.","Performance, B.M.","Philosophy, B.A.","Philosophy, B.S.","Physical Education Teacher Education, B.S.","Physical Therapist Assistant, SAAS","Physics Education, B.S.","Physics, B.S.","Political Science - American Government Emphasis, B.A.","Political Science - American Government Emphasis, B.S.","Political Science - Global Politics Emphasis, B.A.","Political Science - Global Politics Emphasis, B.S.","Political Science - Indian Affairs Administration Emphasis, B.A.","Political Science - Indian Affairs Administration Emphasis, B.S.","Political Science - Peace and Justice Studies Emphasis, B.A.","Political Science - Peace and Justice Studies Emphasis, B.S.","Political Science - Public Administration and Public Policy Emphasis, B.A.","Political Science - Public Administration and Public Policy Emphasis, B.S.","Political Science - Public Law and Political Philosophy Emphasis, B.A.","Political Science - Public Law and Political Philosophy Emphasis, B.S.","Pre-Elementary Education, A.S.","Pre-Engineering, A.S.","Professional Advancement, A.S.","Professional Advancement, B.A.P.","Professional Advancement, B.S.","Professional Pilot, B.S.","Professional Sales, B.S.","Psychology, B.A.","Psychology, B.S.","Public Health, A.S.","Public Health, B.S.","Public Relations and Strategic Communication, B.A.","Public Relations and Strategic Communication, B.S.","Respiratory Therapy, A.A.S.","Respiratory Therapy, B.S.","School Health Education, B.S.","Secondary Education, M.A.T.","Social Work, B.S.W.","Sociology, B.A.","Sociology, B.S.","Software Development, B.A.S.","Software Engineering, B.S.","Spanish Education, B.A.","Spanish, B.A.","Special Education - Mild/Moderate/Severe, B.S.","Statistics, B.S.","Strategic Foresight and Business, B.S.","Surveying Technology, A.A.S.","Technology Management, B.S.","Technology, A.A.S.","Theatre Arts - Acting Emphasis, B.F.A.","Theatre Arts - Musical Theatre Emphasis, B.F.A.","Theatre Arts - Theatre Design and Production Emphasis, B.F.A.","Theatre Arts, A.S.","Theatre Education, B.S.","Theatre Studies, A.A.","Theatre Studies, B.A.","Transportation Technologies, B.A.S.","Web Design and Development - Interaction and User Experience Design Emphasis, B.S.","Web Design and Development - Web Application Development Emphasis, B.S.","Web Design and Development, A.A.S.","Wildland Fire Management, A.A.S.","Zoology, B.S."];
@@ -484,7 +484,7 @@ function dayOffset(n){ const p = mtParts(Date.now()), d = new Date(Date.UTC(p.ye
 function parseDay(s){ const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
 
 /* ---------- Data: loaded from Supabase into one in-memory snapshot ---------- */
-let authUser = null, session = null, myRole = 'guest', loaded = false;
+let authUser = null, session = null, myRole = 'guest', testRole = null, loaded = false;   // testRole: 'admin' or 'member' for test accounts
 const db = { settings:{ semester:'', dues:0 }, adminEmails:[], officerEmails:[], profiles:{}, users:[], events:[], stats:{},
   rsvps:{}, attendance:{}, announcements:[], recaps:[], archive:[], tasks:[], dues:{}, leader:[], log:[],
   app:{ open:false, branches:[], deadline:'', opened_at:null }, apps:[], avail:{}, pending:[], questions:[] };
@@ -495,6 +495,10 @@ async function load(){
   session = authUser ? authUser.email.toLowerCase() : null;
   const r = await sb.rpc('my_role');
   myRole = session ? (r.data || 'member') : 'guest';
+  // Test accounts act as an admin or member here, but only inside the test world (see 33-test-accounts.sql).
+  const tr = session ? await sb.rpc('my_test_role') : null;
+  testRole = (tr && !tr.error && tr.data) || null;
+  if (testRole) myRole = testRole;
   const signed = !!session, off = myRole === 'officer' || myRole === 'admin';
   const t = name => sb.from(name).select('*');
   const reqs = {
@@ -525,6 +529,7 @@ async function load(){
     mySurveys: signed && t('event_surveys'),
     surveyResults: off && sb.rpc('survey_results'),
     surveyPending: off && sb.rpc('survey_pending'),
+    testAccounts: off && t('test_accounts'),
     access: off && t('access_list'),
     codes: off && t('checkin_codes'),
     tasks: off && t('tasks'),
@@ -569,6 +574,16 @@ async function load(){
   db.questions = R.questions || [];
   db.mySurveys = R.mySurveys || []; db.surveyResults = Array.isArray(R.surveyResults) ? R.surveyResults : [];
   db.surveyPending = Array.isArray(R.surveyPending) ? R.surveyPending : [];
+  db.testAccounts = Array.isArray(R.testAccounts) ? R.testAccounts : [];
+  // Real officers never see test accounts in member lists, attendance, applications, or questions.
+  if (!testRole && db.testAccounts.length){
+    const tst = new Set(db.testAccounts.map(a => a.email)), keep = e => !tst.has(e);
+    db.users = db.users.filter(u => keep(u.email));
+    for (const k in db.rsvps) db.rsvps[k] = db.rsvps[k].filter(keep);
+    for (const k in db.attendance) db.attendance[k] = db.attendance[k].filter(keep);
+    db.apps = db.apps.filter(a => keep((a.email || '').toLowerCase()));
+    db.questions = db.questions.filter(q => keep((q.email || '').toLowerCase()));
+  }
   db.mres = {}; (R.mres || []).forEach(r => (db.mres[r.member_id] = db.mres[r.member_id] || {})[r.category] = { path: r.path, updated: r.updated_at });
   db.pstats = R.pstats || null;
   db.pending = R.pending || [];
@@ -590,7 +605,7 @@ function errMsg(e){
   const m = (e && (e.message || e.error_description)) || String(e);
   if (/members_uvuid_unique|Database error saving new user/i.test(m)) return 'An account already uses this UVU ID.';
   if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'Can’t reach the server. Check your connection and try again.';
-  if (/row-level security|permission denied/i.test(m)) return 'You don’t have permission to do that.';
+  if (/row-level security|permission denied/i.test(m)) return testRole ? 'Test accounts can only change test events, announcements, check-ins, and points. Everything else is look-only.' : 'You don’t have permission to do that.';
   return m;
 }
 // Run a change, reload everything, re-render. Errors show as a toast.
@@ -725,8 +740,9 @@ function renderChrome(route){
     ? `${isStaff() && !ui.memberView ? `<span class="seg-toggle" role="group" aria-label="Edit or safe view"><button data-act="safe-view" data-mode="edit" aria-pressed="${!ui.safeView}" title="Make changes">Edit</button><button data-act="safe-view" data-mode="safe" aria-pressed="${!!ui.safeView}" title="Look around without changing anything">Safe</button></span>` : ''}${isStaff() ? `<button class="btn on-dark ${ui.memberView ? '' : 'ghost'} small" data-act="member-view" aria-pressed="${!!ui.memberView}">${ui.memberView ? 'Member view: on' : 'Member view'}</button>` : ''}<span class="name">${esc(u.first)}</span><span class="role ${r}">${r}</span><button class="btn on-dark ghost small" data-act="signout">Sign out</button>`
     : `<a class="btn on-dark ghost small" href="#signin">Sign in</a><a class="btn on-dark small" href="#signup">Join</a>`;
   const bar = document.getElementById('safebar');
-  bar.hidden = !(ui.safeView && isStaff());
-  if (!bar.hidden) bar.innerHTML = '<div class="wrap"><span>Safe view is on. You can see every page, but nothing can be changed.</span><button class="btn small" data-act="safe-view" data-mode="edit">Switch to Edit view</button></div>';
+  bar.hidden = !(ui.safeView && isStaff()) && !testRole;
+  if (testRole) bar.innerHTML = `<div class="wrap"><span>Test ${testRole}. Only test accounts see what you do here. It doesn’t change the real site, stats, or leaderboard.</span></div>`;
+  else if (!bar.hidden) bar.innerHTML = '<div class="wrap"><span>Safe view is on. You can see every page, but nothing can be changed.</span><button class="btn small" data-act="safe-view" data-mode="edit">Switch to Edit view</button></div>';
   document.getElementById('foot-role').textContent = session ? 'Signed in as ' + r : '';
 
   const items = upcoming().slice(0, 6).map(e => {
@@ -1360,6 +1376,29 @@ function adminSeasonsBody(){
         </div>
       </div>
     </details>
+  </div>`;
+}
+
+function adminTestBody(){
+  if (testRole) return '<div class="empty">You’re signed in as a test account. Only a real admin can add or remove test accounts.</div>';
+  const list = db.testAccounts.slice().sort((a, b) => a.role.localeCompare(b.role) || a.email.localeCompare(b.email));
+  return `<div class="stack" style="gap:24px">
+    <p class="muted" style="margin:0">Test accounts try out the site without touching anything real. A <strong>test admin</strong> sees the admin pages and can make events, announcements, check-in codes, and points that only test accounts see. A <strong>test member</strong> can RSVP, check in, and fill out surveys for those test events. Test accounts have their own leaderboard and never show up in real stats, member lists, emails, or the resume book. A test admin can’t change anything real.</p>
+    <form class="panel stack" id="f-test-acct" style="gap:10px">
+      <h3>Add a test account</h3>
+      <div class="row" style="gap:10px;align-items:end">
+        <label style="flex:1;min-width:min(18rem,100%)">Email<input id="ta-email" type="email" required placeholder="you+testmember@gmail.com"></label>
+        <label>Acts as<select id="ta-role"><option value="member">Test member</option><option value="admin">Test admin</option></select></label>
+        <button class="btn" type="submit">Add</button>
+      </div>
+      <p class="hint" style="margin:0">Gmail tip: add +anything before the @ (you+testadmin@gmail.com). It’s a separate account on the site, but the emails still come to your inbox. Add the email here, then sign up with it on the Join page. Each account needs its own made-up 8-digit UVU ID, like 00000001 and 00000002.</p>
+      <div class="err" id="ta-err"></div>
+    </form>
+    <section class="stack" style="gap:10px">
+      <div class="section-head"><h3>Test accounts</h3><span class="muted">${list.length}</span></div>
+      ${list.map(a => `<div class="list-row"><div><div class="ev-title">${esc(a.email)}</div><div class="ev-sub">Test ${a.role}</div></div>
+        ${delBtn('ta-' + a.email, 'Remove', 'ta-del', a.email)}</div>`).join('') || '<div class="empty">No test accounts yet.</div>'}
+    </section>
   </div>`;
 }
 
@@ -3270,6 +3309,7 @@ function viewAdmin(){
   else if (T === 'applications'){ body = adminApplicationsBody(); }
   else if (T === 'seasons'){ body = adminSeasonsBody(); }
   else if (T === 'points'){ body = adminPointsBody(); }
+  else if (T === 'test'){ body = adminTestBody(); }
   else if (T === 'bulk'){ body = bulkBody(); }
   else if (T === 'export'){
     body = `<section class="stack">
@@ -3546,6 +3586,7 @@ document.addEventListener('click', async ev => {
       if (t.dataset.act === 'aw-none') ui.awPick = new Set();
       else document.querySelectorAll('.aw-pick').forEach(c => ui.awPick.add(c.value));
       render(); break; }
+    case 'ta-del': await act(async () => { must(await sb.from('test_accounts').delete().eq('email', id)); await logChange('Removed test account ' + id); }, 'Test account removed'); break;
     case 'aw-del': { const a = db.awards.find(x => x.id === id);
       await act(async () => { must(await sb.from('point_awards').delete().eq('id', id)); await logChange(`Undid ${a.points} points for ${userName(a.email)} (${a.reason})`); }, 'Award undone'); break; }
     case 'lb-season-del': await act(async () => { must(await sb.rpc('delete_leaderboard_season', { season: id })); await logChange('Deleted a past leaderboard season'); }, 'Season deleted'); ui.lbSeason = null; render(); break;
@@ -4119,6 +4160,16 @@ async function handleSubmit(f, v, err){
     await load(); render();
     toast(mine ? 'Your answer was updated' : `Thanks! +${SURVEY_POINTS} points`);
     return;
+  }
+
+  if (f.id === 'f-test-acct'){
+    const email = v('ta-email').toLowerCase(), role = v('ta-role');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return err('ta-err', 'Enter an email address.');
+    if (staffEmails().includes(email)) return err('ta-err', 'That email is a real officer or admin. Use a different one for testing.');
+    const r = await sb.from('test_accounts').insert({ email, role });
+    if (r.error) return err('ta-err', /test_accounts/.test(r.error.message || '') && /exist|schema/i.test(r.error.message || '') ? 'This isn’t set up yet. Run the 33-test-accounts.sql update in Supabase.' : /duplicate/i.test(r.error.message || '') ? 'That email is already a test account.' : errMsg(r.error));
+    await logChange('Added test ' + role + ' ' + email);
+    await load(); render(); toast('Test ' + role + ' added. Now sign up with that email.');
   }
 
   if (f.id === 'f-award'){
