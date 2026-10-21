@@ -242,6 +242,10 @@ main{padding-block:36px 64px}
 .facts dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .meter{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
 .meter span{display:block;height:100%;background:var(--up)}
+.code-inline{font-family:var(--mono);font-size:1.4rem;font-weight:700;letter-spacing:.2em;padding:2px 10px;border:2px solid var(--ink);border-radius:var(--radius)}
+.event-page{border-top:4px solid var(--c)}
+.qr-stage{padding:16px;border-radius:var(--radius);border:1px solid var(--line);background:repeating-conic-gradient(#e9ecea 0 25%, #fff 0 50%) 0 0/20px 20px}
+.qr-stage.dark{background:#1a4026}
 .codebig{font-family:var(--mono);font-size:clamp(3.5rem,14vw,7rem);letter-spacing:.2em;text-align:center;line-height:1;padding:20px 0;border:3px solid var(--ink);border-radius:var(--radius)}
 .checkin-form{display:flex;gap:8px;flex-wrap:wrap}
 .checkin-form input{width:9em;font-family:var(--mono);text-transform:uppercase;letter-spacing:.2em}
@@ -457,7 +461,7 @@ function buildTitle(tier, branch){
   if (tier === 'honorary') return 'Honorary Officer';
   return b ? b + ' Officer' : 'Officer';
 }
-const OFFICER_TABS = [['stats','Statistics'],['approvals','Approvals'],['questions','Questions'],['events','Events'],['plan','Event planning'],['checkin','Check-in & attendance'],['surveys','Event surveys'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
+const OFFICER_TABS = [['stats','Statistics'],['approvals','Approvals'],['questions','Questions'],['events','Events'],['plan','Event planning'],['checkin','Check-in & attendance'],['surveys','Event surveys'],['qr','QR codes'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
 const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['points','Award points'],['seasons','Leaderboard seasons'],['test','Test accounts'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
@@ -2903,6 +2907,7 @@ function viewOfficer(){
   else if (T === 'plan'){ body = planBody(); }
 
   else if (T === 'surveys'){ body = surveysBody(); }
+  else if (T === 'qr'){ body = qrToolBody(); setTimeout(drawQrTool); }
 
   else if (T === 'events'){
     const e = ui.editEvent ? evById(ui.editEvent) : null;
@@ -3353,8 +3358,11 @@ function closeNavMenu(){
 window.addEventListener('resize', closeNavMenu);
 window.addEventListener('scroll', closeNavMenu, { passive: true });
 
-function openEvent(id){
-  const e = evById(id); if (!e) return;
+// Each event has its own page (#event/<id>) to link to or put on a QR code. The calendar opens the same content in a pop-up.
+// A check-in QR adds the code (#event/<id>/<code>) so it's filled in for people who scan it at the event.
+function eventLink(id, code){ return location.origin + '/#event/' + id + (code ? '/' + encodeURIComponent(code) : ''); }
+function eventInner(id, page){
+  const e = evById(id); if (!e) return '';
   const n = rsvpCount(id), mine = session && going(id).includes(session), full = e.cap && n >= e.cap;
   const here = session && attended(id).includes(session);
   let action;
@@ -3366,13 +3374,26 @@ function openEvent(id){
   else action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button>`;
   let checkin = '';
   if (isToday(e)){
+    const pre = page ? decodeURIComponent(location.hash.slice(1).split('/')[2] || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) : '';
     if (!session) checkin = `<div class="notice">At the event? <a href="#signin">Sign in</a> to check in${PTS[e.cat] ? ' and earn ' + PTS[e.cat] + ' points' : ''}.</div>`;
     else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e.cat)}.</div>`;
-    else checkin = `<form class="stack" id="f-checkin" data-id="${id}" style="gap:8px"><label for="ci-code">Check-in code <span class="hint">Shown on screen at the event · ${ptsText(e.cat)}${mine ? '' : ' · No RSVP needed'}</span></label>
-      <div class="checkin-form"><input id="ci-code" maxlength="8" autocomplete="off" placeholder="CODE"><button class="btn" type="submit">Check in</button></div><div class="err" id="ci-err"></div></form>`;
+    else checkin = `<form class="stack" id="f-checkin" data-id="${id}" style="gap:8px"><label for="ci-code">Check-in code <span class="hint">${pre ? 'Filled in from the QR code' : 'Shown on screen at the event'} · ${ptsText(e.cat)}${mine ? '' : ' · No RSVP needed'}</span></label>
+      <div class="checkin-form"><input id="ci-code" maxlength="8" autocomplete="off" placeholder="CODE" value="${esc(pre)}"><button class="btn" type="submit">Check in</button></div><div class="err" id="ci-err"></div></form>`;
   }
-  showModal(`<div class="modal-in">
-    <div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${PTS[e.cat] ? PTS[e.cat] + ' pts' : 'officers only'}</div></div>
+  // Officers: the check-in code, hidden until they click Show code, plus the projector view and a check-in QR.
+  let codeBox = '';
+  if (can('officer') && !e.draft && !isPast(e)){
+    const shown = ui.codeShown === id;
+    codeBox = `<div class="panel stack" style="gap:8px;padding:12px 14px">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:10px"><strong>Check-in code</strong>
+        ${!e.code ? `<button class="btn ghost small" data-act="show-code" data-id="${id}">Create a code</button>`
+          : shown ? `<span class="row" style="gap:8px;align-items:center"><span class="code-inline">${esc(e.code)}</span><button class="btn ghost small" data-act="reveal-code" data-id="${id}">Hide</button></span>`
+          : `<button class="btn ghost small" data-act="reveal-code" data-id="${id}">Show code</button>`}</div>
+      ${e.code ? `<div class="row" style="gap:6px"><button class="btn ghost small" data-act="show-code" data-id="${id}">Projector view</button><button class="btn ghost small" data-act="qr" data-id="${id}" data-kind="checkin">Check-in QR</button></div>` : ''}
+      <span class="hint">${isToday(e) ? 'Check-in is open today.' : 'Members can check in on the day of the event.'}</span></div>`;
+  }
+  const share = e.draft ? '' : `<div class="row" style="gap:6px"><button class="btn ghost small" data-act="copy-link" data-id="${id}">Copy link</button>${can('officer') ? `<button class="btn ghost small" data-act="qr" data-id="${id}" data-kind="page">QR code</button>` : ''}${page ? '' : `<a class="btn ghost small" href="#event/${id}">Open event page</a>`}</div>`;
+  return `<div><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${PTS[e.cat] ? PTS[e.cat] + ' pts' : 'officers only'}${e.draft ? ' · <span class="tag">Draft</span>' : ''}</div></div>
     <h2>${esc(e.title)}</h2>
     <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} <span class="hint">Mountain Time</span></dd>
       <dt>Status</dt><dd>${{ upcoming: 'Upcoming', live: '<strong>Happening now</strong>', over: 'Over' }[evStatus(e)]}</dd>
@@ -3380,8 +3401,127 @@ function openEvent(id){
     ${e.cap ? `<div class="meter"><span style="width:${Math.min(100,n/e.cap*100)}%"></span></div>` : ''}
     <p style="white-space:pre-wrap">${esc(e.desc)}</p>
     ${checkin}
-    <div class="row">${action}${can('officer') ? `<span style="margin-left:auto" class="row">${isToday(e) ? `<button class="btn ghost small" data-act="show-code" data-id="${id}">Check-in code</button>` : ''}<button class="btn ghost small" data-act="edit-event" data-id="${id}">Edit event</button></span>` : ''}</div>
-  </div>`, null, '', catVar(e.cat));
+    <div class="row">${action}${can('officer') ? `<span style="margin-left:auto" class="row"><button class="btn ghost small" data-act="edit-event" data-id="${id}">Edit event</button></span>` : ''}</div>
+    ${codeBox}
+    ${share}`;
+}
+function openEvent(id){
+  const e = evById(id); if (!e) return;
+  showModal(`<div class="modal-in"><button class="modal-x" data-act="close" aria-label="Close" style="float:right">×</button>${eventInner(id, false)}</div>`, null, '', catVar(e.cat));
+}
+// Re-show an event after a change, on its page or in the pop-up.
+function refreshEvent(id){ if (route() === 'event') render(); else openEvent(id); }
+function viewEvent(){
+  const id = location.hash.slice(1).split('/')[1] || '', e = evById(id);
+  if (!session) setReturnTo(location.hash.slice(1));
+  if (!e) return `<div class="view"><div class="page-head"><div class="eyebrow">Event</div><h1 class="page">Event not found</h1></div>
+    <p class="muted">This event may have been removed${session ? '' : ', or you may need to <a href="#signin">sign in</a> to see it'}.</p><p><a class="btn" href="#calendar">See all events</a></p></div>`;
+  return `<div class="view"><p><a href="#calendar">← All events</a></p><section class="panel stack event-page" style="--c:${catVar(e.cat)};gap:14px">${eventInner(id, true)}</section></div>`;
+}
+// Where to go after signing in, when someone arrives from an event link or QR code.
+function setReturnTo(h){ try { localStorage.setItem('wfa-return', JSON.stringify({ h, t: Date.now() })); } catch(e){} }
+function takeReturnTo(){
+  try { const x = JSON.parse(localStorage.getItem('wfa-return') || 'null'); localStorage.removeItem('wfa-return'); return x && Date.now() - x.t < 3 * 864e5 ? x.h : null; } catch(e){ return null; }
+}
+
+/* ---------- QR codes ---------- */
+// Green and gold, with rounded dots and gold corner "eyes". Transparent PNGs unless the style has a background.
+const QR_GOLD = '#B08D2A';
+const QR_STYLES = {
+  brand: ['Green & gold, transparent', null, '#275D38', QR_GOLD],
+  white: ['Green & gold on white', '#ffffff', '#275D38', QR_GOLD],
+  dark:  ['White & gold, transparent (for dark backgrounds)', null, '#ffffff', QR_GOLD],
+  plain: ['Black on white (most reliable)', '#ffffff', '#000000', '#000000']
+};
+const QR_SIZES = { 600: 'Small (600 px)', 1200: 'Medium (1200 px)', 2400: 'Print (2400 px)' };
+let qrLib = null;
+function loadQr(){
+  return qrLib || (qrLib = new Promise((res, rej) => {
+    if (window.qrcode) return res(window.qrcode);
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+    sc.onload = () => res(window.qrcode);
+    sc.onerror = () => { qrLib = null; rej(new Error('The QR code tool didn’t load. Check your connection and try again.')); };
+    document.head.appendChild(sc);
+  }));
+}
+async function qrPng(text, style, px){
+  const qrcode = await loadQr();
+  const qr = qrcode(0, 'H'); qr.addData(text); qr.make();   // high error correction keeps the rounded style easy to scan
+  const n = qr.getModuleCount(), pad = 4, cell = Math.max(4, Math.floor((+px || 1200) / (n + pad * 2))), size = (n + pad * 2) * cell;
+  const [, bg, ink, gold] = QR_STYLES[style] || QR_STYLES.brand;
+  const cv = document.createElement('canvas'); cv.width = cv.height = size;
+  const g = cv.getContext('2d');
+  if (bg){ g.fillStyle = bg; g.fillRect(0, 0, size, size); }
+  const box = (x, y, w, r) => { if (g.roundRect) g.roundRect(x, y, w, w, r); else g.rect(x, y, w, w); };
+  const eye = (r, c) => (r < 7 && c < 7) || (r < 7 && c >= n - 7) || (r >= n - 7 && c < 7);
+  const round = style === 'plain' ? 0 : 1;
+  g.fillStyle = ink; g.beginPath();
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++)
+    if (!eye(r, c) && qr.isDark(r, c)) box((c + pad) * cell + cell * .05 * round, (r + pad) * cell + cell * .05 * round, cell * (1 - .1 * round), cell * .32 * round);
+  g.fill();
+  [[0, 0], [0, n - 7], [n - 7, 0]].forEach(([r0, c0]) => {
+    const x = (c0 + pad) * cell, y = (r0 + pad) * cell;
+    g.fillStyle = gold; g.beginPath(); box(x, y, 7 * cell, 1.8 * cell * round); box(x + cell, y + cell, 5 * cell, 1.1 * cell * round); g.fill('evenodd');
+    g.fillStyle = ink; g.beginPath(); box(x + 2 * cell, y + 2 * cell, 3 * cell, .9 * cell * round); g.fill();
+  });
+  return cv.toDataURL('image/png');
+}
+function qrFileName(name){ return (String(name).replace(/[^\w]+/g, '-').replace(/^-|-$/g, '') || 'wfa') + '-qr.png'; }
+function qrStylePicker(cur, act, extra){
+  return `<div class="row" style="gap:6px" role="group" aria-label="QR style">${Object.entries(QR_STYLES).map(([k, [l]]) => `<button type="button" class="btn ${k === cur ? '' : 'ghost '}small" data-act="${act}" data-style="${k}" ${extra || ''} aria-pressed="${k === cur}">${l}</button>`).join('')}</div>`;
+}
+function qrPreview(png, style, name){
+  return `<div class="qr-stage ${style === 'dark' ? 'dark' : ''}"><img src="${png}" alt="QR code" style="width:min(300px,100%);display:block;margin:0 auto"></div>`;
+}
+async function showQr(id, kind, style){
+  const e = evById(id); if (!e) return;
+  style = style || ui.qrStyle || 'brand'; ui.qrStyle = style;
+  const url = eventLink(id, kind === 'checkin' ? e.code : '');
+  let png; try { png = await qrPng(url, style, 1200); } catch(err){ return toast(err.message); }
+  const file = qrFileName(e.title + (kind === 'checkin' ? '-check-in' : '') + '-' + style);
+  showModal(`<div class="modal-in">
+    <div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="eyebrow">${kind === 'checkin' ? 'Check-in QR' : 'Event QR code'}</div></div>
+    <h2>${esc(e.title)}</h2>
+    ${qrStylePicker(style, 'qr-style', `data-id="${id}" data-kind="${kind}"`)}
+    ${qrPreview(png, style)}
+    <p class="hint" style="word-break:break-all;text-align:center">${esc(url)}</p>
+    <p class="muted">${kind === 'checkin' ? `Scanning this opens the event with the code <strong>${esc(e.code)}</strong> already filled in. People still need to sign in and tap Check in, and it only works on the day of the event. If you make a new code, make a new QR too.` : 'Scanning this opens the event page, where people can RSVP (signing in first if needed). Good for flyers, slides, and social posts.'} Need another size? Use Officer tools → QR codes.</p>
+    <div class="row" style="gap:8px"><a class="btn" href="${png}" download="${esc(file)}">Download PNG</a><button class="btn ghost" data-act="copy-text" data-text="${esc(url)}">Copy link</button><button class="btn ghost" data-act="open-event" data-id="${id}">Back to event</button></div>
+  </div>`, null, 'wide');
+}
+// Officer tools → QR codes: a QR for any link, with quick picks for event pages and main site pages.
+function qrToolBody(){
+  const q = ui.qr || (ui.qr = { text: location.origin + '/', style: 'brand', size: 1200, name: 'WFA website' });
+  const pages = [['', 'Home page'], ['#signup', 'Join (sign up)'], ['#calendar', 'Events calendar'], ['#apply', 'Officer applications'], ['#partners', 'Partner with us'], ['#contact', 'Contact / questions'], ['#leaderboard', 'Leaderboard']];
+  const evs = upcoming().filter(e => !e.draft && e.cat !== 'officer_meeting');
+  return `<div class="grid2" style="gap:24px;align-items:start">
+    <div class="stack" style="gap:12px">
+      <label>Quick pick<select id="qr-pick"><option value="">Choose a page or event…</option>
+        <optgroup label="Site pages">${pages.map(([h, l]) => `<option value="page:${h}|${esc(l)}">${esc(l)}</option>`).join('')}</optgroup>
+        ${evs.length ? `<optgroup label="Upcoming event pages">${evs.map(e => `<option value="ev:${e.id}">${fmtDay(e.date)} · ${esc(e.title)}</option>`).join('')}</optgroup>` : ''}
+      </select></label>
+      <label>Link or text<input id="qr-text" value="${esc(q.text)}" placeholder="https://…"></label>
+      <label>File name<input id="qr-name" value="${esc(q.name)}"></label>
+      <div class="stack" style="gap:6px"><span class="label-text">Style</span>${qrStylePicker(q.style, 'qr-tool-style')}</div>
+      <label>Size<select id="qr-size">${Object.entries(QR_SIZES).map(([k, l]) => `<option value="${k}" ${+k === +q.size ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <p class="hint" style="margin:0">Transparent PNGs drop onto flyers, slides, and posts without a white box. Use the white-background or black-and-white style if a QR has to go on a busy photo. Always test-scan before printing.</p>
+    </div>
+    <div class="stack" style="gap:10px" id="qr-out"><div class="empty">Making the QR code…</div></div>
+  </div>`;
+}
+async function drawQrTool(){
+  const out = document.getElementById('qr-out'); if (!out) return;
+  const q = ui.qr, text = (q.text || '').trim();
+  if (!text){ out.innerHTML = '<div class="empty">Type a link to make a QR code.</div>'; return; }
+  let png; try { png = await qrPng(text, q.style, q.size); } catch(err){ out.innerHTML = `<div class="err">${esc(err.message)}</div>`; return; }
+  if (document.getElementById('qr-out') !== out) return;
+  out.innerHTML = `${qrPreview(png, q.style)}<p class="hint" style="word-break:break-all;text-align:center;margin:0">${esc(text)}</p>
+    <div class="row" style="gap:8px;justify-content:center"><a class="btn" href="${png}" download="${esc(qrFileName(q.name + '-' + q.style))}">Download PNG</a><button class="btn ghost" data-act="copy-text" data-text="${esc(text)}">Copy link</button></div>`;
+}
+async function copyText(text, ok){
+  try { await navigator.clipboard.writeText(text); toast(ok || 'Copied'); }
+  catch(e){ window.prompt('Copy this:', text); }
 }
 async function showCode(id, fresh){
   let e = evById(id); if (!e) return;
@@ -3404,7 +3544,7 @@ async function showCode(id, fresh){
 /* ---------- Render ---------- */
 const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources,
   archive:viewArchive, leaderboard:viewLeaderboard, account:viewAccount, apply:viewApply, availability:viewAvailability,
-  contact:viewContact, partners:viewPartners, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
+  contact:viewContact, partners:viewPartners, event:viewEvent, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
 function route(){ const r = location.hash.slice(1).split('/')[0]; return VIEWS[r] ? r : 'home'; }
 // Officer and admin tabs live in the address (#officer/stats, #admin/applications), so a refresh,
 // a bookmark, or the back button lands on the same tab.
@@ -3453,8 +3593,8 @@ async function afterLogin(){
   if (p){
     const r = await sb.from('rsvps').insert({ event_id: p });
     toast(r.error ? errMsg(r.error) : 'RSVP saved');
-    await load(); location.hash = 'calendar';
-  } else location.hash = myRole === 'admin' ? 'admin' : myRole === 'officer' ? 'officer' : 'home';
+    await load(); takeReturnTo(); location.hash = 'event/' + p;
+  } else { const back = takeReturnTo(); location.hash = back || (myRole === 'admin' ? 'admin' : myRole === 'officer' ? 'officer' : 'home'); }
   render();
 }
 function useTemplate(k){
@@ -3490,6 +3630,12 @@ document.addEventListener('click', async ev => {
       m.querySelector('a').focus();
       break; }
     case 'open-event': openEvent(id); break;
+    case 'reveal-code': ui.codeShown = ui.codeShown === id ? null : id; refreshEvent(id); break;
+    case 'qr': await showQr(id, t.dataset.kind); break;
+    case 'qr-style': await showQr(id, t.dataset.kind, t.dataset.style); break;
+    case 'qr-tool-style': ui.qr.style = t.dataset.style; render(); drawQrTool(); break;
+    case 'copy-link': await copyText(eventLink(id), 'Event link copied'); break;
+    case 'copy-text': await copyText(t.dataset.text, 'Link copied'); break;
     case 'close': closeModal(); break;
     case 'copy': copyText(t.dataset.text, t.dataset.label); break;
     case 'signout': await sb.auth.signOut(); ui.recovery = false; ui.availDraft = null; await load(); toast('Signed out'); location.hash = 'home'; render(); break;
@@ -3497,10 +3643,10 @@ document.addEventListener('click', async ev => {
     case 'cat': { const c = t.dataset.cat; ui.catsOn.has(c) ? ui.catsOn.delete(c) : ui.catsOn.add(c); if (!ui.catsOn.size) Object.keys(CATS).forEach(k => ui.catsOn.add(k)); render(); break; }
     case 'rsvp':
       if (!session){ setPendingRsvp(id); closeModal(); location.hash = 'signin'; break; }
-      if (await act(async () => must(await sb.from('rsvps').insert({ event_id: id })), 'RSVP saved')) openEvent(id);
+      if (await act(async () => must(await sb.from('rsvps').insert({ event_id: id })), 'RSVP saved')) refreshEvent(id);
       break;
     case 'unrsvp':
-      if (await act(async () => must(await sb.from('rsvps').delete().eq('event_id', id).eq('email', session)), 'RSVP canceled')) openEvent(id);
+      if (await act(async () => must(await sb.from('rsvps').delete().eq('event_id', id).eq('email', session)), 'RSVP canceled')) refreshEvent(id);
       break;
     case 'photo': { const r = db.recaps.find(x => x.id === id); showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3>${esc(r.title)}</h3></div><img src="${esc(r.photos[+t.dataset.i])}" alt="" style="width:100%;border-radius:3px"></div>`, null, 'wide'); break; }
     case 'arch-type': ui.archType = t.dataset.type; render(); break;
@@ -3823,12 +3969,20 @@ document.addEventListener('input', e => {
   if (id === 'log-search'){ ui.logSearch = e.target.value; rerenderKeepFocus(id); }
   if (['an-title','an-body'].includes(id)) updateAnnPreview();
   if (['ml-subject','ml-body','ml-closing'].includes(id)){ readMail(); document.getElementById('ml-preview').innerHTML = mailPreview(); document.getElementById('ml-outlook').innerHTML = outlookButtons(audienceEmails(ui.mail.aud)); }
+  if (['qr-text', 'qr-name'].includes(id)){ ui.qr[id === 'qr-text' ? 'text' : 'name'] = e.target.value; clearTimeout(drawQrTool.t); drawQrTool.t = setTimeout(drawQrTool, 250); }
   if (id === 'dc-body'){ const x = db.apps.find(a => a.id === (ui.declineList || [])[0]); if (x) document.getElementById('dc-preview').textContent = fillDecline(e.target.value, x); }
 });
 document.addEventListener('change', async e => {
   const id = e.target.id;
   if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
   if (['ml-aud','ml-ev'].includes(id)){ readMail(); if (id === 'ml-aud' && /^(nosurvey|att|noshow|rsvp):/.test(ui.mail.aud)) ui.mail.ev = ui.mail.aud.split(':')[1]; render(); }
+  if (id === 'qr-size'){ ui.qr.size = +e.target.value; drawQrTool(); }
+  if (id === 'qr-pick' && e.target.value){
+    const v = e.target.value;
+    if (v.startsWith('ev:')){ const ev = evById(v.slice(3)); ui.qr.text = eventLink(ev.id); ui.qr.name = ev.title; }
+    else { const [h, l] = v.slice(5).split('|'); ui.qr.text = location.origin + '/' + h; ui.qr.name = 'WFA ' + l; }
+    render(); drawQrTool();
+  }
   if (id === 'ev-cat'){ const n = document.getElementById('ev-case-note'); if (n) n.hidden = e.target.value !== 'case_competition'; }
   if (id === 'stats-ev'){ ui.statsEv = e.target.value; render(); }
   if (id === 'plan-ev'){ ui.planEv = e.target.value; render(); }
@@ -4066,7 +4220,7 @@ async function handleSubmit(f, v, err){
     const msg = { closed:'Check-in is only open on the day of the event.', notstarted:'Check-in hasn’t started yet. Wait for an officer to show the code.',
       wrong:'That code doesn’t match. Check the screen and try again.', signin:'Sign in first.', missing:'This event no longer exists.' }[r.data];
     if (msg) return err('ci-err', msg);
-    await load(); toast('Checked in · ' + ptsText(e.cat)); render(); openEvent(id);
+    await load(); toast('Checked in · ' + ptsText(e.cat)); render(); if (route() !== 'event') openEvent(id);
   }
 
   if (f.id === 'f-mark'){
