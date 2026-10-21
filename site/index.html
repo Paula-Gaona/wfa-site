@@ -452,7 +452,7 @@ function buildTitle(tier, branch){
   return b ? b + ' Officer' : 'Officer';
 }
 const OFFICER_TABS = [['stats','Statistics'],['approvals','Approvals'],['questions','Questions'],['events','Events'],['plan','Event planning'],['checkin','Check-in & attendance'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
-const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['seasons','Leaderboard seasons'],['log','Change log']];
+const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['points','Award points'],['seasons','Leaderboard seasons'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
 const MAJORS = ["Undeclared","Accounting, A.S.","Accounting, B.S.","American Sign Language Secondary Education, B.A.","Animation and Game Development, B.S.","Anthropology, B.A.","Anthropology, B.S.","Applied Artificial Intelligence, M.S.","Applied Communication, B.A.","Applied Communication, B.S.","Architecture, B.Arch","Art Education, B.S.","Art History, B.A.","Art and Design - Graphic Design Emphasis, A.A.S.","Art and Design - Graphic Design Emphasis, B.F.A.","Art and Design - Illustration Emphasis, A.A.S.","Art and Design - Illustration Emphasis, B.F.A.","Art and Design - Painting/Drawing/Printmaking Emphasis, B.F.A.","Art and Design - Photography Emphasis, A.A.S.","Art and Design - Photography Emphasis, B.F.A.","Art and Design - Sculpture and Ceramics Emphasis, B.F.A.","Art and Design, A.A.","Art and Design, A.S.","Art and Design, B.S.","Associate in Pre-Engineering - Biological and Chemical Engineering Emphasis, A.P.E.","Associate in Pre-Engineering - Civil and Mechanical Engineering Emphasis, A.P.E.","Associate in Pre-Engineering - Computer and Electrical Engineering Emphasis, A.P.E.","Automotive Technology, A.A.S.","Aviation Management, B.S.","Aviation Science, A.A.S.","Aviation Science, A.S.","Bioinformatics, B.S.","Biology Education, B.S.","Biology, A.A.","Biology, A.S.","Biology, B.S.","Biomedical Science, B.S.","Botany, B.S.","Business Management, A.S.","Business Technologies and Education, B.S.","Business and Analysis, B.S.","Cabinetry and Architectural Woodwork, A.A.S.","Chemistry - Biochemistry Emphasis, B.S.","Chemistry - Professional Chemistry Emphasis, B.S.","Chemistry Education, B.S.","Civil Engineering, B.S.","Clinical Mental Health Counseling, M.S.","Commercial Music, B.M.","Computational Data Science, B.S.","Computer Engineering, B.S.","Computer Science Education, B.S.","Computer Science, A.S.","Computer Science, B.S.","Constitutional Government Civics and Law, M.A.","Construction Management, A.A.S.","Construction Management, B.S.","Criminal Justice, A.A.","Criminal Justice, A.S.","Criminal Justice, B.S.","Culinary Arts, A.A.S.","Curriculum and Instruction, M.Ed.","Cybersecurity, A.A.S","Cybersecurity, B.S.","Cybersecurity, M.S.","Dance - Ballet Emphasis, B.F.A.","Dance - Modern Dance Emphasis, B.F.A.","Dance Education, B.S.","Dance, A.S.","Dance, B.S.","Deaf Studies - General Deaf Studies Emphasis, B.A.","Deaf Studies - Interpreting Emphasis, B.A.","Dental Hygiene, A.A.S.","Dental Hygiene, B.S.","Diesel Mechanics Technology, A.A.S.","Digital Audio, A.A.S.","Digital Audio, B.S.","Digital Cinema Production, A.A.S.","Digital Cinema Production, B.S.","Digital Marketing, B.S.","Early Childhood Education, A.S.","Earth Science Education, B.S.","Electrical Engineering, B.S.","Electrical and Computer Engineering, A.A.S.","Elementary Education, B.S.","Emergency Services Administration, B.S.","Emergency Services Operations, A.A.S.","Emergency Services Supervision, B.A.P.","Emergency Services, A.S.","Engineering Design Technology, A.A.S.","Engineering Design Technology, A.S.","Engineering and Technology Management, M.S.","English - Creative Writing Emphasis, B.A.","English - Creative Writing Emphasis, B.S.","English - Literary Studies Emphasis, B.A.","English - Literary Studies Emphasis, B.S.","English - Writing Studies Emphasis, B.A.","English - Writing Studies Emphasis, B.S.","English Education, B.A.","English Education, B.S.","Entertainment Design, A.A.S.","Entertainment Design, B.F.A.","Environmental Science and Management, B.S.","Environmental Studies, B.S.","Event Management, B.S.","Exercise Science, A.S.","Exercise Science, B.S.","Family Science, B.A.","Family Science, B.S.","Finance, B.S.","Finance, M.S.","Financial Planning and Wealth Management, B.S.","Forensic Science - Forensic Investigation Emphasis, B.S.","Forensic Science - Forensic Laboratory Emphasis, B.S.","Forensic Science, A.S.","Geography, B.S.","Geology, B.S.","Health Science, B.S.","Healthcare Administration, B.S.","Healthcare Services, A.A.S.","History and Social Studies Education, B.S.","History, B.A.","Hospitality Management, A.A.S.","Hospitality Management, A.S.","Hospitality Management, B.S.","Human Resource Management, B.S.","Humanities and Social Sciences, A.A.","Humanities and Social Sciences, A.S.","Humanities, B.A.","Humanities, B.S.","Information Systems - Application Development Emphasis, B.S.","Information Systems - Applied Artificial Intelligence Emphasis, B.S.","Information Systems - Data Analytics Emphasis, B.S.","Information Systems - Information Security Management Emphasis, B.S.","Information Systems and Technology, A.A.S.","Information Systems and Technology, A.S.","Information Technology, B.S.","Integrated Studies, B.A.","Integrated Studies, B.S.","International Business, B.S.","Marketing, B.S.","Marriage and Family Therapy, M.A.","Master of Accountancy, M.Acc","Master of Business Administration, M.B.A.","Master of Computer Science, M.C.S.","Master of Education in Applied Behavioral Analysis, M.Ed.","Master of Education in Higher Education Leadership, M.Ed.","Master of Education in K-12 Education Leadership, M.Ed.","Master of Education in School Counseling, M.Ed.","Master of Physician Assistant Studies, M.P.A.S.","Master of Public Administration, M.P.A.","Master of Social Work Advanced Standing, M.S.W.","Master of Social Work, M.S.W.","Mathematics - Actuarial Science Emphasis, B.S.","Mathematics - Applied Mathematics Emphasis, B.S.","Mathematics - Mathematics Emphasis, B.S.","Mathematics Education, B.S.","Mathematics, A.S.","Mechanical Engineering, B.S.","Mechatronics Engineering Technology - Automation and Electrical Technology Emphasis, A.A.S.","Mechatronics Engineering Technology - Mechatronics Emphasis, A.A.S.","Mechatronics Engineering Technology, B.S.","Microbiology, B.S.","Molecular Biosciences and Biotechnology, B.S.","Music Education, B.S.","Music, A.S.","Music, B.A.","Music, B.S.","National Security Studies, B.A.","National Security Studies, B.S.","Nursing, A.S.N.","Nursing, B.S.","Occupational Therapy Assistant, B.S.","Operations and Supply Chain Management, B.S.","Outdoor Recreation Management, A.S.","Outdoor Recreation Management, B.S.","Performance, B.M.","Philosophy, B.A.","Philosophy, B.S.","Physical Education Teacher Education, B.S.","Physical Therapist Assistant, SAAS","Physics Education, B.S.","Physics, B.S.","Political Science - American Government Emphasis, B.A.","Political Science - American Government Emphasis, B.S.","Political Science - Global Politics Emphasis, B.A.","Political Science - Global Politics Emphasis, B.S.","Political Science - Indian Affairs Administration Emphasis, B.A.","Political Science - Indian Affairs Administration Emphasis, B.S.","Political Science - Peace and Justice Studies Emphasis, B.A.","Political Science - Peace and Justice Studies Emphasis, B.S.","Political Science - Public Administration and Public Policy Emphasis, B.A.","Political Science - Public Administration and Public Policy Emphasis, B.S.","Political Science - Public Law and Political Philosophy Emphasis, B.A.","Political Science - Public Law and Political Philosophy Emphasis, B.S.","Pre-Elementary Education, A.S.","Pre-Engineering, A.S.","Professional Advancement, A.S.","Professional Advancement, B.A.P.","Professional Advancement, B.S.","Professional Pilot, B.S.","Professional Sales, B.S.","Psychology, B.A.","Psychology, B.S.","Public Health, A.S.","Public Health, B.S.","Public Relations and Strategic Communication, B.A.","Public Relations and Strategic Communication, B.S.","Respiratory Therapy, A.A.S.","Respiratory Therapy, B.S.","School Health Education, B.S.","Secondary Education, M.A.T.","Social Work, B.S.W.","Sociology, B.A.","Sociology, B.S.","Software Development, B.A.S.","Software Engineering, B.S.","Spanish Education, B.A.","Spanish, B.A.","Special Education - Mild/Moderate/Severe, B.S.","Statistics, B.S.","Strategic Foresight and Business, B.S.","Surveying Technology, A.A.S.","Technology Management, B.S.","Technology, A.A.S.","Theatre Arts - Acting Emphasis, B.F.A.","Theatre Arts - Musical Theatre Emphasis, B.F.A.","Theatre Arts - Theatre Design and Production Emphasis, B.F.A.","Theatre Arts, A.S.","Theatre Education, B.S.","Theatre Studies, A.A.","Theatre Studies, B.A.","Transportation Technologies, B.A.S.","Web Design and Development - Interaction and User Experience Design Emphasis, B.S.","Web Design and Development - Web Application Development Emphasis, B.S.","Web Design and Development, A.A.S.","Wildland Fire Management, A.A.S.","Zoology, B.S."];
@@ -501,6 +501,7 @@ async function load(){
     archive: signed && t('archive'),
     pstats: sb.rpc('public_stats'),
     lbHistory: signed && sb.rpc('leaderboard_history'),
+    awards: myRole === 'admin' && sb.from('point_awards').select('*').order('created_at', { ascending: false }).limit(200),
     pending: off && sb.from('pending_changes').select('*').order('created_at', { ascending: false }).limit(200),
     questions: off && sb.from('questions').select('*').order('created_at', { ascending: false }),
     members: signed && t('members'),
@@ -527,6 +528,7 @@ async function load(){
 
   db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0), about: R.settings?.about || {}, lbSince: R.settings?.lb_since || null };
   db.lbHistory = Array.isArray(R.lbHistory) ? R.lbHistory : [];
+  db.awards = R.awards || [];
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
   (R.profiles || []).forEach(p => {
     db.profiles[p.email] = { name:p.name, title:buildTitle(p.tier, p.branch), bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '', majors:p.majors || [], minor:p.minor || '', canPublish:!!p.can_publish };
@@ -1269,7 +1271,7 @@ function viewLeaderboard(){
   const lb = leaderboard();
   return `<div class="view">
     <section class="page-head"><div class="eyebrow">${esc(db.settings.semester)} · members only</div><h1 class="page">Leaderboard</h1>
-      <p class="muted">Points come from checking in at events with the code shown on screen. RSVPs alone don't count. Officers and admins aren't ranked. Want to stay off the board by name? Choose “Anonymous” in <a href="#account">My account</a>.</p></section>
+      <p class="muted">Points come from checking in at events with the code shown on screen, plus any points admins award (for volunteering, for example). RSVPs alone don't count. Officers and admins aren't ranked. Want to stay off the board by name? Choose “Anonymous” in <a href="#account">My account</a>.</p></section>
     <div class="tiles">${Object.entries(PTS).filter(([,v]) => v).map(([k,v]) => `<div class="tile"><span class="v">${v}</span><span class="l">${catName(k)}</span></div>`).join('')}</div>
     ${db.settings.lbSince ? `<p class="hint" style="margin:0">This season started ${fmtDay(iso(new Date(db.settings.lbSince)))}. Past seasons are below.</p>` : ''}
     <div class="table-wrap"><table><thead><tr><th class="num">Rank</th><th>Member</th><th>Major</th><th class="num">Events</th><th class="num">Points</th></tr></thead><tbody>
@@ -1293,6 +1295,39 @@ function lbHistorySection(){
   </section>`;
 }
 // Admin → Leaderboard seasons: past seasons (with delete) and, folded away, the reset. The reset takes three clicks on purpose.
+// Admin → Award points: pick one or more members, give (or take away) points with a reason.
+// Awards count toward the current leaderboard season. Officers aren't ranked, so only members are listed.
+function adminPointsBody(){
+  const pick = ui.awPick || (ui.awPick = new Set()), q = (ui.awSearch || '').toLowerCase();
+  const members = db.users.filter(u => roleOf(u.email) === 'member').sort((a, b) => (a.last + a.first).localeCompare(b.last + b.first));
+  const shown = members.filter(u => !q || (u.first + ' ' + u.last + ' ' + u.email + ' ' + (u.major || '')).toLowerCase().includes(q));
+  return `<div class="stack" style="gap:24px">
+    <form class="panel stack" id="f-award" style="gap:12px" novalidate>
+      <h3 style="margin:0">Award points</h3>
+      <div class="grid2">
+        <label>Points<input id="aw-pts" type="number" min="-1000" max="1000" step="1" value="${esc(ui.awPts ?? 10)}"><span class="hint">Use a negative number to take points away.</span></label>
+        <label>Reason<input id="aw-reason" maxlength="200" value="${esc(ui.awReason || '')}" placeholder="e.g. Volunteered at the career fair"><span class="hint">Shown in the award history.</span></label>
+      </div>
+      <div class="row" style="gap:8px;align-items:end">
+        <label style="flex:1;min-width:min(16rem,100%)">Find members<input id="aw-search" value="${esc(ui.awSearch || '')}" placeholder="Name, email, or major"></label>
+        <button type="button" class="btn ghost small" data-act="aw-all">Select all ${q ? 'shown' : ''} (${shown.length})</button>
+        <button type="button" class="btn ghost small" data-act="aw-none" ${pick.size ? '' : 'disabled'}>Clear</button>
+      </div>
+      <div class="table-wrap" style="max-height:26rem;overflow:auto"><table><thead><tr><th style="width:2.5rem"></th><th>Member</th><th>Major</th></tr></thead><tbody>
+        ${shown.map(u => `<tr><td><input type="checkbox" class="aw-pick" value="${esc(u.email)}" ${pick.has(u.email) ? 'checked' : ''} aria-label="Select ${esc(u.first)} ${esc(u.last)}"></td>
+          <td>${esc(u.first)} ${esc(u.last)}<div class="hint">${esc(u.email)}</div></td><td>${esc(u.major) || '—'}</td></tr>`).join('') || `<tr><td colspan="3" class="muted">${members.length ? 'No one matches.' : 'No members yet.'}</td></tr>`}
+      </tbody></table></div>
+      <div class="err" id="aw-err"></div>
+      <div class="row"><button class="btn" type="submit" ${pick.size ? '' : 'disabled'}>Award to ${pick.size} member${pick.size === 1 ? '' : 's'}</button></div>
+    </form>
+    <section class="stack" style="gap:10px">
+      <div class="section-head"><h3>Recent awards</h3><span class="muted">${db.awards.length}</span></div>
+      ${db.awards.map(a => `<div class="list-row"><div><div class="ev-title">${a.points > 0 ? '+' : ''}${a.points} · ${esc(userName(a.email))}</div>
+          <div class="ev-sub">${esc(a.reason)} · ${fmtStamp(a.created_at)} · by ${esc(userName(a.awarded_by))}</div></div>
+        ${delBtn('aw-' + a.id, 'Undo', 'aw-del', a.id)}</div>`).join('') || '<div class="empty">No points awarded yet.</div>'}
+    </section>
+  </div>`;
+}
 function adminSeasonsBody(){
   const step = ui.lbStep || 0, seasons = db.lbHistory || [];
   const labels = ['Reset the leaderboard', 'Are you sure? Click again', 'Last chance: click to reset now'];
@@ -3108,6 +3143,7 @@ function viewAdmin(){
   }
   else if (T === 'applications'){ body = adminApplicationsBody(); }
   else if (T === 'seasons'){ body = adminSeasonsBody(); }
+  else if (T === 'points'){ body = adminPointsBody(); }
   else if (T === 'bulk'){ body = bulkBody(); }
   else if (T === 'export'){
     body = `<section class="stack">
@@ -3372,6 +3408,13 @@ document.addEventListener('click', async ev => {
       if (ok){ ui.lbName = null; ui.lbSeason = null; render(); }
       break; }
     case 'lb-reset-cancel': ui.lbStep = 0; render(); break;
+    case 'aw-all': case 'aw-none': {
+      ui.awPts = (document.getElementById('aw-pts') || {}).value; ui.awReason = (document.getElementById('aw-reason') || {}).value;
+      if (t.dataset.act === 'aw-none') ui.awPick = new Set();
+      else document.querySelectorAll('.aw-pick').forEach(c => ui.awPick.add(c.value));
+      render(); break; }
+    case 'aw-del': { const a = db.awards.find(x => x.id === id);
+      await act(async () => { must(await sb.from('point_awards').delete().eq('id', id)); await logChange(`Undid ${a.points} points for ${userName(a.email)} (${a.reason})`); }, 'Award undone'); break; }
     case 'lb-season-del': await act(async () => { must(await sb.rpc('delete_leaderboard_season', { season: id })); await logChange('Deleted a past leaderboard season'); }, 'Season deleted'); ui.lbSeason = null; render(); break;
     case 'ap-withdraw': await act(async () => { must(await sb.from('pending_changes').delete().eq('id', id)); }, 'Withdrawn'); break;
     case 'publish-event': case 'unpublish-event': {
@@ -3587,6 +3630,7 @@ document.addEventListener('input', e => {
   if (e.target.dataset.bulk){ const [i, k] = e.target.dataset.bulk.split(':'); ui.bulk[+i][k] = e.target.value; }
   if (e.target.dataset.tl){ const [i, k] = e.target.dataset.tl.split(':'); ui.tlDraft[+i][k] = e.target.value; }
   if (id === 'mem-search'){ ui.memberSearch = e.target.value; rerenderKeepFocus(id); }
+  if (id === 'aw-search'){ ui.awPts = document.getElementById('aw-pts').value; ui.awReason = document.getElementById('aw-reason').value; ui.awSearch = e.target.value; rerenderKeepFocus(id); }
   if (id === 'log-search'){ ui.logSearch = e.target.value; rerenderKeepFocus(id); }
   if (['an-title','an-body'].includes(id)) updateAnnPreview();
   if (['ml-subject','ml-body','ml-closing'].includes(id)){ readMail(); document.getElementById('ml-preview').innerHTML = mailPreview(); document.getElementById('ml-outlook').innerHTML = outlookButtons(audienceEmails(ui.mail.aud)); }
@@ -3599,6 +3643,13 @@ document.addEventListener('change', async e => {
   if (id === 'stats-ev'){ ui.statsEv = e.target.value; render(); }
   if (id === 'plan-ev'){ ui.planEv = e.target.value; render(); }
   if (id === 'lb-season'){ ui.lbSeason = e.target.value; render(); }
+  if (e.target.classList && e.target.classList.contains('aw-pick')){
+    ui.awPick = ui.awPick || new Set();
+    if (e.target.checked) ui.awPick.add(e.target.value); else ui.awPick.delete(e.target.value);
+    const n = ui.awPick.size, btn = document.querySelector('#f-award [type=submit]');
+    if (btn){ btn.disabled = !n; btn.textContent = `Award to ${n} member${n === 1 ? '' : 's'}`; }
+    const clr = document.querySelector('[data-act=aw-none]'); if (clr) clr.disabled = !n;
+  }
   if (id === 'tpl-cat'){ const cat = e.target.value; ui.tplDraft = { cat, rows: planTemplate(cat).map(r => [...r]) }; render(); }
   if (e.target.classList.contains('plan-owner') || e.target.classList.contains('plan-due')){
     const owner = e.target.classList.contains('plan-owner'), upd = owner ? { owner: e.target.value } : { due: e.target.value || todayIso() };
@@ -3903,6 +3954,18 @@ async function handleSubmit(f, v, err){
     if (a.url && !/^https?:\/\//i.test(a.url)) return err('ar-err', 'Links must start with https://');
     const e = evById(a.event_id); a.date = e ? e.date : todayIso();
     await doOrPropose('archive', 'add', '', { row: a }, 'Add “' + a.title + '” to the archive', 'Added to the archive');
+  }
+
+  if (f.id === 'f-award'){
+    const pts = parseInt(v('aw-pts'), 10), reason = v('aw-reason'), who = [...(ui.awPick || [])];
+    if (!who.length) return err('aw-err', 'Select at least one member.');
+    if (!pts || Math.abs(pts) > 1000) return err('aw-err', 'Enter a number of points between -1000 and 1000 (not 0).');
+    if (!reason) return err('aw-err', 'Add a reason, like “Volunteered at the career fair.”');
+    const r = await sb.from('point_awards').insert(who.map(email => ({ email, points: pts, reason, awarded_by: session })));
+    if (r.error) return err('aw-err', /point_awards/.test(r.error.message || '') ? 'This isn’t set up yet. Run the 30-point-awards.sql update in Supabase.' : errMsg(r.error));
+    await logChange(`${pts > 0 ? 'Awarded' : 'Removed'} ${Math.abs(pts)} points ${pts > 0 ? 'to' : 'from'} ${who.length} member${who.length === 1 ? '' : 's'}: ${reason}`);
+    ui.awPick = new Set(); ui.awReason = ''; await load(); render();
+    toast(`${pts > 0 ? '+' : ''}${pts} points for ${who.length} member${who.length === 1 ? '' : 's'}`);
   }
 
   if (f.id === 'f-plan-task'){
