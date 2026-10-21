@@ -259,6 +259,8 @@ main{padding-block:36px 64px}
 @media (min-width:761px){.tabs{flex-wrap:wrap;overflow:visible}}   /* computers: tabs wrap onto a second line instead of scrolling sideways */
 .tabs button{font:inherit;font-weight:700;background:none;border:0;padding:10px 14px;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap}
 .tabs button[aria-selected="true"]{color:var(--brand-text);border-bottom-color:var(--brand-text)}
+.tag.live-tag{background:#e5484d;border-color:#e5484d;color:#fff}
+.today-bar.over{opacity:.7}
 .dot{display:inline-grid;place-items:center;min-width:1.35em;height:1.35em;padding:0 .35em;margin-left:6px;border-radius:99px;background:#e5484d;color:#fff;font-family:var(--body);font-size:.7rem;font-weight:700;line-height:1;letter-spacing:0;text-transform:none;vertical-align:middle;box-sizing:border-box}
 .navmenu a{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .tabs .badge{font-family:var(--mono);font-size:.7rem;background:var(--brand);color:var(--on-brand);border-radius:99px;padding:1px 7px;margin-left:6px}
@@ -458,7 +460,21 @@ const MINORS = ["Accounting","American Indian Studies","American Studies","Anthr
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function iso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-function dayOffset(n){ const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+n); return iso(d); }
+/* ---------- Club time: everything event-related runs on Mountain Time (America/Denver), wherever the viewer is ---------- */
+const CLUB_TZ = 'America/Denver';
+const mtFmt = new Intl.DateTimeFormat('en-US', { timeZone: CLUB_TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+function mtParts(ms){ return Object.fromEntries(mtFmt.formatToParts(new Date(ms)).filter(p => p.type !== 'literal').map(p => [p.type, +p.value])); }
+// Minutes Mountain Time is ahead of UTC at that moment (-360 in summer, -420 in winter).
+function mtOffset(ms){ const p = mtParts(ms); return Math.round((Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute) - Math.floor(ms / 60000) * 60000) / 60000); }
+// A Mountain Time date ('2026-11-03') and clock time ('18:00') as a real moment.
+function mtMs(dateIso, hhmm){
+  const [y, m, d] = dateIso.split('-').map(Number), [h, mi] = (hhmm || '00:00').split(':').map(Number);
+  const guess = Date.UTC(y, m - 1, d, h, mi);
+  let t = guess - mtOffset(guess) * 60000;
+  const again = guess - mtOffset(t) * 60000; if (again !== t) t = again;   // daylight-saving edge
+  return t;
+}
+function dayOffset(n){ const p = mtParts(Date.now()), d = new Date(Date.UTC(p.year, p.month - 1, p.day + n)); return d.toISOString().slice(0, 10); }
 function parseDay(s){ const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
 
 /* ---------- Data: loaded from Supabase into one in-memory snapshot ---------- */
@@ -605,9 +621,23 @@ const MONTHS = ['January','February','March','April','May','June','July','August
 function fmtDay(s){ return parseDay(s).toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }); }
 function fmtTime(t){ if (!t) return ''; let [h,m] = t.split(':').map(Number); const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + String(m).padStart(2,'0') + ' ' + ap; }
 function fmtStamp(ts){ return new Date(ts).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
-function todayIso(){ return dayOffset(0); }
-function isPast(ev){ return ev.date < todayIso(); }
+function todayIso(){ return dayOffset(0); }   // today's date in Mountain Time
+// An event's start and end as real moments. No end time: treat it as an hour long.
+function evStartMs(ev){ return mtMs(ev.date, ev.start || '00:00'); }
+function evEndMs(ev){ return ev.end && ev.end > (ev.start || '') ? mtMs(ev.date, ev.end) : evStartMs(ev) + 3600000; }
+// 'upcoming' before it starts, 'live' while it's happening, 'over' after it ends.
+function evStatus(ev){ const now = Date.now(); return now < evStartMs(ev) ? 'upcoming' : now < evEndMs(ev) ? 'live' : 'over'; }
+function isPast(ev){ return evStatus(ev) === 'over'; }
+function isLive(ev){ return evStatus(ev) === 'live'; }
+function hasStarted(ev){ return Date.now() >= evStartMs(ev); }
 function isToday(ev){ return ev.date === todayIso(); }
+// Small label for an event's status: "Happening now", "Today · 6:00 PM", or "Over".
+function statusTag(ev){
+  const s = evStatus(ev);
+  if (s === 'live') return '<span class="tag live-tag">Happening now</span>';
+  if (s === 'over') return isToday(ev) ? '<span class="tag">Ended today</span>' : '';
+  return isToday(ev) ? `<span class="tag warn">Today · ${fmtTime(ev.start)}</span>` : '';
+}
 function catName(c){ return (CATS[c] || ['Event'])[0]; }
 function ptsText(c){ return PTS[c] ? '+' + PTS[c] + ' points' : 'no points'; }
 // Officer meetings are hidden from members, and from officers in member view.
@@ -615,7 +645,7 @@ function ptsText(c){ return PTS[c] ? '+' + PTS[c] + ' points' : 'no points'; }
 function visibleEvents(){ const ev = db.events.filter(e => !e.draft); return can('officer') ? ev : ev.filter(e => e.cat !== 'officer_meeting'); }
 function sortedEvents(){ return [...visibleEvents()].sort((a,b) => (a.date + a.start).localeCompare(b.date + b.start)); }
 function upcoming(){ return sortedEvents().filter(e => !isPast(e)); }
-function heldEvents(){ return sortedEvents().filter(e => e.date <= todayIso()).reverse(); }
+function heldEvents(){ return sortedEvents().filter(hasStarted).reverse(); }   // started (happening now or over)
 function going(id){ return db.rsvps[id] || []; }
 function attended(id){ return db.attendance[id] || []; }
 function rsvpCount(id){ return db.stats[id] ? db.stats[id].rsvps : going(id).length; }
@@ -688,7 +718,7 @@ function renderChrome(route){
 
   const items = upcoming().slice(0, 6).map(e => {
     const d = parseDay(e.date);
-    return `<span class="ticker-item"><span class="sym">WFA.${e.cat.slice(0,3).toUpperCase()}</span><span>${isToday(e) ? 'TODAY' : MON[d.getMonth()].toUpperCase() + ' ' + String(d.getDate()).padStart(2,'0')}</span><span>${esc(e.title.toUpperCase())}</span><span class="up">▲ ${rsvpCount(e.id)} RSVP</span></span>`;
+    return `<span class="ticker-item"><span class="sym">WFA.${e.cat.slice(0,3).toUpperCase()}</span><span>${isLive(e) ? 'NOW' : isToday(e) ? 'TODAY' : MON[d.getMonth()].toUpperCase() + ' ' + String(d.getDate()).padStart(2,'0')}</span><span>${esc(e.title.toUpperCase())}</span><span class="up">▲ ${rsvpCount(e.id)} RSVP</span></span>`;
   }).join('');
   setTicker(items);
 }
@@ -727,16 +757,17 @@ function evRow(e){
   else if (mine) status = isPast(e) ? '<div class="muted">RSVP’d, missed</div>' : '<div class="going">You’re going</div>';
   return `<button class="ev-row" data-act="open-event" data-id="${e.id}">
     ${datebox(e.date)}
-    <div style="min-width:0"><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}${isToday(e)?' · today':''}</div>
-      <div class="ev-title">${esc(e.title)}</div>
+    <div style="min-width:0"><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</div>
+      <div class="ev-title">${esc(e.title)} ${statusTag(e)}</div>
       <div class="ev-sub">${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc)}</div></div>
     <div class="rsvp-count">${status}<span class="up">▲</span> ${n}${e.cap?` / ${e.cap}`:''}</div>
   </button>`;
 }
 function todayBar(){
   return visibleEvents().filter(isToday).map(e => {
-    const done = session && attended(e.id).includes(session);
-    return `<div class="today-bar"><div class="stack" style="gap:2px"><span class="live">Happening today · ${fmtTime(e.start)}</span><strong>${esc(e.title)}</strong></div>
+    const done = session && attended(e.id).includes(session), s = evStatus(e);
+    const when = s === 'live' ? `Happening now · until ${fmtTime(e.end)}` : s === 'upcoming' ? `Today · starts at ${fmtTime(e.start)}` : `Ended at ${fmtTime(e.end)} today`;
+    return `<div class="today-bar${s === 'over' ? ' over' : ''}"><div class="stack" style="gap:2px"><span class="live">${when}</span><strong>${esc(e.title)}</strong></div>
       ${done ? '<span class="going">You’re checked in ✓</span>' : `<button class="btn small" data-act="open-event" data-id="${e.id}">${can('officer') ? 'Open check-in' : 'Check in'}</button>`}</div>`;
   }).join('');
 }
@@ -768,7 +799,8 @@ function tabsHtml(tabs, cur, act){
 
 /* ---------- Public views ---------- */
 function viewHome(){
-  const next = upcoming().find(e => !isToday(e)) || upcoming()[0];
+  // The next event that hasn't started (today's in-progress event is already in the banner above).
+  const next = upcoming().find(e => !hasStarted(e)) || upcoming()[0];
   const recap = [...db.recaps].sort((a,b) => b.date.localeCompare(a.date))[0];
   return `<div class="view">
     ${todayBar()}
@@ -2199,7 +2231,7 @@ function mailAudiences(){
   return [
     ['General', [['all','All members'],['members','Members only (no officers)'],['staff','Officers and admins'], ...(DUES_ENABLED ? [['unpaid','Members with unpaid dues']] : [])]],
     ['RSVP’d to…', ev.map(e => ['rsvp:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
-    ['Attended…', ev.filter(e => e.date <= todayIso()).map(e => ['att:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
+    ['Attended…', ev.filter(hasStarted).map(e => ['att:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
     ['RSVP’d but missed…', ev.filter(isPast).map(e => ['noshow:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])]
   ];
 }
@@ -2600,10 +2632,10 @@ function breakdown(emails, values, order, none){
 function eventStatsSection(){
   const evs = sortedEvents().filter(e => e.cat !== 'officer_meeting').reverse();
   if (!evs.length) return '';
-  const held = evs.filter(e => e.date <= todayIso());
+  const held = evs.filter(hasStarted);
   const e = evById(ui.statsEv) || held[0] || evs[0];
   const rs = going(e.id), at = attended(e.id), came = rs.filter(x => at.includes(x)), walkins = at.filter(x => !rs.includes(x));
-  const past = e.date <= todayIso(), who = past && ui.statsWho !== 'rsvp' ? 'att' : 'rsvp';
+  const past = hasStarted(e), who = past && ui.statsWho !== 'rsvp' ? 'att' : 'rsvp';
   const people = who === 'att' ? at : rs, label = who === 'att' ? 'attendees' : 'people who RSVP’d';
   const tile = (v, l, s) => `<div class="tile"><span class="v">${v}</span><span class="l">${l}</span>${s ? `<span class="s">${s}</span>` : ''}</div>`;
   const panel = (h, inner) => `<section class="panel"><h3>${h}</h3>${inner}</section>`;
@@ -2613,7 +2645,7 @@ function eventStatsSection(){
   return `<section class="stack" style="gap:16px">
     <div class="section-head"><h2>Event breakdown</h2></div>
     <div class="row" style="gap:12px;align-items:end">
-      <label style="flex:1;min-width:min(17.5rem,100%)">Event<select id="stats-ev">${evs.map(x => `<option value="${x.id}" ${x.id === e.id ? 'selected' : ''}>${fmtDay(x.date)} · ${esc(x.title)}${x.date > todayIso() ? ' (upcoming)' : ''}</option>`).join('')}</select></label>
+      <label style="flex:1;min-width:min(17.5rem,100%)">Event<select id="stats-ev">${evs.map(x => `<option value="${x.id}" ${x.id === e.id ? 'selected' : ''}>${fmtDay(x.date)} · ${esc(x.title)}${hasStarted(x) ? '' : ' (upcoming)'}</option>`).join('')}</select></label>
       ${past ? `<span class="row" style="gap:6px" role="group" aria-label="Break down">
         <button class="btn ${who === 'att' ? '' : 'ghost '}small" data-act="stats-who" data-w="att" aria-pressed="${who === 'att'}">Attendees</button>
         <button class="btn ${who === 'rsvp' ? '' : 'ghost '}small" data-act="stats-who" data-w="rsvp" aria-pressed="${who === 'rsvp'}">RSVPs</button></span>` : ''}
@@ -2636,7 +2668,7 @@ function eventStatsSection(){
 function statsBody(){
   const all = ui.statsRange === 'all', from = all ? '' : semesterStart();
   const staff = new Set(staffEmails()), members = db.users.filter(u => !staff.has(u.email));
-  const held = sortedEvents().filter(e => e.cat !== 'officer_meeting' && e.date <= todayIso() && e.date >= from);
+  const held = sortedEvents().filter(e => e.cat !== 'officer_meeting' && hasStarted(e) && e.date >= from);
   let checkins = 0, rsvps = 0, showed = 0;
   const perMember = {};
   held.forEach(e => {
@@ -3139,7 +3171,9 @@ function openEvent(id){
   showModal(`<div class="modal-in">
     <div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${PTS[e.cat] ? PTS[e.cat] + ' pts' : 'officers only'}</div></div>
     <h2>${esc(e.title)}</h2>
-    <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)}</dd><dt>Where</dt><dd>${esc(e.loc)}</dd><dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}${isPast(e)||isToday(e)?` · ${attCount(id)} checked in`:''}</dd></dl>
+    <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} <span class="hint">Mountain Time</span></dd>
+      <dt>Status</dt><dd>${{ upcoming: 'Upcoming', live: '<strong>Happening now</strong>', over: 'Over' }[evStatus(e)]}</dd>
+      <dt>Where</dt><dd>${esc(e.loc)}</dd><dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}${hasStarted(e)?` · ${attCount(id)} checked in`:''}</dd></dl>
     ${e.cap ? `<div class="meter"><span style="width:${Math.min(100,n/e.cap*100)}%"></span></div>` : ''}
     <p style="white-space:pre-wrap">${esc(e.desc)}</p>
     ${checkin}
@@ -3202,6 +3236,12 @@ window.addEventListener('hashchange', () => {
   if (/access_token|error_description/.test(location.hash)) return;
   ui.armed = null; ui.lbStep = 0; closeModal(); render(); window.scrollTo(0,0);
 });
+// Once a minute, refresh pages that show event status (Upcoming / Happening now / Over) so they change on time.
+// Only pages without forms, and never while a pop-up is open, so nothing someone is typing gets lost.
+setInterval(() => {
+  if (!loaded || !['home', 'calendar'].includes(route()) || !document.getElementById('modal').hidden) return;
+  const y = window.scrollY; render(); window.scrollTo(0, y);
+}, 60000);
 
 async function afterLogin(){
   await load();
