@@ -3643,8 +3643,15 @@ async function afterLogin(){
 }
 function useTemplate(k){
   const [, s, b] = MAIL_TEMPLATES[k]; ui.mail.subject = s; ui.mail.body = b;
-  // A survey reminder goes to whoever hasn't answered for the most recent open survey.
-  if (k === 'survey' && !/^nosurvey:/.test(ui.mail.aud || '')){ const e = surveyEvents().pop(); if (e){ ui.mail.aud = 'nosurvey:' + e.id; ui.mail.ev = e.id; } }
+  // A survey reminder goes to whoever hasn't answered for the most recent open survey. It never falls back to
+  // everyone: before a survey opens (the event hasn't ended yet), it goes to the people who checked in.
+  if (k === 'survey' && !/^nosurvey:/.test(ui.mail.aud || '')){
+    const e = surveyEvents().pop();
+    if (e){ ui.mail.aud = 'nosurvey:' + e.id; ui.mail.ev = e.id; return; }
+    const last = sortedEvents().filter(x => hasStarted(x) && !x.draft && x.cat !== 'officer_meeting').pop();
+    if (last){ ui.mail.aud = 'att:' + last.id; ui.mail.ev = last.id; if (!isPast(last)) toast(`The survey for ${last.title} opens when it ends at ${fmtTime(last.end)}. Until then this goes to everyone who checked in.`); }
+    else toast('No event has a survey yet. Surveys open when an event ends.');
+  }
 }
 
 /* ---------- Click handling ---------- */
