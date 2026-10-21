@@ -124,7 +124,7 @@ p{margin:0}
 .btn.small{padding:5px 12px;font-size:.88rem}
 .btn.danger{background:transparent;color:var(--danger);border-color:var(--danger)}
 .btn.danger.armed{background:var(--danger);color:#fff}
-.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn:disabled,.btn[aria-disabled="true"]{opacity:.5;cursor:not-allowed}
 label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:.92rem}
 input,select,textarea{font:inherit;font-weight:400;padding:9px 11px;border:1.5px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--ink);width:100%}
 input:focus,select:focus,textarea:focus{border-color:var(--brand-text);outline:none;box-shadow:0 0 0 3px var(--tint)}
@@ -656,6 +656,10 @@ function fmtStamp(ts){ return new Date(ts).toLocaleString('en-US', { month:'shor
 function todayIso(){ return dayOffset(0); }   // today's date in Mountain Time
 // An event's start and end as real moments. No end time: treat it as an hour long.
 function evStartMs(ev){ return mtMs(ev.date, ev.start || '00:00'); }
+// Members can check in starting 15 minutes before an event starts (the database enforces this too).
+const CHECKIN_EARLY_MIN = 15;
+function checkinOpensMs(ev){ return evStartMs(ev) - CHECKIN_EARLY_MIN * 60e3; }
+function mtClock(ms){ const p = mtParts(ms); return String(p.hour % 24).padStart(2, '0') + ':' + String(p.minute).padStart(2, '0'); }
 function evEndMs(ev){ return ev.end && ev.end > (ev.start || '') ? mtMs(ev.date, ev.end) : evStartMs(ev) + 3600000; }
 // 'upcoming' before it starts, 'live' while it's happening, 'over' after it ends.
 function evStatus(ev){ const now = Date.now(); return now < evStartMs(ev) ? 'upcoming' : now < evEndMs(ev) ? 'live' : 'over'; }
@@ -3377,8 +3381,12 @@ function eventInner(id, page){
     const pre = page ? decodeURIComponent(location.hash.slice(1).split('/')[2] || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) : '';
     if (!session) checkin = `<div class="notice">At the event? <a href="#signin">Sign in</a> to check in${PTS[e.cat] ? ' and earn ' + PTS[e.cat] + ' points' : ''}.</div>`;
     else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e.cat)}.</div>`;
-    else checkin = `<form class="stack" id="f-checkin" data-id="${id}" style="gap:8px"><label for="ci-code">Check-in code <span class="hint">${pre ? 'Filled in from the QR code' : 'Shown on screen at the event'} · ${ptsText(e.cat)}${mine ? '' : ' · No RSVP needed'}</span></label>
-      <div class="checkin-form"><input id="ci-code" maxlength="8" autocomplete="off" placeholder="CODE" value="${esc(pre)}"><button class="btn" type="submit">Check in</button></div><div class="err" id="ci-err"></div></form>`;
+    else {
+      const opens = checkinOpensMs(e), early = Date.now() < opens;
+      checkin = `<form class="stack" id="f-checkin" data-id="${id}" style="gap:8px"><label for="ci-code">Check-in code <span class="hint">${pre ? 'Filled in from the QR code' : 'Shown on screen at the event'} · ${ptsText(e.cat)}${mine ? '' : ' · No RSVP needed'}</span></label>
+      <div class="checkin-form"><input id="ci-code" maxlength="8" autocomplete="off" placeholder="CODE" value="${esc(pre)}"><button class="btn" type="submit" data-opens="${opens}" ${early ? 'aria-disabled="true"' : ''}>Check in</button></div>
+      <span class="hint ci-opens" ${early ? '' : 'hidden'}>Check-in opens at ${fmtTime(mtClock(opens))}, 15 minutes before the event starts.</span><div class="err" id="ci-err"></div></form>`;
+    }
   }
   // Officers: the check-in code, hidden until they click Show code, plus the projector view and a check-in QR.
   let codeBox = '';
@@ -3579,6 +3587,12 @@ window.addEventListener('hashchange', () => {
   if (/access_token|error_description/.test(location.hash)) return;
   ui.armed = null; ui.lbStep = 0; closeModal(); render(); window.scrollTo(0,0);
 });
+// Turn on a greyed-out Check in button once check-in opens, without redrawing the page (keeps a typed code).
+setInterval(() => {
+  document.querySelectorAll('#f-checkin [data-opens][aria-disabled="true"]').forEach(b => {
+    if (Date.now() >= +b.dataset.opens){ b.removeAttribute('aria-disabled'); const h = b.closest('form').querySelector('.ci-opens'); if (h) h.hidden = true; }
+  });
+}, 15000);
 // Once a minute, refresh pages that show event status (Upcoming / Happening now / Over) so they change on time.
 // Only pages without forms, and never while a pop-up is open, so nothing someone is typing gets lost.
 setInterval(() => {
@@ -4215,9 +4229,10 @@ async function handleSubmit(f, v, err){
 
   if (f.id === 'f-checkin'){
     const id = f.dataset.id, e = evById(id), code = v('ci-code').toUpperCase();
+    if (Date.now() < checkinOpensMs(e)) return err('ci-err', `Check-in opens at ${fmtTime(mtClock(checkinOpensMs(e)))}, 15 minutes before the event starts.`);
     const r = await sb.rpc('check_in', { p_event: id, p_code: code });
     if (r.error) return err('ci-err', errMsg(r.error));
-    const msg = { closed:'Check-in is only open on the day of the event.', notstarted:'Check-in hasn’t started yet. Wait for an officer to show the code.',
+    const msg = { early:`Check-in opens at ${fmtTime(mtClock(checkinOpensMs(e)))}, 15 minutes before the event starts.`, closed:'Check-in is only open on the day of the event.', notstarted:'Check-in hasn’t started yet. Wait for an officer to show the code.',
       wrong:'That code doesn’t match. Check the screen and try again.', signin:'Sign in first.', missing:'This event no longer exists.' }[r.data];
     if (msg) return err('ci-err', msg);
     await load(); toast('Checked in · ' + ptsText(e.cat)); render(); if (route() !== 'event') openEvent(id);
