@@ -259,6 +259,8 @@ main{padding-block:36px 64px}
 @media (min-width:761px){.tabs{flex-wrap:wrap;overflow:visible}}   /* computers: tabs wrap onto a second line instead of scrolling sideways */
 .tabs button{font:inherit;font-weight:700;background:none;border:0;padding:10px 14px;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap}
 .tabs button[aria-selected="true"]{color:var(--brand-text);border-bottom-color:var(--brand-text)}
+.dot{display:inline-grid;place-items:center;min-width:1.35em;height:1.35em;padding:0 .35em;margin-left:6px;border-radius:99px;background:#e5484d;color:#fff;font-family:var(--body);font-size:.7rem;font-weight:700;line-height:1;letter-spacing:0;text-transform:none;vertical-align:middle;box-sizing:border-box}
+.navmenu a{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .tabs .badge{font-family:var(--mono);font-size:.7rem;background:var(--brand);color:var(--on-brand);border-radius:99px;padding:1px 7px;margin-left:6px}
 .table-wrap{overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-size:.95rem}
@@ -674,7 +676,7 @@ function renderChrome(route){
   const a = ([r,l], cls='') => `<a class="${cls}" href="#${r}" ${route===r?'aria-current="page"':''}>${l}</a>`;
   document.getElementById('nav').innerHTML = links.map(l => a(l)).join('') +
     (can('member') ? '<span class="sep"></span>' + mem.map(l => a(l)).join('') : '') +
-    (staff.length ? '<span class="sep"></span>' + staff.map(([r,l]) => `<button class="menu-btn ${route===r?'current':''}" data-act="nav-menu" data-menu="${r}" aria-haspopup="true" aria-expanded="false">${l} ▾</button>`).join('') : '');
+    (staff.length ? '<span class="sep"></span>' + staff.map(([r,l]) => `<button class="menu-btn ${route===r?'current':''}" data-act="nav-menu" data-menu="${r}" aria-haspopup="true" aria-expanded="false">${l}${dot(countTotal(r))} ▾</button>`).join('') : '');
   const u = me(), r = role();
   document.getElementById('who').innerHTML = u
     ? `${isStaff() && !ui.memberView ? `<span class="seg-toggle" role="group" aria-label="Edit or safe view"><button data-act="safe-view" data-mode="edit" aria-pressed="${!ui.safeView}" title="Make changes">Edit</button><button data-act="safe-view" data-mode="safe" aria-pressed="${!!ui.safeView}" title="Look around without changing anything">Safe</button></span>` : ''}${isStaff() ? `<button class="btn on-dark ${ui.memberView ? '' : 'ghost'} small" data-act="member-view" aria-pressed="${!!ui.memberView}">${ui.memberView ? 'Member view: on' : 'Member view'}</button>` : ''}<span class="name">${esc(u.first)}</span><span class="role ${r}">${r}</span><button class="btn on-dark ghost small" data-act="signout">Sign out</button>`
@@ -749,8 +751,19 @@ function delBtn(key, label, act, id){
 function eventOptions(list, sel, blank){
   return (blank ? `<option value="">${blank}</option>` : '') + list.map(e => `<option value="${e.id}" ${e.id===sel?'selected':''}>${fmtDay(e.date)} · ${esc(e.title)}</option>`).join('');
 }
+// Things waiting on you, per tab. They show as number dots on the tabs, in the Officer tools and Admin menus, and on the menu buttons.
+function tabCounts(which){
+  if (which === 'admin') return { applications: db.apps.filter(a => a.status === 'new').length };
+  return {
+    approvals: db.pending.filter(c => c.status === 'pending' && (isApprover() || c.author === session)).length,
+    questions: db.questions.filter(q => q.status === 'new').length,
+    tasks: db.tasks.filter(t => !t.done && t.who === session && t.due <= todayIso()).length   // your tasks due today or overdue
+  };
+}
+function countTotal(which){ return Object.values(tabCounts(which)).reduce((a, b) => a + b, 0); }
+const dot = n => n ? `<span class="dot" aria-label="${n} new">${n > 99 ? '99+' : n}</span>` : '';
 function tabsHtml(tabs, cur, act){
-  return `<div class="tabs" role="tablist">${tabs.map(([k,l,b]) => `<button role="tab" aria-selected="${cur===k}" data-act="${act}" data-tab="${k}">${l}${b?`<span class="badge">${b}</span>`:''}</button>`).join('')}</div>`;
+  return `<div class="tabs" role="tablist">${tabs.map(([k,l,b]) => `<button role="tab" aria-selected="${cur===k}" data-act="${act}" data-tab="${k}">${l}${dot(b)}</button>`).join('')}</div>`;
 }
 
 /* ---------- Public views ---------- */
@@ -2722,10 +2735,8 @@ function officerProfileSection(){
 
 function viewOfficer(){
   if (!can('officer')) return gate('officer');
-  const openTasks = db.tasks.filter(t => !t.done).length;
-  const newQs = db.questions.filter(q => q.status === 'new').length;
-  const waiting = db.pending.filter(c => c.status === 'pending' && (isApprover() || c.author === session)).length;
-  const tabs = OFFICER_TABS.map(([k,l]) => [k, l, k === 'tasks' ? openTasks : k === 'questions' ? newQs : k === 'approvals' ? (waiting || '') : '']);
+  const counts = tabCounts('officer');
+  const tabs = OFFICER_TABS.map(([k,l]) => [k, l, counts[k] || '']);
   const T = ui.officerTab;
   let body = '';
 
@@ -3008,8 +3019,8 @@ function downloadCsv(){
 function viewAdmin(){
   if (!can('admin')) return gate('admin');
   const T = ui.adminTab;
-  const newApps = db.apps.filter(a => a.status === 'new').length;
-  const tabs = ADMIN_TABS.map(([k,l]) => [k, l, k === 'applications' ? newApps : '']);
+  const counts = tabCounts('admin');
+  const tabs = ADMIN_TABS.map(([k,l]) => [k, l, counts[k] || '']);
   let body = '';
   if (T === 'access'){
     const ed = ui.editOfficer, p = ed ? (db.profiles[ed] || {}) : {};
@@ -3223,7 +3234,8 @@ document.addEventListener('click', async ev => {
       const m = document.getElementById('navmenu'), which = t.dataset.menu;
       if (!m.hidden && m.dataset.for === which){ closeNavMenu(); break; }
       closeNavMenu();
-      m.innerHTML = (which === 'admin' ? ADMIN_TABS : OFFICER_TABS).map(([k,l]) => `<a role="menuitem" href="#${which}" data-tab="${k}">${l}</a>`).join('');
+      const counts = tabCounts(which);
+      m.innerHTML = (which === 'admin' ? ADMIN_TABS : OFFICER_TABS).map(([k,l]) => `<a role="menuitem" href="#${which}" data-tab="${k}"><span>${l}</span>${dot(counts[k])}</a>`).join('');
       const r = t.getBoundingClientRect();
       m.style.top = (r.bottom + 4) + 'px';
       m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 236)) + 'px';
