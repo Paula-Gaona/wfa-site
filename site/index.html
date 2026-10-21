@@ -406,7 +406,7 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
 const SUPABASE_URL = 'https://razxymbbfsnnnguyaalp.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_G9Ct3sh1zfK2peRadj-nzg_SSLCr2Sn';
 const SAFE_MSG = 'Safe view is on. Switch to Edit view to make changes.';
-const READ_RPCS = ['my_role', 'event_stats', 'leaderboard'];   // database functions that only read
+const READ_RPCS = ['my_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats'];   // database functions that only read
 function safeFetch(input, init){
   const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
   let safe = false;
@@ -482,6 +482,7 @@ async function load(){
     recaps: t('recaps'),
     archive: signed && t('archive'),
     pstats: sb.rpc('public_stats'),
+    lbHistory: signed && sb.rpc('leaderboard_history'),
     pending: off && sb.from('pending_changes').select('*').order('created_at', { ascending: false }).limit(200),
     questions: off && sb.from('questions').select('*').order('created_at', { ascending: false }),
     members: signed && t('members'),
@@ -506,7 +507,8 @@ async function load(){
   const R = {};
   keys.forEach((k, i) => { if (res[i].error) console.warn(k, res[i].error.message); R[k] = res[i].data; });
 
-  db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0), about: R.settings?.about || {} };
+  db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0), about: R.settings?.about || {}, lbSince: R.settings?.lb_since || null };
+  db.lbHistory = Array.isArray(R.lbHistory) ? R.lbHistory : [];
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
   (R.profiles || []).forEach(p => {
     db.profiles[p.email] = { name:p.name, title:buildTitle(p.tier, p.branch), bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '', majors:p.majors || [], minor:p.minor || '', canPublish:!!p.can_publish };
@@ -618,7 +620,12 @@ function rsvpCount(id){ return db.stats[id] ? db.stats[id].rsvps : going(id).len
 function attCount(id){ return db.stats[id] ? db.stats[id].attended : attended(id).length; }
 function evById(id){ return db.events.find(e => e.id === id); }
 function catVar(c){ return 'var(' + (CATS[c] || CATS.meeting)[1] + ')'; }
-function points(email){ return db.events.reduce((s, e) => s + (attended(e.id).includes(email) ? PTS[e.cat] || 0 : 0), 0); }
+// Points this leaderboard season. Members' come from the leaderboard; officers (who aren't ranked) are counted from events since the last reset.
+function points(email){
+  const row = db.leader.find(x => x.email === email); if (row) return row.points;
+  const since = db.settings.lbSince ? iso(new Date(db.settings.lbSince)) : '';
+  return db.events.reduce((s, e) => s + (e.date >= since && attended(e.id).includes(email) ? PTS[e.cat] || 0 : 0), 0);
+}
 function attendCount(email){ return db.events.filter(e => attended(e.id).includes(email)).length; }
 function leaderboard(){
   return db.leader.map(x => ({ u:{ first:x.first, last:x.last, major:x.major, email:x.email }, pts:x.points, n:x.events, anon:!!x.anon }))
@@ -1219,10 +1226,42 @@ function viewLeaderboard(){
     <section class="page-head"><div class="eyebrow">${esc(db.settings.semester)} · members only</div><h1 class="page">Leaderboard</h1>
       <p class="muted">Points come from checking in at events with the code shown on screen. RSVPs alone don't count. Officers and admins aren't ranked. Want to stay off the board by name? Choose “Anonymous” in <a href="#account">My account</a>.</p></section>
     <div class="tiles">${Object.entries(PTS).filter(([,v]) => v).map(([k,v]) => `<div class="tile"><span class="v">${v}</span><span class="l">${catName(k)}</span></div>`).join('')}</div>
+    ${db.settings.lbSince ? `<p class="hint" style="margin:0">This season started ${fmtDay(iso(new Date(db.settings.lbSince)))}. Past seasons are below.</p>` : ''}
     <div class="table-wrap"><table><thead><tr><th class="num">Rank</th><th>Member</th><th>Major</th><th class="num">Events</th><th class="num">Points</th></tr></thead><tbody>
       ${lb.map((x,i) => `<tr class="${x.u.email===session?'me':''}"><td class="num"><span class="rank">${i+1}</span></td><td>${esc(x.u.first)} ${esc(x.u.last)}${x.u.email===session ? ' (you' + (x.anon ? ', shown to others as Anonymous Member' : '') + ')' : x.anon && can('officer') ? ' <span class="tag">Anonymous to members</span>' : ''}</td><td>${esc(x.u.major)}</td><td class="num">${x.n}</td><td class="num">${x.pts}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No members yet.</td></tr>'}
     </tbody></table></div>
+    ${lbHistorySection()}
+    ${can('admin') ? lbResetPanel() : ''}
   </div>`;
+}
+// Past seasons, saved each time an admin resets the leaderboard.
+function lbHistorySection(){
+  const seasons = db.lbHistory || []; if (!seasons.length) return '';
+  const s = seasons.find(x => x.id === ui.lbSeason) || seasons[0];
+  const span = (s.started_at ? fmtDay(iso(new Date(s.started_at))) + ' – ' : 'Through ') + fmtDay(iso(new Date(s.ended_at)));
+  return `<section class="stack" style="gap:12px">
+    <div class="section-head"><h2>Past seasons</h2></div>
+    <label style="max-width:24rem">Season<select id="lb-season">${seasons.map(x => `<option value="${x.id}" ${x.id === s.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+    <p class="hint" style="margin:0">${span} · ${s.standings.length} member${s.standings.length === 1 ? '' : 's'} earned points</p>
+    <div class="table-wrap"><table><thead><tr><th class="num">Rank</th><th>Member</th><th>Major</th><th class="num">Events</th><th class="num">Points</th></tr></thead><tbody>
+      ${s.standings.map((r, i) => `<tr class="${r.me ? 'me' : ''}"><td class="num"><span class="rank">${i + 1}</span></td><td>${esc(r.first)} ${esc(r.last)}${r.me ? ' (you)' : ''}</td><td>${esc(r.major)}</td><td class="num">${r.events}</td><td class="num">${r.points}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No one earned points that season.</td></tr>'}
+    </tbody></table></div>
+    ${can('admin') ? `<div>${delBtn('lbdel-' + s.id, 'Delete this season', 'lb-season-del', s.id)}</div>` : ''}
+  </section>`;
+}
+// Admins: save the current standings as a season and start over. Takes three clicks on purpose.
+function lbResetPanel(){
+  const step = ui.lbStep || 0;
+  const labels = ['Reset the leaderboard', 'Are you sure? Click again', 'Last chance: click to reset now'];
+  return `<section class="panel stack" style="gap:10px">
+    <h3 style="margin:0">Start a new season</h3>
+    <p class="muted" style="margin:0">Saves everyone’s current points under “Past seasons,” then starts everyone back at 0. Check-ins from now on count toward the new season. Only admins see this.</p>
+    <div class="row" style="gap:10px;align-items:end">
+      <label style="min-width:min(16rem,100%)">Name for the season that’s ending<input id="lb-name" value="${esc(ui.lbName ?? db.settings.semester)}" placeholder="e.g. Fall 2026"></label>
+      <button class="btn ${step ? 'danger armed' : 'ghost'}" data-act="lb-reset">${labels[step]}</button>
+      ${step ? '<button class="btn ghost small" data-act="lb-reset-cancel">Cancel</button>' : ''}
+    </div>
+  </section>`;
 }
 
 function viewAccount(){
@@ -1238,7 +1277,7 @@ function viewAccount(){
     </section>
     ${todayBar()}
     <div class="tiles">
-      <div class="tile"><span class="v">${points(u.email)}</span><span class="l">Points</span></div>
+      <div class="tile"><span class="v">${points(u.email)}</span><span class="l">Points this season</span></div>
       <div class="tile"><span class="v">${rank ? '#' + rank : '—'}</span><span class="l">${rank ? 'Rank of ' + lb.length : isStaff() ? 'Officers aren’t ranked' : 'Not ranked yet'}</span></div>
       <div class="tile"><span class="v">${attendCount(u.email)}</span><span class="l">Events attended</span></div>
       ${DUES_ENABLED ? `<div class="tile"><span class="v" style="color:${d==='unpaid'?'var(--danger)':'var(--brand-text)'}">${d === 'paid' ? 'Paid' : d === 'waived' ? 'Waived' : 'Due'}</span><span class="l">${esc(db.settings.semester)} dues${d==='unpaid' && db.settings.dues ?` · $${db.settings.dues}`:''}</span></div>` : ''}
@@ -3142,7 +3181,7 @@ function addPasswordToggles(){
 }
 window.addEventListener('hashchange', () => {
   if (/access_token|error_description/.test(location.hash)) return;
-  ui.armed = null; closeModal(); render(); window.scrollTo(0,0);
+  ui.armed = null; ui.lbStep = 0; closeModal(); render(); window.scrollTo(0,0);
 });
 
 async function afterLogin(){
@@ -3259,6 +3298,21 @@ document.addEventListener('click', async ev => {
         await logChange((ok ? 'Approved' : 'Didn’t approve') + ' ' + userName(c.author) + '’s change: ' + c.summary);
       }, ok ? 'Approved and published' : 'Marked as not approved');
       break; }
+    case 'lb-reset': {
+      ui.lbName = (document.getElementById('lb-name') || {}).value;
+      const name = (ui.lbName || '').trim();
+      if (!name){ toast('Name the season that’s ending first, like Fall 2026.'); break; }
+      if ((ui.lbStep || 0) < 2){ ui.lbStep = (ui.lbStep || 0) + 1; render(); break; }
+      ui.lbStep = 0;
+      const ok = await act(async () => {
+        const r = await sb.rpc('reset_leaderboard', { season_name: name });
+        if (r.error) throw /reset_leaderboard/.test(r.error.message || '') ? new Error('This isn’t set up yet. Run the 28-leaderboard-seasons.sql update in Supabase.') : r.error;
+        await logChange('Reset the leaderboard and saved “' + name + '” to past seasons');
+      }, '“' + name + '” saved. The leaderboard starts fresh now.');
+      if (ok){ ui.lbName = null; ui.lbSeason = null; render(); }
+      break; }
+    case 'lb-reset-cancel': ui.lbStep = 0; render(); break;
+    case 'lb-season-del': await act(async () => { must(await sb.rpc('delete_leaderboard_season', { season: id })); await logChange('Deleted a past leaderboard season'); }, 'Season deleted'); ui.lbSeason = null; render(); break;
     case 'ap-withdraw': await act(async () => { must(await sb.from('pending_changes').delete().eq('id', id)); }, 'Withdrawn'); break;
     case 'publish-event': case 'unpublish-event': {
       const e = evById(id), pub = t.dataset.act === 'publish-event';
@@ -3484,6 +3538,7 @@ document.addEventListener('change', async e => {
   if (['ml-aud','ml-ev'].includes(id)){ readMail(); render(); }
   if (id === 'stats-ev'){ ui.statsEv = e.target.value; render(); }
   if (id === 'plan-ev'){ ui.planEv = e.target.value; render(); }
+  if (id === 'lb-season'){ ui.lbSeason = e.target.value; render(); }
   if (id === 'tpl-cat'){ const cat = e.target.value; ui.tplDraft = { cat, rows: planTemplate(cat).map(r => [...r]) }; render(); }
   if (e.target.classList.contains('plan-owner') || e.target.classList.contains('plan-due')){
     const owner = e.target.classList.contains('plan-owner'), upd = owner ? { owner: e.target.value } : { due: e.target.value || todayIso() };
