@@ -2386,9 +2386,20 @@ function outlookBatch(i){ return audienceEmails(ui.mail.aud).slice(i * OUTLOOK_B
 function outlookUrl(i, body){
   return 'https://outlook.office.com/mail/deeplink/compose?subject=' + encodeURIComponent(withFirst(fillMerge(ui.mail.subject), 'there')) + (body ? '&body=' + encodeURIComponent(withFirst(body, 'there')) : '');
 }
-// A mailto: link does support Bcc (plain text only); it opens whatever email app the computer uses by default.
-function mailtoUrl(i){
-  return 'mailto:?bcc=' + encodeURIComponent(outlookBatch(i).join(',')) + '&subject=' + encodeURIComponent(withFirst(fillMerge(ui.mail.subject), 'there')) + '&body=' + encodeURIComponent(withFirst(mdToPlain(mailText()), 'there'));
+// The main way to send from your own email: a mailto: link fills in Bcc, subject, and message (plain text) in the
+// computer's email app. Links have a length limit, so recipients are split into groups that fit, and a message too
+// long to fit is copied for pasting instead.
+const MAILTO_MAX = 1900;
+function mailtoBatches(){
+  const all = audienceEmails(ui.mail.aud), out = []; let cur = [], len = 0;
+  all.forEach(e => { const l = encodeURIComponent(e).length + 3; if (cur.length && len + l > 1300){ out.push(cur); cur = []; len = 0; } cur.push(e); len += l; });
+  if (cur.length) out.push(cur);
+  return out;
+}
+function mailtoUrl(i, withBody = true){
+  const batch = typeof i === 'number' ? (mailtoBatches()[i] || []) : outlookBatch(0);
+  return 'mailto:?bcc=' + encodeURIComponent(batch.join(',')) + '&subject=' + encodeURIComponent(withFirst(fillMerge(ui.mail.subject), 'there')) +
+    (withBody ? '&body=' + encodeURIComponent(withFirst(mdToPlain(mailText()), 'there')) : '');
 }
 function outlookSteps(i){
   const n = outlookBatch(i).length;
@@ -2399,17 +2410,14 @@ function outlookSteps(i){
       <li><button class="btn small" data-act="ol-copy-msg">Copy message</button><div class="hint">Click in the message body and press Ctrl+V. Bold, bullets, and headings come with it.</div></li>
       <li>Check it over and click <strong>Send</strong>.</li>
     </ol>
-    <p class="hint" style="margin:0">Or <a href="${esc(mailtoUrl(i))}">open it in your email app instead</a>, with Bcc already filled in (plain text, no formatting).</p>
     <div class="row"><button class="btn ghost" data-act="close">Done</button></div></div>`);
 }
 function outlookButtons(to){
   if (!to.length) return '<span class="hint">Pick who to send to first.</span>';
-  const n = Math.ceil(to.length / OUTLOOK_BATCH);
-  return Array.from({ length: n }, (_, i) => {
-    const size = to.slice(i * OUTLOOK_BATCH, (i + 1) * OUTLOOK_BATCH).length;
-    const label = n === 1 ? `Open in Outlook (${size} recipients)` : `Open email ${i + 1} of ${n} (${size} recipients)`;
-    return `<button type="button" class="btn" data-act="mail-outlook" data-i="${i}">${label}</button>`;
-  }).join('');
+  const groups = mailtoBatches(), n = groups.length, web = Math.ceil(to.length / OUTLOOK_BATCH);
+  return groups.map((g, i) => `<button type="button" class="btn" data-act="mail-app" data-i="${i}">${n === 1 ? `Open in my email (${g.length} in Bcc)` : `Open email ${i + 1} of ${n} (${g.length} in Bcc)`}</button>`).join('') +
+    `<div class="hint" style="flex-basis:100%">Opens your computer’s email app (like Outlook) with Bcc, subject, and message filled in. Add any bold or bullets there, then send.
+      Prefer Outlook in the browser with formatting kept? ${Array.from({ length: web }, (_, i) => `<button type="button" data-act="mail-outlook" data-i="${i}" style="background:none;border:0;padding:0;font:inherit;color:var(--brand-text);text-decoration:underline;cursor:pointer">${web === 1 ? 'Use Outlook on the web' : 'Outlook on the web, part ' + (i + 1)}</button>`).join(' · ')}</div>`;
 }
 // Event details appended to the message for the events picked under "Add events to this email".
 function eventBlock(){
@@ -3023,7 +3031,7 @@ function viewOfficer(){
         <div class="preview" id="ml-preview">${mailPreview()}</div>
         <div class="panel stack" style="gap:8px">
           <strong>Send from your own Outlook</strong>
-          <span class="hint">Doesn’t count toward the club’s daily email limit. “Open in Outlook” starts a new message with the subject filled in, then walks you through pasting the recipients into Bcc and pasting your formatted message.</span>
+          <span class="hint">Sends from your own account and doesn’t count toward the club’s daily email limit.</span>
           <div class="row" style="gap:6px" id="ml-outlook">${outlookButtons(to)}</div>
           <span class="hint">Want each email to say the person’s name? Use a mail merge: it sends a separate email from your Outlook to each person.</span>
           <div><button type="button" class="btn ghost small" data-act="mail-merge" ${to.length ? '' : 'disabled'}>Download for mail merge</button></div>
@@ -3475,6 +3483,17 @@ document.addEventListener('click', async ev => {
       const i = +t.dataset.i;
       window.open(outlookUrl(i, ''), '_blank', 'noopener');
       outlookSteps(i);
+      break; }
+    case 'mail-app': {
+      readMail();
+      const i = +t.dataset.i; let url = mailtoUrl(i, true);
+      if (url.length > MAILTO_MAX){
+        // Too long for a link: fill in Bcc and subject, and copy the message to paste.
+        url = mailtoUrl(i, false);
+        copyText(withFirst(mdToPlain(mailText()), 'there'), 'message');
+        setTimeout(() => toast('Your message is long, so it’s copied instead. Click in the email body and press Ctrl+V.'), 900);
+      }
+      location.href = url;
       break; }
     case 'ol-copy-to': copyText(outlookBatch(+t.dataset.i).join('; '), 'recipients'); t.textContent = 'Copied ✓'; break;
     case 'ol-copy-msg': {
