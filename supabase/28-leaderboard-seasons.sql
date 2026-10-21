@@ -100,11 +100,9 @@ begin
 end $$;
 grant execute on function public.delete_leaderboard_season(uuid) to authenticated;
 
--- ---------- Remove accounting-related content ----------
+-- ---------- Accounting stays a skill, not a career option ----------
+-- Removes the "Controllership & accounting" career (and with it the matching career interest and tailored-resume category).
+-- Mentions of accounting as a skill in other careers and the recruiting timeline stay as they are.
 delete from public.member_resumes where category = 'Controllership & accounting';
 update public.members set interests = array_remove(interests, 'Controllership & accounting') where 'Controllership & accounting' = any(interests);
 delete from public.careers where title = 'Controllership & accounting';
-update public.careers set path = replace(path, 'Learn accounting, valuation (DCF and comparables), and Excel modeling.', 'Learn valuation (DCF and comparables) and Excel modeling.') where title = 'Investment banking';
-update public.careers set path = replace(path, 'Strong Excel and accounting skills matter most.', 'Strong Excel and financial modeling skills matter most.') where title like 'FP&A%';
-update public.careers set path = replace(path, 'from FP&A and accounting roles', 'from FP&A roles') where title = 'Treasury';
-update public.recruiting_timeline set what_text = replace(what_text, 'learn Excel and accounting basics', 'learn Excel and finance basics') where what_text like '%accounting basics%';

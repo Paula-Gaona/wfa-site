@@ -15,7 +15,7 @@ create policy "officers delete timeline rows" on public.recruiting_timeline for 
 
 -- The rows that were on the page before.
 insert into public.recruiting_timeline (when_text, what_text, sort) values
-  ('Freshman / sophomore year', 'Attend workshops, learn Excel and finance basics, apply to sophomore insight programs.', 0),
+  ('Freshman / sophomore year', 'Attend workshops, learn Excel and accounting basics, apply to sophomore insight programs.', 0),
   ('Spring of sophomore year', 'Many banks open junior summer internship applications well over a year ahead. Have your résumé ready.', 1),
   ('Junior summer', 'Internship. A strong summer often leads to a full-time return offer.', 2),
   ('Senior fall', 'Full-time recruiting for anyone without a return offer.', 3);
