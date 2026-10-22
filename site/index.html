@@ -1480,7 +1480,7 @@ function adminAutoBody(){
       <div class="stack" style="gap:6px"><strong>After the event</strong>
         <label class="check"><input type="checkbox" id="au-survey" ${c.survey ? 'checked' : ''}> Survey email 30 minutes after the event ends, to people who checked in and haven’t answered yet</label></div>
       <label style="max-width:24rem">Daily limit for automatic emails<input id="au-cap" type="number" min="1" max="100" value="${esc(c.daily_cap ?? 60)}">
-        <span class="hint">The free email plan allows 100 a day in total. Recipients go in BCC, up to 45 per email, so one reminder to 100 people uses 3. Keeping this under 100 leaves room for emails you send yourself.</span></label>
+        <span class="hint">A safety net so a mistake can’t send a flood of email. Recipients go in BCC, up to 45 per email, so one reminder to 100 people uses 3. The club’s email plan (Resend Pro) allows 50,000 emails a month.</span></label>
       <span class="hint">Never sent to members who turned off club emails, test accounts, test events, drafts, or officer meetings. Each email goes out once.</span>
       <div><button class="btn" type="submit">Save</button></div><div class="err" id="au-err"></div>
     </form>
@@ -2151,7 +2151,7 @@ function bulkBody(){
     </tbody></table></div>
     <div><button class="btn ghost small" data-act="bulk-add">+ Add row</button></div>
     <label style="max-width:35rem">Sign-in setup<select id="bulk-mode">${setupOptions(ui.bulkMode || 'password', false)}</select></label>
-    <span class="hint">With a temporary password, each person chooses their own password the first time they sign in. The free email plan sends up to 100 emails a day.</span>
+    <span class="hint">With a temporary password, each person chooses their own password the first time they sign in.</span>
     <div><button class="btn" data-act="bulk-go" ${ui.bulkBusy ? 'disabled' : ''}>${ui.bulkBusy ? 'Adding…' : 'Add all officers'}</button></div>
     ${ui.bulkResults ? `<div class="panel stack" style="gap:6px"><h3>Results</h3>${ui.bulkResults.map(x => `<div class="${x.ok ? '' : 'err'}">${esc(x.email)}: ${esc(x.msg)}</div>`).join('')}</div>` : ''}
   </section>`;
@@ -2632,7 +2632,7 @@ function mailPreview(){
   return `<div class="stack" style="gap:10px">
     <dl class="facts"><dt>${personal ? 'To' : 'To (BCC)'}</dt><dd>${to.length} recipient${to.length===1?'':'s'}${to.length ? ': ' + esc(to.slice(0,3).join(', ')) + (to.length>3?` and ${to.length-3} more`:'') : ''}</dd>
     <dt>Subject</dt><dd><strong>${esc(withFirst(fillMerge(ui.mail.subject), name)) || '<span class="muted">No subject yet</span>'}</strong></dd></dl>
-    ${personal ? `<div class="notice" style="margin:0">Personalized: each person gets their own email with their first name. Showing how it looks for ${esc(name)}.${to.length > 90 ? ' This is a lot of separate emails; the free email plan sends up to 100 a day.' : ''}</div>` : ''}
+    ${personal ? `<div class="notice" style="margin:0">Personalized: each person gets their own email with their first name. Showing how it looks for ${esc(name)}.</div>` : ''}
     <div class="mail-html">${mdToHtml(withFirst(mailText(), name)) || '<span class="muted">Message preview appears here.</span>'}</div>
   </div>`;
 }
@@ -3242,7 +3242,7 @@ function viewOfficer(){
           <button class="btn ghost" data-act="mail-copy" data-what="subject">Copy subject</button>
           <button class="btn ghost" data-act="mail-copy" data-what="body">Copy message</button>
         </div>
-        <p class="hint">“Send from the club address” sends from noreply@wolverinefinanceassociation.org with everyone in BCC. It reaches Gmail and other personal addresses, but UVU currently deletes it from @uvu.edu inboxes. The free email plan allows 100 emails a day.</p>
+        <p class="hint">“Send from the club address” sends from noreply@wolverinefinanceassociation.org with everyone in BCC. It reaches Gmail and other personal addresses, but UVU currently deletes it from @uvu.edu inboxes.</p>
       </section></div>`;
   }
 
