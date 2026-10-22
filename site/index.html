@@ -4406,6 +4406,12 @@ function viewEvent(){
     if (ui.soon[id] === null) return `<div class="view"><p class="muted">Loading…</p></div>`;
     if (ui.soon[id]) return `<div class="view stack" style="gap:16px">${soonBlock(ui.soon[id].title, ui.soon[id].desc)}<p><a class="btn" href="#calendar">See other events</a></p></div>`;
   }
+  // Member view: officers see a draft the way members do (its coming-soon page, or "not found").
+  if (e && e.draft && !can('officer')){
+    if (e.comingSoon) return `<div class="view stack" style="gap:16px">${soonBlock(e.title, e.soonDesc)}<p><a class="btn" href="#calendar">See other events</a></p></div>`;
+    return `<div class="view"><div class="page-head"><div class="eyebrow">Event</div><h1 class="page">Event not found</h1></div>
+    <p class="muted">This event may have been removed.</p><p><a class="btn" href="#calendar">See all events</a></p></div>`;
+  }
   if (!e) return `<div class="view"><div class="page-head"><div class="eyebrow">Event</div><h1 class="page">Event not found</h1></div>
     <p class="muted">This event may have been removed${session ? '' : ', or you may need to <a href="#signin">sign in</a> to see it'}.</p><p><a class="btn" href="#calendar">See all events</a></p></div>`;
   return `<div class="view"><p><a href="#calendar">← All events</a></p><section class="panel stack event-page" style="--c:${catVar(e.cat)};gap:14px">${eventInner(id, true)}</section></div>`;
