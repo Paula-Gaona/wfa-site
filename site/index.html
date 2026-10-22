@@ -4036,7 +4036,11 @@ async function showPopup(title, body, chatId, tag){
   } catch(e){ return (e && e.message) || String(e); }
 }
 // Clicking a pop-up shown by the app helper brings this window forward and opens the chat.
-if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.openChat !== undefined) location.hash = 'messages' + (e.data.openChat ? '/' + e.data.openChat : ''); });
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => {
+  if (!e.data || e.data.openChat === undefined) return;
+  location.hash = 'messages' + (e.data.openChat ? '/' + e.data.openChat : '');
+  if (e.data.popupClicked) toast('Pop-up click received at ' + new Date(e.data.popupClicked).toLocaleTimeString());
+});
 function popupsOn(){ try { return localStorage.getItem('wfa-chat-popups') !== 'off'; } catch(e){ return true; } }
 function popupButton(){
   if (!('Notification' in window)) return '';
