@@ -3932,7 +3932,7 @@ async function caseRpc(fn, args, evId, ok, errId){
 // presidents, faculty advisors, and admins start chats with officers and members; members can message their case
 // competition teammates and start a chat to put a team together. New messages arrive live, with a sound, a tab badge,
 // and (if turned on) desktop notifications. Unread messages get one summary email after an hour (auto-emails function).
-const CHAT_GROUPS = [['Officers', ['officers', 'executives', 'branch_leads', 'branch']], ['Case competitions', ['all_teams', 'team', 'forming']], ['Conversations', ['custom', 'direct']]];
+const CHAT_GROUPS = [['Officers', ['officers', 'executives', 'branch_leads', 'branch']], ['Case competitions', ['all_teams', 'team', 'forming']], ['Conversations', ['rule', 'custom', 'direct']]];
 ui.chatMsgs = {}; ui.chatNames = {};
 function isLeader(){ if (myRole === 'admin') return true; const p = db.profiles[session] || {}; return myRole === 'officer' && ['president', 'vice_president', 'advisor'].includes(p.tier); }
 function chatUnread(){ return (db.chats || []).reduce((n, c) => n + (c.member ? c.unread || 0 : 0), 0); }
@@ -3944,7 +3944,7 @@ function chatTitle(c){
 }
 function chatKindLabel(c){
   return { officers: 'All officers and the faculty advisor', executives: 'All presidents and vice presidents', branch_leads: 'This branch’s president and vice president', branch: 'Branch chat', team: 'Your team’s chat', all_teams: 'Every competing team and the officers',
-    forming: 'Putting a team together', custom: 'Chat', direct: 'Teammate chat' }[c.kind] || '';
+    forming: 'Putting a team together', custom: 'Chat', direct: 'Teammate chat', rule: ruleSummary(c.rule) }[c.kind] || '';
 }
 function chatWhen(at){ const ms = Date.parse(at); return mtDateIso(ms) === todayIso() ? fmtTime(mtClock(ms)) : fmtDay(mtDateIso(ms)).replace(/^\w+, /, ''); }
 function chatNameOf(cid, email){
@@ -3970,13 +3970,14 @@ function viewMessages(){
     || '<div class="empty">No chats yet. You’ll see chats here when an officer messages you or you join a case competition team.</div>';
   const c = chatById(open);
   let pane;
-  if (open === 'new' && isLeader()) pane = newChatForm();
+  if (open === 'new' && isStaff()) pane = newChatForm();
+  else if (open.startsWith('edit-') && chatById(open.slice(5)) && myRole === 'admin') pane = newChatForm(chatById(open.slice(5)));
   else if (!c) pane = `<div class="empty" style="margin:auto">${list.length ? 'Pick a chat.' : 'No chats yet.'}</div>`;
   else pane = chatPane(c);
   return `<div class="view">
     <section class="row" style="justify-content:space-between;align-items:end;gap:12px">
       <div class="page-head"><div class="eyebrow">Messages</div><h1 class="page">Chats</h1></div>
-      <div class="row" style="gap:6px">${isLeader() ? '<a class="btn" href="#messages/new">New chat</a>' : ''}
+      <div class="row" style="gap:6px">${isStaff() ? '<a class="btn" href="#messages/new">New chat</a>' : ''}
         <button class="btn ghost small" data-act="chat-sound">${chatSoundOn() ? 'Sound: on' : 'Sound: off'}</button>
         <button class="btn ghost small" data-act="notify-settings">Notification settings</button></div>
     </section>
@@ -3989,6 +3990,7 @@ function chatPane(c){
   else if (c.unread && document.visibilityState === 'visible') setTimeout(() => markRead(c.id));
   const others = (c.people || []).filter(p => !p.me);
   const owner = c.mine && ['custom', 'forming'].includes(c.kind), explicit = ['custom', 'forming', 'direct'].includes(c.kind);
+  const ruleEdit = c.kind === 'rule' && myRole === 'admin';
   const team = c.kind === 'team' ? (db.caseTeams || []).find(t => t.id === c.team_id) : null;
   const me = team && team.members.find(m => m.me);
   const mates = me && me.confirmed ? team.members.filter(m => !m.me && m.email && m.confirmed) : [];
@@ -4002,7 +4004,7 @@ function chatPane(c){
   return `<div class="chat-head">
       <a class="chat-back" href="#messages">← All chats</a>
       <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><strong style="font-size:1.1rem">${esc(chatTitle(c))}</strong>
-        <span class="row" style="gap:6px">${explicit && c.member ? delBtn('cl-' + c.id, 'Leave', 'chat-leave', c.id) : ''}${owner ? delBtn('cd-' + c.id, 'Delete chat', 'chat-delete', c.id) : ''}</span></div>
+        <span class="row" style="gap:6px">${ruleEdit ? `<a class="btn ghost small" href="#messages/edit-${c.id}">Change who’s included</a>` : ''}${explicit && c.member ? delBtn('cl-' + c.id, 'Leave', 'chat-leave', c.id) : ''}${owner || ruleEdit ? delBtn('cd-' + c.id, 'Delete chat', 'chat-delete', c.id) : ''}</span></div>
       <details><summary class="hint" style="cursor:pointer">${esc(chatKindLabel(c))} · ${(c.people || []).length} ${(c.people || []).length === 1 ? 'person' : 'people'}${c.member ? '' : ' · You can read and post here as an officer'}</summary>
         <div class="stack" style="gap:4px;margin-top:6px">${(c.people || []).map(p => `<div class="row" style="gap:8px;align-items:center">${esc(p.first ? (p.first + ' ' + (p.last || '')).trim() : p.email || 'Someone')}${p.me ? ' (you)' : ''}${p.officer ? ' <span class="tag">Officer</span>' : ''}
             ${owner && !p.me && p.email ? delBtn('cr-' + c.id + p.email, 'Remove', 'chat-remove', c.id + '|' + p.email) : ''}</div>`).join('')}
@@ -4023,39 +4025,69 @@ function chatAddForm(c){
     ${agents.length ? `<div class="stack" style="gap:4px"><span class="hint">Free agents looking for a team:</span>${agents.map(a => `<div class="row" style="gap:8px;align-items:center">${esc(personName(a))} <span class="hint">${esc(agentMeta(a))}</span><button class="btn ghost small" data-act="chat-add-person" data-id="${c.id}|${esc(a.email)}">Add to chat</button></div>`).join('')}</div>` : ''}`;
 }
 // Starting a chat: filter people by officer/member, branch, and position, then pick them (or select everyone shown).
-function newChatForm(){
-  const people = db.users.filter(u => u.email !== session).sort((a, b) => (a.first + a.last).localeCompare(b.first + b.last));
+function newChatForm(edit){
+  const leader = isLeader();
+  const people = db.users.filter(u => u.email !== session && (leader || roleOf(u.email) !== 'member')).sort((a, b) => (a.first + a.last).localeCompare(b.first + b.last));
+  const r = (edit && edit.rule) || {};
   const tierName = { president: 'President', vice_president: 'Vice president', advisor: 'Faculty advisor', officer: 'Officer', honorary: 'Honorary officer' };
   const row = u => {
     const officer = roleOf(u.email) !== 'member', p = db.profiles[u.email] || {};
     const tier = officer ? (p.tier || 'officer') : '', branch = officer ? (p.branch || '') : '';
     const label = officer ? (p.title || tierName[tier] || 'Officer') : (u.year || 'Member');
-    return `<label class="check" data-find="${esc((u.first + ' ' + u.last + ' ' + u.email + ' ' + label).toLowerCase())}" data-who="${officer ? 'officer' : 'member'}" data-branch="${esc(branch)}" data-tier="${esc(tier)}">
-      <input type="checkbox" class="cn-pick" value="${esc(u.email)}"> ${esc(u.first)} ${esc(u.last)} <span class="hint">${esc(label)}</span></label>`;
+    return `<label class="check" data-find="${esc((u.first + ' ' + u.last + ' ' + u.email + ' ' + label).toLowerCase())}" data-who="${officer ? 'officer' : 'member'}" data-branch="${esc(branch)}" data-tier="${esc(tier)}" data-year="${esc(u.year || '')}" data-interests="${esc((u.interests || []).join('|'))}">
+      <input type="${leader ? 'checkbox' : 'radio'}" name="cn-pick" class="cn-pick" value="${esc(u.email)}"> ${esc(u.first)} ${esc(u.last)} <span class="hint">${esc(label)}</span></label>`;
   };
-  const sel = (id, label, opts) => `<label style="flex:1;min-width:9rem">${label}<select id="${id}" class="cn-filter">${opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></label>`;
-  return `<form class="stack" id="f-chat-new" style="gap:10px;padding:16px;overflow:auto">
+  const sel = (id, label, opts, cur) => `<label style="flex:1;min-width:9rem">${label}<select id="${id}" class="cn-filter">${opts.map(([v, t]) => `<option value="${esc(v)}" ${(cur || '') === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
+  const interests = [...new Set((db.careers || []).map(c => c.title))].sort();
+  setTimeout(() => { filterChatPeople(); syncAutoChat(); });
+  return `<form class="stack" id="f-chat-new" ${edit ? `data-edit="${edit.id}"` : ''} style="gap:10px;padding:16px;overflow:auto">
     <a class="chat-back" href="#messages">← All chats</a>
-    <h3>New chat</h3>
-    <label>Chat name <span class="hint">Optional. Leave blank for a one-on-one</span><input id="cn-title" maxlength="80" placeholder="e.g. Fall recruiting"></label>
+    <h3>${edit ? 'Change who’s in this chat' : 'New chat'}</h3>
+    ${leader ? `<label>Chat name <span class="hint" id="cn-title-hint">Optional. Leave blank for a one-on-one</span><input id="cn-title" maxlength="80" placeholder="e.g. Fall recruiting" value="${esc(edit ? edit.title : '')}"></label>` : '<p class="hint" style="margin:0">Pick an officer to message one-on-one. Presidents, vice presidents, and the faculty advisor can also start group chats and chats with members.</p>'}
+    ${myRole !== 'admin' ? '' : `<label class="check"><input type="checkbox" id="cn-auto" ${edit ? 'checked disabled' : ''}> <strong>Keep it updated automatically</strong> <span class="hint">Use the filters below instead of picking people. Anyone who matches is in the chat, now or later, and anyone who stops matching drops out. Only admins can make these.</span></label>`}
     <label>Find people<input id="cn-find" placeholder="Type a name, email, or title" autocomplete="off"></label>
     <div class="row" style="gap:8px;align-items:end">
-      ${sel('cn-who', 'Who', [['', 'Everyone'], ['officer', 'Officers'], ['member', 'Members']])}
-      ${sel('cn-branch', 'Branch', [['', 'Any branch'], ...Object.entries(BRANCHES)])}
-      ${sel('cn-tier', 'Position', [['', 'Any position'], ['president', 'Presidents'], ['vice_president', 'Vice presidents'], ['advisor', 'Faculty advisor'], ['officer', 'Officers']])}
+      ${leader ? sel('cn-who', 'Who', [['', 'Everyone'], ['officer', 'Officers'], ['member', 'Members']], r.who) : ''}
+      ${sel('cn-branch', 'Branch', [['', 'Any branch'], ...Object.entries(BRANCHES)], r.branch)}
+      ${sel('cn-tier', 'Position', [['', 'Any position'], ['president', 'Presidents'], ['vice_president', 'Vice presidents'], ['advisor', 'Faculty advisor'], ['officer', 'Officers']], r.tier)}
+      ${sel('cn-year', 'Year', [['', 'Any year'], ...YEARS.map(y => [y, y])], r.year)}
+      ${sel('cn-interest', 'Career interest', [['', 'Any interest'], ...interests.map(i => [i, i])], r.interest)}
     </div>
-    <div class="row" style="gap:8px;align-items:center"><button type="button" class="btn ghost small" data-act="cn-all">Select all shown</button><button type="button" class="btn ghost small" data-act="cn-none">Clear</button><span class="hint" id="cn-count">0 selected</span></div>
+    <div class="notice" id="cn-auto-note" hidden><span id="cn-auto-text"></span></div>
+    <div class="row" style="gap:8px;align-items:center" id="cn-pickbar" ${leader ? '' : 'hidden'}><button type="button" class="btn ghost small" data-act="cn-all">Select all shown</button><button type="button" class="btn ghost small" data-act="cn-none">Clear</button><span class="hint" id="cn-count">0 selected</span></div>
     <div class="chat-pick" id="cn-list">${people.map(row).join('') || '<span class="hint">No members yet.</span>'}</div>
-    <span class="hint">Members can reply in chats you start, but they can’t start chats with officers.</span>
-    <div><button class="btn" type="submit">Start chat</button></div><div class="err" id="cn-err"></div></form>`;
+    ${leader ? '<span class="hint">Members can reply in chats you start, but they can’t start chats with officers.</span>' : ''}
+    <div><button class="btn" type="submit">${edit ? 'Save' : 'Start chat'}</button></div><div class="err" id="cn-err"></div></form>`;
 }
 function filterChatPeople(){
   const q = (document.getElementById('cn-find') || {}).value?.trim().toLowerCase() || '';
-  const who = (document.getElementById('cn-who') || {}).value || '', br = (document.getElementById('cn-branch') || {}).value || '', tier = (document.getElementById('cn-tier') || {}).value || '';
+  const g = id => (document.getElementById(id) || {}).value || '';
+  const who = g('cn-who'), br = g('cn-branch'), tier = g('cn-tier'), year = g('cn-year'), interest = g('cn-interest');
+  let n = 0;
   document.querySelectorAll('#cn-list [data-find]').forEach(l => {
     l.hidden = (q && !l.dataset.find.includes(q)) || (who && l.dataset.who !== who) || (br && l.dataset.branch !== br)
-      || (tier && (tier === 'officer' ? !['officer', 'honorary'].includes(l.dataset.tier) : l.dataset.tier !== tier));
+      || (tier && (tier === 'officer' ? !['officer', 'honorary'].includes(l.dataset.tier) : l.dataset.tier !== tier))
+      || (year && l.dataset.year !== year) || (interest && !l.dataset.interests.split('|').includes(interest));
+    if (!l.hidden) n++;
   });
+  const t = document.getElementById('cn-auto-text');
+  if (t) t.textContent = `Right now ${n} ${n === 1 ? 'person matches' : 'people match'} (plus you). The chat updates itself as people join, change branches or positions, or update their year and interests.`;
+}
+// "Keep it updated automatically": the filters decide who's in it, so picking people (and the name search) don't apply.
+function syncAutoChat(){
+  const auto = (document.getElementById('cn-auto') || {}).checked;
+  const pick = document.getElementById('cn-pickbar'), note = document.getElementById('cn-auto-note'), hint = document.getElementById('cn-title-hint'), find = document.getElementById('cn-find');
+  if (pick) pick.hidden = !!auto; if (note) note.hidden = !auto;
+  if (hint) hint.textContent = auto ? 'Required for automatic chats' : 'Optional. Leave blank for a one-on-one';
+  if (find){ find.closest('label').hidden = !!auto; if (auto) find.value = ''; }
+  document.querySelectorAll('.cn-pick').forEach(c => { c.disabled = !!auto; if (auto) c.checked = false; });
+  filterChatPeople();
+}
+const RULE_TIER = { president: 'Presidents', vice_president: 'Vice presidents', advisor: 'Faculty advisor', officer: 'Officers (not leadership)' };
+function ruleSummary(r){
+  r = r || {};
+  const parts = [r.who === 'officer' ? 'Officers' : r.who === 'member' ? 'Members' : 'Everyone', r.branch && BRANCHES[r.branch], r.tier && RULE_TIER[r.tier], r.year, r.interest].filter(Boolean);
+  return 'Updates automatically: ' + parts.join(' · ');
 }
 function countChatPicks(){ const c = document.getElementById('cn-count'); if (c) c.textContent = document.querySelectorAll('.cn-pick:checked').length + ' selected'; }
 // "Message on site" buttons for presidents, VPs, advisors, and admins (officer applications, questions).
@@ -4063,7 +4095,7 @@ function chatWithBtn(email){
   const e = String(email || '').toLowerCase();
   return isLeader() && e && e !== session && db.users.some(u => u.email === e) ? `<button class="btn ghost small" data-act="chat-with" data-email="${esc(e)}">Message on site</button>` : '';
 }
-const CHAT_ERR = { 'err:notleader': 'Only presidents, vice presidents, faculty advisors, and admins can start chats.', 'err:nobody': 'Pick at least one person.',
+const CHAT_ERR = { 'err:notleader': 'Only officers can start chats.', 'err:officeronly': 'You can message one officer at a time. Presidents, VPs, and the faculty advisor can start group chats and chats with members.', 'err:nobody': 'Pick at least one person.',
   'err:one': 'Pick one teammate.', 'err:notteammate': 'You can only message people on your own case competition team.', 'err:event': 'This competition isn’t open for team-forming chats anymore.',
   'err:notowner': 'Only the person who started this chat can do that.', 'err:automatic': 'People are added to this chat automatically.', 'err:missing': 'That chat doesn’t exist anymore.', 'err:signin': 'Sign in first.' };
 function chatErr(v){ v = String(v || ''); return v.startsWith('err:noaccount:') ? 'There’s no WFA account for ' + v.slice(14) + ' yet. They need to join first.' : CHAT_ERR[v] || v; }
@@ -5008,6 +5040,7 @@ document.addEventListener('change', async e => {
   }
   if (id === 'ev-cat') syncCaseBox();
   if (e.target.classList && e.target.classList.contains('cn-filter')) filterChatPeople();
+  if (e.target.id === 'cn-auto') syncAutoChat();
   if (e.target.classList && e.target.classList.contains('cn-pick')) countChatPicks();
   if (e.target.dataset && e.target.dataset.caseSort){ ui.caseSort = e.target.value; refreshEvent(e.target.dataset.caseSort); }
   if (e.target.dataset && e.target.dataset.casePlace){
@@ -5261,9 +5294,17 @@ async function handleSubmit(f, v, err){
     return;
   }
   if (f.id === 'f-chat-new'){
+    if ((document.getElementById('cn-auto') || {}).checked){
+      const title = v('cn-title'); if (!title) return err('cn-err', 'Give the chat a name, like “Operations officers.”');
+      const rule = { who: v('cn-who'), branch: v('cn-branch'), tier: v('cn-tier'), year: v('cn-year'), interest: v('cn-interest') };
+      const r = await sb.rpc('save_rule_chat', { p_chat: f.dataset.edit || null, p_title: title, p_rule: rule });
+      if (r.error) return err('cn-err', /save_rule_chat/.test(r.error.message || '') ? 'Automatic chats aren’t set up yet. Run 46-auto-updating-chats.sql in Supabase.' : errMsg(r.error));
+      if (String(r.data).startsWith('err:')) return err('cn-err', { 'err:title': 'Give the chat a name.', 'err:notadmin': 'Only admins can make or change automatic chats.', 'err:missing': 'That chat doesn’t exist anymore.' }[r.data] || r.data);
+      await refreshChats(); location.hash = 'messages/' + r.data; toast(f.dataset.edit ? 'Saved' : 'Chat created'); return;
+    }
     const emails = [...f.querySelectorAll('.cn-pick:checked')].map(c => c.value);
-    if (!emails.length) return err('cn-err', 'Pick at least one person.');
-    return openNewChat('custom', emails, null, v('cn-title'));
+    if (!emails.length) return err('cn-err', isLeader() ? 'Pick at least one person.' : 'Pick an officer.');
+    return openNewChat('custom', emails, null, document.getElementById('cn-title') ? v('cn-title') : '');
   }
   if (f.id === 'f-chat-add'){
     const em = v('ca-email').toLowerCase(); if (!em) return;
