@@ -114,11 +114,11 @@ p{margin:0}
 .safebar{background:var(--tint);color:var(--ink);border-bottom:3px solid var(--warn);font-weight:600}
 .safebar .wrap{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding-block:8px}
 .who{display:flex;align-items:center;gap:10px;margin-left:auto}
-.who-more{display:none}
+.who .who-more{display:none}
 @media (max-width:760px){
   .who{gap:6px}
   .who .seg-toggle,.who [data-act="member-view"],.who .name,.who .role,.who [data-act="signout"]{display:none}
-  .who-more{display:inline-flex}
+  .who .who-more{display:inline-flex}
   .who .lbl{display:none}
 }
 .who .name{font-weight:600}
@@ -278,6 +278,12 @@ main{padding-block:36px 64px}
 .chat-compose textarea{flex:1;resize:none;min-height:2.7em;max-height:9em}
 .chat-pick{max-height:16rem;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);padding:8px;display:flex;flex-direction:column;gap:4px}
 .chat-back{display:none}
+.chat-pick.preview .cn-pick{display:none}
+.ms{position:relative}
+.ms summary{list-style:none;cursor:pointer;border:1px solid var(--line);border-radius:var(--radius);padding:8px 28px 8px 10px;background:var(--surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}
+.ms summary::-webkit-details-marker{display:none}
+.ms summary::after{content:'▾';position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--muted)}
+.ms .ms-pop{position:absolute;z-index:30;left:0;right:0;min-width:12rem;max-height:16rem;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.15);padding:8px;display:flex;flex-direction:column;gap:4px;margin-top:4px}
 @media (max-width:760px){.chat-wrap{grid-template-columns:1fr;height:auto;min-height:70vh}.chat-wrap.open .chat-list{display:none}.chat-wrap:not(.open) .chat-pane{display:none}.chat-back{display:inline}.chat-msgs{max-height:62vh}}
 .bell{display:inline-flex;align-items:center;padding:6px 9px}
 .nf-table{width:100%;border-collapse:collapse}
@@ -4037,7 +4043,8 @@ function newChatForm(edit){
     return `<label class="check" data-find="${esc((u.first + ' ' + u.last + ' ' + u.email + ' ' + label).toLowerCase())}" data-who="${officer ? 'officer' : 'member'}" data-branch="${esc(branch)}" data-tier="${esc(tier)}" data-year="${esc(u.year || '')}" data-interests="${esc((u.interests || []).join('|'))}">
       <input type="${leader ? 'checkbox' : 'radio'}" name="cn-pick" class="cn-pick" value="${esc(u.email)}"> ${esc(u.first)} ${esc(u.last)} <span class="hint">${esc(label)}</span></label>`;
   };
-  const sel = (id, label, opts, cur) => `<label style="flex:1;min-width:9rem">${label}<select id="${id}" class="cn-filter">${opts.map(([v, t]) => `<option value="${esc(v)}" ${(cur || '') === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
+  const toList = x => Array.isArray(x) ? x : (x ? [x] : []);
+  const sel = (id, label, opts, cur) => multiFilter(id, label, opts, toList(cur));
   const interests = [...new Set((db.careers || []).map(c => c.title))].sort();
   setTimeout(() => { filterChatPeople(); syncAutoChat(); });
   return `<form class="stack" id="f-chat-new" ${edit ? `data-edit="${edit.id}"` : ''} style="gap:10px;padding:16px;overflow:auto">
@@ -4047,27 +4054,36 @@ function newChatForm(edit){
     ${myRole !== 'admin' ? '' : `<label class="check"><input type="checkbox" id="cn-auto" ${edit ? 'checked disabled' : ''}> <strong>Keep it updated automatically</strong> <span class="hint">Use the filters below instead of picking people. Anyone who matches is in the chat, now or later, and anyone who stops matching drops out. Only admins can make these.</span></label>`}
     <label>Find people<input id="cn-find" placeholder="Type a name, email, or title" autocomplete="off"></label>
     <div class="row" style="gap:8px;align-items:end">
-      ${leader ? sel('cn-who', 'Who', [['', 'Everyone'], ['officer', 'Officers'], ['member', 'Members']], r.who) : ''}
-      ${sel('cn-branch', 'Branch', [['', 'Any branch'], ...Object.entries(BRANCHES)], r.branch)}
-      ${sel('cn-tier', 'Position', [['', 'Any position'], ['president', 'Presidents'], ['vice_president', 'Vice presidents'], ['advisor', 'Faculty advisor'], ['officer', 'Officers']], r.tier)}
-      ${sel('cn-year', 'Year', [['', 'Any year'], ...YEARS.map(y => [y, y])], r.year)}
-      ${sel('cn-interest', 'Career interest', [['', 'Any interest'], ...interests.map(i => [i, i])], r.interest)}
+      ${leader ? sel('cn-who', 'Who', [['officer', 'Officers'], ['member', 'Members']], r.who) : ''}
+      ${sel('cn-branch', 'Branch', Object.entries(BRANCHES), r.branch)}
+      ${sel('cn-tier', 'Position', [['president', 'Presidents'], ['vice_president', 'Vice presidents'], ['advisor', 'Faculty advisor'], ['officer', 'Officers']], r.tier)}
+      ${sel('cn-year', 'Year', YEARS.map(y => [y, y]), r.year)}
+      ${sel('cn-interest', 'Career interest', interests.map(i => [i, i]), r.interest)}
     </div>
     <div class="notice" id="cn-auto-note" hidden><span id="cn-auto-text"></span></div>
     <div class="row" style="gap:8px;align-items:center" id="cn-pickbar" ${leader ? '' : 'hidden'}><button type="button" class="btn ghost small" data-act="cn-all">Select all shown</button><button type="button" class="btn ghost small" data-act="cn-none">Clear</button><span class="hint" id="cn-count">0 selected</span></div>
+    <strong id="cn-preview-label" hidden>Preview: these people will be in the chat</strong>
     <div class="chat-pick" id="cn-list">${people.map(row).join('') || '<span class="hint">No members yet.</span>'}</div>
     ${leader ? '<span class="hint">Members can reply in chats you start, but they can’t start chats with officers.</span>' : ''}
     <div><button class="btn" type="submit">${edit ? 'Save' : 'Start chat'}</button></div><div class="err" id="cn-err"></div></form>`;
 }
+// A dropdown of checkboxes; nothing checked means "any".
+function multiFilter(id, label, opts, cur){
+  return `<div class="ms-wrap" style="flex:1;min-width:10rem"><span class="label-text" style="display:block;font-weight:600;margin-bottom:4px">${label}</span>
+    <details class="ms" id="${id}"><summary>${esc(msSummary(opts, cur))}</summary>
+      <div class="ms-pop">${opts.map(([v, t]) => `<label class="check"><input type="checkbox" class="cn-filter" value="${esc(v)}" data-label="${esc(t)}" ${cur.includes(v) ? 'checked' : ''}> ${esc(t)}</label>`).join('') || '<span class="hint">Nothing to pick</span>'}</div></details></div>`;
+}
+function msSummary(opts, cur){ const names = opts.filter(([v]) => cur.includes(v)).map(([, t]) => t); return names.length ? names.join(', ') : 'Any'; }
+function msVals(id){ return [...document.querySelectorAll('#' + id + ' .cn-filter:checked')].map(c => c.value); }
 function filterChatPeople(){
   const q = (document.getElementById('cn-find') || {}).value?.trim().toLowerCase() || '';
-  const g = id => (document.getElementById(id) || {}).value || '';
-  const who = g('cn-who'), br = g('cn-branch'), tier = g('cn-tier'), year = g('cn-year'), interest = g('cn-interest');
+  const who = msVals('cn-who'), br = msVals('cn-branch'), tier = msVals('cn-tier'), year = msVals('cn-year'), interest = msVals('cn-interest');
+  const tierOk = t => tier.includes(t) || (t === 'honorary' && tier.includes('officer'));
   let n = 0;
   document.querySelectorAll('#cn-list [data-find]').forEach(l => {
-    l.hidden = (q && !l.dataset.find.includes(q)) || (who && l.dataset.who !== who) || (br && l.dataset.branch !== br)
-      || (tier && (tier === 'officer' ? !['officer', 'honorary'].includes(l.dataset.tier) : l.dataset.tier !== tier))
-      || (year && l.dataset.year !== year) || (interest && !l.dataset.interests.split('|').includes(interest));
+    l.hidden = (q && !l.dataset.find.includes(q)) || (who.length && !who.includes(l.dataset.who)) || (br.length && !br.includes(l.dataset.branch))
+      || (tier.length && !tierOk(l.dataset.tier)) || (year.length && !year.includes(l.dataset.year))
+      || (interest.length && !l.dataset.interests.split('|').some(i => interest.includes(i)));
     if (!l.hidden) n++;
   });
   const t = document.getElementById('cn-auto-text');
@@ -4078,6 +4094,8 @@ function syncAutoChat(){
   const auto = (document.getElementById('cn-auto') || {}).checked;
   const pick = document.getElementById('cn-pickbar'), note = document.getElementById('cn-auto-note'), hint = document.getElementById('cn-title-hint'), find = document.getElementById('cn-find');
   if (pick) pick.hidden = !!auto; if (note) note.hidden = !auto;
+  const list = document.getElementById('cn-list'); if (list) list.classList.toggle('preview', !!auto);
+  const ph = document.getElementById('cn-preview-label'); if (ph) ph.hidden = !auto;
   if (hint) hint.textContent = auto ? 'Required for automatic chats' : 'Optional. Leave blank for a one-on-one';
   if (find){ find.closest('label').hidden = !!auto; if (auto) find.value = ''; }
   document.querySelectorAll('.cn-pick').forEach(c => { c.disabled = !!auto; if (auto) c.checked = false; });
@@ -4086,7 +4104,9 @@ function syncAutoChat(){
 const RULE_TIER = { president: 'Presidents', vice_president: 'Vice presidents', advisor: 'Faculty advisor', officer: 'Officers (not leadership)' };
 function ruleSummary(r){
   r = r || {};
-  const parts = [r.who === 'officer' ? 'Officers' : r.who === 'member' ? 'Members' : 'Everyone', r.branch && BRANCHES[r.branch], r.tier && RULE_TIER[r.tier], r.year, r.interest].filter(Boolean);
+  const L = x => Array.isArray(x) ? x : (x ? [x] : []), who = L(r.who);
+  const parts = [who.length === 1 ? (who[0] === 'officer' ? 'Officers' : 'Members') : 'Everyone',
+    L(r.branch).map(b => BRANCHES[b] || b).join(' or '), L(r.tier).map(t => RULE_TIER[t] || t).join(' or '), L(r.year).join(' or '), L(r.interest).join(' or ')].filter(Boolean);
   return 'Updates automatically: ' + parts.join(' · ');
 }
 function countChatPicks(){ const c = document.getElementById('cn-count'); if (c) c.textContent = document.querySelectorAll('.cn-pick:checked').length + ' selected'; }
@@ -4589,6 +4609,7 @@ function useTemplate(k){
 /* ---------- Click handling ---------- */
 document.addEventListener('click', async ev => {
   if (ev.target.id === 'modal') { closeModal(); return; }
+  document.querySelectorAll('details.ms[open]').forEach(d => { if (!d.contains(ev.target)) d.open = false; });
   if (!ev.target.closest('[data-act="nav-menu"]')) closeNavMenu();
   const slotEl = ev.target.closest('[data-slot]');
   if (slotEl){ if (ev.detail === 0) paintSlot(slotEl, !availDraft().has(slotEl.dataset.slot)); return; }
@@ -5039,7 +5060,10 @@ document.addEventListener('change', async e => {
     render(); drawQrTool();
   }
   if (id === 'ev-cat') syncCaseBox();
-  if (e.target.classList && e.target.classList.contains('cn-filter')) filterChatPeople();
+  if (e.target.classList && e.target.classList.contains('cn-filter')){
+    const box = e.target.closest('.ms'); if (box){ const picked = [...box.querySelectorAll('.cn-filter:checked')].map(c => c.dataset.label); box.querySelector('summary').textContent = picked.length ? picked.join(', ') : 'Any'; }
+    filterChatPeople();
+  }
   if (e.target.id === 'cn-auto') syncAutoChat();
   if (e.target.classList && e.target.classList.contains('cn-pick')) countChatPicks();
   if (e.target.dataset && e.target.dataset.caseSort){ ui.caseSort = e.target.value; refreshEvent(e.target.dataset.caseSort); }
@@ -5296,7 +5320,7 @@ async function handleSubmit(f, v, err){
   if (f.id === 'f-chat-new'){
     if ((document.getElementById('cn-auto') || {}).checked){
       const title = v('cn-title'); if (!title) return err('cn-err', 'Give the chat a name, like “Operations officers.”');
-      const rule = { who: v('cn-who'), branch: v('cn-branch'), tier: v('cn-tier'), year: v('cn-year'), interest: v('cn-interest') };
+      const rule = { who: msVals('cn-who'), branch: msVals('cn-branch'), tier: msVals('cn-tier'), year: msVals('cn-year'), interest: msVals('cn-interest') };
       const r = await sb.rpc('save_rule_chat', { p_chat: f.dataset.edit || null, p_title: title, p_rule: rule });
       if (r.error) return err('cn-err', /save_rule_chat/.test(r.error.message || '') ? 'Automatic chats aren’t set up yet. Run 46-auto-updating-chats.sql in Supabase.' : errMsg(r.error));
       if (String(r.data).startsWith('err:')) return err('cn-err', { 'err:title': 'Give the chat a name.', 'err:notadmin': 'Only admins can make or change automatic chats.', 'err:missing': 'That chat doesn’t exist anymore.' }[r.data] || r.data);
