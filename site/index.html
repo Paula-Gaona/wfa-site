@@ -13,15 +13,15 @@
 <meta property="og:url" content="https://wolverinefinanceassociation.org/">
 <meta property="og:image" content="https://wolverinefinanceassociation.org/icon-512.png">
 <meta name="twitter:card" content="summary">
-<!-- Site icon (browser tabs, Google search results, phone home screens): the green WFA badge -->
+<!-- Site icon (browser tabs, Google search results, phone home screens): the WFA seal -->
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">
 <link rel="apple-touch-icon" href="/icon-180.png">
-<meta name="theme-color" content="#275D38">
+<meta name="theme-color" content="#123622">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Barlow+Condensed:wght@600;700;800&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <style>
 /* Layout: green UVU masthead (brand row + nav row) + market-ticker band, then a single content column (max 1120px) whose views swap by role. */
 :root{
@@ -380,13 +380,56 @@ img.avatar{object-fit:cover;display:block}
 .slottip{position:fixed;z-index:70;pointer-events:none;background:var(--ink);color:var(--paper);font-size:.8rem;font-weight:600;padding:4px 9px;border-radius:4px;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.2)}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:12px 20px;border-radius:var(--radius);font-weight:600;z-index:60;max-width:calc(100% - 32px)}
 footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;color:var(--muted)}
+/* ---------- Crest theme: deep crest green, white, gold accents, engraved serif (matches the WFA crest logos) ---------- */
+:root{
+  --brand:#1F4D2E; --brand-deep:#123622; --brand-text:#1F4D2E; --on-brand:#ffffff;
+  --gold:#B8923A; --gold-soft:#E9DDBB;
+  --tint:#EEF2EC; --paper:#ffffff; --surface:#ffffff; --ink:#14231A; --muted:#5E6B60; --line:#E0E3DC;
+  --header-bg:#123622; --ticker-bg:#0D2818; --ticker-fg:#E9DDBB;
+  --display:"Cinzel","Cormorant Garamond",Georgia,serif;
+  --serif:"Cormorant Garamond",Georgia,serif;
+  --radius:3px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --brand:#2C6B41; --brand-deep:#0E2A19; --brand-text:#D9BE7A; --tint:#1A2A1F;
+  --paper:#0C1610; --surface:#122018; --ink:#EFE9DA; --muted:#A8B3A4; --line:#2A3A2E;
+  --header-bg:#0E2A19; --ticker-bg:#07160D; --ticker-fg:#E9DDBB; --gold:#D4AF5A; --gold-soft:#E9DDBB}}
+.site-head{background:var(--header-bg)!important;border-bottom:1px solid var(--gold)}
+.seal{width:3.4rem;height:3.4rem;flex:none}
+.brand-name{font-family:"Cinzel",Georgia,serif;font-weight:600;letter-spacing:.14em;font-size:1.05rem;text-transform:uppercase}
+.brand-name small{font-family:"Cinzel",Georgia,serif;color:var(--gold-soft);letter-spacing:.34em;font-size:.6rem;opacity:1;margin-top:4px}
+.nav a[aria-current="page"],.nav .menu-btn.current{border-bottom-color:var(--gold)}
+.nav .menu-btn,.nav a.staff{font-family:"Cinzel",Georgia,serif;letter-spacing:.12em}
+h1,h2,.page-head h1{font-family:var(--display);font-weight:600;letter-spacing:.08em}
+h1{font-size:clamp(2rem,4.4vw,3.1rem)}
+h3{font-family:var(--serif);font-weight:700;font-size:1.4rem;letter-spacing:.01em}
+.eyebrow{font-family:"Cinzel",Georgia,serif;color:var(--muted);letter-spacing:.26em;font-weight:600}
+.hero-copy p.lede{font-family:var(--serif);font-style:italic;font-size:1.45rem;line-height:1.35}
+.hero{gap:56px;padding-block:28px 12px}
+.hero-copy{gap:26px}
+.hero-title{display:flex;align-items:center;gap:36px}
+.hero-title h1{font-size:clamp(1.9rem,3.6vw,2.6rem);line-height:1.15}
+.hero-title .eyebrow{margin-bottom:4px}
+@media (max-width:560px){.hero-title{flex-direction:column;align-items:flex-start}}
+.hero-crest{width:128px;height:auto;flex:none}
+
+.btn{border-radius:2px;letter-spacing:.03em}
+.btn.ghost{border-color:var(--line);color:var(--brand-text)}
+.btn.ghost:hover{border-color:var(--gold)}
+.section-head{border-bottom:1px solid var(--brand-text)}
+.section-head h2,.section-head h3{color:var(--brand-text)}
+.ticker{font-family:"Cinzel",Georgia,serif;letter-spacing:.08em;border-bottom:0}
+.ticker .sym{color:#cfd8cf} .ticker .up{color:#D9B866}
+.tile .v{font-family:var(--serif);font-weight:700;font-size:2.7rem;color:var(--brand-text)}
+.tile .l{font-family:"Cinzel",Georgia,serif;color:var(--muted);letter-spacing:.14em}
+
 </style>
 </head>
 <body>
 <header class="site-head">
   <div class="wrap head-in">
     <a class="brand" href="#home" aria-label="Wolverine Finance Association home">
-      <span class="mark">WFA</span>
+      <img class="seal" src="/crest-seal.png" alt="" width="54" height="54">
       <span class="brand-name">Wolverine Finance<small>Association · UVU</small></span>
     </a>
     <div class="who" id="who"></div>
@@ -399,7 +442,7 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
 <main class="wrap" id="app">
   <!-- Shown for a moment while the site loads, and read by search engines. Replaced once club data loads. -->
   <section class="stack" style="max-width:47.5rem;padding-block:32px">
-    <div class="eyebrow">Utah Valley University · Student club</div>
+    <div class="eyebrow">Woodbury School of Business · Utah Valley University</div>
     <h1 class="page">Wolverine Finance Association</h1>
     <p>The Wolverine Finance Association (WFA) is Utah Valley University’s student finance club. We help UVU students of any major break into finance with hands-on workshops in financial modeling, valuation, Excel, and the Bloomberg Terminal; guest speakers and panels from industry professionals; case and stock pitch competitions; career fairs and office visits; and recruiting help for internships and full-time roles in investment banking, private equity, asset management, and corporate finance.</p>
     <p class="muted">Loading club events and announcements…</p>
@@ -854,8 +897,11 @@ function viewHome(){
     ${appsBanner()}
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow">Utah Valley University · Student club</div>
-        <h1>Wolverine Finance Association</h1>
+        <div class="hero-title">
+          <img class="hero-crest" src="/crest-shield.png" alt="Wolverine Finance Association crest" width="128" height="147">
+          <div class="stack" style="gap:10px;min-width:0"><div class="eyebrow">Woodbury School of Business · Utah Valley University</div>
+          <h1>Wolverine Finance Association</h1></div>
+        </div>
         <p class="lede">Hands-on finance for UVU students: terminal workshops, stock pitches, modeling nights, and conversations with people who work in the industry.</p>
         <div class="row">
           <a class="btn" href="#calendar">See the calendar</a>
@@ -3661,7 +3707,7 @@ function takeReturnTo(){
 
 /* ---------- QR codes ---------- */
 // Green and gold, with rounded dots and gold corner "eyes". Transparent PNGs unless the style has a background.
-const QR_GOLD = '#B08D2A';
+const QR_GOLD = '#B8923A';
 const QR_STYLES = {
   brand: ['Green & gold, transparent', null, '#275D38', QR_GOLD],
   white: ['Green & gold on white', '#ffffff', '#275D38', QR_GOLD],
