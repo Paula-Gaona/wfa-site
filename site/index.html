@@ -3886,7 +3886,7 @@ function viewMessages(){
       <div class="page-head"><div class="eyebrow">Messages</div><h1 class="page">Chats</h1></div>
       <div class="row" style="gap:6px">${isLeader() ? '<a class="btn" href="#messages/new">New chat</a>' : ''}
         <button class="btn ghost small" data-act="chat-sound">${chatSoundOn() ? 'Sound: on' : 'Sound: off'}</button>
-        ${'Notification' in window && Notification.permission !== 'granted' ? `<button class="btn ghost small" data-act="chat-notify" ${Notification.permission === 'denied' ? 'disabled title="Blocked in your browser settings"' : ''}>Turn on desktop notifications</button>` : ''}</div>
+        ${popupButton()}</div>
     </section>
     <div class="chat-wrap ${open ? 'open' : ''}"><nav class="chat-list" aria-label="Chats">${side}</nav><section class="chat-pane">${pane}</section></div>
   </div>`;
@@ -4015,13 +4015,20 @@ async function onChatMessage(m){
     const looking = route() === 'messages' && ui.chatOpen === m.chat_id && document.visibilityState === 'visible';
     if (looking) markRead(m.chat_id); else c.unread = (c.unread || 0) + 1;
     chatChime();
-    if (!looking && 'Notification' in window && Notification.permission === 'granted' && document.visibilityState !== 'visible'){
+    if (!looking && popupsOn() && 'Notification' in window && Notification.permission === 'granted' && document.visibilityState !== 'visible'){
       try { const n = new Notification(name + ' · ' + chatTitle(c), { body: m.body.slice(0, 160), icon: '/icon-192.png', tag: m.chat_id });
         n.onclick = () => { window.focus(); location.hash = 'messages/' + m.chat_id; n.close(); }; } catch(e){}
     }
   }
   db.chats.sort((a, b) => String(b.last_message_at || b.created_at).localeCompare(String(a.last_message_at || a.created_at)));
   renderChatKeep();
+}
+// Desktop pop-ups: the browser's permission (asked once), plus an on/off switch kept on this device.
+function popupsOn(){ try { return localStorage.getItem('wfa-chat-popups') !== 'off'; } catch(e){ return true; } }
+function popupButton(){
+  if (!('Notification' in window)) return '';
+  if (Notification.permission === 'granted') return `<button class="btn ghost small" data-act="chat-popups" aria-pressed="${popupsOn()}">${popupsOn() ? 'Desktop pop-ups: on' : 'Desktop pop-ups: off'}</button>`;
+  return `<button class="btn ghost small" data-act="chat-notify" ${Notification.permission === 'denied' ? 'disabled title="Blocked in your browser settings. Allow notifications for this site to use them."' : ''}>Turn on desktop notifications</button>`;
 }
 function chatSoundOn(){ try { return localStorage.getItem('wfa-chat-sound') !== 'off'; } catch(e){ return true; } }
 let chatAudio = null;
@@ -4343,7 +4350,8 @@ document.addEventListener('click', async ev => {
     case 'chat-delete': { const r = await sb.from('chats').delete().eq('id', id); if (r.error) { toast(chatSetupErr(r.error)); break; } await refreshChats(); location.hash = 'messages'; toast('Chat deleted'); break; }
     case 'chat-del-msg': { const r = await sb.from('messages').delete().eq('id', id); if (r.error) { toast(errMsg(r.error)); break; } ui.chatMsgs[t.dataset.chat] = (ui.chatMsgs[t.dataset.chat] || []).filter(m => m.id !== id); renderChatKeep(); break; }
     case 'chat-sound': try { localStorage.setItem('wfa-chat-sound', chatSoundOn() ? 'off' : 'on'); } catch(e){} if (chatSoundOn()) chatChime(); renderChatKeep(); break;
-    case 'chat-notify': if ('Notification' in window) { const p = await Notification.requestPermission(); toast(p === 'granted' ? 'Desktop notifications are on for this browser' : 'Notifications weren’t allowed'); renderChatKeep(); } break;
+    case 'chat-notify': if ('Notification' in window) { const p = await Notification.requestPermission(); if (p === 'granted') try { localStorage.setItem('wfa-chat-popups', 'on'); } catch(e){} toast(p === 'granted' ? 'Desktop pop-ups are on for this browser' : 'Notifications weren’t allowed'); renderChatKeep(); } break;
+    case 'chat-popups': try { localStorage.setItem('wfa-chat-popups', popupsOn() ? 'off' : 'on'); } catch(e){} toast(popupsOn() ? 'Desktop pop-ups are on' : 'Desktop pop-ups are off on this device'); renderChatKeep(); break;
     case 'chat-optin': {
       const on = me().chatEmails === false, r = await sb.from('members').update({ chat_emails: on }).eq('id', authUser.id);
       if (r.error) { toast(/chat_emails/.test(r.error.message || '') ? 'Messages aren’t set up yet. An admin needs to run 42-chats.sql.' : errMsg(r.error)); break; }
