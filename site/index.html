@@ -4017,7 +4017,7 @@ async function onChatMessage(m){
     if (looking) markRead(m.chat_id); else c.unread = (c.unread || 0) + 1;
     chatChime();
     if (!looking && popupsOn() && 'Notification' in window && Notification.permission === 'granted' && !document.hasFocus()){
-      try { const n = new Notification(name + ' · ' + chatTitle(c), { body: m.body.slice(0, 160), icon: '/icon-192.png', tag: m.chat_id });
+      try { const n = new Notification(name + ' · ' + chatTitle(c), { body: m.body.slice(0, 160), icon: '/icon-192.png', tag: m.id });   // one pop-up per message (a shared tag would silently replace the last one)
         n.onclick = () => { window.focus(); location.hash = 'messages/' + m.chat_id; n.close(); }; } catch(e){}
     }
   }
