@@ -3970,7 +3970,7 @@ function viewMessages(){
   ui.chatOpen = open || null;
   const list = db.chats || [];
   const mine = list.filter(c => c.member), watching = list.filter(c => !c.member);
-  const side = CHAT_GROUPS.map(([label, kinds]) => { const cs = mine.filter(c => kinds.includes(c.kind));
+  const side = CHAT_GROUPS.map(([label, kinds]) => { const cs = mine.filter(c => kinds.includes(c.kind)).sort((a, b) => (b.kind === "officers") - (a.kind === "officers"));   // Leadership Team always first
       return cs.length ? `<div class="chat-group">${label}</div>${cs.map(c => chatItem(c, open)).join('')}` : ''; }).join('')
     + (watching.length ? `<details ${watching.some(c => c.id === open) ? 'open' : ''}><summary class="chat-group" style="cursor:pointer">Other teams’ chats (${watching.length})</summary>${watching.map(c => chatItem(c, open)).join('')}</details>` : '')
     || '<div class="empty">No chats yet. You’ll see chats here when an officer messages you or you join a case competition team.</div>';
