@@ -420,7 +420,7 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
 const SUPABASE_URL = 'https://razxymbbfsnnnguyaalp.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_G9Ct3sh1zfK2peRadj-nzg_SSLCr2Sn';
 const SAFE_MSG = 'Safe view is on. Switch to Edit view to make changes.';
-const READ_RPCS = ['my_role', 'my_test_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending', 'case_board'];   // database functions that only read
+const READ_RPCS = ['my_role', 'my_test_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending', 'case_board', 'member_points'];   // database functions that only read
 function safeFetch(input, init){
   const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
   let safe = false;
@@ -536,6 +536,8 @@ async function load(){
     testAccounts: off && t('test_accounts'),
     guests: off && t('guest_checkins'),
     caseBoard: signed && sb.rpc('case_board'),
+    caseNotes: off && sb.from('case_teams').select('id, officer_rating, officer_note'),
+    memberPts: off && sb.rpc('member_points'),
     access: off && t('access_list'),
     codes: off && t('checkin_codes'),
     tasks: off && t('tasks'),
@@ -583,6 +585,8 @@ async function load(){
   db.surveyPending = Array.isArray(R.surveyPending) ? R.surveyPending : [];
   db.testAccounts = Array.isArray(R.testAccounts) ? R.testAccounts : [];
   db.caseTeams = (R.caseBoard && R.caseBoard.teams) || []; db.caseAgents = (R.caseBoard && R.caseBoard.agents) || [];
+  db.caseNotes = {}; (Array.isArray(R.caseNotes) ? R.caseNotes : []).forEach(n => db.caseNotes[n.id] = { rating: n.officer_rating || null, note: n.officer_note || '' });
+  db.memberPts = {}; (Array.isArray(R.memberPts) ? R.memberPts : []).forEach(x => db.memberPts[x.email] = x.points);
   db.guests = {}; (Array.isArray(R.guests) ? R.guests : []).forEach(g => (db.guests[g.event_id] = db.guests[g.event_id] || []).push(g));
   // Real officers never see test accounts in member lists, attendance, applications, or questions.
   if (!testRole && db.testAccounts.length){
@@ -3516,6 +3520,9 @@ function teamCard(e, t, open){
     ${!me.confirmed ? `<div class="notice"><span><strong>You’ve been invited to ${esc(t.name)}.</strong> Join to be on the team.</span></div>
       <div class="row" style="gap:8px"><button class="btn" data-act="team-respond" data-id="${t.id}" data-yes="1">Join this team</button><button class="btn ghost" data-act="team-respond" data-id="${t.id}" data-yes="0">Decline</button></div>` : ''}
     ${confirmed < e.teamMin ? `<span class="hint">Needs at least ${e.teamMin} confirmed teammates (${confirmed} so far).</span>` : ''}
+    ${e.teamMode === 'select' && (t.pitch || t.experience || cap) ? (cap && open
+      ? `<details ${t.pitch ? '' : 'open'}><summary style="cursor:pointer">Your team’s application</summary><form class="stack" id="f-team-pitch" data-id="${t.id}" data-ev="${e.id}" style="gap:8px;margin-top:8px">${pitchFields(t.pitch || '', t.experience || '')}<div><button class="btn ghost small" type="submit">Save application</button></div><div class="err" id="tp-err"></div></form></details>`
+      : `<details><summary style="cursor:pointer">Your team’s application</summary><p style="white-space:pre-wrap;margin:8px 0 0">${esc(t.pitch || '')}</p>${t.experience ? `<p class="hint" style="white-space:pre-wrap">${esc(t.experience)}</p>` : ''}</details>`) : ''}
     ${t.members.some(m => !m.joined) ? '<span class="hint">Teammates who haven’t joined WFA yet need to sign up, then confirm on this page. Send them the event link.</span>' : ''}
     ${cap && open && t.members.length < e.teamMax ? `<form class="checkin-form" id="f-team-add" data-id="${t.id}" data-ev="${e.id}"><input id="ta-add" type="email" placeholder="teammate@uvu.edu" aria-label="Teammate’s email" style="width:16em;letter-spacing:0;text-transform:none;font-family:inherit"><button class="btn ghost" type="submit">Invite teammate</button></form><div class="err" id="tadd-err"></div>` : ''}
     ${me.confirmed && (open || !hasStarted(e)) ? `<div>${delBtn('tleave-' + t.id, cap ? 'Withdraw team' : 'Leave team', 'team-remove', t.id + '|' + session)}</div>` : ''}
@@ -3526,42 +3533,92 @@ function newTeamForm(e){
     <label>Team name<input id="tn-name" maxlength="60" required></label>
     <label>Teammates’ emails <span class="hint">Up to ${e.teamMax - 1}, one per line. You’re the captain. Each teammate confirms on this page${e.teamMin > 1 ? `, and teams need at least ${e.teamMin} people` : ''}.</span>
       <textarea id="tn-emails" rows="3" placeholder="teammate@uvu.edu"></textarea></label>
-    ${e.teamMode === 'select' ? '<span class="hint">Officers choose which teams compete. Your team’s status will show here.</span>' : ''}
-    <div><button class="btn" type="submit">Register team</button></div><div class="err" id="tn-err"></div></form>`;
+    ${e.teamMode === 'select' ? `<span class="hint">Officers choose which teams compete, so tell them about your team. You can edit this until registration closes.</span>
+      ${pitchFields('', '')}` : ''}
+    <div><button class="btn" type="submit">${e.teamMode === 'select' ? 'Apply as a team' : 'Register team'}</button></div><div class="err" id="tn-err"></div></form>`;
 }
+function pitchFields(pitch, exp){
+  return `<label>Why your team? <span class="hint">Required. What you want out of the competition and what you’ll bring (800 characters max)</span><textarea id="tn-pitch" rows="3" maxlength="800">${esc(pitch)}</textarea></label>
+      <label>Relevant experience <span class="hint">Optional. Past competitions, coursework, internships, clubs</span><textarea id="tn-exp" rows="2" maxlength="800">${esc(exp)}</textarea></label>`;
+}
+const AGENT_ROLES = ['Modeling & valuation', 'Research & analysis', 'Slides & design', 'Presenting', 'Writing', 'Strategy', 'Accounting'];
+function agentMeta(a){ return [a.year, (a.majors || []).join(' & ')].filter(Boolean).join(' · '); }
+function roleChips(roles){ return (roles || []).length ? `<span class="row" style="gap:4px;flex-wrap:wrap">${roles.map(r => `<span class="tag">${esc(r)}</span>`).join('')}</span>` : ''; }
 function agentBox(e){
   const mine = agentsFor(e.id).find(a => a.me);
   if (mine) return `<div class="notice row" style="justify-content:space-between;gap:10px"><span><strong>You’re on the free-agent list.</strong> Captains can invite you to their team.</span><button class="btn ghost small" data-act="agent-off" data-id="${e.id}">Take me off</button></div>`;
   return `<details><summary style="cursor:pointer">Need a team? Join the free-agent list</summary>
     <form class="stack" id="f-agent" data-id="${e.id}" style="gap:8px;margin-top:10px">
-      <label>A little about you <span class="hint">Optional: your major, strengths, or what role you want</span><textarea id="ag-note" rows="2" maxlength="300"></textarea></label>
-      <span class="hint">Other members see your name, email, and note so they can invite you.</span>
+      <label>What I’d bring to a team <span class="hint">Your strengths, experience, and what you want to work on (600 characters max)</span><textarea id="ag-note" rows="4" maxlength="600" required></textarea></label>
+      <fieldset class="stack" style="gap:4px;border:0;padding:0;margin:0"><legend class="hint" style="padding:0">Roles I’m good at</legend>
+        <div class="row" style="gap:6px 14px">${AGENT_ROLES.map(r => `<label class="check"><input type="checkbox" class="ag-role" value="${esc(r)}"> ${esc(r)}</label>`).join('')}</div></fieldset>
+      <span class="hint">Other members see your name, year, major, email, roles, and bio so they can invite you.</span>
       <div><button class="btn ghost" type="submit">Add me to the free-agent list</button></div><div class="err" id="ag-err"></div></form></details>`;
 }
 function agentList(e, team){
   const list = agentsFor(e.id).filter(a => !a.me);
   if (!list.length) return '';
   return `<div class="stack" style="gap:6px"><strong>Free agents looking for a team</strong>
-    ${list.map(a => `<div class="list-row"><div><div class="ev-title">${esc(personName(a))}</div><div class="ev-sub">${esc(a.email)}${a.note ? ' · ' + esc(a.note) : ''}</div></div>
+    ${list.map(a => `<div class="list-row" style="align-items:start"><div class="stack" style="gap:4px"><div class="ev-title">${esc(personName(a))} <span class="hint">${esc(agentMeta(a))}</span></div>${roleChips(a.roles)}
+        ${a.note ? `<div style="white-space:pre-wrap">${esc(a.note)}</div>` : ''}<div class="ev-sub">${esc(a.email)}</div></div>
       ${team ? `<button class="btn ghost small" data-act="team-invite" data-id="${team.id}|${esc(a.email)}" data-ev="${e.id}">Invite to ${esc(team.name)}</button>` : ''}</div>`).join('')}</div>`;
 }
 // Officers: every team (including applied and declined ones), accept/decline, placements, free agents, and downloads.
+// What officers see about each person on a team: profile, involvement, past case competitions, resume.
+function memberFacts(email, evId){
+  const u = db.users.find(x => x.email === email);
+  const came = sortedEvents().filter(x => x.cat !== 'officer_meeting' && hasStarted(x) && attended(x.id).includes(email)).length;
+  const pastTeams = (db.caseTeams || []).filter(t => t.event_id !== evId && t.members.some(m => m.email === email && m.confirmed));
+  const pastCase = Math.max(pastTeams.length, sortedEvents().filter(x => isCase(x) && x.id !== evId && attended(x.id).includes(email)).length);
+  const best = pastTeams.map(t => t.placement).filter(Boolean).sort()[0];
+  return { u, came, pts: db.memberPts[email] ?? null, pastCase, best };
+}
+function teamScore(t, evId){ const f = t.members.filter(m => m.email).map(m => memberFacts(m.email, evId)); return { came: f.reduce((n, x) => n + x.came, 0), pts: f.reduce((n, x) => n + (x.pts || 0), 0) }; }
+function teamDetails(e, t){
+  const n = db.caseNotes[t.id] || {}, sc = teamScore(t, e.id);
+  return `<details class="stack" style="margin-top:6px" ${ui.caseOpen === t.id ? 'open' : ''} data-case-open="${t.id}"><summary style="cursor:pointer">Details for deciding · ${sc.came} events attended, ${sc.pts} points as a team${n.rating ? ` · rated ${n.rating}/5` : ''}</summary>
+    <div class="stack" style="gap:10px;margin-top:8px">
+      ${t.pitch ? `<div><div class="eyebrow">Why this team</div><p style="white-space:pre-wrap;margin:4px 0 0">${esc(t.pitch)}</p></div>` : (e.teamMode === 'select' ? '<span class="hint">No application answers.</span>' : '')}
+      ${t.experience ? `<div><div class="eyebrow">Relevant experience</div><p style="white-space:pre-wrap;margin:4px 0 0">${esc(t.experience)}</p></div>` : ''}
+      <div class="table-wrap"><table><thead><tr><th>Teammate</th><th>Year</th><th>Majors</th><th>Career interests</th><th class="num">Events</th><th class="num">Points</th><th>Case comps</th><th>Resume</th></tr></thead><tbody>
+        ${t.members.map(m => { if (!m.email || !m.joined) return `<tr><td>${esc(personName(m))}</td><td colspan="7" class="muted">Hasn’t joined WFA yet</td></tr>`;
+          const f = memberFacts(m.email, e.id), u = f.u || {};
+          return `<tr><td>${esc(personName(m))}${m.captain ? ' (captain)' : ''}${m.confirmed ? '' : ' <span class="hint">pending</span>'}</td><td>${esc(u.year || '—')}</td><td>${esc((u.majors || []).join(' & ') || '—')}</td><td>${esc((u.interests || []).join(', ') || '—')}</td>
+            <td class="num">${f.came}</td><td class="num">${f.pts ?? '—'}</td><td>${f.pastCase ? f.pastCase + (f.best ? ` (best: ${ORD[f.best]})` : '') : 'First one'}</td>
+            <td>${u.resumePath ? `<button class="btn ghost small" data-act="open-resume" data-id="${esc(u.resumePath)}">Open</button>` : '—'}</td></tr>`; }).join('')}
+      </tbody></table></div>
+      <form class="stack" id="f-team-note" data-id="${t.id}" data-ev="${e.id}" style="gap:8px">
+        <div class="row" style="gap:10px;align-items:end"><label>Officer rating<select id="tnote-rating"><option value="">Not rated</option>${[5, 4, 3, 2, 1].map(r => `<option value="${r}" ${n.rating === r ? 'selected' : ''}>${'★'.repeat(r)}${'☆'.repeat(5 - r)} (${r})</option>`).join('')}</select></label></div>
+        <label>Officer notes <span class="hint">Only officers see these</span><textarea id="tnote-text" rows="2" maxlength="1000">${esc(n.note || '')}</textarea></label>
+        <div><button class="btn ghost small" type="submit">Save notes</button></div></form>
+    </div></details>`;
+}
+function sortedTeams(e){
+  const teams = teamsFor(e.id), by = ui.caseSort || 'time', sc = {}; teams.forEach(t => sc[t.id] = teamScore(t, e.id));
+  const order = { in: 0, applied: 1, declined: 2 };
+  return teams.slice().sort((a, b) => order[a.status] - order[b.status]
+    || (by === 'rating' ? ((db.caseNotes[b.id] || {}).rating || 0) - ((db.caseNotes[a.id] || {}).rating || 0)
+      : by === 'involvement' ? sc[b.id].pts - sc[a.id].pts || sc[b.id].came - sc[a.id].came : 0)
+    || String(a.created_at).localeCompare(String(b.created_at)));
+}
 function caseAdmin(e){
-  const teams = teamsFor(e.id), agents = agentsFor(e.id), applied = teams.filter(t => t.status === 'applied').length;
+  const teams = sortedTeams(e), agents = agentsFor(e.id), applied = teams.filter(t => t.status === 'applied').length;
   const emails = teamsIn(e.id).flatMap(t => t.members.filter(m => m.email).map(m => m.email));
   const tag = t => t.status === 'applied' ? 'Applied' : t.status === 'declined' ? 'Declined' : 'In';
   return `<div class="panel stack" style="gap:10px;padding:14px">
     <div class="row" style="justify-content:space-between;gap:8px;align-items:center"><strong>Teams (officers)</strong>
       <span class="row" style="gap:6px">${teams.length ? `<button class="btn ghost small" data-act="case-csv" data-id="${e.id}">Download CSV</button>` : ''}${emails.length ? `<button class="btn ghost small" data-act="copy-text" data-text="${esc(emails.join('; '))}">Copy team emails</button>` : ''}</span></div>
     <span class="hint">${teamsIn(e.id).length} in${e.teamLimit ? ` of ${e.teamLimit}` : ''}${applied ? ` · ${applied} waiting for a decision` : ''} · ${e.teamMode === 'select' ? 'Officers choose' : 'First come, first served'}${hasStarted(e) ? ' · Set placements to award bonus points (1st +50, 2nd +30, 3rd +15 each).' : ''}</span>
-    ${teams.map(t => `<div class="list-row"><div><div class="ev-title">${esc(t.name)} <span class="tag">${tag(t)}</span>${t.placement ? ` <span class="tag">${ORD[t.placement]} place</span>` : ''}</div>
-        <div class="ev-sub">${t.members.map(m => esc(personName(m)) + (m.captain ? ' (captain)' : '') + (m.confirmed ? '' : ' (pending)')).join(', ')}</div></div>
+    ${teams.length > 1 ? `<label class="row" style="gap:8px;align-items:center">Sort by<select data-case-sort="${e.id}"><option value="time" ${(ui.caseSort || 'time') === 'time' ? 'selected' : ''}>When they registered</option><option value="rating" ${ui.caseSort === 'rating' ? 'selected' : ''}>Officer rating</option><option value="involvement" ${ui.caseSort === 'involvement' ? 'selected' : ''}>Club involvement (points)</option></select></label>` : ''}
+    ${teams.map(t => `<div class="list-row" style="align-items:start"><div style="min-width:0;flex:1"><div class="ev-title">${esc(t.name)} <span class="tag">${tag(t)}</span>${t.placement ? ` <span class="tag">${ORD[t.placement]} place</span>` : ''}</div>
+        <div class="ev-sub">${t.members.map(m => esc(personName(m)) + (m.captain ? ' (captain)' : '') + (m.confirmed ? '' : ' (pending)')).join(', ')} · registered ${fmtStamp(t.created_at)}</div>
+        ${teamDetails(e, t)}</div>
       <div class="row" style="gap:6px;align-items:center">
         ${e.teamMode === 'select' && t.status !== 'in' ? `<button class="btn small" data-act="case-status" data-id="${t.id}" data-status="in" data-ev="${e.id}">Accept</button>` : ''}
         ${e.teamMode === 'select' && t.status !== 'declined' ? `<button class="btn ghost small" data-act="case-status" data-id="${t.id}" data-status="declined" data-ev="${e.id}">Decline</button>` : ''}
         ${hasStarted(e) && t.status === 'in' ? `<select data-case-place="${t.id}" data-ev="${e.id}" aria-label="Placement for ${esc(t.name)}"><option value="">No placement</option>${[1, 2, 3].map(n => `<option value="${n}" ${t.placement === n ? 'selected' : ''}>${ORD[n]} place (+${PLACE_PTS[n]})</option>`).join('')}</select>` : ''}
         ${delBtn('ct-' + t.id, 'Remove', 'case-del', t.id)}</div></div>`).join('') || '<div class="empty">No teams yet.</div>'}
-    ${agents.length ? `<div class="stack" style="gap:4px"><strong>Free agents (${agents.length})</strong>${agents.map(a => `<div class="ev-sub">${esc(personName(a))} · ${esc(a.email)}${a.note ? ' · ' + esc(a.note) : ''}</div>`).join('')}</div>` : ''}
+    ${agents.length ? `<div class="stack" style="gap:6px"><strong>Free agents (${agents.length})</strong>${agents.map(a => `<div class="stack" style="gap:3px"><div><strong>${esc(personName(a))}</strong> <span class="hint">${esc(agentMeta(a))} · ${esc(a.email)}</span></div>${roleChips(a.roles)}${a.note ? `<div class="hint" style="white-space:pre-wrap">${esc(a.note)}</div>` : ''}</div>`).join('')}</div>` : ''}
   </div>`;
 }
 function caseCsv(id){
@@ -3576,12 +3633,12 @@ function caseCsv(id){
 }
 const CASE_MSG = { signin: 'Sign in first.', missing: 'This competition isn’t open for teams.', closed: 'Team registration is closed.', name: 'Give your team a name.',
   already: 'You’re already on a team for this competition.', toobig: 'That’s more people than a team can have.', dupname: 'Another team already has that name.',
-  full: 'All team spots are taken.', notcaptain: 'Only the team captain can do that.', notfound: 'That team doesn’t exist anymore.' };
+  full: 'All team spots are taken.', pitch: 'Tell the officers why your team should compete.', long: 'Keep each answer under 800 characters.', notcaptain: 'Only the team captain can do that.', notfound: 'That team doesn’t exist anymore.' };
 function caseMsg(r){ r = String(r || ''); if (r.startsWith('email:')) return 'Check this email address: ' + r.slice(6); if (r.startsWith('taken:')) return 'Already on another team: ' + r.slice(6); return CASE_MSG[r] || r; }
 // Runs a team function, shows its message, and refreshes the event (on its page or in the pop-up).
 async function caseRpc(fn, args, evId, ok, errId){
   const r = await sb.rpc(fn, args);
-  const m = r.error ? (/register_team|team_add|team_remove|team_respond/.test(r.error.message || '') ? 'Team registration isn’t set up yet. Run the 37-case-competition-teams.sql update in Supabase.' : errMsg(r.error))
+  const m = r.error ? (/register_team|team_add|team_remove|team_respond|team_update_pitch/.test(r.error.message || '') ? 'Team registration isn’t set up yet. Run the 37-case-competition-teams.sql update in Supabase.' : errMsg(r.error))
     : (r.data === 'ok' || r.data === 'withdrawn') ? '' : caseMsg(r.data);
   if (m){ if (errId && document.getElementById(errId)) err(errId, m); else toast(m); return false; }
   await load(); render(); if (route() !== 'event') openEvent(evId);
@@ -4190,6 +4247,7 @@ document.addEventListener('change', async e => {
     render(); drawQrTool();
   }
   if (id === 'ev-cat'){ const n = document.getElementById('ev-case'); if (n) n.hidden = e.target.value !== 'case_competition'; }
+  if (e.target.dataset && e.target.dataset.caseSort){ ui.caseSort = e.target.value; refreshEvent(e.target.dataset.caseSort); }
   if (e.target.dataset && e.target.dataset.casePlace){
     const place = e.target.value ? +e.target.value : null, evId = e.target.dataset.ev;
     if (await act(async () => { must(await sb.from('case_teams').update({ placement: place }).eq('id', e.target.dataset.casePlace)); await logChange('Set a case competition placement for “' + (evById(evId) || {}).title + '”'); }, place ? ORD[place] + ' place saved' : 'Placement cleared')) refreshEvent(evId);
@@ -4425,14 +4483,26 @@ async function handleSubmit(f, v, err){
 
   if (f.id === 'f-team-new'){
     const id = f.dataset.id, emails = v('tn-emails').split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
-    return caseRpc('register_team', { p_event: id, p_name: v('tn-name'), p_emails: emails }, id, 'Team registered! Your teammates can confirm on this page.', 'tn-err');
+    const ev = evById(id), pitch = document.getElementById('tn-pitch') ? v('tn-pitch') : '', exp = document.getElementById('tn-exp') ? v('tn-exp') : '';
+    if (ev.teamMode === 'select' && !pitch) return err('tn-err', 'Tell the officers why your team should compete.');
+    return caseRpc('register_team', { p_event: id, p_name: v('tn-name'), p_emails: emails, p_pitch: pitch, p_experience: exp }, id, ev.teamMode === 'select' ? 'Application sent! Your teammates can confirm on this page.' : 'Team registered! Your teammates can confirm on this page.', 'tn-err');
+  }
+  if (f.id === 'f-team-pitch'){
+    return caseRpc('team_update_pitch', { p_team: f.dataset.id, p_pitch: v('tn-pitch'), p_experience: v('tn-exp') }, f.dataset.ev, 'Application saved', 'tp-err');
+  }
+  if (f.id === 'f-team-note'){
+    const rating = v('tnote-rating') ? +v('tnote-rating') : null, note = v('tnote-text'); ui.caseOpen = f.dataset.id;
+    if (await act(async () => must(await sb.from('case_teams').update({ officer_rating: rating, officer_note: note }).eq('id', f.dataset.id)), 'Notes saved')) refreshEvent(f.dataset.ev);
+    return;
   }
   if (f.id === 'f-team-add'){
     const em = v('ta-add').toLowerCase(); if (!em) return;
     return caseRpc('team_add', { p_team: f.dataset.id, p_email: em }, f.dataset.ev, 'Invited ' + em, 'tadd-err');
   }
   if (f.id === 'f-agent'){
-    const id = f.dataset.id, r = await sb.from('case_free_agents').insert({ event_id: id, note: v('ag-note') });
+    const id = f.dataset.id, roles = [...f.querySelectorAll('.ag-role:checked')].map(c => c.value);
+    if (!v('ag-note')) return err('ag-err', 'Write a little about what you’d bring to a team.');
+    const r = await sb.from('case_free_agents').insert({ event_id: id, note: v('ag-note'), roles });
     if (r.error) return err('ag-err', /case_free_agents/.test(r.error.message || '') && /exist|schema/i.test(r.error.message || '') ? 'This isn’t set up yet. Run the 37-case-competition-teams.sql update in Supabase.' : /duplicate/i.test(r.error.message || '') ? 'You’re already on the list.' : errMsg(r.error));
     await load(); render(); if (route() !== 'event') openEvent(id); toast('You’re on the free-agent list');
   }
