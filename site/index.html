@@ -612,7 +612,7 @@ async function load(){
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
-    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null }));
+    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {} }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -1451,7 +1451,7 @@ function adminSeasonsBody(){
 const AUTO_REMINDERS = [['7d', '1 week before', 7 * 864e5], ['1d', '1 day before', 864e5], ['2h', '2 hours before', 2 * 36e5]];
 const AUTO_KINDS = { remind_7d: 'Reminder, 1 week before', remind_1d: 'Reminder, 1 day before', remind_2h: 'Reminder, 2 hours before', survey: 'Survey email' };
 function autoCfg(){
-  return db.settings.autoEmail || { enabled: false, reminders: [{ key: '7d', on: false, to: 'all' }, { key: '1d', on: true, to: 'rsvp' }, { key: '2h', on: true, to: 'rsvp' }], survey: true, daily_cap: 60 };
+  return db.settings.autoEmail || { enabled: false, reminders: [{ key: '7d', on: false, to: 'all' }, { key: '1d', on: true, to: 'rsvp' }, { key: '2h', on: true, to: 'rsvp' }], survey: true, daily_cap: 500 };
 }
 function autoUpcoming(c){
   const now = Date.now(), list = [], done = new Set(db.autoLog.map(l => l.event_id + '|' + l.kind));
@@ -1479,9 +1479,9 @@ function adminAutoBody(){
         <span class="hint">Reminders include the date, time, location, description, and a link to the event page.</span></div>
       <div class="stack" style="gap:6px"><strong>After the event</strong>
         <label class="check"><input type="checkbox" id="au-survey" ${c.survey ? 'checked' : ''}> Survey email 30 minutes after the event ends, to people who checked in and haven’t answered yet</label></div>
-      <label style="max-width:24rem">Daily limit for automatic emails<input id="au-cap" type="number" min="1" max="100" value="${esc(c.daily_cap ?? 60)}">
-        <span class="hint">A safety net so a mistake can’t send a flood of email. Recipients go in BCC, up to 45 per email, so one reminder to 100 people uses 3. The club’s email plan (Resend Pro) allows 50,000 emails a month.</span></label>
-      <span class="hint">Never sent to members who turned off club emails, test accounts, test events, drafts, or officer meetings. Each email goes out once.</span>
+      <label style="max-width:24rem">Daily limit for automatic emails<input id="au-cap" type="number" min="1" max="5000" value="${esc(Math.max(c.daily_cap ?? 500, 500))}">
+        <span class="hint">A safety net so a mistake can’t send a flood of email. Each person gets their own email that greets them by first name, so a reminder to 100 people uses 100. The club’s email plan (Resend Pro) allows 50,000 emails a month.</span></label>
+      <span class="hint">Each email greets the person by first name (“Hi Sam,”). Never sent to members who turned off club emails, test accounts, test events, drafts, or officer meetings. Each email goes out once.</span>
       <div><button class="btn" type="submit">Save</button></div><div class="err" id="au-err"></div>
     </form>
     <section class="stack" style="gap:10px">
@@ -2737,7 +2737,7 @@ function planBody(){
     <section class="panel stack" style="gap:8px">
       <div class="row" style="justify-content:space-between;align-items:start">
         <div><h3 style="margin:0">${esc(e.title)} ${e.draft ? '<span class="tag">Draft</span>' : '<span class="tag ok">Published</span>'}</h3>
-          <div class="ev-sub">${catName(e.cat)} · ${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc) || 'No location yet'} · ${when}${e.draft ? '' : ` · ${rsvpCount(e.id)} RSVP${rsvpCount(e.id) === 1 ? '' : 's'}`}</div></div>
+          <div class="ev-sub">${catName(e.cat)}${e.cat === 'officer_meeting' ? ' (' + meetingFor(e) + ')' : ''} · ${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc) || 'No location yet'} · ${when}${e.draft ? '' : ` · ${rsvpCount(e.id)} RSVP${rsvpCount(e.id) === 1 ? '' : 's'}`}</div></div>
         <button class="btn ghost small" data-act="edit-event" data-id="${e.id}">Edit event</button>
       </div>
       ${tasks.length ? `<div class="hbar" title="${done} of ${tasks.length} done"><span class="lbl">${done} of ${tasks.length} done</span><span class="val">${pct(done, tasks.length)}%</span><span class="track"><span class="fill" style="width:${pct(done, tasks.length)}%"></span></span></div>` : ''}
@@ -3041,6 +3041,13 @@ function viewOfficer(){
         <div class="grid2">
           <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${e?.cat===k?'selected':''}>${l} · ${PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select></label>
           <label>Date<input id="ev-date" type="date" required value="${esc(e?.date || dayOffset(7))}"></label>
+        </div>
+        <div class="panel stack" id="ev-branches" ${e?.cat === 'officer_meeting' ? '' : 'hidden'} style="gap:10px;padding:14px">
+          <strong>Who’s expected?</strong>
+          ${[['Branches', MEETING_BRANCHES], ['Positions', MEETING_POSITIONS]].map(([h, groups]) => `<div class="stack" style="gap:6px"><span class="hint">${h}</span>
+            ${groups.map(([k, l]) => `<label class="row" style="gap:10px;align-items:center;justify-content:space-between;flex-wrap:nowrap"><span>${esc(l)}</span>
+              <select class="ev-who" data-k="${k}" style="width:auto">${[['', 'Not included'], ['required', 'Required'], ['invited', 'Invited']].map(([v, t]) => `<option value="${v}" ${((e?.who || {})[k] || '') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`).join('')}</div>`).join('')}
+          <span class="hint">An officer counts as required if their branch or their position is required. Leave everything as “Not included” for a meeting with all officers.</span>
         </div>
         <div class="panel stack" id="ev-case" ${e?.cat === 'case_competition' ? '' : 'hidden'} style="gap:10px;padding:14px">
           <strong>Team registration</strong>
@@ -3535,7 +3542,7 @@ function eventInner(id, page){
     <h2>${esc(e.title)}</h2>
     <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} <span class="hint">Mountain Time</span></dd>
       <dt>Status</dt><dd>${{ upcoming: 'Upcoming', live: '<strong>Happening now</strong>', over: 'Over' }[evStatus(e)]}</dd>
-      <dt>Where</dt><dd>${esc(e.loc)}</dd>${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : `<dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}`}${hasStarted(e)?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
+      <dt>Where</dt><dd>${esc(e.loc)}</dd>${e.cat === 'officer_meeting' ? `<dt>Who</dt><dd>${meetingFor(e)}${session && can('officer') ? `<br><strong>${{ required: 'You’re required.', invited: 'You’re invited (optional).', '': 'You’re not expected at this one.' }[myMeetingStatus(e)]}</strong>` : ''}</dd>` : ''}${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : `<dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}`}${hasStarted(e)?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
     ${e.cap && !isCase(e) ? `<div class="meter"><span style="width:${Math.min(100,n/e.cap*100)}%"></span></div>` : ''}
     <p style="white-space:pre-wrap">${esc(e.desc)}</p>
     ${isCase(e) && !e.draft ? caseSection(e) : ''}
@@ -3576,6 +3583,24 @@ function guestCheckin(e, pre){
 // Captains register a team and invite teammates by email; each teammate confirms. Free agents look for a team.
 // After the event, officers mark 1st-3rd place, which gives confirmed teammates bonus points (see 37-case-competition-teams.sql).
 const PLACE_PTS = { 1: 50, 2: 30, 3: 15 }, ORD = { 1: '1st', 2: '2nd', 3: '3rd' };
+// Officer meetings: which branches and positions are required or invited.
+const MEETING_BRANCHES = Object.entries(BRANCHES);
+const MEETING_POSITIONS = [['president', 'Presidents'], ['vice_president', 'Vice presidents'], ['officer', 'Regular officers'], ['advisor', 'Faculty advisor']];
+const MEETING_LABEL = Object.fromEntries([...MEETING_BRANCHES, ...MEETING_POSITIONS]);
+function meetingFor(e){
+  const w = e.who || {}, list = v => Object.keys(MEETING_LABEL).filter(k => w[k] === v).map(k => esc(MEETING_LABEL[k]));
+  const req = list('required'), inv = list('invited');
+  if (!req.length && !inv.length) return 'All officers';
+  return [req.length ? 'Required: ' + req.join(', ') : '', inv.length ? 'Invited: ' + inv.join(', ') : ''].filter(Boolean).join(' · ');
+}
+// Whether the signed-in officer is required, invited, or not expected at a meeting (the stronger of branch and position).
+function myMeetingStatus(e){
+  const w = e.who || {}, p = db.profiles[session] || {};
+  if (!Object.keys(w).length) return 'required';
+  const pos = { president: 'president', vice_president: 'vice_president', advisor: 'advisor' }[p.tier] || 'officer';
+  const vals = [w[pos], p.branch && w[p.branch]];
+  return vals.includes('required') ? 'required' : vals.includes('invited') ? 'invited' : '';
+}
 function isCase(e){ return !!e && e.cat === 'case_competition'; }
 function regClosesMs(e){ return e.regDeadline ? Date.parse(e.regDeadline) : evStartMs(e); }
 function teamsFor(id){ return (db.caseTeams || []).filter(t => t.event_id === id); }
@@ -3903,7 +3928,11 @@ function render(){
   addPasswordToggles(); syncCaseBox();
 }
 // The event form's team settings show whenever the type is Case competition, however the type got set.
-function syncCaseBox(){ const c = document.getElementById('ev-cat'), b = document.getElementById('ev-case'); if (c && b) b.hidden = c.value !== 'case_competition'; }
+function syncCaseBox(){
+  const c = document.getElementById('ev-cat'); if (!c) return;
+  const b = document.getElementById('ev-case'), m = document.getElementById('ev-branches');
+  if (b) b.hidden = c.value !== 'case_competition'; if (m) m.hidden = c.value !== 'officer_meeting';
+}
 ['input', 'change', 'click', 'keyup'].forEach(t => document.addEventListener(t, ev => { if (ev.target && ev.target.id === 'ev-cat') syncCaseBox(); }, true));
 // Puts a Show/Hide button inside every password box.
 function addPasswordToggles(){
@@ -4350,7 +4379,7 @@ document.addEventListener('change', async e => {
     else { const [h, l] = v.slice(5).split('|'); ui.qr.text = location.origin + '/' + h; ui.qr.name = 'WFA ' + l; }
     render(); drawQrTool();
   }
-  if (id === 'ev-cat'){ const n = document.getElementById('ev-case'); if (n) n.hidden = e.target.value !== 'case_competition'; }
+  if (id === 'ev-cat') syncCaseBox();
   if (e.target.dataset && e.target.dataset.caseSort){ ui.caseSort = e.target.value; refreshEvent(e.target.dataset.caseSort); }
   if (e.target.dataset && e.target.dataset.casePlace){
     const place = e.target.value ? +e.target.value : null, evId = e.target.dataset.ev;
@@ -4646,6 +4675,7 @@ async function handleSubmit(f, v, err){
     const e = { title: v('ev-title'), cat: v('ev-cat'), date: v('ev-date'), start_time: v('ev-start'), end_time: v('ev-end'), loc: v('ev-loc'), cap: Math.max(0, parseInt(v('ev-cap')) || 0), descr: v('ev-desc') };
     if (!e.title || !e.date || !e.start_time || !e.end_time || !e.loc) return err('ev-err', 'Fill in the title, date, times, and location.');
     if (e.end_time <= e.start_time) return err('ev-err', 'End time must be after the start time.');
+    if (e.cat === 'officer_meeting'){ e.meeting_who = {}; f.querySelectorAll('.ev-who').forEach(s => { if (s.value) e.meeting_who[s.dataset.k] = s.value; }); }
     if (e.cat === 'case_competition'){
       e.team_min = parseInt(v('ev-tmin')) || 1; e.team_max = parseInt(v('ev-tmax')) || 1;
       e.team_limit = parseInt(v('ev-tlimit')) || null; e.team_mode = v('ev-tmode') === 'select' ? 'select' : 'fcfs'; e.reg_deadline = mtFromInput(v('ev-tdeadline'));
@@ -4736,8 +4766,8 @@ async function handleSubmit(f, v, err){
   }
 
   if (f.id === 'f-auto'){
-    const cap = parseInt(v('au-cap')) || 60;
-    if (cap < 1 || cap > 100) return err('au-err', 'Set a daily limit from 1 to 100.');
+    const cap = parseInt(v('au-cap')) || 500;
+    if (cap < 1 || cap > 5000) return err('au-err', 'Set a daily limit from 1 to 5,000.');
     const cfg = { enabled: document.getElementById('au-enabled').checked, survey: document.getElementById('au-survey').checked, daily_cap: cap,
       reminders: AUTO_REMINDERS.map(([k]) => ({ key: k, on: f.querySelector(`.au-on[data-k="${k}"]`).checked, to: f.querySelector(`.au-to[data-k="${k}"]`).value })) };
     const r = await sb.from('settings').update({ auto_email: cfg }).eq('id', 1);

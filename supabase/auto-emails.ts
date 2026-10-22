@@ -3,12 +3,13 @@
 //   * event reminders (1 week / 1 day / 2 hours before an event) to people who RSVP'd (or confirmed case competition
 //     teammates), or to all members
 //   * a survey email 30 minutes after an event ends, to people who checked in and haven't answered the survey
+// Each person gets their own email that greets them by first name (sent 100 at a time with Resend's batch API).
 // Supabase runs it every 10 minutes (see 39-automatic-emails.sql). Each event/email is recorded in auto_email_log
 // before sending, so it never goes out twice, and calling it extra times only sends what is already due.
 // Skips members who turned off club emails, test accounts, test events, drafts, and officer meetings.
 //
-// Deploy: Supabase -> Edge Functions -> Deploy a new function -> name it auto-emails -> paste this file -> Deploy.
-// Then, in the function's settings, turn OFF "Verify JWT" (the scheduler calls it without signing in).
+// Deploy: Supabase -> Edge Functions -> auto-emails -> Code -> paste this file -> Deploy.
+// "Verify JWT" must be OFF for this function (the scheduler calls it without signing in).
 // It uses the same secrets as invite-officer (RESEND_API_KEY, MAIL_FROM, SITE_URL); nothing new to add.
 // Keep this file plain ASCII: pasting curly quotes into the editor can garble them.
 
@@ -47,12 +48,13 @@ function htmlEmail(bodyHtml: string, button: { label: string; url: string }, foo
   <div style="padding:0 20px 20px;font-size:12px;color:#5e6b60">${footer}</div>
 </div>`;
 }
-const fromAddress = () => ((Deno.env.get('MAIL_FROM') || '').match(/<([^>]+)>/)?.[1] || Deno.env.get('MAIL_FROM') || '').trim();
-async function resend(payload: Record<string, unknown>) {
-  const r = await fetch('https://api.resend.com/emails', {
+// Sends up to 100 separate emails in one request.
+async function resendBatch(emails: Record<string, unknown>[]) {
+  const from = Deno.env.get('MAIL_FROM');
+  const r = await fetch('https://api.resend.com/emails/batch', {
     method: 'POST',
     headers: { Authorization: `Bearer ${Deno.env.get('RESEND_API_KEY')}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: Deno.env.get('MAIL_FROM'), ...payload }),
+    body: JSON.stringify(emails.map((e) => ({ from, ...e }))),
   });
   return { ok: r.ok, detail: r.ok ? '' : await r.text() };
 }
@@ -66,10 +68,10 @@ Deno.serve(async () => {
     if (!cfg?.enabled) return json({ ok: true, sent: 0, note: 'Automatic emails are off.' });
     const now = Date.now();
 
-    // Daily limit: emails used by automatic sends in the last 24 hours.
+    // Daily limit (a safety net): emails sent automatically in the last 24 hours, one per person.
     const { data: recent } = await db.from('auto_email_log').select('emails').gte('sent_at', new Date(now - DAY).toISOString());
     let used = (recent || []).reduce((n: number, r: { emails: number }) => n + (r.emails || 0), 0);
-    const cap = Math.max(0, Math.min(100, Number(cfg.daily_cap ?? 60)));
+    const cap = Math.max(0, Math.min(5000, Number(cfg.daily_cap ?? 500)));
 
     const { data: events } = await db.from('events').select('id, title, cat, date, start_time, end_time, loc, descr, draft, test')
       .eq('draft', false).eq('test', false).neq('cat', 'officer_meeting')
@@ -80,14 +82,16 @@ Deno.serve(async () => {
     const already = new Set((done || []).map((r) => r.event_id + '|' + r.kind));
 
     // Who can be emailed: members who allow club emails, minus test accounts.
-    const { data: members } = await db.from('members').select('email, email_opt_in');
+    const { data: members } = await db.from('members').select('email, email_opt_in, first');
     const { data: tests } = await db.from('test_accounts').select('email');
     const testSet = new Set((tests || []).map((t) => t.email));
     const okEmail = new Set((members || []).filter((m) => m.email_opt_in !== false && !testSet.has(m.email)).map((m) => m.email));
     const allMembers = [...okEmail];
+    const firstName = new Map((members || []).map((m) => [m.email, String(m.first || '').trim()]));
+    const hi = (email: string) => `Hi ${firstName.get(email) || 'there'},`;
 
     // Work out everything that's due.
-    type Job = { ev: typeof events[number]; kind: string; to: string[]; subject: string; html: string; text: string };
+    type Job = { ev: typeof events[number]; kind: string; to: string[]; subject: string; html: (greeting: string) => string; text: (greeting: string) => string };
     const jobs: Job[] = [];
     for (const ev of events) {
       const start = mtMs(ev.date, ev.start_time), end = mtMs(ev.date, ev.end_time);
@@ -114,10 +118,11 @@ Deno.serve(async () => {
         to = [...new Set(to)].filter((e) => okEmail.has(e));
         const phrase = r.key === '7d' ? `is coming up next week, on ${fmtDay(start)}` : r.key === '1d' ? `is tomorrow at ${fmtTime(start)}` : `starts today at ${fmtTime(start)}`;
         const subject = r.key === '7d' ? `Coming up: ${ev.title} on ${fmtDay(start)}` : r.key === '1d' ? `Tomorrow: ${ev.title}` : `Today at ${fmtTime(start)}: ${ev.title}`;
-        const intro = r.to === 'all' ? `Hi everyone,` : `Hi! You're signed up for this, so here's a reminder.`;
+        const lead = r.to === 'all' ? `${ev.title} ${phrase}.` : `Just a reminder that ${ev.title}, which you signed up for, ${phrase}.`;
+        const label = r.to === 'all' ? 'View the event and RSVP' : 'View the event';
         jobs.push({ ev, kind, to, subject,
-          html: htmlEmail(`<p style="margin:0 0 12px">${escHtml(intro)}</p><p style="margin:0 0 16px">${escHtml(ev.title)} ${escHtml(phrase)}.</p>${details}`, { label: r.to === 'all' ? 'View the event and RSVP' : 'View the event', url: link }, footer),
-          text: `${intro}\n\n${ev.title} ${phrase}.\n\n${when}\n${ev.loc || ''}\n\n${ev.descr || ''}\n\nView the event: ${link}` });
+          html: (g) => htmlEmail(`<p style="margin:0 0 12px">${escHtml(g)}</p><p style="margin:0 0 16px">${escHtml(lead)}</p>${details}`, { label, url: link }, footer),
+          text: (g) => `${g}\n\n${lead}\n\n${when}\n${ev.loc || ''}\n\n${ev.descr || ''}\n\n${label}: ${link}` });
       }
 
       if (cfg.survey && !already.has(ev.id + '|survey')) {
@@ -127,31 +132,32 @@ Deno.serve(async () => {
           const { data: sv } = await db.from('event_surveys').select('email').eq('event_id', ev.id);
           const answered = new Set((sv || []).map((x) => x.email));
           const to = [...new Set((att || []).map((x) => x.email))].filter((e) => okEmail.has(e) && !answered.has(e));
-          const subject = `How was ${ev.title}?`;
-          jobs.push({ ev, kind: 'survey', to, subject,
-            html: htmlEmail(`<p style="margin:0 0 12px">Hi!</p><p style="margin:0 0 12px">Thanks for coming to <strong>${escHtml(ev.title)}</strong>. We'd love to hear what you thought. The survey is one star rating and an optional comment, it earns you 2 leaderboard points, and you can answer anonymously.</p><p style="margin:0 0 12px">It's open for 7 days.</p>`, { label: 'Take the 1-minute survey', url: `${site}/#account` }, footer),
-            text: `Hi!\n\nThanks for coming to ${ev.title}. We'd love to hear what you thought. The survey is one star rating and an optional comment, it earns you 2 leaderboard points, and you can answer anonymously. It's open for 7 days.\n\nTake the survey: ${site}/#account` });
+          const body = `Thanks for coming to ${ev.title}! We'd love to hear what you thought. The survey is one star rating and an optional comment, it earns you 2 leaderboard points, and you can answer anonymously. It's open for 7 days.`;
+          jobs.push({ ev, kind: 'survey', to, subject: `How was ${ev.title}?`,
+            html: (g) => htmlEmail(`<p style="margin:0 0 12px">${escHtml(g)}</p><p style="margin:0 0 12px">${escHtml(body)}</p>`, { label: 'Take the 1-minute survey', url: `${site}/#account` }, footer),
+            text: (g) => `${g}\n\n${body}\n\nTake the survey: ${site}/#account` });
         }
       }
     }
 
     // Send. Claim each job in the log first (the unique key stops a second run from sending it again).
-    const fromAddr = fromAddress(), results: string[] = [];
+    const results: string[] = [];
     for (const j of jobs) {
-      const emails = Math.ceil(j.to.length / 45);
+      const emails = j.to.length;
       const claim = await db.from('auto_email_log').insert({ event_id: j.ev.id, kind: j.kind, recipients: j.to.length, emails: 0, status: 'sending' }).select('id').single();
       if (claim.error) continue;   // already claimed by another run
       const id = claim.data.id;
       if (!j.to.length) { await db.from('auto_email_log').update({ status: 'skipped', detail: 'Nobody to send to' }).eq('id', id); continue; }
       if (used + emails > cap) { await db.from('auto_email_log').update({ status: 'skipped', detail: `Daily limit of ${cap} automatic emails reached` }).eq('id', id); continue; }
       let ok = 0, fail = 0, last = '';
-      for (let i = 0; i < j.to.length; i += 45) {
-        const r = await resend({ to: [fromAddr], bcc: j.to.slice(i, i + 45), subject: j.subject, text: j.text, html: j.html });
-        if (r.ok) ok++; else { fail++; last = r.detail; }
+      for (let i = 0; i < j.to.length; i += 100) {
+        const chunk = j.to.slice(i, i + 100);
+        const r = await resendBatch(chunk.map((email) => ({ to: [email], subject: j.subject, html: j.html(hi(email)), text: j.text(hi(email)) })));
+        if (r.ok) ok += chunk.length; else { fail += chunk.length; last = r.detail; }
         await new Promise((res) => setTimeout(res, 600));   // stay under Resend's rate limit
       }
       used += ok + fail;
-      await db.from('auto_email_log').update({ status: ok ? 'sent' : 'failed', emails: ok + fail, detail: fail ? `${fail} of ${ok + fail} emails failed: ${last}`.slice(0, 500) : '' }).eq('id', id);
+      await db.from('auto_email_log').update({ status: ok ? 'sent' : 'failed', emails: ok + fail, detail: fail ? `${fail} of ${ok + fail} people didn't get it: ${last}`.slice(0, 500) : '' }).eq('id', id);
       await db.from('change_log').insert({ who: 'automatic emails', text: `Sent "${j.subject}" to ${j.to.length} ${j.to.length === 1 ? 'person' : 'people'}${fail ? ' (some failed)' : ''}` });
       results.push(j.kind);
     }
