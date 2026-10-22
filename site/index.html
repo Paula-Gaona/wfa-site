@@ -11,7 +11,7 @@
 <meta property="og:title" content="Wolverine Finance Association | UVU">
 <meta property="og:description" content="Utah Valley University's student finance club: workshops, guest speakers, case competitions, career fairs, and recruiting help for careers in finance.">
 <meta property="og:url" content="https://wolverinefinanceassociation.org/">
-<meta property="og:image" content="https://wolverinefinanceassociation.org/icon-512.png">
+<meta property="og:image" content="https://wolverinefinanceassociation.org/og-image.png">
 <meta name="twitter:card" content="summary">
 <!-- Site icon (browser tabs, Google search results, phone home screens): the WFA seal -->
 <link rel="icon" href="/favicon.ico" sizes="48x48">
@@ -834,6 +834,7 @@ function renderChrome(route){
   document.getElementById('who').innerHTML = u
     ? `${isStaff() && !ui.memberView ? `<span class="seg-toggle" role="group" aria-label="Edit or safe view"><button data-act="safe-view" data-mode="edit" aria-pressed="${!ui.safeView}" title="Make changes">Edit</button><button data-act="safe-view" data-mode="safe" aria-pressed="${!!ui.safeView}" title="Look around without changing anything">Safe</button></span>` : ''}${isStaff() ? `<button class="btn on-dark ${ui.memberView ? '' : 'ghost'} small" data-act="member-view" aria-pressed="${!!ui.memberView}">${ui.memberView ? 'Member view: on' : 'Member view'}</button>` : ''}<span class="name">${esc(u.first)}</span><span class="role ${r}">${r}</span><button class="btn on-dark ghost small" data-act="signout">Sign out</button>`
     : `<a class="btn on-dark ghost small" href="#signin">Sign in</a><a class="btn on-dark small" href="#signup">Join</a>`;
+  document.getElementById('who').insertAdjacentHTML('afterbegin', appHeaderBtn());
   const bar = document.getElementById('safebar');
   bar.hidden = !(ui.safeView && isStaff()) && !testRole;
   if (testRole) bar.innerHTML = `<div class="wrap"><span>Test ${testRole}. Only test accounts see what you do here. It doesn’t change the real site, stats, or leaderboard.</span></div>`;
@@ -4039,7 +4040,6 @@ async function showPopup(title, body, chatId, tag){
 if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => {
   if (!e.data || e.data.openChat === undefined) return;
   location.hash = 'messages' + (e.data.openChat ? '/' + e.data.openChat : '');
-  if (e.data.popupClicked) toast('Pop-up click received at ' + new Date(e.data.popupClicked).toLocaleTimeString());
 });
 function popupsOn(){ try { return localStorage.getItem('wfa-chat-popups') !== 'off'; } catch(e){ return true; } }
 function popupButton(){
@@ -4262,6 +4262,23 @@ function installHtml(){
   if (isIphone()) return '<button class="btn ghost small" data-act="install-iphone">Add WFA to your home screen</button>';
   return '';
 }
+// In the installed app there's no browser refresh button, so the header gets one. Everywhere else: Install app.
+function appHeaderBtn(){
+  if (appInstalled()) return '<button class="btn on-dark ghost small" data-act="app-refresh" title="Reload the app" aria-label="Refresh">↻ Refresh</button>';
+  return '<button class="btn on-dark ghost small" data-act="install-any" title="Install the WFA app">Install app</button>';
+}
+// Install steps for whatever device and browser this is (used when the browser can't show its own install prompt).
+function installSteps(){
+  const ua = navigator.userAgent, iphone = /iPhone|iPad|iPod/.test(ua), android = /Android/.test(ua), edge = /Edg\//.test(ua), safariMac = /Macintosh/.test(ua) && /Safari/.test(ua) && !/Chrome|Chromium|Edg/.test(ua);
+  const steps = iphone ? ['Open this site in <strong>Safari</strong> (it has to be Safari on iPhone).', 'Tap <strong>Share</strong> (the square with an arrow pointing up).', 'Choose <strong>Add to Home Screen</strong>, then <strong>Add</strong>.']
+    : android ? ['Open this site in <strong>Chrome</strong>.', 'Tap <strong>⋮</strong> in the top right.', 'Choose <strong>Install app</strong> (or <strong>Add to Home screen</strong>), then <strong>Install</strong>.']
+    : edge ? ['Click <strong>⋯</strong> in the top right of Edge.', 'Choose <strong>Apps → Install this site as an app</strong>.', 'Click <strong>Install</strong>.']
+    : safariMac ? ['In Safari’s menu bar, choose <strong>File → Add to Dock</strong>.', 'Click <strong>Add</strong>.']
+    : ['Look for the <strong>install icon</strong> at the right end of the address bar (a screen with a down arrow) and click it. Or:', 'Click <strong>⋮</strong> in the top right of Chrome → <strong>Cast, save, and share → Install page as app</strong>.', 'Click <strong>Install</strong>.'];
+  showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="eyebrow">Install the app</div></div>
+    <h2>Get the WFA app</h2><ol style="margin:0;padding-left:1.2em;line-height:1.8">${steps.map(x => `<li>${x}</li>`).join('')}</ol>
+    <p class="muted">It opens in its own window (or from your home screen) with the WFA seal, and can show message pop-ups.</p></div>`);
+}
 function renderInstall(){ const el = document.getElementById('foot-install'); if (el) el.innerHTML = installHtml(); }
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; renderInstall(); if (route() === 'account') render(); });
 window.addEventListener('appinstalled', () => { installPrompt = null; renderInstall(); toast('WFA app installed'); });
@@ -4375,8 +4392,11 @@ document.addEventListener('click', async ev => {
       const on = me().chatEmails === false, r = await sb.from('members').update({ chat_emails: on }).eq('id', authUser.id);
       if (r.error) { toast(/chat_emails/.test(r.error.message || '') ? 'Messages aren’t set up yet. An admin needs to run 42-chats.sql.' : errMsg(r.error)); break; }
       await load(); render(); toast(on ? 'Message emails turned on' : 'Message emails turned off'); break; }
+    case 'app-refresh': location.reload(); break;
+    case 'install-any': if (installPrompt){ installPrompt.prompt(); const c = await installPrompt.userChoice; installPrompt = null; renderInstall(); render(); if (c.outcome !== 'accepted') toast('Not installed. You can install it anytime.'); } else installSteps(); break;
     case 'install-app': if (installPrompt){ installPrompt.prompt(); const c = await installPrompt.userChoice; installPrompt = null; renderInstall(); if (c.outcome !== 'accepted') toast('Not installed. You can install it later from the address bar.'); } break;
-    case 'install-iphone': showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="eyebrow">Add to home screen</div></div>
+    case 'install-iphone': installSteps(); break;
+    case 'install-iphone-old': showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="eyebrow">Add to home screen</div></div>
       <h2>Get the WFA app on your iPhone</h2><ol style="margin:0;padding-left:1.2em;line-height:1.8"><li>Open this site in <strong>Safari</strong>.</li><li>Tap the <strong>Share</strong> button (the square with an arrow).</li><li>Choose <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li></ol>
       <p class="muted">It opens like an app, with the WFA seal on your home screen.</p></div>`); break;
     case 'reveal-code': ui.codeShown = ui.codeShown === id ? null : id; refreshEvent(id); break;
