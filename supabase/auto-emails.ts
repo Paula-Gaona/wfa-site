@@ -134,8 +134,8 @@ Deno.serve(async () => {
           const to = [...new Set((att || []).map((x) => x.email))].filter((e) => okEmail.has(e) && !answered.has(e));
           const body = `Thanks for coming to ${ev.title}! We'd love to hear what you thought. The survey is one star rating and an optional comment, it earns you 2 leaderboard points, and you can answer anonymously. It's open for 7 days.`;
           jobs.push({ ev, kind: 'survey', to, subject: `How was ${ev.title}?`,
-            html: (g) => htmlEmail(`<p style="margin:0 0 12px">${escHtml(g)}</p><p style="margin:0 0 12px">${escHtml(body)}</p>`, { label: 'Take the 1-minute survey', url: `${site}/#account` }, footer),
-            text: (g) => `${g}\n\n${body}\n\nTake the survey: ${site}/#account` });
+            html: (g) => htmlEmail(`<p style="margin:0 0 12px">${escHtml(g)}</p><p style="margin:0 0 12px">${escHtml(body)}</p><p style="margin:0 0 12px">Event: <a href="${escHtml(link)}" style="color:#1f4d2e">${escHtml(ev.title)}</a></p>`, { label: 'Take the 1-minute survey', url: `${site}/#account` }, footer),
+            text: (g) => `${g}\n\n${body}\n\nEvent: ${link}\nTake the survey: ${site}/#account` });
         }
       }
     }

@@ -2433,7 +2433,7 @@ function memberTable(rows){
 
 const SURVEY_POINTS = 2, SURVEY_DAYS = 7;
 const MAIL_TEMPLATES = {
-  reminder: ['Event reminder', 'Reminder: {event} on {date}', 'Hi everyone,\n\nQuick reminder that {event} is on {date} at {time} in {location}.\n\nSee you there,\nWolverine Finance Association'],
+  reminder: ['Event reminder', 'Reminder: {event} on {date}', 'Hi everyone,\n\nQuick reminder that {event} is on {date} at {time} in {location}.\n\nDetails and RSVP: {link}\n\nSee you there,\nWolverine Finance Association'],
   dues: ['Dues reminder', '{semester} WFA dues reminder', 'Hi,\n\nOur records show your {semester} dues (${dues}) are still outstanding. You can pay any officer at the next meeting.\n\nThanks,\nWolverine Finance Association'],
   survey: ['Survey reminder', 'How was {event}? Quick survey', 'Hi {first},\n\nThanks for coming to {event} on {date}! We’d love to hear what you thought. The survey is one star rating and an optional comment, it earns you ' + SURVEY_POINTS + ' leaderboard points, and you can answer anonymously.\n\nFill it out in My account: ' + location.origin + '/#account\n\nIt closes 7 days after the event.\n\nThanks,\nWolverine Finance Association'],
   missed: ['We missed you', 'Sorry we missed you at {event}', 'Hi,\n\nWe missed you at {event} on {date}. Slides and notes are in the members archive on our site.\n\nHope to see you at the next one,\nWolverine Finance Association']
@@ -2482,7 +2482,7 @@ function firstNameOf(email){ const u = db.users.find(x => x.email === email); re
 function withFirst(s, name){ return String(s).replace(/\{first\}/g, name); }
 function usesFirst(){ return /\{first\}/.test((ui.mail.subject || '') + (ui.mail.body || '') + (ui.mail.closing || '')); }
 // Placeholder buttons above the message. They insert at the cursor in whichever box was used last.
-const PLACEHOLDERS = [['{first}', 'First name'], ['{event}', 'Event name'], ['{date}', 'Event date'], ['{time}', 'Event time'], ['{location}', 'Location'], ['{semester}', 'Semester']];
+const PLACEHOLDERS = [['{first}', 'First name'], ['{event}', 'Event name'], ['{date}', 'Event date'], ['{time}', 'Event time'], ['{location}', 'Location'], ['{link}', 'Event link'], ['{semester}', 'Semester']];
 function insertBar(){
   return `<div class="row" style="gap:4px;align-items:center" role="toolbar" aria-label="Insert"><span class="hint">Insert:</span>${PLACEHOLDERS.map(([p, l]) => `<button type="button" class="btn ghost small" data-act="ins" data-ph="${p}" title="Inserts ${p}">${l}</button>`).join('')}</div>`;
 }
@@ -2520,7 +2520,7 @@ function fillMerge(s){
   const [, id] = ui.mail.aud.split(':');
   const e = evById(ui.mail.ev || (id || ''));
   return s.replace(/\{event\}/g, e ? e.title : '{event}').replace(/\{date\}/g, e ? fmtDay(e.date) : '{date}').replace(/\{time\}/g, e ? fmtTime(e.start) : '{time}')
-    .replace(/\{location\}/g, e ? e.loc : '{location}').replace(/\{semester\}/g, db.settings.semester).replace(/\{dues\}/g, db.settings.dues);
+    .replace(/\{location\}/g, e ? e.loc : '{location}').replace(/\{link\}/g, e ? eventLink(e.id) : '{link}').replace(/\{semester\}/g, db.settings.semester).replace(/\{dues\}/g, db.settings.dues);
 }
 /* ---------- Email formatting: **bold**, *italic*, "- " bullets, "## " headings, links ---------- */
 function mdInline(s){
@@ -2612,7 +2612,7 @@ function eventBlock(){
   if (!list.length) return '';
   return '\n\n## ' + (list.length === 1 ? 'Event' : 'Upcoming events') + '\n' + list.map(e =>
     '\n### ' + e.title + '\n- When: ' + fmtDay(e.date) + (e.start ? ', ' + fmtTime(e.start) + (e.end ? ' to ' + fmtTime(e.end) : '') : '') +
-    (e.loc ? '\n- Where: ' + e.loc : '') + (e.desc ? '\n' + e.desc.trim().split('\n').map(l => '> ' + l).join('\n') : '')).join('\n\n');
+    (e.loc ? '\n- Where: ' + e.loc : '') + '\n- Details & RSVP: ' + eventLink(e.id) + (e.desc ? '\n' + e.desc.trim().split('\n').map(l => '> ' + l).join('\n') : '')).join('\n\n');
 }
 function mailText(){
   const closing = fillMerge(ui.mail.closing || '').trim();
@@ -3216,7 +3216,7 @@ function viewOfficer(){
         <h3>Email draft builder</h3>
         <div class="row" style="gap:6px"><span class="hint">Start from:</span>${Object.entries(MAIL_TEMPLATES).filter(([k]) => k !== 'dues' || DUES_ENABLED).map(([k,[l]]) => `<button type="button" class="btn ghost small" data-act="mail-tpl" data-tpl="${k}">${l}</button>`).join('')}</div>
         <label>Send to<select id="ml-aud">${mailAudiences().map(([g, opts]) => opts.length ? `<optgroup label="${esc(g)}">${opts.map(([k,l]) => `<option value="${k}" ${ui.mail.aud===k?'selected':''}>${esc(l)}</option>`).join('')}</optgroup>` : '').join('')}</select></label>
-        <label>Event <span class="hint">(optional)</span><select id="ml-ev">${eventOptions(sortedEvents(), ui.mail.ev, 'None')}</select><span class="hint">Only needed if the message uses {event}, {date}, {time}, or {location}.</span></label>
+        <label>Event <span class="hint">(optional)</span><select id="ml-ev">${eventOptions(sortedEvents(), ui.mail.ev, 'None')}</select><span class="hint">Only needed if the message uses {event}, {date}, {time}, {location}, or {link}.</span></label>
         <label>Subject<input id="ml-subject" value="${esc(ui.mail.subject)}"></label>
         <label for="ml-body">Message</label>
         ${fmtBar('ml-body')}
@@ -4325,7 +4325,7 @@ async function sendMail(){
   const to = audienceEmails(ui.mail.aud), subject = fillMerge(ui.mail.subject).trim(), md = mailText(), text = mdToPlain(md);
   if (!to.length) return toast('No one is in that group.');
   if (!subject || !text) return toast('Add a subject and a message.');
-  if (/\{(event|date|time|location)\}/.test(subject + text)) return toast('Pick an event, or remove {event}, {date}, {time}, and {location} from the message.');
+  if (/\{(event|date|time|location|link)\}/.test(subject + text)) return toast('Pick an event, or remove {event}, {date}, {time}, {location}, and {link} from the message.');
   if (usesFirst()){
     // Personalized: one email per person, a little apart to stay under the email service's rate limit.
     let sent = 0, failed = 0, lastErr = '';
