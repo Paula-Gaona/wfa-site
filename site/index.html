@@ -648,7 +648,8 @@ async function load(){
   db.awards = R.awards || [];
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
   (R.profiles || []).forEach(p => {
-    db.profiles[p.email] = { name:p.name, title:buildTitle(p.tier, p.branch), bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '', majors:p.majors || [], minor:p.minor || '', canPublish:!!p.can_publish };
+    const auto = buildTitle(p.tier, p.branch), custom = p.title && p.title !== auto ? p.title : '';   // older profiles saved the automatic title
+    db.profiles[p.email] = { name:p.name, title:custom || auto, customTitle:custom, rawTitle:p.title || '', bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '', majors:p.majors || [], minor:p.minor || '', canPublish:!!p.can_publish };
     (p.role === 'admin' ? db.adminEmails : db.officerEmails).push(p.email);
   });
   if (R.access){
@@ -3518,6 +3519,8 @@ function viewAdmin(){
           <label>Rank on Officers page<select id="of-tier">${Object.entries(TIERS).map(([k,l]) => `<option value="${k}" ${(p.tier || 'officer')===k?'selected':''}>${l}</option>`).join('')}</select></label>
           <label>Branch<select id="of-branch"><option value="">No branch</option>${Object.entries(BRANCHES).map(([k,l]) => `<option value="${k}" ${p.branch===k?'selected':''}>${l}</option>`).join('')}</select></label>
         </div>
+        <label>Custom title <span class="hint">Optional, like “Treasurer” or “Firm Outreach Officer.” Shown on the Officers page and around the site instead of the automatic title. Rank and branch still decide permissions and chats.</span>
+          <input id="of-ctitle" maxlength="60" value="${esc(p.customTitle || '')}" placeholder="Leave blank to use: ${esc(buildTitle(p.tier || 'officer', p.branch || ''))}"></label>
         <label class="check"><input type="checkbox" id="of-publish" ${p.canPublish ? 'checked' : ''}> Can publish without approval</label>
         <span class="hint" style="margin-top:-8px">Presidents, vice presidents, faculty advisors, and admins always can. Other officers’ changes that members can see go to the Approvals inbox unless this is checked.</span>
         <fieldset class="pwset">
@@ -5674,7 +5677,7 @@ async function handleSubmit(f, v, err){
         }
         if (old) await sb.storage.from('officer-photos').remove([old]);
       }
-      must(await sb.from('officer_profiles').upsert({ email: session, photo, title: p.title || '', tier: p.tier || 'officer', branch: p.branch || '', name: v('pf-name'), contact, hours: v('pf-hours'), linkedin, bio: v('pf-bio') }));
+      must(await sb.from('officer_profiles').upsert({ email: session, photo, title: p.rawTitle || '', tier: p.tier || 'officer', branch: p.branch || '', name: v('pf-name'), contact, hours: v('pf-hours'), linkedin, bio: v('pf-bio') }));
       ui.profilePhoto = null;
       await logChange('Updated their officer profile');
     }, 'Profile saved');
@@ -5685,7 +5688,7 @@ async function handleSubmit(f, v, err){
     const first = v('of-first'), last = v('of-last'), mode = v('of-setup'), canPub = !!(document.getElementById('of-publish') || {}).checked;
     let pw = (mode === 'password' || mode === 'manual') ? v('of-pw') : '';
     if ((mode === 'password' || mode === 'manual') && !pw){ pw = tempPw(); document.getElementById('of-pw').value = pw; }
-    const hours = v('of-hours'), bio = v('of-bio'), tier = v('of-tier'), branch = v('of-branch'), title = buildTitle(tier, branch);
+    const hours = v('of-hours'), bio = v('of-bio'), tier = v('of-tier'), branch = v('of-branch'), title = (document.getElementById('of-ctitle') || {}).value?.trim() || buildTitle(tier, branch);   // blank = the automatic title
     if (!EMAIL_RE.test(email)) return err('of-err', 'Enter a valid login email.');
     if (!first || !last) return err('of-err', 'Enter their first and last name.');
     if (pw && pw.length < 8) return err('of-err', 'Temporary password needs at least 8 characters.');
