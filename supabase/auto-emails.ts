@@ -192,7 +192,7 @@ Deno.serve(async () => {
         jobs.push({ ev, kind, subject, emailTo: base.filter((e) => getsEmail(e, 'events')), pushTo: base.filter((e) => getsPush(e, 'events')),
           html: (g) => htmlEmail(`<p style="margin:0 0 12px">${escHtml(g)}</p><p style="margin:0 0 16px">${escHtml(lead)}</p>${details}`, { label, url: link }, footer),
           text: (g) => `${g}\n\n${lead}\n\n${when}\n${ev.loc || ''}\n\n${ev.descr || ''}\n\n${label}: ${link}`,
-          push: { title: subject, body: `${fmtTime(start)}${ev.loc ? ' · ' + ev.loc : ''}`, url: link } });
+          push: { title: subject, body: `${fmtTime(start)}${ev.loc ? ' 00b7 ' + ev.loc : ''}`, url: link } });
       }
 
       // Check-in is open (15 minutes before the start): a notification only, to people signed up who haven't checked in.
