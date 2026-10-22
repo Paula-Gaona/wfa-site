@@ -3845,8 +3845,11 @@ function render(){
   if (session && (needsPassword() || needsProfile())) r = 'setup';   // finish the account before anything else
   syncTabHash(r);
   renderChrome(r); document.getElementById('app').innerHTML = VIEWS[r]();
-  addPasswordToggles();
+  addPasswordToggles(); syncCaseBox();
 }
+// The event form's team settings show whenever the type is Case competition, however the type got set.
+function syncCaseBox(){ const c = document.getElementById('ev-cat'), b = document.getElementById('ev-case'); if (c && b) b.hidden = c.value !== 'case_competition'; }
+['input', 'change', 'click', 'keyup'].forEach(t => document.addEventListener(t, ev => { if (ev.target && ev.target.id === 'ev-cat') syncCaseBox(); }, true));
 // Puts a Show/Hide button inside every password box.
 function addPasswordToggles(){
   document.querySelectorAll('#app input[type="password"]').forEach(inp => {
