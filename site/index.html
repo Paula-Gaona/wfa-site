@@ -1028,8 +1028,10 @@ function viewPartners(){
   const ans = s ? s.answered : 0;
   const stats = s && s.members ? `<section class="stack" style="gap:16px">
       <div class="section-head"><h2>Who our members are</h2><span class="muted">Live from our member profiles</span></div>
-      <div class="tiles">${tile(s.members, 'Members')}${tile(s.events, 'Events held')}${tile(s.avg_attendance, 'Average attendance')}</div>
+      <div class="tiles">${tile(s.members, 'Members')}${tile(s.events, 'Events held')}${s.by_type ? '' : tile(s.avg_attendance, 'Average attendance')}</div>
       <div class="stats-grid">
+        ${s.by_type && s.by_type.length ? `<section class="panel"><div><h3>Average attendance by event type</h3><span class="hint">Members checked in per event. Bigger events like guest speakers draw more people than hands-on workshops.</span></div>
+          ${hbars(s.by_type.map(x => [catName(x.cat), x.avg, `${catName(x.cat)}: ${x.avg} on average across ${x.events} event${x.events === 1 ? '' : 's'}`]))}</section>` : ''}
         ${s.interests.length ? `<section class="panel"><div><h3>Career interests</h3><span class="hint">Share of the ${ans} members who told us. Members can pick more than one.</span></div>
           ${hbars(s.interests.map(x => [x.name, pct(x.n, ans), `${x.name}: ${x.n} members`]), '%')}</section>` : ''}
         ${s.majors.length ? `<section class="panel"><div><h3>Top majors</h3><span class="hint">Number of members. Double majors count once for each.</span></div>
