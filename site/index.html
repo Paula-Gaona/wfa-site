@@ -505,7 +505,7 @@ function buildTitle(tier, branch){
   return b ? b + ' Officer' : 'Officer';
 }
 const OFFICER_TABS = [['stats','Statistics'],['approvals','Approvals'],['questions','Questions'],['events','Events'],['plan','Event planning'],['checkin','Check-in & attendance'],['surveys','Event surveys'],['qr','QR codes'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
-const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['points','Award points'],['seasons','Leaderboard seasons'],['test','Test accounts'],['log','Change log']];
+const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['points','Award points'],['seasons','Leaderboard seasons'],['auto','Automatic emails'],['test','Test accounts'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
 const MAJORS = ["Undeclared","Accounting, A.S.","Accounting, B.S.","American Sign Language Secondary Education, B.A.","Animation and Game Development, B.S.","Anthropology, B.A.","Anthropology, B.S.","Applied Artificial Intelligence, M.S.","Applied Communication, B.A.","Applied Communication, B.S.","Architecture, B.Arch","Art Education, B.S.","Art History, B.A.","Art and Design - Graphic Design Emphasis, A.A.S.","Art and Design - Graphic Design Emphasis, B.F.A.","Art and Design - Illustration Emphasis, A.A.S.","Art and Design - Illustration Emphasis, B.F.A.","Art and Design - Painting/Drawing/Printmaking Emphasis, B.F.A.","Art and Design - Photography Emphasis, A.A.S.","Art and Design - Photography Emphasis, B.F.A.","Art and Design - Sculpture and Ceramics Emphasis, B.F.A.","Art and Design, A.A.","Art and Design, A.S.","Art and Design, B.S.","Associate in Pre-Engineering - Biological and Chemical Engineering Emphasis, A.P.E.","Associate in Pre-Engineering - Civil and Mechanical Engineering Emphasis, A.P.E.","Associate in Pre-Engineering - Computer and Electrical Engineering Emphasis, A.P.E.","Automotive Technology, A.A.S.","Aviation Management, B.S.","Aviation Science, A.A.S.","Aviation Science, A.S.","Bioinformatics, B.S.","Biology Education, B.S.","Biology, A.A.","Biology, A.S.","Biology, B.S.","Biomedical Science, B.S.","Botany, B.S.","Business Management, A.S.","Business Technologies and Education, B.S.","Business and Analysis, B.S.","Cabinetry and Architectural Woodwork, A.A.S.","Chemistry - Biochemistry Emphasis, B.S.","Chemistry - Professional Chemistry Emphasis, B.S.","Chemistry Education, B.S.","Civil Engineering, B.S.","Clinical Mental Health Counseling, M.S.","Commercial Music, B.M.","Computational Data Science, B.S.","Computer Engineering, B.S.","Computer Science Education, B.S.","Computer Science, A.S.","Computer Science, B.S.","Constitutional Government Civics and Law, M.A.","Construction Management, A.A.S.","Construction Management, B.S.","Criminal Justice, A.A.","Criminal Justice, A.S.","Criminal Justice, B.S.","Culinary Arts, A.A.S.","Curriculum and Instruction, M.Ed.","Cybersecurity, A.A.S","Cybersecurity, B.S.","Cybersecurity, M.S.","Dance - Ballet Emphasis, B.F.A.","Dance - Modern Dance Emphasis, B.F.A.","Dance Education, B.S.","Dance, A.S.","Dance, B.S.","Deaf Studies - General Deaf Studies Emphasis, B.A.","Deaf Studies - Interpreting Emphasis, B.A.","Dental Hygiene, A.A.S.","Dental Hygiene, B.S.","Diesel Mechanics Technology, A.A.S.","Digital Audio, A.A.S.","Digital Audio, B.S.","Digital Cinema Production, A.A.S.","Digital Cinema Production, B.S.","Digital Marketing, B.S.","Early Childhood Education, A.S.","Earth Science Education, B.S.","Electrical Engineering, B.S.","Electrical and Computer Engineering, A.A.S.","Elementary Education, B.S.","Emergency Services Administration, B.S.","Emergency Services Operations, A.A.S.","Emergency Services Supervision, B.A.P.","Emergency Services, A.S.","Engineering Design Technology, A.A.S.","Engineering Design Technology, A.S.","Engineering and Technology Management, M.S.","English - Creative Writing Emphasis, B.A.","English - Creative Writing Emphasis, B.S.","English - Literary Studies Emphasis, B.A.","English - Literary Studies Emphasis, B.S.","English - Writing Studies Emphasis, B.A.","English - Writing Studies Emphasis, B.S.","English Education, B.A.","English Education, B.S.","Entertainment Design, A.A.S.","Entertainment Design, B.F.A.","Environmental Science and Management, B.S.","Environmental Studies, B.S.","Event Management, B.S.","Exercise Science, A.S.","Exercise Science, B.S.","Family Science, B.A.","Family Science, B.S.","Finance, B.S.","Finance, M.S.","Financial Planning and Wealth Management, B.S.","Forensic Science - Forensic Investigation Emphasis, B.S.","Forensic Science - Forensic Laboratory Emphasis, B.S.","Forensic Science, A.S.","Geography, B.S.","Geology, B.S.","Health Science, B.S.","Healthcare Administration, B.S.","Healthcare Services, A.A.S.","History and Social Studies Education, B.S.","History, B.A.","Hospitality Management, A.A.S.","Hospitality Management, A.S.","Hospitality Management, B.S.","Human Resource Management, B.S.","Humanities and Social Sciences, A.A.","Humanities and Social Sciences, A.S.","Humanities, B.A.","Humanities, B.S.","Information Systems - Application Development Emphasis, B.S.","Information Systems - Applied Artificial Intelligence Emphasis, B.S.","Information Systems - Data Analytics Emphasis, B.S.","Information Systems - Information Security Management Emphasis, B.S.","Information Systems and Technology, A.A.S.","Information Systems and Technology, A.S.","Information Technology, B.S.","Integrated Studies, B.A.","Integrated Studies, B.S.","International Business, B.S.","Marketing, B.S.","Marriage and Family Therapy, M.A.","Master of Accountancy, M.Acc","Master of Business Administration, M.B.A.","Master of Computer Science, M.C.S.","Master of Education in Applied Behavioral Analysis, M.Ed.","Master of Education in Higher Education Leadership, M.Ed.","Master of Education in K-12 Education Leadership, M.Ed.","Master of Education in School Counseling, M.Ed.","Master of Physician Assistant Studies, M.P.A.S.","Master of Public Administration, M.P.A.","Master of Social Work Advanced Standing, M.S.W.","Master of Social Work, M.S.W.","Mathematics - Actuarial Science Emphasis, B.S.","Mathematics - Applied Mathematics Emphasis, B.S.","Mathematics - Mathematics Emphasis, B.S.","Mathematics Education, B.S.","Mathematics, A.S.","Mechanical Engineering, B.S.","Mechatronics Engineering Technology - Automation and Electrical Technology Emphasis, A.A.S.","Mechatronics Engineering Technology - Mechatronics Emphasis, A.A.S.","Mechatronics Engineering Technology, B.S.","Microbiology, B.S.","Molecular Biosciences and Biotechnology, B.S.","Music Education, B.S.","Music, A.S.","Music, B.A.","Music, B.S.","National Security Studies, B.A.","National Security Studies, B.S.","Nursing, A.S.N.","Nursing, B.S.","Occupational Therapy Assistant, B.S.","Operations and Supply Chain Management, B.S.","Outdoor Recreation Management, A.S.","Outdoor Recreation Management, B.S.","Performance, B.M.","Philosophy, B.A.","Philosophy, B.S.","Physical Education Teacher Education, B.S.","Physical Therapist Assistant, SAAS","Physics Education, B.S.","Physics, B.S.","Political Science - American Government Emphasis, B.A.","Political Science - American Government Emphasis, B.S.","Political Science - Global Politics Emphasis, B.A.","Political Science - Global Politics Emphasis, B.S.","Political Science - Indian Affairs Administration Emphasis, B.A.","Political Science - Indian Affairs Administration Emphasis, B.S.","Political Science - Peace and Justice Studies Emphasis, B.A.","Political Science - Peace and Justice Studies Emphasis, B.S.","Political Science - Public Administration and Public Policy Emphasis, B.A.","Political Science - Public Administration and Public Policy Emphasis, B.S.","Political Science - Public Law and Political Philosophy Emphasis, B.A.","Political Science - Public Law and Political Philosophy Emphasis, B.S.","Pre-Elementary Education, A.S.","Pre-Engineering, A.S.","Professional Advancement, A.S.","Professional Advancement, B.A.P.","Professional Advancement, B.S.","Professional Pilot, B.S.","Professional Sales, B.S.","Psychology, B.A.","Psychology, B.S.","Public Health, A.S.","Public Health, B.S.","Public Relations and Strategic Communication, B.A.","Public Relations and Strategic Communication, B.S.","Respiratory Therapy, A.A.S.","Respiratory Therapy, B.S.","School Health Education, B.S.","Secondary Education, M.A.T.","Social Work, B.S.W.","Sociology, B.A.","Sociology, B.S.","Software Development, B.A.S.","Software Engineering, B.S.","Spanish Education, B.A.","Spanish, B.A.","Special Education - Mild/Moderate/Severe, B.S.","Statistics, B.S.","Strategic Foresight and Business, B.S.","Surveying Technology, A.A.S.","Technology Management, B.S.","Technology, A.A.S.","Theatre Arts - Acting Emphasis, B.F.A.","Theatre Arts - Musical Theatre Emphasis, B.F.A.","Theatre Arts - Theatre Design and Production Emphasis, B.F.A.","Theatre Arts, A.S.","Theatre Education, B.S.","Theatre Studies, A.A.","Theatre Studies, B.A.","Transportation Technologies, B.A.S.","Web Design and Development - Interaction and User Experience Design Emphasis, B.S.","Web Design and Development - Web Application Development Emphasis, B.S.","Web Design and Development, A.A.S.","Wildland Fire Management, A.A.S.","Zoology, B.S."];
@@ -579,6 +579,7 @@ async function load(){
     testAccounts: off && t('test_accounts'),
     guests: off && t('guest_checkins'),
     caseBoard: signed && sb.rpc('case_board'),
+    autoLog: myRole === 'admin' && sb.from('auto_email_log').select('*').order('sent_at', { ascending: false }).limit(60),
     caseNotes: off && sb.from('case_teams').select('id, officer_rating, officer_note'),
     memberPts: off && sb.rpc('member_points'),
     access: off && t('access_list'),
@@ -591,7 +592,8 @@ async function load(){
   const R = {};
   keys.forEach((k, i) => { if (res[i].error) console.warn(k, res[i].error.message); R[k] = res[i].data; });
 
-  db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0), about: R.settings?.about || {}, lbSince: R.settings?.lb_since || null };
+  db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0), about: R.settings?.about || {}, lbSince: R.settings?.lb_since || null, autoEmail: R.settings?.auto_email || null };
+  db.autoLog = Array.isArray(R.autoLog) ? R.autoLog : [];
   db.lbHistory = Array.isArray(R.lbHistory) ? R.lbHistory : [];
   db.awards = R.awards || [];
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
@@ -1441,6 +1443,58 @@ function adminSeasonsBody(){
         </div>
       </div>
     </details>
+  </div>`;
+}
+
+// Admin -> Automatic emails: reminders before events and a survey email after, sent by the auto-emails Edge Function
+// every 10 minutes (see supabase/auto-emails.ts and 39-automatic-emails.sql).
+const AUTO_REMINDERS = [['7d', '1 week before', 7 * 864e5], ['1d', '1 day before', 864e5], ['2h', '2 hours before', 2 * 36e5]];
+const AUTO_KINDS = { remind_7d: 'Reminder, 1 week before', remind_1d: 'Reminder, 1 day before', remind_2h: 'Reminder, 2 hours before', survey: 'Survey email' };
+function autoCfg(){
+  return db.settings.autoEmail || { enabled: false, reminders: [{ key: '7d', on: false, to: 'all' }, { key: '1d', on: true, to: 'rsvp' }, { key: '2h', on: true, to: 'rsvp' }], survey: true, daily_cap: 60 };
+}
+function autoUpcoming(c){
+  const now = Date.now(), list = [], done = new Set(db.autoLog.map(l => l.event_id + '|' + l.kind));
+  sortedEvents().filter(e => !e.draft && e.cat !== 'officer_meeting' && evEndMs(e) + 30 * 6e4 > now && evStartMs(e) - 8 * 864e5 < now).forEach(e => {
+    AUTO_REMINDERS.forEach(([k, l, off]) => { const r = (c.reminders || []).find(x => x.key === k);
+      if (r && r.on && evStartMs(e) - off > now && !done.has(e.id + '|remind_' + k))
+        list.push([evStartMs(e) - off, e, 'Reminder, ' + l, r.to === 'all' ? 'All members' : isCase(e) ? `${teamsIn(e.id).reduce((n, t) => n + t.members.filter(m => m.confirmed).length, 0)} confirmed teammates so far` : `${rsvpCount(e.id)} RSVP’d so far`]); });
+    if (c.survey && evEndMs(e) + 30 * 6e4 > now && !done.has(e.id + '|survey')) list.push([evEndMs(e) + 30 * 6e4, e, 'Survey email', 'People who check in']);
+  });
+  return list.sort((a, b) => a[0] - b[0]).slice(0, 12);
+}
+function adminAutoBody(){
+  const c = autoCfg(), ready = !!db.settings.autoEmail;
+  const rem = k => (c.reminders || []).find(r => r.key === k) || { key: k, on: false, to: 'rsvp' };
+  const when = ms => `${fmtDay(mtDateIso(ms))}, ${fmtTime(mtClock(ms))}`;
+  const up = autoUpcoming(c);
+  return `<div class="stack" style="gap:24px">
+    ${ready ? '' : '<div class="notice"><span><strong>One-time setup needed.</strong> Deploy the auto-emails Edge Function and run 39-automatic-emails.sql in Supabase (Claude has the steps). Until then these settings can’t be saved.</span></div>'}
+    <form class="panel stack" id="f-auto" style="gap:14px">
+      <label class="check" style="font-weight:700"><input type="checkbox" id="au-enabled" ${c.enabled ? 'checked' : ''}> Send automatic emails</label>
+      <div class="stack" style="gap:8px"><strong>Event reminders</strong>
+        ${AUTO_REMINDERS.map(([k, l]) => { const r = rem(k); return `<div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
+          <label class="check" style="min-width:11rem"><input type="checkbox" class="au-on" data-k="${k}" ${r.on ? 'checked' : ''}> ${l}</label>
+          <select class="au-to" data-k="${k}" aria-label="Who gets the ${l} reminder"><option value="rsvp" ${r.to !== 'all' ? 'selected' : ''}>People who RSVP’d (confirmed teammates for case competitions)</option><option value="all" ${r.to === 'all' ? 'selected' : ''}>All members</option></select></div>`; }).join('')}
+        <span class="hint">Reminders include the date, time, location, description, and a link to the event page.</span></div>
+      <div class="stack" style="gap:6px"><strong>After the event</strong>
+        <label class="check"><input type="checkbox" id="au-survey" ${c.survey ? 'checked' : ''}> Survey email 30 minutes after the event ends, to people who checked in and haven’t answered yet</label></div>
+      <label style="max-width:24rem">Daily limit for automatic emails<input id="au-cap" type="number" min="1" max="100" value="${esc(c.daily_cap ?? 60)}">
+        <span class="hint">The free email plan allows 100 a day in total. Recipients go in BCC, up to 45 per email, so one reminder to 100 people uses 3. Keeping this under 100 leaves room for emails you send yourself.</span></label>
+      <span class="hint">Never sent to members who turned off club emails, test accounts, test events, drafts, or officer meetings. Each email goes out once.</span>
+      <div><button class="btn" type="submit">Save</button></div><div class="err" id="au-err"></div>
+    </form>
+    <section class="stack" style="gap:10px">
+      <div class="section-head"><h3>Coming up</h3><span class="muted">${c.enabled ? 'Next 8 days' : 'Automatic emails are off'}</span></div>
+      ${up.length ? up.map(([ms, e, what, who]) => `<div class="list-row"><div><div class="ev-title">${esc(what)} · ${esc(e.title)}</div><div class="ev-sub">${when(ms)} · ${esc(who)}</div></div></div>`).join('') : '<div class="empty">Nothing scheduled in the next 8 days.</div>'}
+      <span class="hint">Emails go out within 10 minutes of these times.</span>
+    </section>
+    <section class="stack" style="gap:10px">
+      <div class="section-head"><h3>Recently sent</h3><span class="muted">${db.autoLog.length}</span></div>
+      ${db.autoLog.map(l => { const e = evById(l.event_id) || { title: 'Deleted event' };
+        return `<div class="list-row"><div><div class="ev-title">${esc(AUTO_KINDS[l.kind] || l.kind)} · ${esc(e.title)}</div>
+          <div class="ev-sub">${fmtStamp(l.sent_at)} · ${l.status === 'sent' ? `Sent to ${l.recipients} ${l.recipients === 1 ? 'person' : 'people'}` : l.status === 'skipped' ? 'Not sent: ' + esc(l.detail) : l.status === 'failed' ? 'Failed: ' + esc(l.detail) : 'Sending…'}${l.status === 'sent' && l.detail ? ' · ' + esc(l.detail) : ''}</div></div></div>`; }).join('') || '<div class="empty">No automatic emails yet.</div>'}
+    </section>
   </div>`;
 }
 
@@ -3393,6 +3447,7 @@ function viewAdmin(){
   else if (T === 'seasons'){ body = adminSeasonsBody(); }
   else if (T === 'points'){ body = adminPointsBody(); }
   else if (T === 'test'){ body = adminTestBody(); }
+  else if (T === 'auto'){ body = adminAutoBody(); }
   else if (T === 'bulk'){ body = bulkBody(); }
   else if (T === 'export'){
     body = `<section class="stack">
@@ -4678,6 +4733,17 @@ async function handleSubmit(f, v, err){
     await load(); render();
     toast(mine ? 'Your answer was updated' : `Thanks! +${SURVEY_POINTS} points`);
     return;
+  }
+
+  if (f.id === 'f-auto'){
+    const cap = parseInt(v('au-cap')) || 60;
+    if (cap < 1 || cap > 100) return err('au-err', 'Set a daily limit from 1 to 100.');
+    const cfg = { enabled: document.getElementById('au-enabled').checked, survey: document.getElementById('au-survey').checked, daily_cap: cap,
+      reminders: AUTO_REMINDERS.map(([k]) => ({ key: k, on: f.querySelector(`.au-on[data-k="${k}"]`).checked, to: f.querySelector(`.au-to[data-k="${k}"]`).value })) };
+    const r = await sb.from('settings').update({ auto_email: cfg }).eq('id', 1);
+    if (r.error) return err('au-err', /auto_email/.test(r.error.message || '') ? 'This isn’t set up yet. Run 39-automatic-emails.sql in Supabase first.' : errMsg(r.error));
+    await logChange((cfg.enabled ? 'Turned on' : 'Turned off') + ' automatic emails');
+    await load(); render(); toast(cfg.enabled ? 'Saved. Automatic emails are on.' : 'Saved. Automatic emails are off.');
   }
 
   if (f.id === 'f-test-acct'){
