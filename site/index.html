@@ -492,7 +492,7 @@ h3{font-family:var(--serif);font-weight:700;font-size:1.4rem;letter-spacing:.01e
     <div class="eyebrow">Woodbury School of Business · Utah Valley University</div>
     <h1 class="page">Wolverine Finance Association</h1>
     <p>The Wolverine Finance Association (WFA) is Utah Valley University’s student finance club. We help UVU students of any major break into finance with hands-on workshops in financial modeling, valuation, Excel, and the Bloomberg Terminal; guest speakers and panels from industry professionals; case and stock pitch competitions; career fairs and office visits; and recruiting help for internships and full-time roles in investment banking, private equity, asset management, and corporate finance.</p>
-    <p class="muted">Loading club events and announcements…</p>
+    <p class="muted" id="boot-msg">Loading club events and announcements…</p>
   </section>
 </main>
 <footer><div class="wrap row" style="justify-content:space-between">
@@ -523,7 +523,19 @@ function safeFetch(input, init){
     if (!allowed) return Promise.resolve(new Response(JSON.stringify({ message: SAFE_MSG, error: SAFE_MSG, code: 'safe_view' }),
       { status: 403, headers: { 'Content-Type': 'application/json' } }));
   }
-  return fetch(input, init);
+  // Reads that hang (the database provider sometimes stalls a request) are cut off after 8 seconds and tried again,
+  // up to 3 tries. Changes are sent once, never repeated.
+  if (typeof input !== 'string' || (init && init.signal)) return fetch(input, init);
+  const rp = new URL(input).pathname;
+  const isRead = rp.startsWith('/rest/v1/') && (method === 'GET' || method === 'HEAD'
+    || (rp.startsWith('/rest/v1/rpc/') && READ_RPCS.includes(rp.split('/').pop())));
+  if (!isRead) return fetch(input, init);
+  const attempt = n => {
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8000);
+    return fetch(input, { ...(init || {}), signal: ctl.signal }).then(r => { clearTimeout(timer); return r; },
+      e => { clearTimeout(timer); if (n < 3 && ctl.signal.aborted) return attempt(n + 1); throw e; });
+  };
+  return attempt(1);
 }
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { fetch: safeFetch } });
 const initialHash = location.hash;
@@ -5785,8 +5797,11 @@ sb.auth.onAuthStateChange(event => { if (event === 'PASSWORD_RECOVERY'){ ui.reco
   document.getElementById('dl-minors').innerHTML = MINORS.map(m => `<option value="${esc(m)}">`).join('');
   if (/type=recovery/.test(initialHash)) ui.recovery = true;
   const m = initialHash.match(/error_description=([^&]+)/);
+  const retryBtn = ' <button class="btn ghost small" type="button" onclick="location.reload()">Try again</button>';
+  const slow = setTimeout(() => { const b = document.getElementById('boot-msg'); if (b && !loaded) b.innerHTML = 'This is taking longer than usual. Our database provider may be having trouble; it usually clears up in a minute.' + retryBtn; }, 12000);
   try { await load(); }
-  catch(e){ document.getElementById('app').innerHTML = `<div class="empty">Couldn’t load club data. ${esc(errMsg(e))}</div>`; return; }
+  catch(e){ clearTimeout(slow); document.getElementById('app').innerHTML = `<div class="empty">Couldn’t load club data. ${esc(errMsg(e))}${retryBtn}</div>`; return; }
+  clearTimeout(slow);
   if (/access_token|error_description/.test(initialHash)) history.replaceState(null, '', location.pathname + '#home');
   loaded = true; render();
   if (m) toast(decodeURIComponent(m[1].replace(/\+/g, ' ')));
