@@ -420,7 +420,7 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
 const SUPABASE_URL = 'https://razxymbbfsnnnguyaalp.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_G9Ct3sh1zfK2peRadj-nzg_SSLCr2Sn';
 const SAFE_MSG = 'Safe view is on. Switch to Edit view to make changes.';
-const READ_RPCS = ['my_role', 'my_test_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending'];   // database functions that only read
+const READ_RPCS = ['my_role', 'my_test_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending', 'case_board'];   // database functions that only read
 function safeFetch(input, init){
   const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
   let safe = false;
@@ -535,6 +535,7 @@ async function load(){
     surveyPending: off && sb.rpc('survey_pending'),
     testAccounts: off && t('test_accounts'),
     guests: off && t('guest_checkins'),
+    caseBoard: signed && sb.rpc('case_board'),
     access: off && t('access_list'),
     codes: off && t('checkin_codes'),
     tasks: off && t('tasks'),
@@ -563,7 +564,8 @@ async function load(){
       resumePath:m.resume_path || '', resumeBook:!!m.resume_book, resumeUpdated:m.resume_updated || null, emailOptIn:m.email_opt_in !== false };
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
-  db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '' }));
+  db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
+    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -580,6 +582,7 @@ async function load(){
   db.mySurveys = R.mySurveys || []; db.surveyResults = Array.isArray(R.surveyResults) ? R.surveyResults : [];
   db.surveyPending = Array.isArray(R.surveyPending) ? R.surveyPending : [];
   db.testAccounts = Array.isArray(R.testAccounts) ? R.testAccounts : [];
+  db.caseTeams = (R.caseBoard && R.caseBoard.teams) || []; db.caseAgents = (R.caseBoard && R.caseBoard.agents) || [];
   db.guests = {}; (Array.isArray(R.guests) ? R.guests : []).forEach(g => (db.guests[g.event_id] = db.guests[g.event_id] || []).push(g));
   // Real officers never see test accounts in member lists, attendance, applications, or questions.
   if (!testRole && db.testAccounts.length){
@@ -757,7 +760,7 @@ function renderChrome(route){
 
   const items = upcoming().slice(0, 6).map(e => {
     const d = parseDay(e.date);
-    return `<span class="ticker-item"><span class="sym">WFA.${e.cat.slice(0,3).toUpperCase()}</span><span>${isLive(e) ? 'NOW' : isToday(e) ? 'TODAY' : MON[d.getMonth()].toUpperCase() + ' ' + String(d.getDate()).padStart(2,'0')}</span><span>${esc(e.title.toUpperCase())}</span><span class="up">▲ ${rsvpCount(e.id)} RSVP</span></span>`;
+    return `<span class="ticker-item"><span class="sym">WFA.${e.cat.slice(0,3).toUpperCase()}</span><span>${isLive(e) ? 'NOW' : isToday(e) ? 'TODAY' : MON[d.getMonth()].toUpperCase() + ' ' + String(d.getDate()).padStart(2,'0')}</span><span>${esc(e.title.toUpperCase())}</span><span class="up">▲ ${isCase(e) ? teamsIn(e.id).length + ' TEAM' + (teamsIn(e.id).length === 1 ? '' : 'S') : rsvpCount(e.id) + ' RSVP'}</span></span>`;
   }).join('');
   setTicker(items);
 }
@@ -2338,6 +2341,8 @@ function mailAudiences(){
     ['RSVP’d to…', ev.map(e => ['rsvp:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
     ['Attended…', ev.filter(hasStarted).map(e => ['att:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
     ['RSVP’d but missed…', ev.filter(isPast).map(e => ['noshow:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
+    ['Case competition teams…', ev.filter(e => isCase(e) && teamsIn(e.id).length).map(e => ['teams:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
+    ['Free agents for…', ev.filter(e => isCase(e) && agentsFor(e.id).length).map(e => ['agents:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
     ['Hasn’t filled out the survey for…', surveyEvents().map(e => ['nosurvey:'+e.id, e.title + ' (' + fmtDay(e.date) + ', ' + surveyPendingFor(e.id).length + ' left)'])]
   ];
 }
@@ -2362,6 +2367,8 @@ function audienceAll(key){
   if (k === 'rsvp') return going(id);
   if (k === 'att') return attended(id);
   if (k === 'nosurvey') return surveyPendingFor(id);
+  if (k === 'teams') return teamsIn(id).flatMap(t => t.members.filter(m => m.email && m.joined).map(m => m.email));
+  if (k === 'agents') return agentsFor(id).map(a => a.email);
   if (k === 'noshow') { const e = evById(id); return e ? attendanceStats(e).noshows : []; }
   return [];
 }
@@ -2931,7 +2938,14 @@ function viewOfficer(){
           <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${e?.cat===k?'selected':''}>${l} · ${PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select></label>
           <label>Date<input id="ev-date" type="date" required value="${esc(e?.date || dayOffset(7))}"></label>
         </div>
-        <p class="notice" id="ev-case-note" ${e?.cat === 'case_competition' ? '' : 'hidden'}><span><strong>Heads up:</strong> team registration isn’t built yet. For now members RSVP and check in one by one, so collect team names and members separately (a form or email) until it’s added.</span></p>
+        <div class="panel stack" id="ev-case" ${e?.cat === 'case_competition' ? '' : 'hidden'} style="gap:10px;padding:14px">
+          <strong>Team registration</strong>
+          <div class="grid2"><label>Smallest team<input id="ev-tmin" type="number" min="1" max="20" value="${e?.teamMin ?? 2}"></label><label>Largest team<input id="ev-tmax" type="number" min="1" max="20" value="${e?.teamMax ?? 4}"></label></div>
+          <div class="grid2"><label>Team limit <span class="hint">Leave blank for no limit</span><input id="ev-tlimit" type="number" min="1" max="500" value="${e?.teamLimit ?? ''}"></label>
+            <label>How teams get in<select id="ev-tmode"><option value="fcfs" ${e?.teamMode === 'select' ? '' : 'selected'}>First come, first served (closes when full)</option><option value="select" ${e?.teamMode === 'select' ? 'selected' : ''}>Officers choose (any number can apply)</option></select></label></div>
+          <label>Registration deadline <span class="hint">Mountain Time. Leave blank to close when the event starts.</span><input id="ev-tdeadline" type="datetime-local" value="${mtLocalInput(e?.regDeadline)}"></label>
+          <span class="hint">Members register teams on the event page instead of RSVPing. Every teammate needs a WFA account and confirms. After the event, mark 1st–3rd place on the event page: each confirmed teammate gets 50 / 30 / 15 bonus points.</span>
+        </div>
         <div class="grid2">
           <label>Starts<input id="ev-start" type="time" required value="${esc(e?.start || '18:00')}"></label>
           <label>Ends<input id="ev-end" type="time" required value="${esc(e?.end || '19:00')}"></label>
@@ -3382,6 +3396,7 @@ function eventInner(id, page){
   let action;
   if (isPast(e)) action = `<span class="muted">This event has ended.${here ? ' You attended.' : mine ? ' You RSVP’d.' : ''}</span>`;
   else if (hasStarted(e)) action = `<span class="muted">${here ? 'You’re checked in.' : mine ? 'You RSVP’d. Check in with the code above.' : 'RSVPs closed when the event started. Here without an RSVP? Check in with the code above.'}</span>`;
+  else if (isCase(e)) action = '';   // case competitions use team registration (caseSection) instead of RSVPs
   else if (!session) action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button><span class="hint">You’ll sign in first.</span>`;
   else if (mine) action = `<span class="going">You’re going.</span><button class="btn ghost small" data-act="unrsvp" data-id="${id}">Cancel RSVP</button>`;
   else if (full) action = `<span class="muted">All ${e.cap} seats are taken.</span>`;
@@ -3415,12 +3430,14 @@ function eventInner(id, page){
     <h2>${esc(e.title)}</h2>
     <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} <span class="hint">Mountain Time</span></dd>
       <dt>Status</dt><dd>${{ upcoming: 'Upcoming', live: '<strong>Happening now</strong>', over: 'Over' }[evStatus(e)]}</dd>
-      <dt>Where</dt><dd>${esc(e.loc)}</dd><dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}${hasStarted(e)?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
-    ${e.cap ? `<div class="meter"><span style="width:${Math.min(100,n/e.cap*100)}%"></span></div>` : ''}
+      <dt>Where</dt><dd>${esc(e.loc)}</dd>${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : `<dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}`}${hasStarted(e)?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
+    ${e.cap && !isCase(e) ? `<div class="meter"><span style="width:${Math.min(100,n/e.cap*100)}%"></span></div>` : ''}
     <p style="white-space:pre-wrap">${esc(e.desc)}</p>
+    ${isCase(e) && !e.draft ? caseSection(e) : ''}
     ${checkin}
     <div class="row">${action}${can('officer') ? `<span style="margin-left:auto" class="row"><button class="btn ghost small" data-act="edit-event" data-id="${id}">Edit event</button></span>` : ''}</div>
     ${codeBox}
+    ${isCase(e) && can('officer') ? caseAdmin(e) : ''}
     ${share}`;
 }
 function openEvent(id){
@@ -3448,6 +3465,127 @@ function guestCheckin(e, pre){
         <span class="hint">Guests don’t earn points. If you join later with this email, this check-in moves to your account and you get the points.</span>
         <div class="err" id="gc-err"></div>
       </form></details></div>`;
+}
+/* ---------- Case competitions: team registration ---------- */
+// Officers set team size, an optional team limit, a deadline, and a mode (first come, first served, or officers choose).
+// Captains register a team and invite teammates by email; each teammate confirms. Free agents look for a team.
+// After the event, officers mark 1st-3rd place, which gives confirmed teammates bonus points (see 37-case-competition-teams.sql).
+const PLACE_PTS = { 1: 50, 2: 30, 3: 15 }, ORD = { 1: '1st', 2: '2nd', 3: '3rd' };
+function isCase(e){ return !!e && e.cat === 'case_competition'; }
+function regClosesMs(e){ return e.regDeadline ? Date.parse(e.regDeadline) : evStartMs(e); }
+function teamsFor(id){ return (db.caseTeams || []).filter(t => t.event_id === id); }
+function teamsIn(id){ return teamsFor(id).filter(t => t.status === 'in'); }
+function agentsFor(id){ return (db.caseAgents || []).filter(a => a.event_id === id); }
+function myTeam(id){ return teamsFor(id).find(t => (t.members || []).some(m => m.me)); }
+function caseFull(e){ return e.teamMode === 'fcfs' && !!e.teamLimit && teamsIn(e.id).length >= e.teamLimit; }
+function personName(m){ return m.first ? (m.first + ' ' + (m.last || '')).trim() : (m.email || 'Invited teammate'); }
+function mtDateIso(ms){ const p = mtParts(ms), z = n => String(n).padStart(2, '0'); return `${p.year}-${z(p.month)}-${z(p.day)}`; }
+function fmtMtStamp(ms){ return `${fmtDay(mtDateIso(ms))} at ${fmtTime(mtClock(ms))}`; }
+function mtLocalInput(iso){ return iso ? mtDateIso(Date.parse(iso)) + 'T' + mtClock(Date.parse(iso)) : ''; }
+function mtFromInput(v){ if (!v) return null; const [d, t] = v.split('T'); return new Date(mtMs(d, t)).toISOString(); }
+function caseInfoLine(e){
+  const parts = [e.teamMin === e.teamMax ? `Teams of ${e.teamMax}` : `Teams of ${e.teamMin}–${e.teamMax}`];
+  if (e.teamMode === 'select') parts.push(e.teamLimit ? `officers choose up to ${e.teamLimit} teams` : 'officers choose the teams');
+  else if (e.teamLimit) parts.push(`${Math.max(0, e.teamLimit - teamsIn(e.id).length)} of ${e.teamLimit} team spots left`);
+  parts.push((Date.now() < regClosesMs(e) ? 'registration closes ' : 'registration closed ') + fmtMtStamp(regClosesMs(e)));
+  return parts.join(' · ');
+}
+function caseSection(e){
+  const id = e.id, open = Date.now() < regClosesMs(e), t = session && myTeam(id);
+  let h = `<div class="panel stack" style="gap:12px"><div><strong style="font-size:1.1rem">Team registration</strong><div class="hint">${caseInfoLine(e)}</div></div>`;
+  if (!session) return h + `<p style="margin:0">Every teammate needs a free WFA account to join a team.</p>
+    <div class="row" style="gap:8px"><button class="btn" data-act="event-auth" data-to="signup" data-id="${id}">Join WFA (free)</button><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">Sign in</button></div></div>`;
+  if (t) h += teamCard(e, t, open);
+  else if (!open) h += '<p class="muted" style="margin:0">Team registration is closed.</p>';
+  else if (caseFull(e)) h += `<p class="muted" style="margin:0">All ${e.teamLimit} team spots are taken.</p>`;
+  else h += newTeamForm(e);
+  if (open){
+    const cap = t && (t.members.find(m => m.me) || {}).captain, room = t && t.members.length < e.teamMax;
+    if (!t) h += agentBox(e);
+    if (!t || (cap && room)) h += agentList(e, cap && room ? t : null);
+  }
+  return h + '</div>';
+}
+function teamCard(e, t, open){
+  const me = t.members.find(m => m.me) || {}, cap = me.captain, confirmed = t.members.filter(m => m.confirmed).length;
+  const status = t.placement ? `${ORD[t.placement]} place` : t.status === 'applied' ? 'Applied · officers will choose the teams' : t.status === 'declined' ? 'Not selected this time' : 'Registered';
+  return `<div class="stack" style="gap:8px">
+    <div class="row" style="gap:8px;align-items:center"><strong>${esc(t.name)}</strong><span class="tag">${status}</span></div>
+    <ul style="margin:0;padding-left:1.2em">${t.members.map(m => `<li>${esc(personName(m))}${m.captain ? ' (captain)' : ''} · <span class="hint">${m.confirmed ? '✓ confirmed' : m.joined ? 'invited, needs to confirm' : 'invited, needs to join WFA first'}</span>
+      ${cap && !m.captain && open ? delBtn('tm-' + t.id + m.email, 'Remove', 'team-remove', t.id + '|' + m.email) : ''}</li>`).join('')}</ul>
+    ${!me.confirmed ? `<div class="notice"><span><strong>You’ve been invited to ${esc(t.name)}.</strong> Join to be on the team.</span></div>
+      <div class="row" style="gap:8px"><button class="btn" data-act="team-respond" data-id="${t.id}" data-yes="1">Join this team</button><button class="btn ghost" data-act="team-respond" data-id="${t.id}" data-yes="0">Decline</button></div>` : ''}
+    ${confirmed < e.teamMin ? `<span class="hint">Needs at least ${e.teamMin} confirmed teammates (${confirmed} so far).</span>` : ''}
+    ${t.members.some(m => !m.joined) ? '<span class="hint">Teammates who haven’t joined WFA yet need to sign up, then confirm on this page. Send them the event link.</span>' : ''}
+    ${cap && open && t.members.length < e.teamMax ? `<form class="checkin-form" id="f-team-add" data-id="${t.id}" data-ev="${e.id}"><input id="ta-add" type="email" placeholder="teammate@uvu.edu" aria-label="Teammate’s email" style="width:16em;letter-spacing:0;text-transform:none;font-family:inherit"><button class="btn ghost" type="submit">Invite teammate</button></form><div class="err" id="tadd-err"></div>` : ''}
+    ${me.confirmed && (open || !hasStarted(e)) ? `<div>${delBtn('tleave-' + t.id, cap ? 'Withdraw team' : 'Leave team', 'team-remove', t.id + '|' + session)}</div>` : ''}
+  </div>`;
+}
+function newTeamForm(e){
+  return `<form class="stack" id="f-team-new" data-id="${e.id}" style="gap:8px">
+    <label>Team name<input id="tn-name" maxlength="60" required></label>
+    <label>Teammates’ emails <span class="hint">Up to ${e.teamMax - 1}, one per line. You’re the captain. Each teammate confirms on this page${e.teamMin > 1 ? `, and teams need at least ${e.teamMin} people` : ''}.</span>
+      <textarea id="tn-emails" rows="3" placeholder="teammate@uvu.edu"></textarea></label>
+    ${e.teamMode === 'select' ? '<span class="hint">Officers choose which teams compete. Your team’s status will show here.</span>' : ''}
+    <div><button class="btn" type="submit">Register team</button></div><div class="err" id="tn-err"></div></form>`;
+}
+function agentBox(e){
+  const mine = agentsFor(e.id).find(a => a.me);
+  if (mine) return `<div class="notice row" style="justify-content:space-between;gap:10px"><span><strong>You’re on the free-agent list.</strong> Captains can invite you to their team.</span><button class="btn ghost small" data-act="agent-off" data-id="${e.id}">Take me off</button></div>`;
+  return `<details><summary style="cursor:pointer">Need a team? Join the free-agent list</summary>
+    <form class="stack" id="f-agent" data-id="${e.id}" style="gap:8px;margin-top:10px">
+      <label>A little about you <span class="hint">Optional: your major, strengths, or what role you want</span><textarea id="ag-note" rows="2" maxlength="300"></textarea></label>
+      <span class="hint">Other members see your name, email, and note so they can invite you.</span>
+      <div><button class="btn ghost" type="submit">Add me to the free-agent list</button></div><div class="err" id="ag-err"></div></form></details>`;
+}
+function agentList(e, team){
+  const list = agentsFor(e.id).filter(a => !a.me);
+  if (!list.length) return '';
+  return `<div class="stack" style="gap:6px"><strong>Free agents looking for a team</strong>
+    ${list.map(a => `<div class="list-row"><div><div class="ev-title">${esc(personName(a))}</div><div class="ev-sub">${esc(a.email)}${a.note ? ' · ' + esc(a.note) : ''}</div></div>
+      ${team ? `<button class="btn ghost small" data-act="team-invite" data-id="${team.id}|${esc(a.email)}" data-ev="${e.id}">Invite to ${esc(team.name)}</button>` : ''}</div>`).join('')}</div>`;
+}
+// Officers: every team (including applied and declined ones), accept/decline, placements, free agents, and downloads.
+function caseAdmin(e){
+  const teams = teamsFor(e.id), agents = agentsFor(e.id), applied = teams.filter(t => t.status === 'applied').length;
+  const emails = teamsIn(e.id).flatMap(t => t.members.filter(m => m.email).map(m => m.email));
+  const tag = t => t.status === 'applied' ? 'Applied' : t.status === 'declined' ? 'Declined' : 'In';
+  return `<div class="panel stack" style="gap:10px;padding:14px">
+    <div class="row" style="justify-content:space-between;gap:8px;align-items:center"><strong>Teams (officers)</strong>
+      <span class="row" style="gap:6px">${teams.length ? `<button class="btn ghost small" data-act="case-csv" data-id="${e.id}">Download CSV</button>` : ''}${emails.length ? `<button class="btn ghost small" data-act="copy-text" data-text="${esc(emails.join('; '))}">Copy team emails</button>` : ''}</span></div>
+    <span class="hint">${teamsIn(e.id).length} in${e.teamLimit ? ` of ${e.teamLimit}` : ''}${applied ? ` · ${applied} waiting for a decision` : ''} · ${e.teamMode === 'select' ? 'Officers choose' : 'First come, first served'}${hasStarted(e) ? ' · Set placements to award bonus points (1st +50, 2nd +30, 3rd +15 each).' : ''}</span>
+    ${teams.map(t => `<div class="list-row"><div><div class="ev-title">${esc(t.name)} <span class="tag">${tag(t)}</span>${t.placement ? ` <span class="tag">${ORD[t.placement]} place</span>` : ''}</div>
+        <div class="ev-sub">${t.members.map(m => esc(personName(m)) + (m.captain ? ' (captain)' : '') + (m.confirmed ? '' : ' (pending)')).join(', ')}</div></div>
+      <div class="row" style="gap:6px;align-items:center">
+        ${e.teamMode === 'select' && t.status !== 'in' ? `<button class="btn small" data-act="case-status" data-id="${t.id}" data-status="in" data-ev="${e.id}">Accept</button>` : ''}
+        ${e.teamMode === 'select' && t.status !== 'declined' ? `<button class="btn ghost small" data-act="case-status" data-id="${t.id}" data-status="declined" data-ev="${e.id}">Decline</button>` : ''}
+        ${hasStarted(e) && t.status === 'in' ? `<select data-case-place="${t.id}" data-ev="${e.id}" aria-label="Placement for ${esc(t.name)}"><option value="">No placement</option>${[1, 2, 3].map(n => `<option value="${n}" ${t.placement === n ? 'selected' : ''}>${ORD[n]} place (+${PLACE_PTS[n]})</option>`).join('')}</select>` : ''}
+        ${delBtn('ct-' + t.id, 'Remove', 'case-del', t.id)}</div></div>`).join('') || '<div class="empty">No teams yet.</div>'}
+    ${agents.length ? `<div class="stack" style="gap:4px"><strong>Free agents (${agents.length})</strong>${agents.map(a => `<div class="ev-sub">${esc(personName(a))} · ${esc(a.email)}${a.note ? ' · ' + esc(a.note) : ''}</div>`).join('')}</div>` : ''}
+  </div>`;
+}
+function caseCsv(id){
+  const e = evById(id), q = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const lines = [['Team', 'Status', 'Placement', 'Name', 'Email', 'Captain', 'Confirmed'],
+    ...teamsFor(id).flatMap(t => t.members.map(m => [t.name, t.status === 'in' ? 'In' : t.status === 'applied' ? 'Applied' : 'Declined', t.placement ? ORD[t.placement] : '', personName(m), m.email || '', m.captain ? 'Yes' : '', m.confirmed ? 'Yes' : 'No'])),
+    ...agentsFor(id).map(a => ['(free agent)', '', '', personName(a), a.email, '', ''])];
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.map(r => r.map(q).join(',')).join('\r\n')], { type: 'text/csv' }));
+  a.download = 'WFA teams - ' + e.title.replace(/[\\/:*?"<>|]/g, '') + ' ' + e.date + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+const CASE_MSG = { signin: 'Sign in first.', missing: 'This competition isn’t open for teams.', closed: 'Team registration is closed.', name: 'Give your team a name.',
+  already: 'You’re already on a team for this competition.', toobig: 'That’s more people than a team can have.', dupname: 'Another team already has that name.',
+  full: 'All team spots are taken.', notcaptain: 'Only the team captain can do that.', notfound: 'That team doesn’t exist anymore.' };
+function caseMsg(r){ r = String(r || ''); if (r.startsWith('email:')) return 'Check this email address: ' + r.slice(6); if (r.startsWith('taken:')) return 'Already on another team: ' + r.slice(6); return CASE_MSG[r] || r; }
+// Runs a team function, shows its message, and refreshes the event (on its page or in the pop-up).
+async function caseRpc(fn, args, evId, ok, errId){
+  const r = await sb.rpc(fn, args);
+  const m = r.error ? (/register_team|team_add|team_remove|team_respond/.test(r.error.message || '') ? 'Team registration isn’t set up yet. Run the 37-case-competition-teams.sql update in Supabase.' : errMsg(r.error))
+    : (r.data === 'ok' || r.data === 'withdrawn') ? '' : caseMsg(r.data);
+  if (m){ if (errId && document.getElementById(errId)) err(errId, m); else toast(m); return false; }
+  await load(); render(); if (route() !== 'event') openEvent(evId);
+  toast(r.data === 'withdrawn' ? 'Team withdrawn' : ok); return true;
 }
 // Re-show an event after a change, on its page or in the pop-up.
 function refreshEvent(id){ if (route() === 'event') render(); else openEvent(id); }
@@ -3688,6 +3826,16 @@ document.addEventListener('click', async ev => {
       setReturnTo('event/' + id + (code ? '/' + encodeURIComponent(code.toUpperCase()) : ''));
       closeModal(); location.hash = t.dataset.to; break;
     }
+    case 'team-respond': { const tm = (db.caseTeams || []).find(x => x.id === id), yes = t.dataset.yes === '1';
+      await caseRpc('team_respond', { p_team: id, p_accept: yes }, tm.event_id, yes ? 'You joined ' + tm.name : 'Invite declined'); break; }
+    case 'team-remove': { const [tid, em] = id.split('|'), tm = (db.caseTeams || []).find(x => x.id === tid);
+      await caseRpc('team_remove', { p_team: tid, p_email: em }, tm.event_id, em === session ? 'You left the team' : 'Removed'); break; }
+    case 'team-invite': { const [tid, em] = id.split('|'); await caseRpc('team_add', { p_team: tid, p_email: em }, t.dataset.ev, 'Invited ' + em); break; }
+    case 'agent-off': await act(async () => must(await sb.from('case_free_agents').delete().eq('event_id', id).eq('email', session)), 'Taken off the free-agent list'); refreshEvent(id); break;
+    case 'case-status': await act(async () => { must(await sb.from('case_teams').update({ status: t.dataset.status }).eq('id', id)); await logChange((t.dataset.status === 'in' ? 'Accepted' : 'Declined') + ' a team for “' + (evById(t.dataset.ev) || {}).title + '”'); }, t.dataset.status === 'in' ? 'Team accepted' : 'Team declined'); refreshEvent(t.dataset.ev); break;
+    case 'case-del': { const tm = (db.caseTeams || []).find(x => x.id === id);
+      await act(async () => { must(await sb.from('case_teams').delete().eq('id', id)); await logChange('Removed team “' + tm.name + '”'); }, 'Team removed'); refreshEvent(tm.event_id); break; }
+    case 'case-csv': caseCsv(id); break;
     case 'reveal-code': ui.codeShown = ui.codeShown === id ? null : id; refreshEvent(id); break;
     case 'qr': await showQr(id, t.dataset.kind); break;
     case 'qr-style': await showQr(id, t.dataset.kind, t.dataset.style); break;
@@ -4033,7 +4181,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', async e => {
   const id = e.target.id;
   if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
-  if (['ml-aud','ml-ev'].includes(id)){ readMail(); if (id === 'ml-aud' && /^(nosurvey|att|noshow|rsvp):/.test(ui.mail.aud)) ui.mail.ev = ui.mail.aud.split(':')[1]; render(); }
+  if (['ml-aud','ml-ev'].includes(id)){ readMail(); if (id === 'ml-aud' && /^(nosurvey|att|noshow|rsvp|teams|agents):/.test(ui.mail.aud)) ui.mail.ev = ui.mail.aud.split(':')[1]; render(); }
   if (id === 'qr-size'){ ui.qr.size = +e.target.value; drawQrTool(); }
   if (id === 'qr-pick' && e.target.value){
     const v = e.target.value;
@@ -4041,7 +4189,11 @@ document.addEventListener('change', async e => {
     else { const [h, l] = v.slice(5).split('|'); ui.qr.text = location.origin + '/' + h; ui.qr.name = 'WFA ' + l; }
     render(); drawQrTool();
   }
-  if (id === 'ev-cat'){ const n = document.getElementById('ev-case-note'); if (n) n.hidden = e.target.value !== 'case_competition'; }
+  if (id === 'ev-cat'){ const n = document.getElementById('ev-case'); if (n) n.hidden = e.target.value !== 'case_competition'; }
+  if (e.target.dataset && e.target.dataset.casePlace){
+    const place = e.target.value ? +e.target.value : null, evId = e.target.dataset.ev;
+    if (await act(async () => { must(await sb.from('case_teams').update({ placement: place }).eq('id', e.target.dataset.casePlace)); await logChange('Set a case competition placement for “' + (evById(evId) || {}).title + '”'); }, place ? ORD[place] + ' place saved' : 'Placement cleared')) refreshEvent(evId);
+  }
   if (id === 'stats-ev'){ ui.statsEv = e.target.value; render(); }
   if (id === 'plan-ev'){ ui.planEv = e.target.value; render(); }
   if (id === 'lb-season'){ ui.lbSeason = e.target.value; render(); }
@@ -4271,6 +4423,20 @@ async function handleSubmit(f, v, err){
     location.hash = myRole === 'admin' ? 'admin' : myRole === 'officer' ? 'officer' : 'home'; render();
   }
 
+  if (f.id === 'f-team-new'){
+    const id = f.dataset.id, emails = v('tn-emails').split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
+    return caseRpc('register_team', { p_event: id, p_name: v('tn-name'), p_emails: emails }, id, 'Team registered! Your teammates can confirm on this page.', 'tn-err');
+  }
+  if (f.id === 'f-team-add'){
+    const em = v('ta-add').toLowerCase(); if (!em) return;
+    return caseRpc('team_add', { p_team: f.dataset.id, p_email: em }, f.dataset.ev, 'Invited ' + em, 'tadd-err');
+  }
+  if (f.id === 'f-agent'){
+    const id = f.dataset.id, r = await sb.from('case_free_agents').insert({ event_id: id, note: v('ag-note') });
+    if (r.error) return err('ag-err', /case_free_agents/.test(r.error.message || '') && /exist|schema/i.test(r.error.message || '') ? 'This isn’t set up yet. Run the 37-case-competition-teams.sql update in Supabase.' : /duplicate/i.test(r.error.message || '') ? 'You’re already on the list.' : errMsg(r.error));
+    await load(); render(); if (route() !== 'event') openEvent(id); toast('You’re on the free-agent list');
+  }
+
   if (f.id === 'f-guest'){
     const id = f.dataset.id, e = evById(id), first = v('gc-first'), last = v('gc-last'), email = v('gc-email').toLowerCase(), code = v('gc-code').toUpperCase();
     ui.guestOpen = id;
@@ -4306,6 +4472,11 @@ async function handleSubmit(f, v, err){
     const e = { title: v('ev-title'), cat: v('ev-cat'), date: v('ev-date'), start_time: v('ev-start'), end_time: v('ev-end'), loc: v('ev-loc'), cap: Math.max(0, parseInt(v('ev-cap')) || 0), descr: v('ev-desc') };
     if (!e.title || !e.date || !e.start_time || !e.end_time || !e.loc) return err('ev-err', 'Fill in the title, date, times, and location.');
     if (e.end_time <= e.start_time) return err('ev-err', 'End time must be after the start time.');
+    if (e.cat === 'case_competition'){
+      e.team_min = parseInt(v('ev-tmin')) || 1; e.team_max = parseInt(v('ev-tmax')) || 1;
+      e.team_limit = parseInt(v('ev-tlimit')) || null; e.team_mode = v('ev-tmode') === 'select' ? 'select' : 'fcfs'; e.reg_deadline = mtFromInput(v('ev-tdeadline'));
+      if (e.team_min < 1 || e.team_max > 20 || e.team_max < e.team_min) return err('ev-err', 'Team sizes go from 1 to 20, and the largest team can’t be smaller than the smallest.');
+    }
     const code = v('ev-code').toUpperCase().replace(/\s+/g, '');
     if (code && !/^[A-Z0-9]{3,8}$/.test(code)) return err('ev-err', 'Check-in codes use 3–8 letters or numbers.');
     const editing = ui.editEvent, wasDraft = editing && (evById(editing) || {}).draft;
