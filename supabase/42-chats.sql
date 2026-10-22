@@ -1,6 +1,6 @@
 -- WFA update: chats (live messaging on the site).
 -- Automatic chats, whose membership updates itself:
---   * officers  - "All officers + faculty advisor": everyone on the access list
+--   * officers  - "Leadership Team": every officer and the faculty advisor (everyone on the access list)
 --   * branch    - one per branch: officers in that branch, plus presidents
 --   * team      - one per accepted case competition team: its confirmed teammates
 --   * all_teams - one per case competition: confirmed teammates on every accepted team
@@ -131,7 +131,7 @@ do $$ begin
 end $$;
 
 -- ---------- Automatic chats ----------
-insert into public.chats (kind, title, created_by) select 'officers', 'All officers + faculty advisor', 'system'
+insert into public.chats (kind, title, created_by) select 'officers', 'Leadership Team', 'system'
   where not exists (select 1 from public.chats where kind = 'officers');
 insert into public.chats (kind, branch, title, created_by)
   select 'branch', b, initcap(replace(b, '_', ' ')), 'system' from unnest(array['communications', 'operations', 'financial_applications']) b
