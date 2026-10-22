@@ -114,6 +114,13 @@ p{margin:0}
 .safebar{background:var(--tint);color:var(--ink);border-bottom:3px solid var(--warn);font-weight:600}
 .safebar .wrap{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding-block:8px}
 .who{display:flex;align-items:center;gap:10px;margin-left:auto}
+.who-more{display:none}
+@media (max-width:760px){
+  .who{gap:6px}
+  .who .seg-toggle,.who [data-act="member-view"],.who .name,.who .role,.who [data-act="signout"]{display:none}
+  .who-more{display:inline-flex}
+  .who .lbl{display:none}
+}
 .who .name{font-weight:600}
 
 /* Wider header; on desktop the menu wraps to a second line instead of scrolling sideways */
@@ -444,7 +451,7 @@ h3{font-family:var(--serif);font-weight:700;font-size:1.4rem;letter-spacing:.01e
 .hero-title{display:flex;align-items:center;gap:36px}
 .hero-title h1{font-size:clamp(1.9rem,3.6vw,2.6rem);line-height:1.15}
 .hero-title .eyebrow{margin-bottom:4px}
-@media (max-width:560px){.hero-title{flex-direction:column;align-items:flex-start}}
+@media (max-width:560px){.hero-title{gap:14px}.hero-crest{width:68px}.hero-title h1{font-size:1.45rem;letter-spacing:.05em}.hero-title .eyebrow{font-size:.62rem;letter-spacing:.16em}}
 .hero-crest{width:128px;height:auto;flex:none}
 
 .btn{border-radius:2px;letter-spacing:.03em}
@@ -612,6 +619,8 @@ async function load(){
     surveyPending: off && sb.rpc('survey_pending'),
     testAccounts: off && t('test_accounts'),
     guests: off && t('guest_checkins'),
+    guestRsvps: off && t('guest_rsvps'),
+    evQuestions: signed && sb.from('event_questions').select('*').order('created_at'),
     caseBoard: signed && sb.rpc('case_board'),
     chats: signed && sb.rpc('my_chats'),
     autoLog: myRole === 'admin' && sb.from('auto_email_log').select('*').order('sent_at', { ascending: false }).limit(60),
@@ -647,7 +656,7 @@ async function load(){
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
-    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {} }));
+    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, guestOpens:e.guest_rsvp_opens || null }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -669,6 +678,8 @@ async function load(){
   db.caseTeams = (R.caseBoard && R.caseBoard.teams) || []; db.caseAgents = (R.caseBoard && R.caseBoard.agents) || [];
   db.caseNotes = {}; (Array.isArray(R.caseNotes) ? R.caseNotes : []).forEach(n => db.caseNotes[n.id] = { rating: n.officer_rating || null, note: n.officer_note || '' });
   db.memberPts = {}; (Array.isArray(R.memberPts) ? R.memberPts : []).forEach(x => db.memberPts[x.email] = x.points);
+  db.guestRsvps = {}; (Array.isArray(R.guestRsvps) ? R.guestRsvps : []).forEach(g => (db.guestRsvps[g.event_id] = db.guestRsvps[g.event_id] || []).push(g));
+  db.evQuestions = Array.isArray(R.evQuestions) ? R.evQuestions : [];
   db.guests = {}; (Array.isArray(R.guests) ? R.guests : []).forEach(g => (db.guests[g.event_id] = db.guests[g.event_id] || []).push(g));
   // Real officers never see test accounts in member lists, attendance, applications, or questions.
   if (!testRole && db.testAccounts.length){
@@ -836,7 +847,7 @@ function renderChrome(route){
     (staff.length ? '<span class="sep"></span>' + staff.map(([r,l]) => `<button class="menu-btn ${route===r?'current':''}" data-act="nav-menu" data-menu="${r}" aria-haspopup="true" aria-expanded="false">${l}${dot(countTotal(r))} ▾</button>`).join('') : '');
   const u = me(), r = role();
   document.getElementById('who').innerHTML = u
-    ? `${isStaff() && !ui.memberView ? `<span class="seg-toggle" role="group" aria-label="Edit or safe view"><button data-act="safe-view" data-mode="edit" aria-pressed="${!ui.safeView}" title="Make changes">Edit</button><button data-act="safe-view" data-mode="safe" aria-pressed="${!!ui.safeView}" title="Look around without changing anything">Safe</button></span>` : ''}${isStaff() ? `<button class="btn on-dark ${ui.memberView ? '' : 'ghost'} small" data-act="member-view" aria-pressed="${!!ui.memberView}">${ui.memberView ? 'Member view: on' : 'Member view'}</button>` : ''}<span class="name">${esc(u.first)}</span><span class="role ${r}">${r}</span><button class="btn on-dark ghost small" data-act="signout">Sign out</button>`
+    ? `${isStaff() && !ui.memberView ? `<span class="seg-toggle" role="group" aria-label="Edit or safe view"><button data-act="safe-view" data-mode="edit" aria-pressed="${!ui.safeView}" title="Make changes">Edit</button><button data-act="safe-view" data-mode="safe" aria-pressed="${!!ui.safeView}" title="Look around without changing anything">Safe</button></span>` : ''}${isStaff() ? `<button class="btn on-dark ${ui.memberView ? '' : 'ghost'} small" data-act="member-view" aria-pressed="${!!ui.memberView}">${ui.memberView ? 'Member view: on' : 'Member view'}</button>` : ''}<span class="name">${esc(u.first)}</span><span class="role ${r}">${r}</span><button class="btn on-dark ghost small" data-act="signout">Sign out</button><button class="btn on-dark ghost small who-more" data-act="who-menu" aria-label="Account menu">☰</button>`
     : `<a class="btn on-dark ghost small" href="#signin">Sign in</a><a class="btn on-dark small" href="#signup">Join</a>`;
   document.getElementById('who').insertAdjacentHTML('afterbegin', appHeaderBtn() + (u ? `<button class="btn on-dark ghost small bell" data-act="notify-settings" title="Notification settings" aria-label="Notification settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></button>` : ''));
   const bar = document.getElementById('safebar');
@@ -2541,7 +2552,7 @@ function audienceAll(key){
   if (k === 'members') return db.users.filter(u => roleOf(u.email) === 'member').map(u => u.email);
   if (k === 'staff') return staffEmails();
   if (k === 'unpaid') return db.users.filter(u => duesOf(u.email) === 'unpaid').map(u => u.email);
-  if (k === 'rsvp') return going(id);
+  if (k === 'rsvp') return [...going(id), ...((db.guestRsvps || {})[id] || []).filter(g => g.reminders).map(g => g.email)];
   if (k === 'att') return attended(id);
   if (k === 'nosurvey') return surveyPendingFor(id);
   if (k === 'teams') return teamsIn(id).flatMap(t => t.members.filter(m => m.email && m.joined).map(m => m.email));
@@ -3136,7 +3147,10 @@ function viewOfficer(){
         </div>
         <label>Location<input id="ev-loc" required value="${esc(e?.loc)}" placeholder="Building and room">
           <span class="hint">Need a room? <a href="https://www.uvu.edu/woodbury/current-students.html" target="_blank" rel="noopener">Reserve one through Woodbury ↗</a></span></label>
-        <label>Seat limit<input id="ev-cap" type="number" min="0" value="${esc(e?.cap || 0)}"><span class="hint">0 means no limit. RSVPs close when the limit is reached.</span></label>
+        <label>Seat limit<input id="ev-cap" type="number" min="0" value="${esc(e?.cap || 0)}"><span class="hint">0 means no limit. RSVPs close when the limit is reached. Guest RSVPs count too.</span></label>
+        <label id="ev-go-wrap" ${e?.cat === 'officer_meeting' || e?.cat === 'case_competition' ? 'hidden' : ''}>Guest RSVPs open <span class="hint">Optional. Give members early access: until this time (Mountain Time) only members can RSVP. Leave blank to let guests RSVP right away.</span><input id="ev-guest-opens" type="datetime-local" value="${mtLocalInput(e?.guestOpens)}"></label>
+        <label class="check" id="ev-mo-wrap" ${e?.cat === 'officer_meeting' ? 'hidden' : ''}><input type="checkbox" id="ev-members-only" ${e?.membersOnly ? 'checked' : ''}> Members only <span class="hint">Everyone can see it, but only members can RSVP and check in (a reason to join).</span></label>
+        <label class="check" id="ev-qa-wrap" ${e?.cat === 'guest_speaker' ? '' : 'hidden'}><input type="checkbox" id="ev-qa" ${e?.qaEnabled ? 'checked' : ''}> Add Q&A <span class="hint">People can submit questions for the speaker ahead of time. Only officers see them.</span></label>
         <label>Check-in code <span class="hint">(optional)</span>
           <span class="row" style="gap:8px;flex-wrap:nowrap"><input id="ev-code" maxlength="8" autocomplete="off" value="${esc(e?.code || '')}" placeholder="e.g. BULL" style="font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;flex:1;min-width:0"><button type="button" class="btn ghost small" data-act="ev-gen-code">Generate</button></span>
           <span class="hint">Members type this at the event to check in. It only works on the event’s date. Leave blank to make one on the day.</span></label>
@@ -3582,7 +3596,7 @@ function eventInner(id, page){
   if (isPast(e)) action = `<span class="muted">This event has ended.${here ? ' You attended.' : mine ? ' You RSVP’d.' : ''}</span>`;
   else if (hasStarted(e)) action = `<span class="muted">${here ? 'You’re checked in.' : mine ? 'You RSVP’d. Check in with the code above.' : 'RSVPs closed when the event started. Here without an RSVP? Check in with the code above.'}</span>`;
   else if (isCase(e)) action = '';   // case competitions use team registration (caseSection) instead of RSVPs
-  else if (!session) action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button><span class="hint">You’ll sign in first.</span>`;
+  else if (!session) action = '';   // visitors: guestRsvpBox (or the members-only note) below
   else if (mine) action = `<span class="going">You’re going.</span><button class="btn ghost small" data-act="unrsvp" data-id="${id}">Cancel RSVP</button>`;
   else if (full) action = `<span class="muted">All ${e.cap} seats are taken.</span>`;
   else action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button>`;
@@ -3611,7 +3625,7 @@ function eventInner(id, page){
       <span class="hint">${isToday(e) ? 'Check-in is open today.' : 'Members can check in on the day of the event.'}</span></div>`;
   }
   const share = e.draft ? '' : `<div class="row" style="gap:6px"><button class="btn ghost small" data-act="copy-link" data-id="${id}">Copy link</button>${can('officer') ? `<button class="btn ghost small" data-act="qr" data-id="${id}" data-kind="page">QR code</button>` : ''}${page ? '' : `<a class="btn ghost small" href="#event/${id}">Open event page</a>`}</div>`;
-  return `<div><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${PTS[e.cat] ? PTS[e.cat] + ' pts' : 'officers only'}${e.draft ? ' · <span class="tag">Draft</span>' : ''}</div></div>
+  return `<div><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${PTS[e.cat] ? PTS[e.cat] + ' pts' : 'officers only'}${e.draft ? ' · <span class="tag">Draft</span>' : ''}${e.membersOnly ? ' · <span class="tag">Members only</span>' : ''}</div></div>
     <h2>${esc(e.title)}</h2>
     <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} <span class="hint">Mountain Time</span></dd>
       <dt>Status</dt><dd>${{ upcoming: 'Upcoming', live: '<strong>Happening now</strong>', over: 'Over' }[evStatus(e)]}</dd>
@@ -3620,8 +3634,11 @@ function eventInner(id, page){
     <p style="white-space:pre-wrap">${esc(e.desc)}</p>
     ${isCase(e) && !e.draft ? caseSection(e) : ''}
     ${checkin}
+    ${!session && !isCase(e) && !hasStarted(e) && !e.draft ? (e.membersOnly ? membersOnlyNote(e, 'RSVP') : guestRsvpBox(e)) : ''}
+    ${e.qaEnabled && !isPast(e) && !e.draft ? qaBox(e) : ''}
     <div class="row">${action}${can('officer') ? `<span style="margin-left:auto" class="row"><button class="btn ghost small" data-act="edit-event" data-id="${id}">Edit event</button></span>` : ''}</div>
     ${codeBox}
+    ${can('officer') ? eventOfficerExtras(e) : ''}
     ${isCase(e) && can('officer') ? caseAdmin(e) : ''}
     ${share}`;
 }
@@ -3630,8 +3647,66 @@ function openEvent(id){
   showModal(`<div class="modal-in"><button class="modal-x" data-act="close" aria-label="Close" style="float:right">×</button>${eventInner(id, false)}</div>`, null, '', catVar(e.cat));
 }
 // Check-in for visitors who aren't signed in: joining is the big, first option; checking in as a guest is tucked below.
+// Members-only events: everyone sees them, and visitors get a nudge to join.
+function membersOnlyNote(e, what){
+  return `<div class="panel stack" style="gap:10px"><div><strong>This event is for WFA members</strong><div class="hint">Joining is free and takes about a minute. Then you can ${what}, earn points, and get reminders.</div></div>
+    <div class="row" style="gap:8px"><button class="btn" data-act="event-auth" data-to="signup" data-id="${e.id}">Join WFA (free)</button><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${e.id}">I have an account: sign in</button></div></div>`;
+}
+// RSVP without an account: name, email, and an opt-in for email reminders about this one event.
+function guestRsvpDone(id){ try { return JSON.parse(localStorage.getItem('wfa-grsvp-' + id) || 'null'); } catch(e){ return null; } }
+function guestRsvpBox(e){
+  const id = e.id, done = guestRsvpDone(id), full = e.cap && rsvpCount(id) >= e.cap;
+  const join = `<div class="row" style="gap:8px"><button class="btn" data-act="event-auth" data-to="signup" data-id="${id}">Join WFA (free) and RSVP</button><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">I have an account: sign in</button></div>`;
+  if (done) return `<div class="panel stack" style="gap:10px"><div class="notice"><span><strong>You’re going, ${esc(done.first)}!</strong> ${done.reminders ? 'We’ll email you reminders about this event.' : ''} Join WFA to earn points for coming and get the full calendar.</span></div>${join}</div>`;
+  if (full) return `<div class="panel"><span class="muted">All ${e.cap} seats are taken.</span></div>`;
+  if (e.guestOpens && Date.now() < Date.parse(e.guestOpens)) return `<div class="panel stack" style="gap:10px"><div><strong>Members get early access</strong>
+      <div class="hint">Guest RSVPs open ${fmtMtStamp(Date.parse(e.guestOpens))}${e.cap ? `, and there are ${e.cap} seats` : ''}. Join WFA (free) to RSVP now.</div></div>${join}</div>`;
+  return `<div class="panel stack" style="gap:12px">
+    <strong style="font-size:1.1rem">RSVP</strong>
+    <p style="margin:0">Members ${PTS[e.cat] ? `earn <strong>${PTS[e.cat]} points</strong> for coming, ` : ''}get reminders for every event, and can join the resume book. Joining is free.</p>
+    ${join}
+    <details ${ui.grsvpOpen === id ? 'open' : ''}><summary style="cursor:pointer">Not ready to join? RSVP as a guest</summary>
+      <form class="stack" id="f-grsvp" data-id="${id}" style="gap:8px;margin-top:10px">
+        <div class="grid2"><label>First name<input id="gr-first" autocomplete="given-name" required></label><label>Last name<input id="gr-last" autocomplete="family-name" required></label></div>
+        <label>Email<input id="gr-email" type="email" autocomplete="email" required></label>
+        <label class="check"><input type="checkbox" id="gr-remind"> Send me email reminders about this event</label>
+        <div><button class="btn ghost" type="submit">RSVP as a guest</button></div><div class="err" id="gr-err"></div>
+      </form></details></div>`;
+}
+// Q&A for guest speakers: submit questions ahead of time. Members see their own; officers see them all.
+function qaBox(e){
+  if (e.membersOnly && !session) return '';
+  const mine = (db.evQuestions || []).filter(q => q.event_id === e.id && q.email === session);
+  return `<div class="panel stack" style="gap:10px">
+    <div><strong>Questions for the speaker</strong><div class="hint">Send a question ahead of time. Officers pick which ones to ask.</div></div>
+    <form class="stack" id="f-qa" data-id="${e.id}" style="gap:8px">
+      ${session ? '' : '<label>Your name<input id="qa-name" autocomplete="name" required></label>'}
+      <label>Your question<textarea id="qa-text" rows="2" maxlength="600" required></textarea></label>
+      <div><button class="btn ghost" type="submit">Send question</button></div><div class="err" id="qa-err"></div></form>
+    ${mine.length && !can('officer') ? `<div class="stack" style="gap:4px"><span class="hint">Your questions:</span>${mine.map(q => `<div class="row" style="gap:8px;align-items:center"><span>${esc(q.question)}</span>${delBtn('qd-' + q.id, 'Delete', 'qa-del', q.id)}</div>`).join('')}</div>` : ''}
+  </div>`;
+}
+// Officers: guest RSVPs and speaker questions for this event.
+function eventOfficerExtras(e){
+  const g = (db.guestRsvps || {})[e.id] || [], qs = (db.evQuestions || []).filter(q => q.event_id === e.id);
+  let h = '';
+  if (g.length) h += `<div class="panel stack" style="gap:6px;padding:12px 14px"><div class="row" style="justify-content:space-between;align-items:center"><strong>Guest RSVPs (${g.length})</strong>
+      <button class="btn ghost small" data-act="copy-text" data-text="${esc(g.map(x => x.email).join('; '))}">Copy emails</button></div>
+    ${g.map(x => `<div class="ev-sub">${esc(x.first)} ${esc(x.last)} · ${esc(x.email)}${x.reminders ? ' · wants reminders' : ''}</div>`).join('')}
+    <span class="hint">Guests who join with the same email get their RSVP moved to their account.</span></div>`;
+  if (e.qaEnabled){
+    const sorted = qs.slice().sort((a, b) => (b.starred - a.starred) || String(a.created_at).localeCompare(String(b.created_at)));
+    h += `<div class="panel stack" style="gap:8px;padding:12px 14px"><div class="row" style="justify-content:space-between;align-items:center"><strong>Questions for the speaker (${qs.length})</strong>
+        ${qs.length ? `<button class="btn ghost small" data-act="copy-text" data-text="${esc(sorted.map((q, i) => (i + 1) + '. ' + q.question + (q.starred ? ' ★' : '')).join('\n'))}">Copy all</button>` : ''}</div>
+      ${sorted.map(q => `<div class="row" style="gap:8px;align-items:start;justify-content:space-between"><div><div>${esc(q.question)}</div><div class="hint">${esc(q.name || 'Someone')} · ${fmtStamp(q.created_at)}</div></div>
+        <span class="row" style="gap:6px"><button class="btn ghost small" data-act="qa-star" data-id="${q.id}" aria-pressed="${q.starred}" title="Star to ask">${q.starred ? '★ Starred' : '☆ Star'}</button>${delBtn('qd-' + q.id, 'Delete', 'qa-del', q.id)}</span></div>`).join('') || '<div class="empty">No questions yet.</div>'}
+      <span class="hint">Star the ones to ask. “Copy all” puts starred questions first, ready to send to the speaker.</span></div>`;
+  }
+  return h;
+}
 function guestDone(id){ try { return JSON.parse(localStorage.getItem('wfa-guest-' + id) || 'null'); } catch(e){ return null; } }
 function guestCheckin(e, pre){
+  if (e.membersOnly) return membersOnlyNote(e, 'check in');
   const id = e.id, pts = PTS[e.cat] || 0, done = guestDone(id);
   const join = `<div class="row" style="gap:8px"><button class="btn" data-act="event-auth" data-to="signup" data-id="${id}">Join WFA (free) and check in</button><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">I have an account: sign in</button></div>`;
   if (done) return `<div class="panel stack" style="gap:10px"><div class="notice"><span><strong>You’re checked in as a guest, ${esc(done.first)}.</strong> Join with ${esc(done.email)} and this check-in moves to your account${pts ? `, with the ${pts} points` : ''}.</span></div>${join}</div>`;
@@ -4361,6 +4436,9 @@ function syncCaseBox(){
   const c = document.getElementById('ev-cat'); if (!c) return;
   const b = document.getElementById('ev-case'), m = document.getElementById('ev-branches');
   if (b) b.hidden = c.value !== 'case_competition'; if (m) m.hidden = c.value !== 'officer_meeting';
+  const mo = document.getElementById('ev-mo-wrap'), qa = document.getElementById('ev-qa-wrap');
+  if (mo) mo.hidden = c.value === 'officer_meeting'; if (qa) qa.hidden = c.value !== 'guest_speaker';
+  const go = document.getElementById('ev-go-wrap'); if (go) go.hidden = c.value === 'officer_meeting' || c.value === 'case_competition';
 }
 ['input', 'change', 'click', 'keyup'].forEach(t => document.addEventListener(t, ev => { if (ev.target && ev.target.id === 'ev-cat') syncCaseBox(); }, true));
 document.addEventListener('keydown', e => {
@@ -4382,8 +4460,8 @@ function installHtml(){
 }
 // In the installed app there's no browser refresh button, so the header gets one. Everywhere else: Install app.
 function appHeaderBtn(){
-  if (appInstalled()) return '<button class="btn on-dark ghost small" data-act="app-refresh" title="Reload the app" aria-label="Refresh">↻ Refresh</button>';
-  return '<button class="btn on-dark ghost small" data-act="install-any" title="Install the WFA app">Install app</button>';
+  if (appInstalled()) return '<button class="btn on-dark ghost small" data-act="app-refresh" title="Reload the app" aria-label="Refresh">↻<span class="lbl"> Refresh</span></button>';
+  return '<button class="btn on-dark ghost small" data-act="install-any" title="Install the WFA app">Install<span class="lbl"> app</span></button>';
 }
 // Install steps for whatever device and browser this is (used when the browser can't show its own install prompt).
 function installSteps(){
@@ -4462,9 +4540,20 @@ document.addEventListener('click', async ev => {
   const t = ev.target.closest('[data-act]');
   if (!t) return;
   const a = t.dataset.act, id = t.dataset.id;
+  if (t.dataset.close) closeModal();
   if (t.dataset.key && ui.armed !== t.dataset.key){ readMail(); ui.armed = t.dataset.key; render(); return; }
   ui.armed = null;
   switch (a){
+    case 'who-menu': { const u = me(), r = role();
+      showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="eyebrow">Signed in</div></div>
+        <h2>${esc(u.first)} ${esc(u.last)} <span class="role ${r}" style="font-size:.7rem;vertical-align:middle">${r}</span></h2>
+        <div class="stack" style="gap:10px">
+          ${isStaff() && !ui.memberView ? `<div class="row" style="gap:8px;align-items:center"><span>View:</span><button class="btn ${ui.safeView ? 'ghost ' : ''}small" data-act="safe-view" data-mode="edit" data-close="1">Edit</button><button class="btn ${ui.safeView ? '' : 'ghost '}small" data-act="safe-view" data-mode="safe" data-close="1">Safe</button></div>` : ''}
+          ${isStaff() ? `<button class="btn ghost" data-act="member-view" data-close="1">${ui.memberView ? 'Member view: on (turn off)' : 'Member view'}</button>` : ''}
+          <a class="btn ghost" href="#account">My account</a>
+          <button class="btn ghost" data-act="notify-settings">Notification settings</button>
+          <button class="btn danger" data-act="signout" data-close="1">Sign out</button>
+        </div></div>`); break; }
     case 'nav-menu': {
       const m = document.getElementById('navmenu'), which = t.dataset.menu;
       if (!m.hidden && m.dataset.for === which){ closeNavMenu(); break; }
@@ -4532,6 +4621,10 @@ document.addEventListener('click', async ev => {
       toast(r === 'granted' ? (ui.pushOnDevice ? 'Notifications are on for this device' : 'Notifications are on while the site is open') : r === 'denied' ? 'Notifications are blocked. Allow them for this site in your browser settings.' : r === 'unsupported' ? 'This browser doesn’t support notifications' : 'Notifications weren’t turned on');
       if (r === 'granted') notifySettings(); break; }
     case 'push-off': await disablePush(); toast('Notifications are off on this device'); notifySettings(); break;
+    case 'qa-star': { const q = db.evQuestions.find(x => x.id === id);
+      if (await act(async () => must(await sb.from('event_questions').update({ starred: !q.starred }).eq('id', id)), q.starred ? 'Unstarred' : 'Starred')) refreshEvent(q.event_id); break; }
+    case 'qa-del': { const q = db.evQuestions.find(x => x.id === id);
+      if (await act(async () => must(await sb.from('event_questions').delete().eq('id', id)), 'Question deleted')) refreshEvent(q.event_id); break; }
     case 'reveal-code': ui.codeShown = ui.codeShown === id ? null : id; refreshEvent(id); break;
     case 'qr': await showQr(id, t.dataset.kind); break;
     case 'qr-style': await showQr(id, t.dataset.kind, t.dataset.style); break;
@@ -5174,6 +5267,28 @@ async function handleSubmit(f, v, err){
     await load(); render(); if (route() !== 'event') openEvent(id); toast('You’re on the free-agent list');
   }
 
+  if (f.id === 'f-grsvp'){
+    const id = f.dataset.id, first = v('gr-first'), last = v('gr-last'), email = v('gr-email').toLowerCase(), reminders = document.getElementById('gr-remind').checked;
+    ui.grsvpOpen = id;
+    const r = await sb.rpc('guest_rsvp', { p_event: id, p_first: first, p_last: last, p_email: email, p_reminders: reminders });
+    if (r.error) return err('gr-err', /guest_rsvp/.test(r.error.message || '') ? 'Guest RSVPs aren’t set up yet.' : errMsg(r.error));
+    const msg = { name: 'Enter your first and last name.', email: 'Enter a valid email address.', missing: 'This event isn’t open for guest RSVPs.',
+      started: 'This event has already started. Check in with the code on screen instead.', full: 'All seats are taken.',
+      member: 'There’s already a WFA account with this email. Sign in to RSVP.', notyet: 'Members get early access. Guest RSVPs aren’t open yet.' }[r.data];
+    if (msg) return err('gr-err', msg);
+    try { localStorage.setItem('wfa-grsvp-' + id, JSON.stringify({ first, email, reminders })); } catch(x){}
+    toast('You’re going!'); await load(); refreshEvent(id); return;
+  }
+  if (f.id === 'f-qa'){
+    const id = f.dataset.id, text = v('qa-text'), name = document.getElementById('qa-name') ? v('qa-name') : '';
+    const r = await sb.rpc('ask_question', { p_event: id, p_question: text, p_name: name });
+    if (r.error) return err('qa-err', /ask_question/.test(r.error.message || '') ? 'Q&A isn’t set up yet.' : errMsg(r.error));
+    const msg = { missing: 'Questions aren’t open for this event.', closed: 'This event has ended.', empty: 'Write a question first.', long: 'Keep it under 600 characters.',
+      name: 'Enter your name.', many: 'That’s a lot of questions! Try again in a bit.' }[r.data];
+    if (msg) return err('qa-err', msg);
+    toast('Question sent. Thanks!'); await load(); refreshEvent(id); return;
+  }
+
   if (f.id === 'f-guest'){
     const id = f.dataset.id, e = evById(id), first = v('gc-first'), last = v('gc-last'), email = v('gc-email').toLowerCase(), code = v('gc-code').toUpperCase();
     ui.guestOpen = id;
@@ -5209,6 +5324,9 @@ async function handleSubmit(f, v, err){
     const e = { title: v('ev-title'), cat: v('ev-cat'), date: v('ev-date'), start_time: v('ev-start'), end_time: v('ev-end'), loc: v('ev-loc'), cap: Math.max(0, parseInt(v('ev-cap')) || 0), descr: v('ev-desc') };
     if (!e.title || !e.date || !e.start_time || !e.end_time || !e.loc) return err('ev-err', 'Fill in the title, date, times, and location.');
     if (e.end_time <= e.start_time) return err('ev-err', 'End time must be after the start time.');
+    e.members_only = e.cat !== 'officer_meeting' && document.getElementById('ev-members-only').checked;
+    e.qa_enabled = e.cat === 'guest_speaker' && document.getElementById('ev-qa').checked;
+    e.guest_rsvp_opens = ['officer_meeting', 'case_competition'].includes(e.cat) ? null : mtFromInput(v('ev-guest-opens'));
     if (e.cat === 'officer_meeting'){ e.meeting_who = {}; f.querySelectorAll('.ev-who').forEach(s => { if (s.value) e.meeting_who[s.dataset.k] = s.value; }); }
     if (e.cat === 'case_competition'){
       e.team_min = parseInt(v('ev-tmin')) || 1; e.team_max = parseInt(v('ev-tmax')) || 1;

@@ -2,6 +2,7 @@
 // Sends the automatic club emails (and phone/computer notifications) that admins turn on in Admin -> Automatic emails:
 //   * event reminders 1 week before, 1 day before, and the day of (9 AM, 2 hours before, or 1 hour before), to
 //     everyone or to people who RSVP'd; for case competitions, only accepted teams (unless an admin turns that off)
+//     Guests who RSVP'd without an account and asked for reminders get that event's reminders by email.
 //   * "check-in is open" notifications 15 minutes before an event, to people who RSVP'd (notification only)
 //   * a survey request 30 minutes after an event ends, to people who checked in and haven't answered the survey
 //   * a summary email when chat messages sit unread for over an hour (see 42-chats.sql; works even when the
@@ -164,7 +165,7 @@ Deno.serve(async () => {
     for (const ev of events) {
       const start = mtMs(ev.date, ev.start_time), end = mtMs(ev.date, ev.end_time);
       const link = `${site}/#event/${ev.id}`, when = `${fmtDay(start)}, ${fmtTime(start)} to ${fmtTime(end)}`;
-      const footer = `You're getting this because you're a Wolverine Finance Association member. To change which emails you get, open Notification settings on the site, or turn club emails off in My account: <a href="${site}/#account" style="color:#1f4d2e">${site}/#account</a>`;
+      const footer = `You're getting this because you're a Wolverine Finance Association member or asked for reminders about this event. Members can change which emails they get in Notification settings on the site, or turn club emails off in My account: <a href="${site}/#account" style="color:#1f4d2e">${site}/#account</a>`;
       const details = `<p style="margin:0 0 4px"><strong>${escHtml(ev.title)}</strong></p><p style="margin:0 0 4px">${escHtml(when)}</p>` +
         (ev.loc ? `<p style="margin:0 0 12px">${escHtml(ev.loc)}</p>` : '') +
         (ev.descr ? `<div style="margin:0 0 6px 18px;color:#3d4a40;white-space:pre-wrap">${escHtml(ev.descr)}</div>` : '');
@@ -189,7 +190,14 @@ Deno.serve(async () => {
         const lead = teamsOnly ? `Just a reminder that ${ev.title}, which your team is competing in, ${phrase}.`
           : toEveryone ? `${ev.title} ${phrase}.` : `Just a reminder that ${ev.title}, which you signed up for, ${phrase}.`;
         const label = toEveryone ? 'View the event and RSVP' : 'View the event';
-        jobs.push({ ev, kind, subject, emailTo: base.filter((e) => getsEmail(e, 'events')), pushTo: base.filter((e) => getsPush(e, 'events')),
+        // Guests who RSVP'd without an account and asked for reminders about this event.
+        let guestTo: string[] = [];
+        if (ev.cat !== 'case_competition') {
+          const { data: gr } = await db.from('guest_rsvps').select('email, first').eq('event_id', ev.id).eq('reminders', true);
+          (gr || []).forEach((g) => { if (!byEmail.has(g.email)) { guestTo.push(g.email); firstName.set(g.email, String(g.first || '').trim()); } });
+          guestTo = [...new Set(guestTo)];
+        }
+        jobs.push({ ev, kind, subject, emailTo: [...base.filter((e) => getsEmail(e, 'events')), ...guestTo], pushTo: base.filter((e) => getsPush(e, 'events')),
           html: (g) => htmlEmail(`<p style="margin:0 0 12px">${escHtml(g)}</p><p style="margin:0 0 16px">${escHtml(lead)}</p>${details}`, { label, url: link }, footer),
           text: (g) => `${g}\n\n${lead}\n\n${when}\n${ev.loc || ''}\n\n${ev.descr || ''}\n\n${label}: ${link}`,
           push: { title: subject, body: `${fmtTime(start)}${ev.loc ? ' - ' + ev.loc : ''}`, url: link } });
