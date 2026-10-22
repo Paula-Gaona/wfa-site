@@ -510,7 +510,7 @@ h3{font-family:var(--serif);font-weight:700;font-size:1.4rem;letter-spacing:.01e
 const SUPABASE_URL = 'https://razxymbbfsnnnguyaalp.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_G9Ct3sh1zfK2peRadj-nzg_SSLCr2Sn';
 const SAFE_MSG = 'Safe view is on. Switch to Edit view to make changes.';
-const READ_RPCS = ['my_role', 'my_test_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending', 'case_board', 'member_points', 'my_chats', 'chat_names', 'mark_chat_read', 'rule_chats'];   // database functions that only read
+const READ_RPCS = ['my_role', 'my_test_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending', 'case_board', 'member_points', 'my_chats', 'chat_names', 'mark_chat_read', 'rule_chats', 'event_coming_soon'];   // database functions that only read
 function safeFetch(input, init){
   const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
   let safe = false;
@@ -664,7 +664,7 @@ async function load(){
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
-    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, guestOpens:e.guest_rsvp_opens || null }));
+    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, guestOpens:e.guest_rsvp_opens || null, comingSoon:!!e.coming_soon }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -3159,6 +3159,7 @@ function viewOfficer(){
         <label>Seat limit<input id="ev-cap" type="number" min="0" value="${esc(e?.cap || 0)}"><span class="hint">0 means no limit. RSVPs close when the limit is reached. Guest RSVPs count too.</span></label>
         <label id="ev-go-wrap" ${e?.cat === 'officer_meeting' || e?.cat === 'case_competition' ? 'hidden' : ''}>Guest RSVPs open <span class="hint">Optional. Give members early access: until this time (Mountain Time) only members can RSVP. Leave blank to let guests RSVP right away.</span><input id="ev-guest-opens" type="datetime-local" value="${mtLocalInput(e?.guestOpens)}"></label>
         <label class="check" id="ev-mo-wrap" ${e?.cat === 'officer_meeting' ? 'hidden' : ''}><input type="checkbox" id="ev-members-only" ${e?.membersOnly ? 'checked' : ''}> Members only <span class="hint">Everyone can see it, but only members can RSVP and check in (a reason to join).</span></label>
+        ${!e || e.draft ? `<label class="check"><input type="checkbox" id="ev-soon" ${e?.comingSoon ? 'checked' : ''}> Coming-soon page <span class="hint">While this is a draft, anyone who opens its link sees the title and “coming soon” instead of “event not found.” Copy the link or QR code from the Drafts list after saving.</span></label>` : ''}
         <label class="check" id="ev-qa-wrap" ${e?.cat === 'guest_speaker' ? '' : 'hidden'}><input type="checkbox" id="ev-qa" ${e?.qaEnabled ? 'checked' : ''}> Add Q&A <span class="hint">People can submit questions for the speaker ahead of time. Only officers see them.</span></label>
         <label>Check-in code <span class="hint">(optional)</span>
           <span class="row" style="gap:8px;flex-wrap:nowrap"><input id="ev-code" maxlength="8" autocomplete="off" value="${esc(e?.code || '')}" placeholder="e.g. BULL" style="font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;flex:1;min-width:0"><button type="button" class="btn ghost small" data-act="ev-gen-code">Generate</button></span>
@@ -3177,7 +3178,8 @@ function viewOfficer(){
         ${(() => { const drafts = db.events.filter(x => x.draft).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
           return drafts.length ? `<div class="section-head"><h3>Drafts</h3><span class="muted">${drafts.length}</span></div>
           <div>${drafts.map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)} <span class="tag">Draft</span>${pendingFor('event', ev.id).length ? ' <span class="tag warn">Waiting for approval</span>' : ''}</div><div class="ev-sub">${fmtDay(ev.date)} · ${esc(catName(ev.cat))}</div></div>
-            <div class="row" style="gap:6px"><button class="btn small" data-act="publish-event" data-id="${ev.id}">${canPublish() ? 'Publish' : 'Submit for approval'}</button><button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button>${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('')}</div>` : ''; })()}
+            <div class="row" style="gap:6px"><button class="btn small" data-act="publish-event" data-id="${ev.id}">${canPublish() ? 'Publish' : 'Submit for approval'}</button><button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button><button class="btn ghost small" data-act="copy-link" data-id="${ev.id}">Copy link</button><button class="btn ghost small" data-act="qr" data-id="${ev.id}" data-kind="page">QR code</button>${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('')}
+          <span class="hint">A draft’s link and QR code are already final: they start working when it’s published${drafts.some(x => x.comingSoon) ? ' (drafts with a coming-soon page show that until then)' : ''}.</span></div>` : ''; })()}
         <div class="section-head"><h3>Published events</h3><span class="muted">${sortedEvents().length}</span></div>
         <div>${sortedEvents().reverse().map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)}</div><div class="ev-sub">${fmtDay(ev.date)} · ${going(ev.id).length} RSVP${isPast(ev)?' · '+attended(ev.id).length+' attended':''}</div></div>
           <div class="row" style="gap:6px"><button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button>${isPast(ev) ? '' : `<button class="btn ghost small ${ui.armed === 'unpub-' + ev.id ? 'armed' : ''}" data-act="unpublish-event" data-id="${ev.id}" data-key="unpub-${ev.id}">${ui.armed === 'unpub-' + ev.id ? 'Click again to unpublish' : 'Unpublish'}</button>`}${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('') || '<div class="empty">No published events yet.</div>'}</div>
@@ -3635,7 +3637,7 @@ function eventInner(id, page){
       ${e.code ? `<div class="row" style="gap:6px"><button class="btn ghost small" data-act="show-code" data-id="${id}">Projector view</button><button class="btn ghost small" data-act="qr" data-id="${id}" data-kind="checkin">Check-in QR</button></div>` : ''}
       <span class="hint">${isToday(e) ? 'Check-in is open today.' : 'Members can check in on the day of the event.'}</span></div>`;
   }
-  const share = e.draft ? '' : `<div class="row" style="gap:6px"><button class="btn ghost small" data-act="copy-link" data-id="${id}">Copy link</button>${can('officer') ? `<button class="btn ghost small" data-act="qr" data-id="${id}" data-kind="page">QR code</button>` : ''}${page ? '' : `<a class="btn ghost small" href="#event/${id}">Open event page</a>`}</div>`;
+  const share = e.draft && !can('officer') ? '' : `${e.draft ? '<span class="hint">This link starts working when the event is published.</span>' : ''}<div class="row" style="gap:6px"><button class="btn ghost small" data-act="copy-link" data-id="${id}">Copy link</button>${can('officer') ? `<button class="btn ghost small" data-act="qr" data-id="${id}" data-kind="page">QR code</button>` : ''}${page ? '' : `<a class="btn ghost small" href="#event/${id}">Open event page</a>`}</div>`;
   return `<div><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${PTS[e.cat] ? PTS[e.cat] + ' pts' : 'officers only'}${e.draft ? ' · <span class="tag">Draft</span>' : ''}${e.membersOnly ? ' · <span class="tag">Members only</span>' : ''}</div></div>
     <h2>${esc(e.title)}</h2>
     <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} <span class="hint">Mountain Time</span></dd>
@@ -4368,6 +4370,17 @@ function refreshEvent(id){ if (route() === 'event') render(); else openEvent(id)
 function viewEvent(){
   const id = location.hash.slice(1).split('/')[1] || '', e = evById(id);
   if (!session) setReturnTo(location.hash.slice(1));
+  if (!e && id){
+    // A draft with a coming-soon page shows just its title until it's published.
+    ui.soon = ui.soon || {};
+    if (ui.soon[id] === undefined){
+      ui.soon[id] = null;
+      sb.rpc('event_coming_soon', { p_id: id }).then(r => { ui.soon[id] = (r.data && r.data.title) ? r.data : false; if (route() === 'event') render(); }, () => { ui.soon[id] = false; if (route() === 'event') render(); });
+    }
+    if (ui.soon[id] === null) return `<div class="view"><p class="muted">Loading…</p></div>`;
+    if (ui.soon[id]) return `<div class="view"><div class="page-head"><div class="eyebrow">Coming soon</div><h1 class="page">${esc(ui.soon[id].title)}</h1></div>
+      <p class="muted">This event isn’t published yet. Check back soon for the date, details, and RSVPs.</p><p><a class="btn" href="#calendar">See other events</a></p></div>`;
+  }
   if (!e) return `<div class="view"><div class="page-head"><div class="eyebrow">Event</div><h1 class="page">Event not found</h1></div>
     <p class="muted">This event may have been removed${session ? '' : ', or you may need to <a href="#signin">sign in</a> to see it'}.</p><p><a class="btn" href="#calendar">See all events</a></p></div>`;
   return `<div class="view"><p><a href="#calendar">← All events</a></p><section class="panel stack event-page" style="--c:${catVar(e.cat)};gap:14px">${eventInner(id, true)}</section></div>`;
@@ -4740,7 +4753,7 @@ document.addEventListener('click', async ev => {
     case 'qr': await showQr(id, t.dataset.kind); break;
     case 'qr-style': await showQr(id, t.dataset.kind, t.dataset.style); break;
     case 'qr-tool-style': ui.qr.style = t.dataset.style; render(); drawQrTool(); break;
-    case 'copy-link': await copyText(eventLink(id), 'Event link copied'); break;
+    case 'copy-link': await copyText(eventLink(id), (evById(id) || {}).draft ? 'Link copied. It works once the event is published' : 'Event link copied'); break;
     case 'copy-text': await copyText(t.dataset.text, 'Link copied'); break;
     case 'close': closeModal(); break;
     case 'copy': copyText(t.dataset.text, t.dataset.label); break;
@@ -5455,6 +5468,7 @@ async function handleSubmit(f, v, err){
     if (e.end_time <= e.start_time) return err('ev-err', 'End time must be after the start time.');
     e.members_only = e.cat !== 'officer_meeting' && document.getElementById('ev-members-only').checked;
     e.qa_enabled = e.cat === 'guest_speaker' && document.getElementById('ev-qa').checked;
+    if (document.getElementById('ev-soon')) e.coming_soon = document.getElementById('ev-soon').checked;
     e.guest_rsvp_opens = ['officer_meeting', 'case_competition'].includes(e.cat) ? null : mtFromInput(v('ev-guest-opens'));
     if (e.cat === 'officer_meeting'){ e.meeting_who = {}; f.querySelectorAll('.ev-who').forEach(s => { if (s.value) e.meeting_who[s.dataset.k] = s.value; }); }
     if (e.cat === 'case_competition'){
