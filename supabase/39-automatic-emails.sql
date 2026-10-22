@@ -35,6 +35,7 @@ select cron.unschedule(jobid) from cron.job where jobname = 'wfa-auto-emails';
 select cron.schedule('wfa-auto-emails', '*/10 * * * *', $job$
   select net.http_post(
     url := 'https://razxymbbfsnnnguyaalp.supabase.co/functions/v1/auto-emails',
-    headers := '{"Content-Type": "application/json"}'::jsonb,
+    -- The site's public (publishable) key, the same one in site/index.html. Supabase requires it on function calls.
+    headers := '{"Content-Type": "application/json", "apikey": "sb_publishable_G9Ct3sh1zfK2peRadj-nzg_SSLCr2Sn"}'::jsonb,
     body := '{}'::jsonb);
 $job$);
