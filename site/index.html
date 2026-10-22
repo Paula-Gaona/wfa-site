@@ -4200,12 +4200,20 @@ function takeReturnTo(){
 /* ---------- QR codes ---------- */
 // Green and gold, with rounded dots and gold corner "eyes". Transparent PNGs unless the style has a background.
 const QR_GOLD = '#B8923A';
+// [label, background (null = transparent), dots, corner squares, 'seal' = WFA seal in the middle]
 const QR_STYLES = {
-  brand: ['Green & gold, transparent', null, '#275D38', QR_GOLD],
-  white: ['Green & gold on white', '#ffffff', '#275D38', QR_GOLD],
-  dark:  ['White & gold, transparent (for dark backgrounds)', null, '#ffffff', QR_GOLD],
-  plain: ['Black on white (most reliable)', '#ffffff', '#000000', '#000000']
+  brand:     ['Green & gold, transparent', null, '#1F4D2E', QR_GOLD],
+  seal:      ['Green & gold with the seal, transparent', null, '#1F4D2E', QR_GOLD, 'seal'],
+  green:     ['Green, transparent', null, '#1F4D2E', '#1F4D2E'],
+  black:     ['Black, transparent', null, '#000000', '#000000'],
+  blackseal: ['Black with the seal, transparent', null, '#000000', '#000000', 'seal'],
+  ongreen:   ['Cream & gold on crest green', '#123622', '#F4EFE1', QR_GOLD],
+  white:     ['Green & gold on white', '#ffffff', '#1F4D2E', QR_GOLD],
+  dark:      ['White & gold, transparent (for dark backgrounds)', null, '#ffffff', QR_GOLD],
+  plain:     ['Black on white (most reliable)', '#ffffff', '#000000', '#000000']
 };
+let qrSeal = null;
+function loadQrSeal(){ return qrSeal || (qrSeal = new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => { qrSeal = null; rej(new Error('The seal image didn’t load.')); }; i.src = '/crest-seal.png'; })); }
 const QR_SIZES = { 600: 'Small (600 px)', 1200: 'Medium (1200 px)', 2400: 'Print (2400 px)' };
 let qrLib = null;
 function loadQr(){
@@ -4222,7 +4230,7 @@ async function qrPng(text, style, px){
   const qrcode = await loadQr();
   const qr = qrcode(0, 'H'); qr.addData(text); qr.make();   // high error correction keeps the rounded style easy to scan
   const n = qr.getModuleCount(), pad = 4, cell = Math.max(4, Math.floor((+px || 1200) / (n + pad * 2))), size = (n + pad * 2) * cell;
-  const [, bg, ink, gold] = QR_STYLES[style] || QR_STYLES.brand;
+  const [, bg, ink, gold, logo] = QR_STYLES[style] || QR_STYLES.brand;
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
   const g = cv.getContext('2d');
   if (bg){ g.fillStyle = bg; g.fillRect(0, 0, size, size); }
@@ -4238,6 +4246,14 @@ async function qrPng(text, style, px){
     g.fillStyle = gold; g.beginPath(); box(x, y, 7 * cell, 1.8 * cell * round); box(x + cell, y + cell, 5 * cell, 1.1 * cell * round); g.fill('evenodd');
     g.fillStyle = ink; g.beginPath(); box(x + 2 * cell, y + 2 * cell, 3 * cell, .9 * cell * round); g.fill();
   });
+  // The seal in the middle covers about 5% of the code; high error correction makes up for the hidden dots.
+  if (logo === 'seal'){
+    const img = await loadQrSeal(), d = Math.round(size * 0.22), cx = size / 2, gap = cell * 0.8;
+    g.save(); g.beginPath(); g.arc(cx, cx, d / 2 + gap, 0, Math.PI * 2);
+    if (bg){ g.fillStyle = bg; g.fill(); } else { g.globalCompositeOperation = 'destination-out'; g.fill(); }
+    g.restore();
+    g.drawImage(img, cx - d / 2, cx - d / 2, d, d);
+  }
   return cv.toDataURL('image/png');
 }
 function qrFileName(name){ return (String(name).replace(/[^\w]+/g, '-').replace(/^-|-$/g, '') || 'wfa') + '-qr.png'; }
