@@ -3932,7 +3932,7 @@ async function caseRpc(fn, args, evId, ok, errId){
 // presidents, faculty advisors, and admins start chats with officers and members; members can message their case
 // competition teammates and start a chat to put a team together. New messages arrive live, with a sound, a tab badge,
 // and (if turned on) desktop notifications. Unread messages get one summary email after an hour (auto-emails function).
-const CHAT_GROUPS = [['Officers', ['officers', 'branch']], ['Case competitions', ['all_teams', 'team', 'forming']], ['Conversations', ['custom', 'direct']]];
+const CHAT_GROUPS = [['Officers', ['officers', 'executives', 'branch_leads', 'branch']], ['Case competitions', ['all_teams', 'team', 'forming']], ['Conversations', ['custom', 'direct']]];
 ui.chatMsgs = {}; ui.chatNames = {};
 function isLeader(){ if (myRole === 'admin') return true; const p = db.profiles[session] || {}; return myRole === 'officer' && ['president', 'vice_president', 'advisor'].includes(p.tier); }
 function chatUnread(){ return (db.chats || []).reduce((n, c) => n + (c.member ? c.unread || 0 : 0), 0); }
@@ -3943,7 +3943,7 @@ function chatTitle(c){
   return o.length ? o.map(p => p.first ? (p.first + ' ' + (p.last || '')).trim() : (p.email || 'Someone')).join(', ') : 'Just you';
 }
 function chatKindLabel(c){
-  return { officers: 'All officers and the faculty advisor', branch: 'Branch chat', team: 'Your team’s chat', all_teams: 'Every competing team and the officers',
+  return { officers: 'All officers and the faculty advisor', executives: 'All presidents and vice presidents', branch_leads: 'This branch’s president and vice president', branch: 'Branch chat', team: 'Your team’s chat', all_teams: 'Every competing team and the officers',
     forming: 'Putting a team together', custom: 'Chat', direct: 'Teammate chat' }[c.kind] || '';
 }
 function chatWhen(at){ const ms = Date.parse(at); return mtDateIso(ms) === todayIso() ? fmtTime(mtClock(ms)) : fmtDay(mtDateIso(ms)).replace(/^\w+, /, ''); }
