@@ -272,6 +272,10 @@ main{padding-block:36px 64px}
 .chat-pick{max-height:16rem;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);padding:8px;display:flex;flex-direction:column;gap:4px}
 .chat-back{display:none}
 @media (max-width:760px){.chat-wrap{grid-template-columns:1fr;height:auto;min-height:70vh}.chat-wrap.open .chat-list{display:none}.chat-wrap:not(.open) .chat-pane{display:none}.chat-back{display:inline}.chat-msgs{max-height:62vh}}
+.bell{display:inline-flex;align-items:center;padding:6px 9px}
+.nf-table{width:100%;border-collapse:collapse}
+.nf-table th,.nf-table td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.nf-table td.c,.nf-table th.c{text-align:center;width:6.5rem}
 .code-inline{font-family:var(--mono);font-size:1.4rem;font-weight:700;letter-spacing:.2em;padding:2px 10px;border:2px solid var(--ink);border-radius:var(--radius)}
 .event-page{border-top:4px solid var(--c)}
 .qr-stage{padding:16px;border-radius:var(--radius);border:1px solid var(--line);background:repeating-conic-gradient(#e9ecea 0 25%, #fff 0 50%) 0 0/20px 20px}
@@ -623,7 +627,7 @@ async function load(){
   const R = {};
   keys.forEach((k, i) => { if (res[i].error) console.warn(k, res[i].error.message); R[k] = res[i].data; });
 
-  db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0), about: R.settings?.about || {}, lbSince: R.settings?.lb_since || null, autoEmail: R.settings?.auto_email || null };
+  db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0), about: R.settings?.about || {}, lbSince: R.settings?.lb_since || null, autoEmail: R.settings?.auto_email || null, pushKey: R.settings?.push_public_key || '' };
   db.autoLog = Array.isArray(R.autoLog) ? R.autoLog : [];
   db.lbHistory = Array.isArray(R.lbHistory) ? R.lbHistory : [];
   db.awards = R.awards || [];
@@ -639,7 +643,7 @@ async function load(){
   db.users = (R.members || []).map(m => {
     const majors = (m.majors && m.majors.length) ? m.majors : (m.major ? [m.major] : []);
     return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(' & '), email:m.email, joined:m.joined, interests:m.interests || [], year:m.year || '', lbPublic:m.lb_public !== false,
-      resumePath:m.resume_path || '', resumeBook:!!m.resume_book, resumeUpdated:m.resume_updated || null, emailOptIn:m.email_opt_in !== false, chatEmails:m.chat_emails !== false };
+      resumePath:m.resume_path || '', resumeBook:!!m.resume_book, resumeUpdated:m.resume_updated || null, emailOptIn:m.email_opt_in !== false, chatEmails:m.chat_emails !== false, notify:m.notify || {} };
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
@@ -661,7 +665,7 @@ async function load(){
   db.surveyPending = Array.isArray(R.surveyPending) ? R.surveyPending : [];
   db.testAccounts = Array.isArray(R.testAccounts) ? R.testAccounts : [];
   db.chats = Array.isArray(R.chats) ? R.chats : [];
-  setTimeout(syncChatLive);
+  setTimeout(syncChatLive); setTimeout(syncPush);
   db.caseTeams = (R.caseBoard && R.caseBoard.teams) || []; db.caseAgents = (R.caseBoard && R.caseBoard.agents) || [];
   db.caseNotes = {}; (Array.isArray(R.caseNotes) ? R.caseNotes : []).forEach(n => db.caseNotes[n.id] = { rating: n.officer_rating || null, note: n.officer_note || '' });
   db.memberPts = {}; (Array.isArray(R.memberPts) ? R.memberPts : []).forEach(x => db.memberPts[x.email] = x.points);
@@ -834,7 +838,7 @@ function renderChrome(route){
   document.getElementById('who').innerHTML = u
     ? `${isStaff() && !ui.memberView ? `<span class="seg-toggle" role="group" aria-label="Edit or safe view"><button data-act="safe-view" data-mode="edit" aria-pressed="${!ui.safeView}" title="Make changes">Edit</button><button data-act="safe-view" data-mode="safe" aria-pressed="${!!ui.safeView}" title="Look around without changing anything">Safe</button></span>` : ''}${isStaff() ? `<button class="btn on-dark ${ui.memberView ? '' : 'ghost'} small" data-act="member-view" aria-pressed="${!!ui.memberView}">${ui.memberView ? 'Member view: on' : 'Member view'}</button>` : ''}<span class="name">${esc(u.first)}</span><span class="role ${r}">${r}</span><button class="btn on-dark ghost small" data-act="signout">Sign out</button>`
     : `<a class="btn on-dark ghost small" href="#signin">Sign in</a><a class="btn on-dark small" href="#signup">Join</a>`;
-  document.getElementById('who').insertAdjacentHTML('afterbegin', appHeaderBtn());
+  document.getElementById('who').insertAdjacentHTML('afterbegin', appHeaderBtn() + (u ? `<button class="btn on-dark ghost small bell" data-act="notify-settings" title="Notification settings" aria-label="Notification settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></button>` : ''));
   const bar = document.getElementById('safebar');
   bar.hidden = !(ui.safeView && isStaff()) && !testRole;
   if (testRole) bar.innerHTML = `<div class="wrap"><span>Test ${testRole}. Only test accounts see what you do here. It doesn’t change the real site, stats, or leaderboard.</span></div>`;
@@ -1485,7 +1489,7 @@ function adminSeasonsBody(){
 // every 10 minutes (see supabase/auto-emails.ts and 39-automatic-emails.sql).
 const AUTO_REMINDERS = [['7d', '1 week before'], ['1d', '1 day before'], ['same', 'The day of']];
 const SAME_DAY = { '9am': '9 AM that morning', '2h': '2 hours before', '1h': '1 hour before' };
-const AUTO_KINDS = { remind_7d: 'Reminder, 1 week before', remind_1d: 'Reminder, 1 day before', remind_same: 'Reminder, day of', remind_2h: 'Reminder, day of', survey: 'Survey email' };
+const AUTO_KINDS = { remind_7d: 'Reminder, 1 week before', remind_1d: 'Reminder, 1 day before', remind_same: 'Reminder, day of', remind_2h: 'Reminder, day of', survey: 'Survey request', checkin_open: 'Check-in is open (notification)' };
 function autoCfg(){
   const c = db.settings.autoEmail || { enabled: false, reminders: [{ key: '7d', on: true, to: 'all' }, { key: '1d', on: true, to: 'all' }, { key: 'same', on: true, to: 'all', at: '2h' }], survey: true, daily_cap: 500, case_teams_only: true };
   // Older settings called the day-of reminder "2h".
@@ -1531,6 +1535,18 @@ function adminAutoBody(){
         <span class="hint">Reminders include the date, time, location, description, and a link to the event page. A 9 AM reminder for an event before 10 AM goes out an hour before instead.</span></div>
       <div class="stack" style="gap:6px"><strong>After the event</strong>
         <label class="check"><input type="checkbox" id="au-survey" ${c.survey ? 'checked' : ''}> Survey email 30 minutes after the event ends, to people who checked in and haven’t answered yet</label></div>
+      <div class="stack" style="gap:6px"><strong>Phone and computer notifications</strong>
+        <label class="check"><input type="checkbox" id="au-push" ${c.push !== false ? 'checked' : ''}> Send notifications to members’ devices (for whatever each member turns on in their Notification settings)</label>
+        <span class="hint">${db.settings.pushKey ? 'Set up. Members who turn notifications on get them even when the site is closed.' : 'Not set up yet: generate keys below, then follow the steps.'}</span>
+        <details ${db.settings.pushKey ? '' : 'open'}><summary style="cursor:pointer">Push setup (one time)</summary>
+          <div class="stack" style="gap:8px;margin-top:8px">
+            ${ui.vapid ? `<label>Public key<input readonly value="${ui.vapid.pub}" onclick="this.select()"></label>
+              <label>Private key <span class="hint">Secret. It only goes in Supabase’s Edge Function secrets. It isn’t saved anywhere else; if you leave this page, generate new keys.</span><input readonly value="${ui.vapid.priv}" onclick="this.select()"></label>
+              <ol style="margin:0;padding-left:1.2em;line-height:1.7"><li>In Supabase: <strong>Edge Functions → Secrets</strong>. Add <code>VAPID_PUBLIC_KEY</code> = the public key and <code>VAPID_PRIVATE_KEY</code> = the private key.</li>
+                <li>Click <strong>Save the public key to the site</strong> below.</li></ol>
+              <div class="row" style="gap:8px"><button type="button" class="btn small" data-act="vapid-save">Save the public key to the site</button></div>`
+              : `<span class="hint">${db.settings.pushKey ? 'Making new keys turns off notifications on every device until each person turns them back on.' : ''}</span><div><button type="button" class="btn ghost small" data-act="vapid-gen">Generate keys</button></div>`}
+          </div></details></div>
       <div class="stack" style="gap:6px"><strong>Messages</strong>
         <label class="check"><input type="checkbox" id="au-chat" ${c.chat_alerts !== false ? 'checked' : ''}> Email people when their messages sit unread for an hour (one summary; works even when the emails above are off)</label></div>
       <label style="max-width:24rem">Daily limit for automatic emails<input id="au-cap" type="number" min="1" max="5000" value="${esc(Math.max(c.daily_cap ?? 500, 500))}">
@@ -1616,8 +1632,8 @@ function viewAccount(){
           <dt>Club emails</dt><dd>${u.emailOptIn === false ? 'Off' : 'On'} <button class="btn ghost small" data-act="mail-optin" style="margin-left:6px">${u.emailOptIn === false ? 'Turn on' : 'Turn off'}</button>
             <div class="hint">Events and announcements. Account emails like password resets always send.</div></dd>
           ${installHtml() ? `<dt>App</dt><dd>${installHtml()}<div class="hint">Opens in its own window with the WFA icon, and gets message pop-ups.</div></dd>` : ''}
-          <dt>Message emails</dt><dd>${u.chatEmails === false ? 'Off' : 'On'} <button class="btn ghost small" data-act="chat-optin" style="margin-left:6px">${u.chatEmails === false ? 'Turn on' : 'Turn off'}</button>
-            <div class="hint">One email if messages on the site sit unread for an hour.</div></dd>
+          <dt>Notifications</dt><dd><button class="btn ghost small" data-act="notify-settings">Notification settings</button>
+            <div class="hint">Choose pop-ups and emails for messages, event reminders, check-in, surveys, and announcements.</div></dd>
           ${isStaff() ? '' : `<dt>Leaderboard</dt><dd>${u.lbPublic === false ? 'Anonymous Member' : 'Shown by name'} <button class="btn ghost small" data-act="lb-toggle" style="margin-left:6px">${u.lbPublic === false ? 'Show my name' : 'Go anonymous'}</button></dd>`}
           <dt>Email</dt><dd>${esc(u.email)}</dd>
           <dt>Joined</dt><dd>${fmtDay(u.joined)}</dd>
@@ -3887,7 +3903,7 @@ function viewMessages(){
       <div class="page-head"><div class="eyebrow">Messages</div><h1 class="page">Chats</h1></div>
       <div class="row" style="gap:6px">${isLeader() ? '<a class="btn" href="#messages/new">New chat</a>' : ''}
         <button class="btn ghost small" data-act="chat-sound">${chatSoundOn() ? 'Sound: on' : 'Sound: off'}</button>
-        ${popupButton()}</div>
+        <button class="btn ghost small" data-act="notify-settings">Notification settings</button></div>
     </section>
     <div class="chat-wrap ${open ? 'open' : ''}"><nav class="chat-list" aria-label="Chats">${side}</nav><section class="chat-pane">${pane}</section></div>
   </div>`;
@@ -4017,7 +4033,7 @@ async function onChatMessage(m){
     const looking = route() === 'messages' && ui.chatOpen === m.chat_id && document.hasFocus();
     if (looking) markRead(m.chat_id); else c.unread = (c.unread || 0) + 1;
     chatChime();
-    if (!looking && popupsOn() && 'Notification' in window && Notification.permission === 'granted' && !document.hasFocus()){
+    if (!looking && !ui.pushOnDevice && popupsOn() && (me() || {}).notify?.messages_push !== false && 'Notification' in window && Notification.permission === 'granted' && !document.hasFocus()){
       showPopup(name + ' · ' + chatTitle(c), m.body.slice(0, 160), m.chat_id, m.id);
     }
   }
@@ -4038,6 +4054,7 @@ async function showPopup(title, body, chatId, tag){
 }
 // Clicking a pop-up shown by the app helper brings this window forward and opens the chat.
 if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => {
+  if (e.data && e.data.openUrl){ try { location.hash = new URL(e.data.openUrl).hash.slice(1); } catch(x){} return; }
   if (!e.data || e.data.openChat === undefined) return;
   location.hash = 'messages' + (e.data.openChat ? '/' + e.data.openChat : '');
 });
@@ -4070,6 +4087,7 @@ let badgeIcon = null, badgeShown = -1;
 function updateTabBadge(){
   const n = session ? chatUnread() : 0;
   document.title = (n ? `(${n}) ` : '') + BASE_TITLE;
+  try { if (navigator.setAppBadge) n ? navigator.setAppBadge(n) : navigator.clearAppBadge(); } catch(e){}
   if (n === badgeShown) return; badgeShown = n;
   const link = document.querySelector('link[rel="icon"][sizes="48x48"]') || document.querySelector('link[rel="icon"]');
   if (!link) return;
@@ -4080,6 +4098,89 @@ function updateTabBadge(){
     link.href = c.toDataURL('image/png'); };
   if (badgeIcon) draw(badgeIcon);
   else { const img = new Image(); img.onload = () => { badgeIcon = img; draw(img); }; img.src = '/icon-192.png'; }
+}
+/* ---------- Notifications: settings, push on this device, first-launch prompt ---------- */
+// Each member chooses, per kind, a pop-up/phone notification and/or an email (members.notify; missing = on).
+// "Push" means notifications that arrive even when the site or app is closed (supabase/push.ts).
+const NOTIFY_KINDS = [
+  ['messages', 'Messages', true, true, 'Email: one summary if messages sit unread for an hour'],
+  ['events', 'Event reminders', true, true, '1 week before, 1 day before, and the day of (as admins set them)'],
+  ['checkin', 'Check-in is open', true, false, '15 minutes before events you RSVP’d to'],
+  ['surveys', 'Survey requests', true, true, 'After events you checked in to'],
+  ['announcements', 'New announcements', true, false, '']];
+function urlB64(b){ const pad = '='.repeat((4 - b.length % 4) % 4), raw = atob((b + pad).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from([...raw].map(c => c.charCodeAt(0))); }
+async function pushSub(){ try { const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null; return reg && reg.pushManager ? await reg.pushManager.getSubscription() : null; } catch(e){ return null; } }
+// Turn notifications on for this device: ask permission (needs a click), then sign the device up for push.
+async function enablePush(){
+  if (!('Notification' in window)) return 'unsupported';
+  let perm = Notification.permission;
+  if (perm === 'default') perm = await Notification.requestPermission();
+  if (perm !== 'granted') return perm;
+  try { localStorage.setItem('wfa-chat-popups', 'on'); } catch(e){}
+  const key = db.settings.pushKey;
+  if (!session || !key || !('serviceWorker' in navigator)) return 'granted';   // pop-ups while the site is open only
+  const reg = await navigator.serviceWorker.ready;
+  if (!reg.pushManager) return 'granted';
+  let sub = await reg.pushManager.getSubscription();
+  const want = urlB64(key);
+  if (sub && sub.options && sub.options.applicationServerKey && String(new Uint8Array(sub.options.applicationServerKey)) !== String(want)){ await sub.unsubscribe(); sub = null; }
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: want });
+  const j = sub.toJSON();
+  const r = await sb.from('push_subscriptions').upsert({ endpoint: j.endpoint, email: session, p256dh: j.keys.p256dh, auth: j.keys.auth });
+  ui.pushOnDevice = !r.error;
+  return 'granted';
+}
+async function disablePush(){
+  try { localStorage.setItem('wfa-chat-popups', 'off'); } catch(e){}
+  const sub = await pushSub();
+  if (sub){ await sb.from('push_subscriptions').delete().eq('endpoint', sub.endpoint); try { await sub.unsubscribe(); } catch(e){} }
+  ui.pushOnDevice = false;
+}
+// After loading: if this device already allowed notifications, make sure it's signed up for push under this account.
+async function syncPush(){
+  if (ui.pushSyncedFor === session) return; ui.pushSyncedFor = session;
+  if (session && db.settings.pushKey && 'Notification' in window && Notification.permission === 'granted' && popupsOn()){ try { await enablePush(); } catch(e){} }
+  else ui.pushOnDevice = !!(await pushSub()) && !!session;
+  if (route() === 'messages' || !document.getElementById('modal').hidden) { /* nothing to redraw */ }
+}
+function deviceStatus(){
+  if (!('Notification' in window)) return isIphone() && !appInstalled() ? 'On iPhone, add WFA to your Home Screen first (Install app at the top), then turn notifications on from the app.' : 'This browser doesn’t support notifications.';
+  if (Notification.permission === 'denied') return 'Blocked in this browser’s settings. Allow notifications for this site there, then come back.';
+  if (Notification.permission === 'granted' && popupsOn()) return ui.pushOnDevice ? 'On, even when the site or app is closed.' : db.settings.pushKey ? 'On while the site is open.' : 'On while the site is open. (Notifications when it’s closed are coming soon.)';
+  return 'Off on this device.';
+}
+function notifySettings(){
+  const u = me(); if (!u) return;
+  const n = u.notify || {}, on = k => n[k] !== false;
+  const deviceOn = 'Notification' in window && Notification.permission === 'granted' && popupsOn();
+  showModal(`<div class="modal-in">
+    <div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="eyebrow">Notification settings</div></div>
+    <h2>How you hear from WFA</h2>
+    <div class="panel stack" style="gap:8px;padding:12px 14px">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:10px"><strong>Notifications on this device</strong>
+        ${!('Notification' in window) || Notification.permission === 'denied' ? '' : deviceOn ? '<button class="btn ghost small" data-act="push-off">Turn off on this device</button>' : '<button class="btn small" data-act="push-on">Turn on</button>'}</div>
+      <span class="hint">${deviceStatus()}</span>
+      <div class="row" style="gap:8px;align-items:center"><button class="btn ghost small" data-act="chat-sound">${chatSoundOn() ? 'Sound: on' : 'Sound: off'}</button>${deviceOn ? '<button class="btn ghost small" data-act="chat-test-popup">Test notification</button>' : ''}</div>
+    </div>
+    <form id="f-notify" class="stack" style="gap:10px">
+      <table class="nf-table"><thead><tr><th>What</th><th class="c">Notification</th><th class="c">Email</th></tr></thead><tbody>
+        ${NOTIFY_KINDS.map(([k, label, push, email, hint]) => `<tr><td><strong>${label}</strong>${hint ? `<div class="hint">${hint}</div>` : ''}</td>
+          <td class="c">${push ? `<input type="checkbox" class="nf" data-k="${k}_push" ${on(k + '_push') ? 'checked' : ''} aria-label="${label}: notification">` : '—'}</td>
+          <td class="c">${email ? `<input type="checkbox" class="nf" data-k="${k}_email" ${(k === 'messages' ? u.chatEmails !== false : on(k + '_email')) ? 'checked' : ''} aria-label="${label}: email">` : '—'}</td></tr>`).join('')}
+      </tbody></table>
+      <label class="check"><input type="checkbox" class="nf" data-k="skip_email_if_push" ${on('skip_email_if_push') ? 'checked' : ''}> Skip the email when I already get it as a notification on a device</label>
+      ${u.emailOptIn === false ? '<div class="notice"><span>Club emails are off in My account, so you won’t get any of these emails.</span></div>' : ''}
+      <div><button class="btn" type="submit">Save</button></div><div class="err" id="nf-err"></div>
+    </form></div>`, null, 'wide');
+}
+// The first time someone opens the installed app, offer to turn notifications on (browsers need a tap to ask).
+function maybeWelcome(){
+  if (!appInstalled() || !('Notification' in window) || Notification.permission !== 'default') return;
+  try { if (localStorage.getItem('wfa-welcome-asked')) return; localStorage.setItem('wfa-welcome-asked', '1'); } catch(e){ return; }
+  showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="eyebrow">Welcome to the WFA app</div></div>
+    <h2>Turn on notifications?</h2>
+    <p>Get a heads-up for new messages, event reminders, when check-in opens, and more. You can choose exactly which ones in Notification settings, anytime.</p>
+    <div class="row" style="gap:8px"><button class="btn" data-act="push-on">Turn on notifications</button><button class="btn ghost" data-act="close">Not now</button></div></div>`);
 }
 // Re-show an event after a change, on its page or in the pop-up.
 function refreshEvent(id){ if (route() === 'event') render(); else openEvent(id); }
@@ -4237,6 +4338,7 @@ function render(){
   syncTabHash(r);
   renderChrome(r); document.getElementById('app').innerHTML = VIEWS[r]();
   addPasswordToggles(); syncCaseBox(); afterChatRender(); updateTabBadge();
+  if (!ui.welcomed){ ui.welcomed = true; setTimeout(maybeWelcome, 800); }
 }
 // The event form's team settings show whenever the type is Case competition, however the type got set.
 function syncCaseBox(){
@@ -4399,6 +4501,21 @@ document.addEventListener('click', async ev => {
     case 'install-iphone-old': showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="eyebrow">Add to home screen</div></div>
       <h2>Get the WFA app on your iPhone</h2><ol style="margin:0;padding-left:1.2em;line-height:1.8"><li>Open this site in <strong>Safari</strong>.</li><li>Tap the <strong>Share</strong> button (the square with an arrow).</li><li>Choose <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li></ol>
       <p class="muted">It opens like an app, with the WFA seal on your home screen.</p></div>`); break;
+    case 'notify-settings': notifySettings(); break;
+    case 'vapid-gen': {
+      // The key pair is made here in the browser; only the public key is saved to the site.
+      const k = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+      const raw = new Uint8Array(await crypto.subtle.exportKey('raw', k.publicKey)), jwk = await crypto.subtle.exportKey('jwk', k.privateKey);
+      ui.vapid = { pub: btoa(String.fromCharCode(...raw)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), priv: jwk.d };
+      render(); break; }
+    case 'vapid-save': {
+      const r = await sb.from('settings').update({ push_public_key: ui.vapid.pub }).eq('id', 1);
+      if (r.error) { toast(/push_public_key/.test(r.error.message || '') ? 'Run 43-push-and-notification-settings.sql in Supabase first.' : errMsg(r.error)); break; }
+      ui.vapid = null; await logChange('Set up push notification keys'); await load(); render(); toast('Push keys saved. Members can now turn on notifications.'); break; }
+    case 'push-on': { const r = await enablePush(); closeModal();
+      toast(r === 'granted' ? (ui.pushOnDevice ? 'Notifications are on for this device' : 'Notifications are on while the site is open') : r === 'denied' ? 'Notifications are blocked. Allow them for this site in your browser settings.' : r === 'unsupported' ? 'This browser doesn’t support notifications' : 'Notifications weren’t turned on');
+      if (r === 'granted') notifySettings(); break; }
+    case 'push-off': await disablePush(); toast('Notifications are off on this device'); notifySettings(); break;
     case 'reveal-code': ui.codeShown = ui.codeShown === id ? null : id; refreshEvent(id); break;
     case 'qr': await showQr(id, t.dataset.kind); break;
     case 'qr-style': await showQr(id, t.dataset.kind, t.dataset.style); break;
@@ -4407,7 +4524,8 @@ document.addEventListener('click', async ev => {
     case 'copy-text': await copyText(t.dataset.text, 'Link copied'); break;
     case 'close': closeModal(); break;
     case 'copy': copyText(t.dataset.text, t.dataset.label); break;
-    case 'signout': await sb.auth.signOut(); ui.recovery = false; ui.availDraft = null; await load(); toast('Signed out'); location.hash = 'home'; render(); break;
+    case 'signout': { const sub = await pushSub(); if (sub) await sb.from('push_subscriptions').delete().eq('endpoint', sub.endpoint); ui.pushSyncedFor = null; ui.pushOnDevice = false; }
+      await sb.auth.signOut(); ui.recovery = false; ui.availDraft = null; await load(); toast('Signed out'); location.hash = 'home'; render(); break;
     case 'cal': { const d = +t.dataset.d; if (d === 0){ const n = new Date(); ui.cal = new Date(n.getFullYear(), n.getMonth(), 1); } else ui.cal = new Date(ui.cal.getFullYear(), ui.cal.getMonth() + d, 1); render(); break; }
     case 'cat': { const c = t.dataset.cat; ui.catsOn.has(c) ? ui.catsOn.delete(c) : ui.catsOn.add(c); if (!ui.catsOn.size) Object.keys(CATS).forEach(k => ui.catsOn.add(k)); render(); break; }
     case 'rsvp':
@@ -4987,6 +5105,13 @@ async function handleSubmit(f, v, err){
     location.hash = myRole === 'admin' ? 'admin' : myRole === 'officer' ? 'officer' : 'home'; render();
   }
 
+  if (f.id === 'f-notify'){
+    const notify = {}; f.querySelectorAll('.nf').forEach(c => { if (c.dataset.k !== 'messages_email') notify[c.dataset.k] = c.checked; });
+    const chatEmails = f.querySelector('.nf[data-k="messages_email"]').checked;
+    const r = await sb.from('members').update({ notify, chat_emails: chatEmails }).eq('id', authUser.id);
+    if (r.error) return err('nf-err', /notify/.test(r.error.message || '') ? 'Notification settings aren’t set up yet. An admin needs to run 43-push-and-notification-settings.sql.' : errMsg(r.error));
+    await load(); closeModal(); render(); toast('Notification settings saved'); return;
+  }
   if (f.id === 'f-chat'){
     const id = f.dataset.id, t = document.getElementById('chat-text'), body = t.value.trim();
     if (!body) return;
@@ -5162,7 +5287,7 @@ async function handleSubmit(f, v, err){
     const cap = parseInt(v('au-cap')) || 500;
     if (cap < 1 || cap > 5000) return err('au-err', 'Set a daily limit from 1 to 5,000.');
     const cfg = { enabled: document.getElementById('au-enabled').checked, survey: document.getElementById('au-survey').checked, daily_cap: cap,
-      case_teams_only: v('au-case') !== 'same', chat_alerts: document.getElementById('au-chat').checked,
+      case_teams_only: v('au-case') !== 'same', chat_alerts: document.getElementById('au-chat').checked, push: document.getElementById('au-push').checked,
       reminders: AUTO_REMINDERS.map(([k]) => ({ key: k, on: f.querySelector(`.au-on[data-k="${k}"]`).checked, to: f.querySelector(`.au-to[data-k="${k}"]`).value,
         ...(k === 'same' ? { at: f.querySelector('.au-at').value } : {}) })) };
     const r = await sb.from('settings').update({ auto_email: cfg }).eq('id', 1);
