@@ -510,7 +510,7 @@ h3{font-family:var(--serif);font-weight:700;font-size:1.4rem;letter-spacing:.01e
 const SUPABASE_URL = 'https://razxymbbfsnnnguyaalp.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_G9Ct3sh1zfK2peRadj-nzg_SSLCr2Sn';
 const SAFE_MSG = 'Safe view is on. Switch to Edit view to make changes.';
-const READ_RPCS = ['my_role', 'my_test_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending', 'case_board', 'member_points', 'my_chats', 'chat_names', 'mark_chat_read'];   // database functions that only read
+const READ_RPCS = ['my_role', 'my_test_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending', 'case_board', 'member_points', 'my_chats', 'chat_names', 'mark_chat_read', 'rule_chats'];   // database functions that only read
 function safeFetch(input, init){
   const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
   let safe = false;
@@ -629,6 +629,7 @@ async function load(){
     evQuestions: signed && sb.from('event_questions').select('*').order('created_at'),
     caseBoard: signed && sb.rpc('case_board'),
     chats: signed && sb.rpc('my_chats'),
+    ruleChats: myRole === 'admin' && sb.rpc('rule_chats'),
     autoLog: myRole === 'admin' && sb.from('auto_email_log').select('*').order('sent_at', { ascending: false }).limit(60),
     caseNotes: off && sb.from('case_teams').select('id, officer_rating, officer_note'),
     memberPts: off && sb.rpc('member_points'),
@@ -681,6 +682,7 @@ async function load(){
   db.surveyPending = Array.isArray(R.surveyPending) ? R.surveyPending : [];
   db.testAccounts = Array.isArray(R.testAccounts) ? R.testAccounts : [];
   db.chats = Array.isArray(R.chats) ? R.chats : [];
+  db.ruleChats = Array.isArray(R.ruleChats) ? R.ruleChats : [];
   setTimeout(syncChatLive); setTimeout(syncPush);
   db.caseTeams = (R.caseBoard && R.caseBoard.teams) || []; db.caseAgents = (R.caseBoard && R.caseBoard.agents) || [];
   db.caseNotes = {}; (Array.isArray(R.caseNotes) ? R.caseNotes : []).forEach(n => db.caseNotes[n.id] = { rating: n.officer_rating || null, note: n.officer_note || '' });
@@ -3977,10 +3979,12 @@ function viewMessages(){
       return cs.length ? `<div class="chat-group">${label}</div>${cs.map(c => chatItem(c, open)).join('')}` : ''; }).join('')
     + (watching.length ? `<details ${watching.some(c => c.id === open) ? 'open' : ''}><summary class="chat-group" style="cursor:pointer">Other teams’ chats (${watching.length})</summary>${watching.map(c => chatItem(c, open)).join('')}</details>` : '')
     || '<div class="empty">No chats yet. You’ll see chats here when an officer messages you or you join a case competition team.</div>';
+  const manage = myRole === 'admin' && (db.ruleChats || []).length ? `<details ${open.startsWith('edit-') ? 'open' : ''}><summary class="chat-group" style="cursor:pointer">Automatic chats you manage (${db.ruleChats.length})</summary>
+    ${db.ruleChats.map(rc => `<a class="chat-item ${open === 'edit-' + rc.id ? 'sel' : ''}" href="#messages/edit-${rc.id}"><span class="chat-name">${esc(rc.title)}</span><span class="hint">${rc.people}</span><span class="chat-last">${esc(ruleSummary(rc.rule).replace('Updates automatically: ', ''))}${rc.member ? '' : ' · you’re not in it'}</span></a>`).join('')}</details>` : '';
   const c = chatById(open);
   let pane;
   if (open === 'new' && isStaff()) pane = newChatForm();
-  else if (open.startsWith('edit-') && chatById(open.slice(5)) && myRole === 'admin') pane = newChatForm(chatById(open.slice(5)));
+  else if (open.startsWith('edit-') && myRole === 'admin' && (db.ruleChats || []).some(x => x.id === open.slice(5))) pane = newChatForm(db.ruleChats.find(x => x.id === open.slice(5)));
   else if (!c) pane = `<div class="empty" style="margin:auto">${list.length ? 'Pick a chat.' : 'No chats yet.'}</div>`;
   else pane = chatPane(c);
   return `<div class="view">
@@ -3990,7 +3994,7 @@ function viewMessages(){
         <button class="btn ghost small" data-act="chat-sound">${chatSoundOn() ? 'Sound: on' : 'Sound: off'}</button>
         <button class="btn ghost small" data-act="notify-settings">Notification settings</button></div>
     </section>
-    <div class="chat-wrap ${open ? 'open' : ''}"><nav class="chat-list" aria-label="Chats">${side}</nav><section class="chat-pane">${pane}</section></div>
+    <div class="chat-wrap ${open ? 'open' : ''}"><nav class="chat-list" aria-label="Chats">${side}${manage}</nav><section class="chat-pane">${pane}</section></div>
   </div>`;
 }
 function chatPane(c){
@@ -4013,7 +4017,7 @@ function chatPane(c){
   return `<div class="chat-head">
       <a class="chat-back" href="#messages">← All chats</a>
       <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><strong style="font-size:1.1rem">${esc(chatTitle(c))}</strong>
-        <span class="row" style="gap:6px">${ruleEdit ? `<a class="btn ghost small" href="#messages/edit-${c.id}">Change who’s included</a>` : ''}${explicit && c.member ? delBtn('cl-' + c.id, 'Leave', 'chat-leave', c.id) : ''}${owner || ruleEdit ? delBtn('cd-' + c.id, 'Delete chat', 'chat-delete', c.id) : ''}</span></div>
+        <span class="row" style="gap:6px">${ruleEdit ? `<a class="btn ghost small" href="#messages/edit-${c.id}">Change who’s included</a>` : ''}${explicit && c.member ? delBtn('cl-' + c.id, 'Leave', 'chat-leave', c.id) : ''}${owner ? delBtn('cd-' + c.id, 'Delete chat', 'chat-delete', c.id) : ''}</span></div>
       <details><summary class="hint" style="cursor:pointer">${esc(chatKindLabel(c))} · ${(c.people || []).length} ${(c.people || []).length === 1 ? 'person' : 'people'}${c.member ? '' : ' · You can read and post here as an officer'}</summary>
         <div class="stack" style="gap:4px;margin-top:6px">${(c.people || []).map(p => `<div class="row" style="gap:8px;align-items:center">${esc(p.first ? (p.first + ' ' + (p.last || '')).trim() : p.email || 'Someone')}${p.me ? ' (you)' : ''}${p.officer ? ' <span class="tag">Officer</span>' : ''}
             ${owner && !p.me && p.email ? delBtn('cr-' + c.id + p.email, 'Remove', 'chat-remove', c.id + '|' + p.email) : ''}</div>`).join('')}
@@ -4064,11 +4068,16 @@ function newChatForm(edit){
       ${sel('cn-interest', 'Career interest', interests.map(i => [i, i]), r.interest)}
     </div>
     <div class="notice" id="cn-auto-note" hidden><span id="cn-auto-text"></span></div>
+    <div class="stack" id="cn-auto-me" hidden style="gap:8px">
+      <label class="check"><input type="checkbox" id="cn-incl" ${edit && edit.rule && edit.rule.include_creator === false ? '' : 'checked'}> Include me in this chat</label>
+      <label id="cn-first-wrap" ${edit && edit.rule && edit.rule.include_creator === false ? '' : 'hidden'}>First message <span class="hint" id="cn-first-hint">${edit ? 'Optional. Posted in the chat under your name.' : 'Required when you’re not in the chat. Posted under your name so people know why they’re here.'}</span>
+        <textarea id="cn-first" rows="3" maxlength="4000" placeholder="e.g. Hi all! This chat is for everyone interested in investment banking. We’ll share recruiting tips and events here."></textarea></label>
+    </div>
     <div class="row" style="gap:8px;align-items:center" id="cn-pickbar" ${leader ? '' : 'hidden'}><button type="button" class="btn ghost small" data-act="cn-all">Select all shown</button><button type="button" class="btn ghost small" data-act="cn-none">Clear</button><span class="hint" id="cn-count">0 selected</span></div>
     <strong id="cn-preview-label" hidden>Preview: these people will be in the chat</strong>
     <div class="chat-pick" id="cn-list">${people.map(row).join('') || '<span class="hint">No members yet.</span>'}</div>
     ${leader ? '<span class="hint">Members can reply in chats you start, but they can’t start chats with officers.</span>' : ''}
-    <div><button class="btn" type="submit">${edit ? 'Save' : 'Start chat'}</button></div><div class="err" id="cn-err"></div></form>`;
+    <div class="row" style="gap:8px"><button class="btn" type="submit">${edit ? 'Save' : 'Start chat'}</button>${edit ? delBtn('rd-' + edit.id, 'Delete this chat', 'rule-del', edit.id) : ''}</div><div class="err" id="cn-err"></div></form>`;
 }
 // A dropdown of checkboxes; nothing checked means "any".
 function multiFilter(id, label, opts, cur){
@@ -4090,13 +4099,14 @@ function filterChatPeople(){
     if (!l.hidden) n++;
   });
   const t = document.getElementById('cn-auto-text');
-  if (t) t.textContent = `Right now ${n} ${n === 1 ? 'person matches' : 'people match'} (plus you). The chat updates itself as people join, change branches or positions, or update their year and interests.`;
+  if (t) t.textContent = `Right now ${n} ${n === 1 ? 'person matches' : 'people match'}${(document.getElementById('cn-incl') || {}).checked === false ? '' : ' (plus you)'}. The chat updates itself as people join, change branches or positions, or update their year and interests.`;
 }
 // "Keep it updated automatically": the filters decide who's in it, so picking people (and the name search) don't apply.
 function syncAutoChat(){
   const auto = (document.getElementById('cn-auto') || {}).checked;
   const pick = document.getElementById('cn-pickbar'), note = document.getElementById('cn-auto-note'), hint = document.getElementById('cn-title-hint'), find = document.getElementById('cn-find');
   if (pick) pick.hidden = !!auto; if (note) note.hidden = !auto;
+  const me = document.getElementById('cn-auto-me'); if (me) me.hidden = !auto;
   const list = document.getElementById('cn-list'); if (list) list.classList.toggle('preview', !!auto);
   const ph = document.getElementById('cn-preview-label'); if (ph) ph.hidden = !auto;
   if (hint) hint.textContent = auto ? 'Required for automatic chats' : 'Optional. Leave blank for a one-on-one';
@@ -4669,6 +4679,8 @@ document.addEventListener('click', async ev => {
     case 'chat-add-person': { const [cid, em] = id.split('|'); await chatCall('chat_add', { p_chat: cid, p_email: em }, 'Added to the chat'); break; }
     case 'chat-remove': { const [cid, em] = id.split('|'); await chatCall('chat_remove', { p_chat: cid, p_email: em }, 'Removed'); break; }
     case 'chat-leave': if (await chatCall('chat_remove', { p_chat: id, p_email: session }, 'You left the chat')) location.hash = 'messages'; break;
+    case 'rule-del': { const r = await sb.rpc('delete_rule_chat', { p_chat: id }); if (r.error || String(r.data).startsWith('err:')) { toast(r.error ? errMsg(r.error) : 'Only admins can delete automatic chats.'); break; }
+      await load(); location.hash = 'messages'; toast('Chat deleted'); break; }
     case 'chat-delete': { const r = await sb.from('chats').delete().eq('id', id); if (r.error) { toast(chatSetupErr(r.error)); break; } await refreshChats(); location.hash = 'messages'; toast('Chat deleted'); break; }
     case 'chat-del-msg': { const r = await sb.from('messages').delete().eq('id', id); if (r.error) { toast(errMsg(r.error)); break; } ui.chatMsgs[t.dataset.chat] = (ui.chatMsgs[t.dataset.chat] || []).filter(m => m.id !== id); renderChatKeep(); break; }
     case 'chat-sound': try { localStorage.setItem('wfa-chat-sound', chatSoundOn() ? 'off' : 'on'); } catch(e){} if (chatSoundOn()) chatChime(); renderChatKeep(); break;
@@ -5068,6 +5080,7 @@ document.addEventListener('change', async e => {
     filterChatPeople();
   }
   if (e.target.id === 'cn-auto') syncAutoChat();
+  if (e.target.id === 'cn-incl'){ const w = document.getElementById('cn-first-wrap'); if (w) w.hidden = e.target.checked && !document.querySelector('#f-chat-new[data-edit]'); filterChatPeople(); }
   if (e.target.classList && e.target.classList.contains('cn-pick')) countChatPicks();
   if (e.target.dataset && e.target.dataset.caseSort){ ui.caseSort = e.target.value; refreshEvent(e.target.dataset.caseSort); }
   if (e.target.dataset && e.target.dataset.casePlace){
@@ -5323,11 +5336,13 @@ async function handleSubmit(f, v, err){
   if (f.id === 'f-chat-new'){
     if ((document.getElementById('cn-auto') || {}).checked){
       const title = v('cn-title'); if (!title) return err('cn-err', 'Give the chat a name, like “Operations officers.”');
-      const rule = { who: msVals('cn-who'), branch: msVals('cn-branch'), tier: msVals('cn-tier'), year: msVals('cn-year'), interest: msVals('cn-interest') };
-      const r = await sb.rpc('save_rule_chat', { p_chat: f.dataset.edit || null, p_title: title, p_rule: rule });
+      const incl = document.getElementById('cn-incl').checked, first = v('cn-first');
+      if (!incl && !f.dataset.edit && !first) return err('cn-err', 'Write a first message so people know why they’re in this chat.');
+      const rule = { who: msVals('cn-who'), branch: msVals('cn-branch'), tier: msVals('cn-tier'), year: msVals('cn-year'), interest: msVals('cn-interest'), include_creator: incl };
+      const r = await sb.rpc('save_rule_chat', { p_chat: f.dataset.edit || null, p_title: title, p_rule: rule, p_message: first });
       if (r.error) return err('cn-err', /save_rule_chat/.test(r.error.message || '') ? 'Automatic chats aren’t set up yet. Run 46-auto-updating-chats.sql in Supabase.' : errMsg(r.error));
-      if (String(r.data).startsWith('err:')) return err('cn-err', { 'err:title': 'Give the chat a name.', 'err:notadmin': 'Only admins can make or change automatic chats.', 'err:missing': 'That chat doesn’t exist anymore.' }[r.data] || r.data);
-      await refreshChats(); location.hash = 'messages/' + r.data; toast(f.dataset.edit ? 'Saved' : 'Chat created'); return;
+      if (String(r.data).startsWith('err:')) return err('cn-err', { 'err:title': 'Give the chat a name.', 'err:notadmin': 'Only admins can make or change automatic chats.', 'err:message': 'Write a first message so people know why they’re in this chat.', 'err:missing': 'That chat doesn’t exist anymore.' }[r.data] || r.data);
+      await load(); location.hash = incl ? 'messages/' + r.data : 'messages/edit-' + r.data; toast(f.dataset.edit ? 'Saved' : incl ? 'Chat created' : 'Chat created and your first message posted'); return;
     }
     const emails = [...f.querySelectorAll('.cn-pick:checked')].map(c => c.value);
     if (!emails.length) return err('cn-err', isLeader() ? 'Pick at least one person.' : 'Pick an officer.');
