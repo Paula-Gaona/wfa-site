@@ -1448,24 +1448,38 @@ function adminSeasonsBody(){
 
 // Admin -> Automatic emails: reminders before events and a survey email after, sent by the auto-emails Edge Function
 // every 10 minutes (see supabase/auto-emails.ts and 39-automatic-emails.sql).
-const AUTO_REMINDERS = [['7d', '1 week before', 7 * 864e5], ['1d', '1 day before', 864e5], ['2h', '2 hours before', 2 * 36e5]];
-const AUTO_KINDS = { remind_7d: 'Reminder, 1 week before', remind_1d: 'Reminder, 1 day before', remind_2h: 'Reminder, 2 hours before', survey: 'Survey email' };
+const AUTO_REMINDERS = [['7d', '1 week before'], ['1d', '1 day before'], ['same', 'The day of']];
+const SAME_DAY = { '9am': '9 AM that morning', '2h': '2 hours before', '1h': '1 hour before' };
+const AUTO_KINDS = { remind_7d: 'Reminder, 1 week before', remind_1d: 'Reminder, 1 day before', remind_same: 'Reminder, day of', remind_2h: 'Reminder, day of', survey: 'Survey email' };
 function autoCfg(){
-  return db.settings.autoEmail || { enabled: false, reminders: [{ key: '7d', on: false, to: 'all' }, { key: '1d', on: true, to: 'rsvp' }, { key: '2h', on: true, to: 'rsvp' }], survey: true, daily_cap: 500 };
+  const c = db.settings.autoEmail || { enabled: false, reminders: [{ key: '7d', on: true, to: 'all' }, { key: '1d', on: true, to: 'all' }, { key: 'same', on: true, to: 'all', at: '2h' }], survey: true, daily_cap: 500, case_teams_only: true };
+  // Older settings called the day-of reminder "2h".
+  const reminders = (c.reminders || []).map(r => r.key === '2h' ? { ...r, key: 'same', at: '2h' } : r);
+  return { ...c, reminders, case_teams_only: c.case_teams_only !== false };
+}
+// When a reminder goes out (the same rules as supabase/auto-emails.ts).
+function reminderAt(e, r){
+  const start = evStartMs(e);
+  if (r.key === '7d') return start - 7 * 864e5;
+  if (r.key === '1d') return start - 864e5;
+  if (r.at === '9am'){ const nine = mtMs(e.date, '09:00'); return nine < start - 36e5 ? nine : start - 36e5; }
+  return start - (r.at === '1h' ? 1 : 2) * 36e5;
 }
 function autoUpcoming(c){
-  const now = Date.now(), list = [], done = new Set(db.autoLog.map(l => l.event_id + '|' + l.kind));
+  const now = Date.now(), list = [], done = new Set(db.autoLog.map(l => l.event_id + '|' + (l.kind === 'remind_2h' ? 'remind_same' : l.kind)));
   sortedEvents().filter(e => !e.draft && e.cat !== 'officer_meeting' && evEndMs(e) + 30 * 6e4 > now && evStartMs(e) - 8 * 864e5 < now).forEach(e => {
-    AUTO_REMINDERS.forEach(([k, l, off]) => { const r = (c.reminders || []).find(x => x.key === k);
-      if (r && r.on && evStartMs(e) - off > now && !done.has(e.id + '|remind_' + k))
-        list.push([evStartMs(e) - off, e, 'Reminder, ' + l, r.to === 'all' ? 'All members' : isCase(e) ? `${teamsIn(e.id).reduce((n, t) => n + t.members.filter(m => m.confirmed).length, 0)} confirmed teammates so far` : `${rsvpCount(e.id)} RSVP’d so far`]); });
+    AUTO_REMINDERS.forEach(([k, l]) => { const r = c.reminders.find(x => x.key === k);
+      if (!r || !r.on || done.has(e.id + '|remind_' + k)) return;
+      const at = reminderAt(e, r); if (at <= now) return;
+      const teams = isCase(e) && c.case_teams_only;
+      list.push([at, e, 'Reminder, ' + (k === 'same' ? 'day of' : l.toLowerCase()), teams ? `Accepted teams (${teamsIn(e.id).reduce((n, t) => n + t.members.filter(m => m.confirmed).length, 0)} confirmed teammates so far)` : r.to === 'all' ? 'All members' : `${rsvpCount(e.id)} RSVP’d so far`]); });
     if (c.survey && evEndMs(e) + 30 * 6e4 > now && !done.has(e.id + '|survey')) list.push([evEndMs(e) + 30 * 6e4, e, 'Survey email', 'People who check in']);
   });
   return list.sort((a, b) => a[0] - b[0]).slice(0, 12);
 }
 function adminAutoBody(){
   const c = autoCfg(), ready = !!db.settings.autoEmail;
-  const rem = k => (c.reminders || []).find(r => r.key === k) || { key: k, on: false, to: 'rsvp' };
+  const rem = k => c.reminders.find(r => r.key === k) || { key: k, on: false, to: 'all', at: '2h' };
   const when = ms => `${fmtDay(mtDateIso(ms))}, ${fmtTime(mtClock(ms))}`;
   const up = autoUpcoming(c);
   return `<div class="stack" style="gap:24px">
@@ -1474,9 +1488,12 @@ function adminAutoBody(){
       <label class="check" style="font-weight:700"><input type="checkbox" id="au-enabled" ${c.enabled ? 'checked' : ''}> Send automatic emails</label>
       <div class="stack" style="gap:8px"><strong>Event reminders</strong>
         ${AUTO_REMINDERS.map(([k, l]) => { const r = rem(k); return `<div class="row" style="gap:10px;align-items:center;flex-wrap:wrap">
-          <label class="check" style="min-width:11rem"><input type="checkbox" class="au-on" data-k="${k}" ${r.on ? 'checked' : ''}> ${l}</label>
-          <select class="au-to" data-k="${k}" aria-label="Who gets the ${l} reminder"><option value="rsvp" ${r.to !== 'all' ? 'selected' : ''}>People who RSVP’d (confirmed teammates for case competitions)</option><option value="all" ${r.to === 'all' ? 'selected' : ''}>All members</option></select></div>`; }).join('')}
-        <span class="hint">Reminders include the date, time, location, description, and a link to the event page.</span></div>
+          <label class="check" style="min-width:9rem"><input type="checkbox" class="au-on" data-k="${k}" ${r.on ? 'checked' : ''}> ${l}</label>
+          ${k === 'same' ? `<select class="au-at" aria-label="When the day-of reminder goes out">${Object.entries(SAME_DAY).map(([v, t]) => `<option value="${v}" ${(r.at || '2h') === v ? 'selected' : ''}>${t}</option>`).join('')}</select>` : ''}
+          <select class="au-to" data-k="${k}" aria-label="Who gets the ${l} reminder"><option value="all" ${r.to !== 'rsvp' ? 'selected' : ''}>Everyone</option><option value="rsvp" ${r.to === 'rsvp' ? 'selected' : ''}>Only people who RSVP’d</option></select></div>`; }).join('')}
+        <label style="max-width:34rem">Case competitions<select id="au-case"><option value="teams" ${c.case_teams_only ? 'selected' : ''}>Reminders go only to accepted teams</option><option value="same" ${c.case_teams_only ? '' : 'selected'}>Same as other events</option></select>
+          <span class="hint">“Accepted teams” means confirmed teammates on teams that are in the competition.</span></label>
+        <span class="hint">Reminders include the date, time, location, description, and a link to the event page. A 9 AM reminder for an event before 10 AM goes out an hour before instead.</span></div>
       <div class="stack" style="gap:6px"><strong>After the event</strong>
         <label class="check"><input type="checkbox" id="au-survey" ${c.survey ? 'checked' : ''}> Survey email 30 minutes after the event ends, to people who checked in and haven’t answered yet</label></div>
       <label style="max-width:24rem">Daily limit for automatic emails<input id="au-cap" type="number" min="1" max="5000" value="${esc(Math.max(c.daily_cap ?? 500, 500))}">
@@ -4769,7 +4786,9 @@ async function handleSubmit(f, v, err){
     const cap = parseInt(v('au-cap')) || 500;
     if (cap < 1 || cap > 5000) return err('au-err', 'Set a daily limit from 1 to 5,000.');
     const cfg = { enabled: document.getElementById('au-enabled').checked, survey: document.getElementById('au-survey').checked, daily_cap: cap,
-      reminders: AUTO_REMINDERS.map(([k]) => ({ key: k, on: f.querySelector(`.au-on[data-k="${k}"]`).checked, to: f.querySelector(`.au-to[data-k="${k}"]`).value })) };
+      case_teams_only: v('au-case') !== 'same',
+      reminders: AUTO_REMINDERS.map(([k]) => ({ key: k, on: f.querySelector(`.au-on[data-k="${k}"]`).checked, to: f.querySelector(`.au-to[data-k="${k}"]`).value,
+        ...(k === 'same' ? { at: f.querySelector('.au-at').value } : {}) })) };
     const r = await sb.from('settings').update({ auto_email: cfg }).eq('id', 1);
     if (r.error) return err('au-err', /auto_email/.test(r.error.message || '') ? 'This isn’t set up yet. Run 39-automatic-emails.sql in Supabase first.' : errMsg(r.error));
     await logChange((cfg.enabled ? 'Turned on' : 'Turned off') + ' automatic emails');

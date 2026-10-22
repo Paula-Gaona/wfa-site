@@ -1,7 +1,7 @@
 // Supabase Edge Function: auto-emails
 // Sends the automatic club emails that admins turn on in Admin -> Automatic emails:
-//   * event reminders (1 week / 1 day / 2 hours before an event) to people who RSVP'd (or confirmed case competition
-//     teammates), or to all members
+//   * event reminders 1 week before, 1 day before, and the day of (9 AM, 2 hours before, or 1 hour before), to
+//     everyone or to people who RSVP'd; for case competitions, only accepted teams (unless an admin turns that off)
 //   * a survey email 30 minutes after an event ends, to people who checked in and haven't answered the survey
 // Each person gets their own email that greets them by first name (sent 100 at a time with Resend's batch API).
 // Supabase runs it every 10 minutes (see 39-automatic-emails.sql). Each event/email is recorded in auto_email_log
@@ -18,7 +18,6 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const escHtml = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const HOUR = 36e5, DAY = 864e5, STALE = 6 * HOUR;   // never send something more than 6 hours late
-const OFFSETS: Record<string, number> = { '7d': 7 * DAY, '1d': DAY, '2h': 2 * HOUR };
 const TZ = 'America/Denver';
 
 // ---------- Mountain Time ----------
@@ -101,25 +100,34 @@ Deno.serve(async () => {
         (ev.loc ? `<p style="margin:0 0 12px">${escHtml(ev.loc)}</p>` : '') +
         (ev.descr ? `<div style="margin:0 0 6px 18px;color:#3d4a40;white-space:pre-wrap">${escHtml(ev.descr)}</div>` : '');
 
-      for (const r of (cfg.reminders || [])) {
-        const offset = OFFSETS[r.key], kind = 'remind_' + r.key;
-        if (!r.on || !offset || already.has(ev.id + '|' + kind)) continue;
-        const sendAt = start - offset;
+      for (const r0 of (cfg.reminders || [])) {
+        const r = r0.key === '2h' ? { ...r0, key: 'same', at: '2h' } : r0;   // older settings called the day-of reminder "2h"
+        if (!r.on || !['7d', '1d', 'same'].includes(r.key)) continue;
+        const kind = 'remind_' + r.key;
+        if (already.has(ev.id + '|' + kind) || (r.key === 'same' && already.has(ev.id + '|remind_2h'))) continue;
+        let sendAt: number;
+        if (r.key === '7d') sendAt = start - 7 * DAY;
+        else if (r.key === '1d') sendAt = start - DAY;
+        else if (r.at === '9am') { const nine = mtMs(ev.date, '09:00'); sendAt = nine < start - HOUR ? nine : start - HOUR; }
+        else sendAt = start - (r.at === '1h' ? 1 : 2) * HOUR;
         if (now < sendAt || now >= start || now - sendAt > STALE) continue;
+        // Case competitions: only accepted teams (unless an admin chose otherwise). Everything else: everyone, or RSVPs.
+        const teamsOnly = ev.cat === 'case_competition' && cfg.case_teams_only !== false;
         let to: string[];
-        if (r.to === 'all') to = allMembers;
-        else if (ev.cat === 'case_competition') {
+        if (teamsOnly || (r.to === 'rsvp' && ev.cat === 'case_competition')) {
           const { data: tm } = await db.from('case_team_members').select('email, confirmed, case_teams!inner(status)').eq('event_id', ev.id).eq('confirmed', true).eq('case_teams.status', 'in');
           to = (tm || []).map((x) => x.email);
-        } else {
+        } else if (r.to === 'rsvp') {
           const { data: rs } = await db.from('rsvps').select('email').eq('event_id', ev.id);
           to = (rs || []).map((x) => x.email);
-        }
+        } else to = allMembers;
         to = [...new Set(to)].filter((e) => okEmail.has(e));
         const phrase = r.key === '7d' ? `is coming up next week, on ${fmtDay(start)}` : r.key === '1d' ? `is tomorrow at ${fmtTime(start)}` : `starts today at ${fmtTime(start)}`;
         const subject = r.key === '7d' ? `Coming up: ${ev.title} on ${fmtDay(start)}` : r.key === '1d' ? `Tomorrow: ${ev.title}` : `Today at ${fmtTime(start)}: ${ev.title}`;
-        const lead = r.to === 'all' ? `${ev.title} ${phrase}.` : `Just a reminder that ${ev.title}, which you signed up for, ${phrase}.`;
-        const label = r.to === 'all' ? 'View the event and RSVP' : 'View the event';
+        const toEveryone = !teamsOnly && r.to !== 'rsvp';
+        const lead = teamsOnly ? `Just a reminder that ${ev.title}, which your team is competing in, ${phrase}.`
+          : toEveryone ? `${ev.title} ${phrase}.` : `Just a reminder that ${ev.title}, which you signed up for, ${phrase}.`;
+        const label = toEveryone ? 'View the event and RSVP' : 'View the event';
         jobs.push({ ev, kind, to, subject,
           html: (g) => htmlEmail(`<p style="margin:0 0 12px">${escHtml(g)}</p><p style="margin:0 0 16px">${escHtml(lead)}</p>${details}`, { label, url: link }, footer),
           text: (g) => `${g}\n\n${lead}\n\n${when}\n${ev.loc || ''}\n\n${ev.descr || ''}\n\n${label}: ${link}` });
