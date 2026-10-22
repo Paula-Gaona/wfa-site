@@ -1,2 +1,13 @@
 [build]
   publish = "site"
+
+# The app helper must always be checked for updates, so new deploys reach the installed app right away.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"

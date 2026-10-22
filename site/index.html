@@ -18,6 +18,12 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">
 <link rel="apple-touch-icon" href="/icon-180.png">
+<!-- Installable app: its own window and icon on computers, a home-screen app on phones (manifest + sw.js) -->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="WFA">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#123622">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -474,7 +480,7 @@ h3{font-family:var(--serif);font-weight:700;font-size:1.4rem;letter-spacing:.01e
 </main>
 <footer><div class="wrap row" style="justify-content:space-between">
   <span>Wolverine Finance Association · A student club at Utah Valley University</span>
-  <span id="foot-role"></span>
+  <span class="row" style="gap:12px;align-items:center"><span id="foot-install"></span><span id="foot-role"></span></span>
 </div></footer>
 <div class="backdrop" id="modal" hidden></div>
 <div class="toast" id="toast" hidden></div>
@@ -833,6 +839,7 @@ function renderChrome(route){
   if (testRole) bar.innerHTML = `<div class="wrap"><span>Test ${testRole}. Only test accounts see what you do here. It doesn’t change the real site, stats, or leaderboard.</span></div>`;
   else if (!bar.hidden) bar.innerHTML = '<div class="wrap"><span>Safe view is on. You can see every page, but nothing can be changed.</span><button class="btn small" data-act="safe-view" data-mode="edit">Switch to Edit view</button></div>';
   document.getElementById('foot-role').textContent = session ? 'Signed in as ' + r : '';
+  renderInstall();
 
   const items = upcoming().slice(0, 6).map(e => {
     const d = parseDay(e.date);
@@ -1607,6 +1614,7 @@ function viewAccount(){
           <dt>Career interests</dt><dd>${(u.interests || []).length ? esc(u.interests.join(', ')) : '<span class="muted">None picked yet</span>'}</dd>
           <dt>Club emails</dt><dd>${u.emailOptIn === false ? 'Off' : 'On'} <button class="btn ghost small" data-act="mail-optin" style="margin-left:6px">${u.emailOptIn === false ? 'Turn on' : 'Turn off'}</button>
             <div class="hint">Events and announcements. Account emails like password resets always send.</div></dd>
+          ${installHtml() ? `<dt>App</dt><dd>${installHtml()}<div class="hint">Opens in its own window with the WFA icon, and gets message pop-ups.</div></dd>` : ''}
           <dt>Message emails</dt><dd>${u.chatEmails === false ? 'Off' : 'On'} <button class="btn ghost small" data-act="chat-optin" style="margin-left:6px">${u.chatEmails === false ? 'Turn on' : 'Turn off'}</button>
             <div class="hint">One email if messages on the site sit unread for an hour.</div></dd>
           ${isStaff() ? '' : `<dt>Leaderboard</dt><dd>${u.lbPublic === false ? 'Anonymous Member' : 'Shown by name'} <button class="btn ghost small" data-act="lb-toggle" style="margin-left:6px">${u.lbPublic === false ? 'Show my name' : 'Go anonymous'}</button></dd>`}
@@ -4219,6 +4227,21 @@ document.addEventListener('keydown', e => {
 document.addEventListener('input', e => {
   if (e.target && e.target.id === 'cn-find'){ const q = e.target.value.trim().toLowerCase(); document.querySelectorAll('#cn-list [data-find]').forEach(l => { l.hidden = !!q && !l.dataset.find.includes(q); }); }
 });
+// ---------- Installable app ----------
+// Chrome and Edge offer to install the site as an app; on iPhone it's Share -> Add to Home Screen.
+let installPrompt = null;
+function appInstalled(){ return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
+function isIphone(){ return /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream; }
+function installHtml(){
+  if (appInstalled()) return '';
+  if (installPrompt) return '<button class="btn ghost small" data-act="install-app">Install the WFA app</button>';
+  if (isIphone()) return '<button class="btn ghost small" data-act="install-iphone">Add WFA to your home screen</button>';
+  return '';
+}
+function renderInstall(){ const el = document.getElementById('foot-install'); if (el) el.innerHTML = installHtml(); }
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; renderInstall(); if (route() === 'account') render(); });
+window.addEventListener('appinstalled', () => { installPrompt = null; renderInstall(); toast('WFA app installed'); });
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 // Puts a Show/Hide button inside every password box.
 function addPasswordToggles(){
   document.querySelectorAll('#app input[type="password"]').forEach(inp => {
@@ -4325,6 +4348,10 @@ document.addEventListener('click', async ev => {
       const on = me().chatEmails === false, r = await sb.from('members').update({ chat_emails: on }).eq('id', authUser.id);
       if (r.error) { toast(/chat_emails/.test(r.error.message || '') ? 'Messages aren’t set up yet. An admin needs to run 42-chats.sql.' : errMsg(r.error)); break; }
       await load(); render(); toast(on ? 'Message emails turned on' : 'Message emails turned off'); break; }
+    case 'install-app': if (installPrompt){ installPrompt.prompt(); const c = await installPrompt.userChoice; installPrompt = null; renderInstall(); if (c.outcome !== 'accepted') toast('Not installed. You can install it later from the address bar.'); } break;
+    case 'install-iphone': showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="eyebrow">Add to home screen</div></div>
+      <h2>Get the WFA app on your iPhone</h2><ol style="margin:0;padding-left:1.2em;line-height:1.8"><li>Open this site in <strong>Safari</strong>.</li><li>Tap the <strong>Share</strong> button (the square with an arrow).</li><li>Choose <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li></ol>
+      <p class="muted">It opens like an app, with the WFA seal on your home screen.</p></div>`); break;
     case 'reveal-code': ui.codeShown = ui.codeShown === id ? null : id; refreshEvent(id); break;
     case 'qr': await showQr(id, t.dataset.kind); break;
     case 'qr-style': await showQr(id, t.dataset.kind, t.dataset.style); break;
