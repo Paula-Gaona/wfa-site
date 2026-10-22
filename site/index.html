@@ -4012,10 +4012,11 @@ async function onChatMessage(m){
   c.last = { body: m.body.slice(0, 140), at: m.created_at, me: m.email === session, first: name.split(' ')[0] };
   c.last_message_at = m.created_at;
   if (m.email !== session && c.member){
-    const looking = route() === 'messages' && ui.chatOpen === m.chat_id && document.visibilityState === 'visible';
+    // "Looking" means this window is the one in use (focused) with that chat open.
+    const looking = route() === 'messages' && ui.chatOpen === m.chat_id && document.hasFocus();
     if (looking) markRead(m.chat_id); else c.unread = (c.unread || 0) + 1;
     chatChime();
-    if (!looking && popupsOn() && 'Notification' in window && Notification.permission === 'granted' && document.visibilityState !== 'visible'){
+    if (!looking && popupsOn() && 'Notification' in window && Notification.permission === 'granted' && !document.hasFocus()){
       try { const n = new Notification(name + ' · ' + chatTitle(c), { body: m.body.slice(0, 160), icon: '/icon-192.png', tag: m.chat_id });
         n.onclick = () => { window.focus(); location.hash = 'messages/' + m.chat_id; n.close(); }; } catch(e){}
     }
