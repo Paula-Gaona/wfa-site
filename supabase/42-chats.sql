@@ -1,7 +1,7 @@
 -- WFA update: chats (live messaging on the site).
 -- Automatic chats, whose membership updates itself:
 --   * officers  - "Leadership Team": every officer and the faculty advisor (everyone on the access list)
---   * branch    - one per branch: officers in that branch, plus presidents
+--   * branch    - one per branch: the officers in that branch
 --   * team      - one per accepted case competition team: its confirmed teammates
 --   * all_teams - one per case competition: confirmed teammates on every accepted team
 --   (Officers can open team and all-teams chats to help; they count as members once they post.)
@@ -65,7 +65,7 @@ language sql stable security definer set search_path = public as $$
   select x.email from chats c cross join lateral (
     select a.email from access_list a where c.kind = 'officers'
     union select a.email from access_list a join officer_profiles p on p.email = a.email
-      where c.kind = 'branch' and (p.branch = c.branch or p.tier = 'president')
+      where c.kind = 'branch' and p.branch = c.branch
     union select cm.email from case_team_members cm join case_teams t on t.id = cm.team_id
       where c.kind = 'team' and cm.team_id = c.team_id and cm.confirmed and t.status = 'in'
     union select cm.email from case_team_members cm join case_teams t on t.id = cm.team_id
