@@ -1,7 +1,7 @@
 // WFA app helper (service worker). It's what lets the site install as an app (its own window and icon).
 // Pages always load fresh from the network when online, so every deploy shows up right away; the last copy is
 // only used if there's no connection. Logos and icons are kept for speed. Club data (Supabase) is never cached here.
-const CACHE = 'wfa-v1';
+const CACHE = 'wfa-v2';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil((async () => {
@@ -25,4 +25,16 @@ self.addEventListener('fetch', (e) => {
       return hit || net;
     }));
   }
+});
+
+// Clicking a message pop-up: bring the WFA window forward and open that chat (or open the site if it's closed).
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const chat = (e.notification.data || {}).chat || '';
+  e.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const win = wins.find((w) => new URL(w.url).origin === self.location.origin);
+    if (win) { await win.focus(); win.postMessage({ openChat: chat }); }
+    else await self.clients.openWindow('/#messages' + (chat ? '/' + chat : ''));
+  })());
 });

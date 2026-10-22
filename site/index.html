@@ -4017,18 +4017,30 @@ async function onChatMessage(m){
     if (looking) markRead(m.chat_id); else c.unread = (c.unread || 0) + 1;
     chatChime();
     if (!looking && popupsOn() && 'Notification' in window && Notification.permission === 'granted' && !document.hasFocus()){
-      try { const n = new Notification(name + ' · ' + chatTitle(c), { body: m.body.slice(0, 160), icon: '/icon-192.png', tag: m.id });   // one pop-up per message (a shared tag would silently replace the last one)
-        n.onclick = () => { window.focus(); location.hash = 'messages/' + m.chat_id; n.close(); }; } catch(e){}
+      showPopup(name + ' · ' + chatTitle(c), m.body.slice(0, 160), m.chat_id, m.id);
     }
   }
   db.chats.sort((a, b) => String(b.last_message_at || b.created_at).localeCompare(String(a.last_message_at || a.created_at)));
   renderChatKeep();
 }
 // Desktop pop-ups: the browser's permission (asked once), plus an on/off switch kept on this device.
+// Shows a desktop pop-up through the app helper (sw.js), which works in tabs and in the installed app; falls back to
+// the plain browser way. Returns 'ok' or the browser's reason it refused. Clicking it opens that chat.
+async function showPopup(title, body, chatId, tag){
+  try {
+    const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+    if (reg && reg.showNotification){ await reg.showNotification(title, { body, icon: '/icon-192.png', badge: '/icon-48.png', tag: tag || String(Date.now()), data: { chat: chatId || '' } }); return 'ok'; }
+    const n = new Notification(title, { body, icon: '/icon-192.png', tag: tag || String(Date.now()) });
+    n.onclick = () => { window.focus(); if (chatId) location.hash = 'messages/' + chatId; n.close(); };
+    return 'ok';
+  } catch(e){ return (e && e.message) || String(e); }
+}
+// Clicking a pop-up shown by the app helper brings this window forward and opens the chat.
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.openChat !== undefined) location.hash = 'messages' + (e.data.openChat ? '/' + e.data.openChat : ''); });
 function popupsOn(){ try { return localStorage.getItem('wfa-chat-popups') !== 'off'; } catch(e){ return true; } }
 function popupButton(){
   if (!('Notification' in window)) return '';
-  if (Notification.permission === 'granted') return `<button class="btn ghost small" data-act="chat-popups" aria-pressed="${popupsOn()}">${popupsOn() ? 'Desktop pop-ups: on' : 'Desktop pop-ups: off'}</button>`;
+  if (Notification.permission === 'granted') return `<button class="btn ghost small" data-act="chat-popups" aria-pressed="${popupsOn()}">${popupsOn() ? 'Desktop pop-ups: on' : 'Desktop pop-ups: off'}</button>${popupsOn() ? '<button class="btn ghost small" data-act="chat-test-popup">Test pop-up</button>' : ''}`;
   return `<button class="btn ghost small" data-act="chat-notify" ${Notification.permission === 'denied' ? 'disabled title="Blocked in your browser settings. Allow notifications for this site to use them."' : ''}>Turn on desktop notifications</button>`;
 }
 function chatSoundOn(){ try { return localStorage.getItem('wfa-chat-sound') !== 'off'; } catch(e){ return true; } }
@@ -4352,6 +4364,8 @@ document.addEventListener('click', async ev => {
     case 'chat-del-msg': { const r = await sb.from('messages').delete().eq('id', id); if (r.error) { toast(errMsg(r.error)); break; } ui.chatMsgs[t.dataset.chat] = (ui.chatMsgs[t.dataset.chat] || []).filter(m => m.id !== id); renderChatKeep(); break; }
     case 'chat-sound': try { localStorage.setItem('wfa-chat-sound', chatSoundOn() ? 'off' : 'on'); } catch(e){} if (chatSoundOn()) chatChime(); renderChatKeep(); break;
     case 'chat-notify': if ('Notification' in window) { const p = await Notification.requestPermission(); if (p === 'granted') try { localStorage.setItem('wfa-chat-popups', 'on'); } catch(e){} toast(p === 'granted' ? 'Desktop pop-ups are on for this browser' : 'Notifications weren’t allowed'); renderChatKeep(); } break;
+    case 'chat-test-popup': { const r = await showPopup('Wolverine Finance Association', 'This is a test pop-up. Message pop-ups will look like this.', '', 'test-' + Date.now());
+      toast(r === 'ok' ? 'Test pop-up sent. If you don’t see it, check the notification center (Windows key + N).' : 'The browser refused the pop-up: ' + r); break; }
     case 'chat-popups': try { localStorage.setItem('wfa-chat-popups', popupsOn() ? 'off' : 'on'); } catch(e){} toast(popupsOn() ? 'Desktop pop-ups are on' : 'Desktop pop-ups are off on this device'); renderChatKeep(); break;
     case 'chat-optin': {
       const on = me().chatEmails === false, r = await sb.from('members').update({ chat_emails: on }).eq('id', authUser.id);
