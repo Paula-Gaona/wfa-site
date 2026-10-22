@@ -242,6 +242,30 @@ main{padding-block:36px 64px}
 .facts dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .meter{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
 .meter span{display:block;height:100%;background:var(--up)}
+.chat-wrap{display:grid;grid-template-columns:minmax(15rem,20rem) 1fr;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);height:min(74vh,48rem);overflow:hidden}
+.chat-list{border-right:1px solid var(--line);overflow:auto;padding:8px}
+.chat-group{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding:12px 8px 4px;font-weight:700}
+.chat-item{display:grid;grid-template-columns:1fr auto;gap:2px 8px;padding:9px 10px;border-radius:4px;color:var(--ink);text-decoration:none;align-items:center}
+.chat-item:hover{background:var(--tint)}
+.chat-item.sel{background:var(--tint);box-shadow:inset 3px 0 0 var(--brand)}
+.chat-item .chat-name{font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-item.unread .chat-last{color:var(--ink);font-weight:600}
+.chat-item .chat-last{grid-column:1/-1;font-size:.85rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-pane{display:flex;flex-direction:column;min-width:0;min-height:0}
+.chat-head{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.chat-msgs{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:8px}
+.chat-msg{max-width:78%;align-self:flex-start}
+.chat-msg.me{align-self:flex-end;text-align:right}
+.chat-msg .bubble{display:inline-block;text-align:left;padding:8px 12px;border-radius:14px;background:var(--tint);white-space:pre-wrap;overflow-wrap:anywhere}
+.chat-msg.me .bubble{background:var(--brand);color:#fff}
+.chat-msg.me .bubble a{color:#fff}
+.chat-msg .who{font-size:.78rem;color:var(--muted);margin:0 6px 2px}
+.chat-day{align-self:center;font-size:.75rem;color:var(--muted);margin:8px 0 2px}
+.chat-compose{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line);align-items:flex-end}
+.chat-compose textarea{flex:1;resize:none;min-height:2.7em;max-height:9em}
+.chat-pick{max-height:16rem;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);padding:8px;display:flex;flex-direction:column;gap:4px}
+.chat-back{display:none}
+@media (max-width:760px){.chat-wrap{grid-template-columns:1fr;height:auto;min-height:70vh}.chat-wrap.open .chat-list{display:none}.chat-wrap:not(.open) .chat-pane{display:none}.chat-back{display:inline}.chat-msgs{max-height:62vh}}
 .code-inline{font-family:var(--mono);font-size:1.4rem;font-weight:700;letter-spacing:.2em;padding:2px 10px;border:2px solid var(--ink);border-radius:var(--radius)}
 .event-page{border-top:4px solid var(--c)}
 .qr-stage{padding:16px;border-radius:var(--radius);border:1px solid var(--line);background:repeating-conic-gradient(#e9ecea 0 25%, #fff 0 50%) 0 0/20px 20px}
@@ -463,7 +487,7 @@ h3{font-family:var(--serif);font-weight:700;font-size:1.4rem;letter-spacing:.01e
 const SUPABASE_URL = 'https://razxymbbfsnnnguyaalp.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_G9Ct3sh1zfK2peRadj-nzg_SSLCr2Sn';
 const SAFE_MSG = 'Safe view is on. Switch to Edit view to make changes.';
-const READ_RPCS = ['my_role', 'my_test_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending', 'case_board', 'member_points'];   // database functions that only read
+const READ_RPCS = ['my_role', 'my_test_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending', 'case_board', 'member_points', 'my_chats', 'chat_names', 'mark_chat_read'];   // database functions that only read
 function safeFetch(input, init){
   const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
   let safe = false;
@@ -579,6 +603,7 @@ async function load(){
     testAccounts: off && t('test_accounts'),
     guests: off && t('guest_checkins'),
     caseBoard: signed && sb.rpc('case_board'),
+    chats: signed && sb.rpc('my_chats'),
     autoLog: myRole === 'admin' && sb.from('auto_email_log').select('*').order('sent_at', { ascending: false }).limit(60),
     caseNotes: off && sb.from('case_teams').select('id, officer_rating, officer_note'),
     memberPts: off && sb.rpc('member_points'),
@@ -608,7 +633,7 @@ async function load(){
   db.users = (R.members || []).map(m => {
     const majors = (m.majors && m.majors.length) ? m.majors : (m.major ? [m.major] : []);
     return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(' & '), email:m.email, joined:m.joined, interests:m.interests || [], year:m.year || '', lbPublic:m.lb_public !== false,
-      resumePath:m.resume_path || '', resumeBook:!!m.resume_book, resumeUpdated:m.resume_updated || null, emailOptIn:m.email_opt_in !== false };
+      resumePath:m.resume_path || '', resumeBook:!!m.resume_book, resumeUpdated:m.resume_updated || null, emailOptIn:m.email_opt_in !== false, chatEmails:m.chat_emails !== false };
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
@@ -629,6 +654,8 @@ async function load(){
   db.mySurveys = R.mySurveys || []; db.surveyResults = Array.isArray(R.surveyResults) ? R.surveyResults : [];
   db.surveyPending = Array.isArray(R.surveyPending) ? R.surveyPending : [];
   db.testAccounts = Array.isArray(R.testAccounts) ? R.testAccounts : [];
+  db.chats = Array.isArray(R.chats) ? R.chats : [];
+  setTimeout(syncChatLive);
   db.caseTeams = (R.caseBoard && R.caseBoard.teams) || []; db.caseAgents = (R.caseBoard && R.caseBoard.agents) || [];
   db.caseNotes = {}; (Array.isArray(R.caseNotes) ? R.caseNotes : []).forEach(n => db.caseNotes[n.id] = { rating: n.officer_rating || null, note: n.officer_note || '' });
   db.memberPts = {}; (Array.isArray(R.memberPts) ? R.memberPts : []).forEach(x => db.memberPts[x.email] = x.points);
@@ -789,11 +816,11 @@ function setPendingRsvp(id){ ui._pending = id; try { id ? sessionStorage.setItem
 function renderChrome(route){
   const links = [['home','Home'],['calendar','Calendar'],['recaps','Recaps'],['officers','Officers'],['about','About'],['resources','Resources'],['partners','Partner with us'],['contact','Contact']];
   if (appsOpen()) links.push(['apply','Apply']);
-  const mem = [['archive','Archive'],['leaderboard','Leaderboard'],['availability','Availability'],['account','My account']];
+  const mem = [['archive','Archive'],['leaderboard','Leaderboard'],['availability','Availability'],['messages','Messages'],['account','My account']];
   const staff = [];
   if (can('officer')) staff.push(['officer','Officer tools']);
   if (can('admin')) staff.push(['admin','Admin']);
-  const a = ([r,l], cls='') => `<a class="${cls}" href="#${r}" ${route===r?'aria-current="page"':''}>${l}${r === 'account' ? dot(pendingSurveys().length) : ''}</a>`;
+  const a = ([r,l], cls='') => `<a class="${cls}" href="#${r}" ${route===r?'aria-current="page"':''}>${l}${r === 'account' ? dot(pendingSurveys().length) : r === 'messages' ? dot(chatUnread()) : ''}</a>`;
   document.getElementById('nav').innerHTML = links.map(l => a(l)).join('') +
     (can('member') ? '<span class="sep"></span>' + mem.map(l => a(l)).join('') : '') +
     (staff.length ? '<span class="sep"></span>' + staff.map(([r,l]) => `<button class="menu-btn ${route===r?'current':''}" data-act="nav-menu" data-menu="${r}" aria-haspopup="true" aria-expanded="false">${l}${dot(countTotal(r))} ▾</button>`).join('') : '');
@@ -1165,7 +1192,7 @@ function questionsBody(){
       ${(q.ways || []).length ? `<div class="hint"><strong>Interested in:</strong> ${esc(q.ways.join(', '))}</div>` : ''}
       <p style="white-space:pre-wrap;margin:0">${esc(q.message)}</p>
       <div class="row" style="gap:6px">
-        <a class="btn small" href="${esc(questionReplyUrl(q))}" target="_blank" rel="noopener">Reply in Outlook</a>
+        <a class="btn small" href="${esc(questionReplyUrl(q))}" target="_blank" rel="noopener">Reply in Outlook</a>${chatWithBtn(q.email)}
         <button class="btn ghost small" data-act="q-status" data-id="${q.id}">${q.status === 'answered' ? 'Mark as new' : 'Mark answered'}</button>
         ${delBtn('q-' + q.id, 'Delete', 'q-del', q.id)}
       </div>
@@ -1496,6 +1523,8 @@ function adminAutoBody(){
         <span class="hint">Reminders include the date, time, location, description, and a link to the event page. A 9 AM reminder for an event before 10 AM goes out an hour before instead.</span></div>
       <div class="stack" style="gap:6px"><strong>After the event</strong>
         <label class="check"><input type="checkbox" id="au-survey" ${c.survey ? 'checked' : ''}> Survey email 30 minutes after the event ends, to people who checked in and haven’t answered yet</label></div>
+      <div class="stack" style="gap:6px"><strong>Messages</strong>
+        <label class="check"><input type="checkbox" id="au-chat" ${c.chat_alerts !== false ? 'checked' : ''}> Email people when their messages sit unread for an hour (one summary; works even when the emails above are off)</label></div>
       <label style="max-width:24rem">Daily limit for automatic emails<input id="au-cap" type="number" min="1" max="5000" value="${esc(Math.max(c.daily_cap ?? 500, 500))}">
         <span class="hint">A safety net so a mistake can’t send a flood of email. Each person gets their own email that greets them by first name, so a reminder to 100 people uses 100. The club’s email plan (Resend Pro) allows 50,000 emails a month.</span></label>
       <span class="hint">Each email greets the person by first name (“Hi Sam,”). Never sent to members who turned off club emails, test accounts, test events, drafts, or officer meetings. Each email goes out once.</span>
@@ -1578,6 +1607,8 @@ function viewAccount(){
           <dt>Career interests</dt><dd>${(u.interests || []).length ? esc(u.interests.join(', ')) : '<span class="muted">None picked yet</span>'}</dd>
           <dt>Club emails</dt><dd>${u.emailOptIn === false ? 'Off' : 'On'} <button class="btn ghost small" data-act="mail-optin" style="margin-left:6px">${u.emailOptIn === false ? 'Turn on' : 'Turn off'}</button>
             <div class="hint">Events and announcements. Account emails like password resets always send.</div></dd>
+          <dt>Message emails</dt><dd>${u.chatEmails === false ? 'Off' : 'On'} <button class="btn ghost small" data-act="chat-optin" style="margin-left:6px">${u.chatEmails === false ? 'Turn on' : 'Turn off'}</button>
+            <div class="hint">One email if messages on the site sit unread for an hour.</div></dd>
           ${isStaff() ? '' : `<dt>Leaderboard</dt><dd>${u.lbPublic === false ? 'Anonymous Member' : 'Shown by name'} <button class="btn ghost small" data-act="lb-toggle" style="margin-left:6px">${u.lbPublic === false ? 'Show my name' : 'Go anonymous'}</button></dd>`}
           <dt>Email</dt><dd>${esc(u.email)}</dd>
           <dt>Joined</dt><dd>${fmtDay(u.joined)}</dd>
@@ -2067,7 +2098,7 @@ function appCard(x){
       <div><div class="eyebrow">What they’d start or change</div><p class="ann-body">${esc(x.ideas)}</p></div>
       ${x.other ? `<div><div class="eyebrow">Anything else</div><p class="ann-body">${esc(x.other)}</p></div>` : ''}
     </div></details>
-    <div class="row">${x.resume_path ? `<button class="btn ghost small" data-act="open-resume" data-id="${esc(x.resume_path)}">Open resume (PDF)</button>` : ''}${x.linkedin ? `<a class="btn ghost small" href="${esc(x.linkedin)}" target="_blank" rel="noopener">LinkedIn ↗</a>` : ''}${x.status === 'accepted' && roleOf(x.email) === 'member' ? `<button class="btn small" data-act="change-status" data-id="${esc(x.email)}">Make officer</button>` : ''}
+    <div class="row">${chatWithBtn(x.email)}${x.resume_path ? `<button class="btn ghost small" data-act="open-resume" data-id="${esc(x.resume_path)}">Open resume (PDF)</button>` : ''}${x.linkedin ? `<a class="btn ghost small" href="${esc(x.linkedin)}" target="_blank" rel="noopener">LinkedIn ↗</a>` : ''}${x.status === 'accepted' && roleOf(x.email) === 'member' ? `<button class="btn small" data-act="change-status" data-id="${esc(x.email)}">Make officer</button>` : ''}
       ${x.status === 'declined' ? (x.decline_emailed_at
         ? `<span class="hint">Decline email sent ${fmtDay(iso(new Date(x.decline_emailed_at)))}</span><button class="btn ghost small" data-act="decline-email" data-id="${x.id}">Send again</button>`
         : `<button class="btn small" data-act="decline-email" data-id="${x.id}">Send decline email</button>`) : ''}
@@ -3648,6 +3679,9 @@ function caseSection(e){
   else h += newTeamForm(e);
   if (open){
     const cap = t && (t.members.find(m => m.me) || {}).captain, room = t && t.members.length < e.teamMax;
+    if (!t){ const fc = (db.chats || []).find(x => x.kind === 'forming' && x.event_id === id && x.mine);
+      h += `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">${fc ? `<a class="btn ghost small" href="#messages/${fc.id}">Open my team-forming chat</a>` : `<button class="btn ghost small" data-act="chat-forming" data-id="${id}">Start a chat to put a team together</button>`}
+        <span class="hint">Talk with friends and free agents before you register. You choose who’s in it.</span></div>`; }
     if (!t) h += agentBox(e);
     if (!t || (cap && room)) h += agentList(e, cap && room ? t : null);
   }
@@ -3668,6 +3702,10 @@ function teamCard(e, t, open){
       : `<details><summary style="cursor:pointer">Your team’s application</summary><p style="white-space:pre-wrap;margin:8px 0 0">${esc(t.pitch || '')}</p>${t.experience ? `<p class="hint" style="white-space:pre-wrap">${esc(t.experience)}</p>` : ''}</details>`) : ''}
     ${t.members.some(m => !m.joined) ? '<span class="hint">Teammates who haven’t joined WFA yet need to sign up, then confirm on this page. Send them the event link.</span>' : ''}
     ${cap && open && t.members.length < e.teamMax ? `<form class="checkin-form" id="f-team-add" data-id="${t.id}" data-ev="${e.id}"><input id="ta-add" type="email" placeholder="teammate@uvu.edu" aria-label="Teammate’s email" style="width:16em;letter-spacing:0;text-transform:none;font-family:inherit"><button class="btn ghost" type="submit">Invite teammate</button></form><div class="err" id="tadd-err"></div>` : ''}
+    ${me.confirmed ? (() => { const tc = (db.chats || []).find(x => x.kind === 'team' && x.team_id === t.id), ac = (db.chats || []).find(x => x.kind === 'all_teams' && x.event_id === e.id && x.member);
+        const mates = t.members.filter(m => !m.me && m.email && m.confirmed);
+        return (tc || ac || mates.length) ? `<div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">${tc ? `<a class="btn ghost small" href="#messages/${tc.id}">Team chat</a>` : ''}${ac ? `<a class="btn ghost small" href="#messages/${ac.id}">All-teams chat</a>` : ''}
+          ${mates.map(m => `<button class="btn ghost small" data-act="chat-direct" data-email="${esc(m.email)}">Message ${esc(personName(m).split(' ')[0])}</button>`).join('')}</div>` : ''; })() : ''}
     ${me.confirmed && (open || !hasStarted(e)) ? `<div>${delBtn('tleave-' + t.id, cap ? 'Withdraw team' : 'Leave team', 'team-remove', t.id + '|' + session)}</div>` : ''}
   </div>`;
 }
@@ -3699,12 +3737,12 @@ function agentBox(e){
       <div><button class="btn ghost" type="submit">Add me to the free-agent list</button></div><div class="err" id="ag-err"></div></form></details>`;
 }
 function agentList(e, team){
-  const list = agentsFor(e.id).filter(a => !a.me);
+  const list = agentsFor(e.id).filter(a => !a.me), fc = (db.chats || []).find(x => x.kind === 'forming' && x.event_id === e.id && x.mine);
   if (!list.length) return '';
   return `<div class="stack" style="gap:6px"><strong>Free agents looking for a team</strong>
     ${list.map(a => `<div class="list-row" style="align-items:start"><div class="stack" style="gap:4px"><div class="ev-title">${esc(personName(a))} <span class="hint">${esc(agentMeta(a))}</span></div>${roleChips(a.roles)}
         ${a.note ? `<div style="white-space:pre-wrap">${esc(a.note)}</div>` : ''}<div class="ev-sub">${esc(a.email)}</div></div>
-      ${team ? `<button class="btn ghost small" data-act="team-invite" data-id="${team.id}|${esc(a.email)}" data-ev="${e.id}">Invite to ${esc(team.name)}</button>` : ''}</div>`).join('')}</div>`;
+      <span class="row" style="gap:6px">${team ? `<button class="btn ghost small" data-act="team-invite" data-id="${team.id}|${esc(a.email)}" data-ev="${e.id}">Invite to ${esc(team.name)}</button>` : ''}${fc && !(fc.people || []).some(p => p.email === a.email) ? `<button class="btn ghost small" data-act="chat-add-person" data-id="${fc.id}|${esc(a.email)}">Add to my chat</button>` : ''}</span></div>`).join('')}</div>`;
 }
 // Officers: every team (including applied and declined ones), accept/decline, placements, free agents, and downloads.
 // What officers see about each person on a team: profile, involvement, past case competitions, resume.
@@ -3749,12 +3787,13 @@ function caseAdmin(e){
   const emails = teamsIn(e.id).flatMap(t => t.members.filter(m => m.email).map(m => m.email));
   const tag = t => t.status === 'applied' ? 'Applied' : t.status === 'declined' ? 'Declined' : 'In';
   return `<div class="panel stack" style="gap:10px;padding:14px">
-    <div class="row" style="justify-content:space-between;gap:8px;align-items:center"><strong>Teams (officers)</strong>
+    <div class="row" style="justify-content:space-between;gap:8px;align-items:center"><strong>Teams (officers)</strong>${(() => { const ac = (db.chats || []).find(x => x.kind === 'all_teams' && x.event_id === e.id); return ac ? `<a class="btn ghost small" href="#messages/${ac.id}">All-teams chat</a>` : ''; })()}
       <span class="row" style="gap:6px">${teams.length ? `<button class="btn ghost small" data-act="case-csv" data-id="${e.id}">Download CSV</button>` : ''}${emails.length ? `<button class="btn ghost small" data-act="copy-text" data-text="${esc(emails.join('; '))}">Copy team emails</button>` : ''}</span></div>
     <span class="hint">${teamsIn(e.id).length} in${e.teamLimit ? ` of ${e.teamLimit}` : ''}${applied ? ` · ${applied} waiting for a decision` : ''} · ${e.teamMode === 'select' ? 'Officers choose' : 'First come, first served'}${hasStarted(e) ? ' · Set placements to award bonus points (1st +50, 2nd +30, 3rd +15 each).' : ''}</span>
     ${teams.length > 1 ? `<label class="row" style="gap:8px;align-items:center">Sort by<select data-case-sort="${e.id}"><option value="time" ${(ui.caseSort || 'time') === 'time' ? 'selected' : ''}>When they registered</option><option value="rating" ${ui.caseSort === 'rating' ? 'selected' : ''}>Officer rating</option><option value="involvement" ${ui.caseSort === 'involvement' ? 'selected' : ''}>Club involvement (points)</option></select></label>` : ''}
     ${teams.map(t => `<div class="list-row" style="align-items:start"><div style="min-width:0;flex:1"><div class="ev-title">${esc(t.name)} <span class="tag">${tag(t)}</span>${t.placement ? ` <span class="tag">${ORD[t.placement]} place</span>` : ''}</div>
         <div class="ev-sub">${t.members.map(m => esc(personName(m)) + (m.captain ? ' (captain)' : '') + (m.confirmed ? '' : ' (pending)')).join(', ')} · registered ${fmtStamp(t.created_at)}</div>
+        ${(() => { const tc = (db.chats || []).find(x => x.kind === 'team' && x.team_id === t.id); return tc ? `<a class="hint" href="#messages/${tc.id}">Open team chat</a>` : ''; })()}
         ${teamDetails(e, t)}</div>
       <div class="row" style="gap:6px;align-items:center">
         ${e.teamMode === 'select' && t.status !== 'in' ? `<button class="btn small" data-act="case-status" data-id="${t.id}" data-status="in" data-ev="${e.id}">Accept</button>` : ''}
@@ -3786,6 +3825,229 @@ async function caseRpc(fn, args, evId, ok, errId){
   if (m){ if (errId && document.getElementById(errId)) err(errId, m); else toast(m); return false; }
   await load(); render(); if (route() !== 'event') openEvent(evId);
   toast(r.data === 'withdrawn' ? 'Team withdrawn' : ok); return true;
+}
+/* ---------- Messages (chats) ---------- */
+// Chats live in Supabase (42-chats.sql). Automatic chats (all officers + faculty advisor, each branch, each accepted
+// case competition team, and each competition's all-teams chat) keep their own member lists. Presidents, vice
+// presidents, faculty advisors, and admins start chats with officers and members; members can message their case
+// competition teammates and start a chat to put a team together. New messages arrive live, with a sound, a tab badge,
+// and (if turned on) desktop notifications. Unread messages get one summary email after an hour (auto-emails function).
+const CHAT_GROUPS = [['Officers', ['officers', 'branch']], ['Case competitions', ['all_teams', 'team', 'forming']], ['Conversations', ['custom', 'direct']]];
+ui.chatMsgs = {}; ui.chatNames = {};
+function isLeader(){ if (myRole === 'admin') return true; const p = db.profiles[session] || {}; return myRole === 'officer' && ['president', 'vice_president', 'advisor'].includes(p.tier); }
+function chatUnread(){ return (db.chats || []).reduce((n, c) => n + (c.member ? c.unread || 0 : 0), 0); }
+function chatById(id){ return (db.chats || []).find(c => c.id === id); }
+function chatTitle(c){
+  if (c.title) return c.title;
+  const o = (c.people || []).filter(p => !p.me);
+  return o.length ? o.map(p => p.first ? (p.first + ' ' + (p.last || '')).trim() : (p.email || 'Someone')).join(', ') : 'Just you';
+}
+function chatKindLabel(c){
+  return { officers: 'All officers and the faculty advisor', branch: 'Branch chat', team: 'Your team’s chat', all_teams: 'Every competing team and the officers',
+    forming: 'Putting a team together', custom: 'Chat', direct: 'Teammate chat' }[c.kind] || '';
+}
+function chatWhen(at){ const ms = Date.parse(at); return mtDateIso(ms) === todayIso() ? fmtTime(mtClock(ms)) : fmtDay(mtDateIso(ms)).replace(/^\w+, /, ''); }
+function chatNameOf(cid, email){
+  if (email === session) return 'You';
+  const n = (ui.chatNames[cid] || {})[email] || db.users.find(u => u.email === email);
+  return n && n.first ? (n.first + ' ' + (n.last || '')).trim() : 'Someone';
+}
+function linkify(t){ return esc(t).replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" target="_blank" rel="noopener">$1</a>'); }
+function chatItem(c, open){
+  const last = c.last ? (c.last.me ? 'You: ' : c.last.first ? c.last.first + ': ' : '') + c.last.body : chatKindLabel(c);
+  return `<a class="chat-item ${open === c.id ? 'sel' : ''} ${c.unread ? 'unread' : ''}" href="#messages/${c.id}"><span class="chat-name">${esc(chatTitle(c))}</span>
+    <span class="hint">${c.unread ? dot(c.unread) : c.last ? chatWhen(c.last.at) : ''}</span><span class="chat-last">${esc(last)}</span></a>`;
+}
+function viewMessages(){
+  if (!session) return gate('member');
+  const open = location.hash.slice(1).split('/')[1] || '';
+  ui.chatOpen = open || null;
+  const list = db.chats || [];
+  const mine = list.filter(c => c.member), watching = list.filter(c => !c.member);
+  const side = CHAT_GROUPS.map(([label, kinds]) => { const cs = mine.filter(c => kinds.includes(c.kind));
+      return cs.length ? `<div class="chat-group">${label}</div>${cs.map(c => chatItem(c, open)).join('')}` : ''; }).join('')
+    + (watching.length ? `<details ${watching.some(c => c.id === open) ? 'open' : ''}><summary class="chat-group" style="cursor:pointer">Other teams’ chats (${watching.length})</summary>${watching.map(c => chatItem(c, open)).join('')}</details>` : '')
+    || '<div class="empty">No chats yet. You’ll see chats here when an officer messages you or you join a case competition team.</div>';
+  const c = chatById(open);
+  let pane;
+  if (open === 'new' && isLeader()) pane = newChatForm();
+  else if (!c) pane = `<div class="empty" style="margin:auto">${list.length ? 'Pick a chat.' : 'No chats yet.'}</div>`;
+  else pane = chatPane(c);
+  return `<div class="view">
+    <section class="row" style="justify-content:space-between;align-items:end;gap:12px">
+      <div class="page-head"><div class="eyebrow">Messages</div><h1 class="page">Chats</h1></div>
+      <div class="row" style="gap:6px">${isLeader() ? '<a class="btn" href="#messages/new">New chat</a>' : ''}
+        <button class="btn ghost small" data-act="chat-sound">${chatSoundOn() ? 'Sound: on' : 'Sound: off'}</button>
+        ${'Notification' in window && Notification.permission !== 'granted' ? `<button class="btn ghost small" data-act="chat-notify" ${Notification.permission === 'denied' ? 'disabled title="Blocked in your browser settings"' : ''}>Turn on desktop notifications</button>` : ''}</div>
+    </section>
+    <div class="chat-wrap ${open ? 'open' : ''}"><nav class="chat-list" aria-label="Chats">${side}</nav><section class="chat-pane">${pane}</section></div>
+  </div>`;
+}
+function chatPane(c){
+  const msgs = ui.chatMsgs[c.id];
+  if (!msgs) setTimeout(() => loadChat(c.id));
+  else if (c.unread && document.visibilityState === 'visible') setTimeout(() => markRead(c.id));
+  const others = (c.people || []).filter(p => !p.me);
+  const owner = c.mine && ['custom', 'forming'].includes(c.kind), explicit = ['custom', 'forming', 'direct'].includes(c.kind);
+  const team = c.kind === 'team' ? (db.caseTeams || []).find(t => t.id === c.team_id) : null;
+  const me = team && team.members.find(m => m.me);
+  const mates = me && me.confirmed ? team.members.filter(m => !m.me && m.email && m.confirmed) : [];
+  let day = '';
+  const body = !msgs ? '<div class="empty" style="margin:auto">Loading…</div>'
+    : !msgs.length ? '<div class="empty" style="margin:auto">No messages yet. Say hi!</div>'
+    : msgs.map(m => { const d = mtDateIso(Date.parse(m.created_at)), sep = d !== day ? `<div class="chat-day">${d === todayIso() ? 'Today' : fmtDay(d)}</div>` : ''; day = d;
+        const mine = m.email === session;
+        return `${sep}<div class="chat-msg ${mine ? 'me' : ''}">${mine ? '' : `<div class="who">${esc(chatNameOf(c.id, m.email))}</div>`}<span class="bubble">${linkify(m.body)}</span>
+          <div class="who">${fmtTime(mtClock(Date.parse(m.created_at)))}${mine || isLeader() ? ` · <button type="button" data-act="chat-del-msg" data-id="${m.id}" data-chat="${c.id}" style="background:none;border:0;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer">Delete</button>` : ''}</div></div>`; }).join('');
+  return `<div class="chat-head">
+      <a class="chat-back" href="#messages">← All chats</a>
+      <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><strong style="font-size:1.1rem">${esc(chatTitle(c))}</strong>
+        <span class="row" style="gap:6px">${explicit && c.member ? delBtn('cl-' + c.id, 'Leave', 'chat-leave', c.id) : ''}${owner ? delBtn('cd-' + c.id, 'Delete chat', 'chat-delete', c.id) : ''}</span></div>
+      <details><summary class="hint" style="cursor:pointer">${esc(chatKindLabel(c))} · ${(c.people || []).length} ${(c.people || []).length === 1 ? 'person' : 'people'}${c.member ? '' : ' · You can read and post here as an officer'}</summary>
+        <div class="stack" style="gap:4px;margin-top:6px">${(c.people || []).map(p => `<div class="row" style="gap:8px;align-items:center">${esc(p.first ? (p.first + ' ' + (p.last || '')).trim() : p.email || 'Someone')}${p.me ? ' (you)' : ''}${p.officer ? ' <span class="tag">Officer</span>' : ''}
+            ${owner && !p.me && p.email ? delBtn('cr-' + c.id + p.email, 'Remove', 'chat-remove', c.id + '|' + p.email) : ''}</div>`).join('')}
+          ${mates.length ? `<div class="row" style="gap:6px;flex-wrap:wrap"><span class="hint">Message a teammate:</span>${mates.map(m => `<button class="btn ghost small" data-act="chat-direct" data-email="${esc(m.email)}">${esc(personName(m))}</button>`).join('')}</div>` : ''}
+          ${owner ? chatAddForm(c) : ''}</div></details>
+    </div>
+    <div class="chat-msgs" id="chat-msgs">${body}</div>
+    <form class="chat-compose" id="f-chat" data-id="${c.id}"><textarea id="chat-text" rows="2" maxlength="4000" placeholder="Write a message. Enter sends, Shift+Enter adds a line." aria-label="Message"></textarea><button class="btn" type="submit">Send</button></form>`;
+}
+// The person who started a chat adds people: officers pick from the member list; members type an email or add free agents.
+function chatAddForm(c){
+  const inChat = new Set((c.people || []).map(p => p.email).filter(Boolean));
+  const agents = c.kind === 'forming' ? agentsFor(c.event_id).filter(a => !a.me && !inChat.has(a.email)) : [];
+  return `<form class="row" id="f-chat-add" data-id="${c.id}" style="gap:6px;align-items:end;margin-top:6px">
+      ${isStaff() ? `<label style="flex:1;min-width:12rem">Add someone<select id="ca-email"><option value="">Choose a person…</option>${db.users.filter(u => !inChat.has(u.email) && u.email !== session).sort((a, b) => (a.first + a.last).localeCompare(b.first + b.last)).map(u => `<option value="${esc(u.email)}">${esc(u.first)} ${esc(u.last)}</option>`).join('')}</select></label>`
+        : `<label style="flex:1;min-width:12rem">Add someone by email<input id="ca-email" type="email" placeholder="name@uvu.edu"></label>`}
+      <button class="btn ghost small" type="submit">Add</button></form>
+    ${agents.length ? `<div class="stack" style="gap:4px"><span class="hint">Free agents looking for a team:</span>${agents.map(a => `<div class="row" style="gap:8px;align-items:center">${esc(personName(a))} <span class="hint">${esc(agentMeta(a))}</span><button class="btn ghost small" data-act="chat-add-person" data-id="${c.id}|${esc(a.email)}">Add to chat</button></div>`).join('')}</div>` : ''}`;
+}
+function newChatForm(){
+  const people = db.users.filter(u => u.email !== session).sort((a, b) => (a.first + a.last).localeCompare(b.first + b.last));
+  return `<form class="stack" id="f-chat-new" style="gap:10px;padding:16px;overflow:auto">
+    <a class="chat-back" href="#messages">← All chats</a>
+    <h3>New chat</h3>
+    <label>Chat name <span class="hint">Optional. Leave blank for a one-on-one</span><input id="cn-title" maxlength="80" placeholder="e.g. Fall recruiting"></label>
+    <label>Find people<input id="cn-find" placeholder="Type a name or email" autocomplete="off"></label>
+    <div class="chat-pick" id="cn-list">${people.map(u => `<label class="check" data-find="${esc((u.first + ' ' + u.last + ' ' + u.email).toLowerCase())}"><input type="checkbox" class="cn-pick" value="${esc(u.email)}"> ${esc(u.first)} ${esc(u.last)} <span class="hint">${roleOf(u.email) !== 'member' ? 'Officer' : esc(u.year || 'Member')}</span></label>`).join('') || '<span class="hint">No members yet.</span>'}</div>
+    <span class="hint">Members can reply in chats you start, but they can’t start chats with officers.</span>
+    <div><button class="btn" type="submit">Start chat</button></div><div class="err" id="cn-err"></div></form>`;
+}
+// "Message on site" buttons for presidents, VPs, advisors, and admins (officer applications, questions).
+function chatWithBtn(email){
+  const e = String(email || '').toLowerCase();
+  return isLeader() && e && e !== session && db.users.some(u => u.email === e) ? `<button class="btn ghost small" data-act="chat-with" data-email="${esc(e)}">Message on site</button>` : '';
+}
+const CHAT_ERR = { 'err:notleader': 'Only presidents, vice presidents, faculty advisors, and admins can start chats.', 'err:nobody': 'Pick at least one person.',
+  'err:one': 'Pick one teammate.', 'err:notteammate': 'You can only message people on your own case competition team.', 'err:event': 'This competition isn’t open for team-forming chats anymore.',
+  'err:notowner': 'Only the person who started this chat can do that.', 'err:automatic': 'People are added to this chat automatically.', 'err:missing': 'That chat doesn’t exist anymore.', 'err:signin': 'Sign in first.' };
+function chatErr(v){ v = String(v || ''); return v.startsWith('err:noaccount:') ? 'There’s no WFA account for ' + v.slice(14) + ' yet. They need to join first.' : CHAT_ERR[v] || v; }
+function chatSetupErr(e){ return /create_chat|chat_add|chat_remove|my_chats|messages|chats/.test((e && e.message) || '') && /exist|schema|find/i.test((e && e.message) || '') ? 'Messages aren’t set up yet. Run 42-chats.sql in Supabase.' : errMsg(e); }
+async function refreshChats(){ const r = await sb.rpc('my_chats'); if (Array.isArray(r.data)) db.chats = r.data; }
+async function openNewChat(kind, emails, eventId, title){
+  const r = await sb.rpc('create_chat', { p_kind: kind, p_title: title || '', p_emails: emails || [], p_event: eventId || null });
+  if (r.error) return toast(chatSetupErr(r.error));
+  if (String(r.data).startsWith('err:')) return toast(chatErr(r.data));
+  await refreshChats(); closeModal();
+  if (location.hash === '#messages/' + r.data) render(); else location.hash = 'messages/' + r.data;
+}
+async function chatCall(fn, args, ok){
+  const r = await sb.rpc(fn, args);
+  if (r.error) { toast(chatSetupErr(r.error)); return false; }
+  if (String(r.data).startsWith('err:')) { toast(chatErr(r.data)); return false; }
+  await refreshChats(); renderChatKeep(); if (ok) toast(ok); return true;
+}
+async function loadChat(id){
+  if (ui.chatLoading === id) return; ui.chatLoading = id;
+  const [m, n] = await Promise.all([sb.from('messages').select('*').eq('chat_id', id).order('created_at', { ascending: false }).limit(300), sb.rpc('chat_names', { p_chat: id })]);
+  ui.chatLoading = null;
+  ui.chatMsgs[id] = (m.data || []).reverse();
+  ui.chatNames[id] = Object.fromEntries((n.data || []).map(x => [x.email, x]));
+  if (ui.chatOpen === id) markRead(id);
+  renderChatKeep();
+}
+async function markRead(id){
+  const c = chatById(id); if (c) c.unread = 0;
+  renderChrome(route()); updateTabBadge();
+  await sb.rpc('mark_chat_read', { p_chat: id });
+}
+// Re-draw the Messages page without losing what's typed in the message box.
+function renderChatKeep(){
+  if (route() !== 'messages'){ renderChrome(route()); updateTabBadge(); return; }
+  const t = document.getElementById('chat-text'), val = t ? t.value : '', focused = t && document.activeElement === t, y = window.scrollY;
+  render(); window.scrollTo(0, y);
+  const t2 = document.getElementById('chat-text'); if (t2){ t2.value = val; if (focused) t2.focus(); }
+}
+function afterChatRender(){ const box = document.getElementById('chat-msgs'); if (box) box.scrollTop = box.scrollHeight; }
+
+// ---------- Live messages, sound, tab badge, desktop notifications ----------
+let chatChannel = null;
+function syncChatLive(){
+  if (session && !chatChannel && sb.channel){
+    chatChannel = sb.channel('wfa-messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, p => onChatMessage(p.new))
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, p => { for (const k in ui.chatMsgs) ui.chatMsgs[k] = ui.chatMsgs[k].filter(m => m.id !== (p.old || {}).id); renderChatKeep(); })
+      .subscribe();
+  } else if (!session && chatChannel){ sb.removeChannel(chatChannel); chatChannel = null; }
+  updateTabBadge();
+}
+async function onChatMessage(m){
+  if (!m || !m.chat_id) return;
+  let c = chatById(m.chat_id);
+  if (!c){ await refreshChats(); c = chatById(m.chat_id); if (!c) return; }
+  const msgs = ui.chatMsgs[m.chat_id];
+  if (msgs && !msgs.some(x => x.id === m.id)) msgs.push(m);
+  if (m.email !== session && !(ui.chatNames[m.chat_id] || {})[m.email]){
+    const n = await sb.rpc('chat_names', { p_chat: m.chat_id }); ui.chatNames[m.chat_id] = Object.fromEntries((n.data || []).map(x => [x.email, x]));
+  }
+  const name = chatNameOf(m.chat_id, m.email);
+  c.last = { body: m.body.slice(0, 140), at: m.created_at, me: m.email === session, first: name.split(' ')[0] };
+  c.last_message_at = m.created_at;
+  if (m.email !== session && c.member){
+    const looking = route() === 'messages' && ui.chatOpen === m.chat_id && document.visibilityState === 'visible';
+    if (looking) markRead(m.chat_id); else c.unread = (c.unread || 0) + 1;
+    chatChime();
+    if (!looking && 'Notification' in window && Notification.permission === 'granted' && document.visibilityState !== 'visible'){
+      try { const n = new Notification(name + ' · ' + chatTitle(c), { body: m.body.slice(0, 160), icon: '/icon-192.png', tag: m.chat_id });
+        n.onclick = () => { window.focus(); location.hash = 'messages/' + m.chat_id; n.close(); }; } catch(e){}
+    }
+  }
+  db.chats.sort((a, b) => String(b.last_message_at || b.created_at).localeCompare(String(a.last_message_at || a.created_at)));
+  renderChatKeep();
+}
+function chatSoundOn(){ try { return localStorage.getItem('wfa-chat-sound') !== 'off'; } catch(e){ return true; } }
+let chatAudio = null;
+// A soft two-note chime made in the browser (no sound file to download). Browsers only allow it after a click on the page.
+function chatChime(){
+  if (!chatSoundOn()) return;
+  try {
+    chatAudio = chatAudio || new (window.AudioContext || window.webkitAudioContext)();
+    if (chatAudio.state === 'suspended') chatAudio.resume();
+    const t = chatAudio.currentTime;
+    [[880, 0], [1320, 0.12]].forEach(([f, d]) => {
+      const o = chatAudio.createOscillator(), g = chatAudio.createGain();
+      o.type = 'sine'; o.frequency.value = f; o.connect(g); g.connect(chatAudio.destination);
+      g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.18, t + d + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.35);
+      o.start(t + d); o.stop(t + d + 0.4);
+    });
+  } catch(e){}
+}
+// Unread count in the tab title, and a red dot on the tab icon, like Outlook on the web.
+const BASE_TITLE = document.title;
+let badgeIcon = null, badgeShown = -1;
+function updateTabBadge(){
+  const n = session ? chatUnread() : 0;
+  document.title = (n ? `(${n}) ` : '') + BASE_TITLE;
+  if (n === badgeShown) return; badgeShown = n;
+  const link = document.querySelector('link[rel="icon"][sizes="48x48"]') || document.querySelector('link[rel="icon"]');
+  if (!link) return;
+  if (!n){ link.href = '/favicon.ico'; return; }
+  const draw = img => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+    g.drawImage(img, 0, 0, 64, 64); g.fillStyle = '#d93025'; g.beginPath(); g.arc(48, 16, 15, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#fff'; g.font = 'bold 20px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(n > 9 ? '9+' : String(n), 48, 17);
+    link.href = c.toDataURL('image/png'); };
+  if (badgeIcon) draw(badgeIcon);
+  else { const img = new Image(); img.onload = () => { badgeIcon = img; draw(img); }; img.src = '/icon-192.png'; }
 }
 // Re-show an event after a change, on its page or in the pop-up.
 function refreshEvent(id){ if (route() === 'event') render(); else openEvent(id); }
@@ -3922,7 +4184,7 @@ async function showCode(id, fresh){
 /* ---------- Render ---------- */
 const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources,
   archive:viewArchive, leaderboard:viewLeaderboard, account:viewAccount, apply:viewApply, availability:viewAvailability,
-  contact:viewContact, partners:viewPartners, event:viewEvent, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
+  contact:viewContact, partners:viewPartners, event:viewEvent, messages:viewMessages, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
 function route(){ const r = location.hash.slice(1).split('/')[0]; return VIEWS[r] ? r : 'home'; }
 // Officer and admin tabs live in the address (#officer/stats, #admin/applications), so a refresh,
 // a bookmark, or the back button lands on the same tab.
@@ -3942,7 +4204,7 @@ function render(){
   if (session && (needsPassword() || needsProfile())) r = 'setup';   // finish the account before anything else
   syncTabHash(r);
   renderChrome(r); document.getElementById('app').innerHTML = VIEWS[r]();
-  addPasswordToggles(); syncCaseBox();
+  addPasswordToggles(); syncCaseBox(); afterChatRender(); updateTabBadge();
 }
 // The event form's team settings show whenever the type is Case competition, however the type got set.
 function syncCaseBox(){
@@ -3951,6 +4213,12 @@ function syncCaseBox(){
   if (b) b.hidden = c.value !== 'case_competition'; if (m) m.hidden = c.value !== 'officer_meeting';
 }
 ['input', 'change', 'click', 'keyup'].forEach(t => document.addEventListener(t, ev => { if (ev.target && ev.target.id === 'ev-cat') syncCaseBox(); }, true));
+document.addEventListener('keydown', e => {
+  if (e.target && e.target.id === 'chat-text' && e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); e.target.form.requestSubmit(); }
+});
+document.addEventListener('input', e => {
+  if (e.target && e.target.id === 'cn-find'){ const q = e.target.value.trim().toLowerCase(); document.querySelectorAll('#cn-list [data-find]').forEach(l => { l.hidden = !!q && !l.dataset.find.includes(q); }); }
+});
 // Puts a Show/Hide button inside every password box.
 function addPasswordToggles(){
   document.querySelectorAll('#app input[type="password"]').forEach(inp => {
@@ -4043,6 +4311,20 @@ document.addEventListener('click', async ev => {
     case 'case-del': { const tm = (db.caseTeams || []).find(x => x.id === id);
       await act(async () => { must(await sb.from('case_teams').delete().eq('id', id)); await logChange('Removed team “' + tm.name + '”'); }, 'Team removed'); refreshEvent(tm.event_id); break; }
     case 'case-csv': caseCsv(id); break;
+    case 'chat-with': await openNewChat('custom', [t.dataset.email]); break;
+    case 'chat-direct': await openNewChat('direct', [t.dataset.email]); break;
+    case 'chat-forming': await openNewChat('forming', [], id); break;
+    case 'chat-add-person': { const [cid, em] = id.split('|'); await chatCall('chat_add', { p_chat: cid, p_email: em }, 'Added to the chat'); break; }
+    case 'chat-remove': { const [cid, em] = id.split('|'); await chatCall('chat_remove', { p_chat: cid, p_email: em }, 'Removed'); break; }
+    case 'chat-leave': if (await chatCall('chat_remove', { p_chat: id, p_email: session }, 'You left the chat')) location.hash = 'messages'; break;
+    case 'chat-delete': { const r = await sb.from('chats').delete().eq('id', id); if (r.error) { toast(chatSetupErr(r.error)); break; } await refreshChats(); location.hash = 'messages'; toast('Chat deleted'); break; }
+    case 'chat-del-msg': { const r = await sb.from('messages').delete().eq('id', id); if (r.error) { toast(errMsg(r.error)); break; } ui.chatMsgs[t.dataset.chat] = (ui.chatMsgs[t.dataset.chat] || []).filter(m => m.id !== id); renderChatKeep(); break; }
+    case 'chat-sound': try { localStorage.setItem('wfa-chat-sound', chatSoundOn() ? 'off' : 'on'); } catch(e){} if (chatSoundOn()) chatChime(); renderChatKeep(); break;
+    case 'chat-notify': if ('Notification' in window) { const p = await Notification.requestPermission(); toast(p === 'granted' ? 'Desktop notifications are on for this browser' : 'Notifications weren’t allowed'); renderChatKeep(); } break;
+    case 'chat-optin': {
+      const on = me().chatEmails === false, r = await sb.from('members').update({ chat_emails: on }).eq('id', authUser.id);
+      if (r.error) { toast(/chat_emails/.test(r.error.message || '') ? 'Messages aren’t set up yet. An admin needs to run 42-chats.sql.' : errMsg(r.error)); break; }
+      await load(); render(); toast(on ? 'Message emails turned on' : 'Message emails turned off'); break; }
     case 'reveal-code': ui.codeShown = ui.codeShown === id ? null : id; refreshEvent(id); break;
     case 'qr': await showQr(id, t.dataset.kind); break;
     case 'qr-style': await showQr(id, t.dataset.kind, t.dataset.style); break;
@@ -4631,6 +4913,26 @@ async function handleSubmit(f, v, err){
     location.hash = myRole === 'admin' ? 'admin' : myRole === 'officer' ? 'officer' : 'home'; render();
   }
 
+  if (f.id === 'f-chat'){
+    const id = f.dataset.id, t = document.getElementById('chat-text'), body = t.value.trim();
+    if (!body) return;
+    t.value = '';
+    const r = await sb.from('messages').insert({ chat_id: id, body }).select().single();
+    if (r.error){ t.value = body; return toast(chatSetupErr(r.error)); }
+    await onChatMessage(r.data);
+    const t2 = document.getElementById('chat-text'); if (t2) t2.focus();
+    return;
+  }
+  if (f.id === 'f-chat-new'){
+    const emails = [...f.querySelectorAll('.cn-pick:checked')].map(c => c.value);
+    if (!emails.length) return err('cn-err', 'Pick at least one person.');
+    return openNewChat('custom', emails, null, v('cn-title'));
+  }
+  if (f.id === 'f-chat-add'){
+    const em = v('ca-email').toLowerCase(); if (!em) return;
+    return chatCall('chat_add', { p_chat: f.dataset.id, p_email: em }, 'Added to the chat');
+  }
+
   if (f.id === 'f-team-new'){
     const id = f.dataset.id, emails = v('tn-emails').split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
     const ev = evById(id), pitch = document.getElementById('tn-pitch') ? v('tn-pitch') : '', exp = document.getElementById('tn-exp') ? v('tn-exp') : '';
@@ -4786,7 +5088,7 @@ async function handleSubmit(f, v, err){
     const cap = parseInt(v('au-cap')) || 500;
     if (cap < 1 || cap > 5000) return err('au-err', 'Set a daily limit from 1 to 5,000.');
     const cfg = { enabled: document.getElementById('au-enabled').checked, survey: document.getElementById('au-survey').checked, daily_cap: cap,
-      case_teams_only: v('au-case') !== 'same',
+      case_teams_only: v('au-case') !== 'same', chat_alerts: document.getElementById('au-chat').checked,
       reminders: AUTO_REMINDERS.map(([k]) => ({ key: k, on: f.querySelector(`.au-on[data-k="${k}"]`).checked, to: f.querySelector(`.au-to[data-k="${k}"]`).value,
         ...(k === 'same' ? { at: f.querySelector('.au-at').value } : {}) })) };
     const r = await sb.from('settings').update({ auto_email: cfg }).eq('id', 1);

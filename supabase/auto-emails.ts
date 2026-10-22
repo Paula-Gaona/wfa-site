@@ -3,6 +3,8 @@
 //   * event reminders 1 week before, 1 day before, and the day of (9 AM, 2 hours before, or 1 hour before), to
 //     everyone or to people who RSVP'd; for case competitions, only accepted teams (unless an admin turns that off)
 //   * a survey email 30 minutes after an event ends, to people who checked in and haven't answered the survey
+//   * a summary email when chat messages sit unread for over an hour (see 42-chats.sql; works even when the
+//     event emails are off, and members can turn it off in My account)
 // Each person gets their own email that greets them by first name (sent 100 at a time with Resend's batch API).
 // Supabase runs it every 10 minutes (see 39-automatic-emails.sql). Each event/email is recorded in auto_email_log
 // before sending, so it never goes out twice, and calling it extra times only sends what is already due.
@@ -64,7 +66,31 @@ Deno.serve(async () => {
     const site = (Deno.env.get('SITE_URL') || '').replace(/\/+$/, '');
     const { data: st } = await db.from('settings').select('auto_email').eq('id', 1).single();
     const cfg = st?.auto_email;
-    if (!cfg?.enabled) return json({ ok: true, sent: 0, note: 'Automatic emails are off.' });
+
+    // Chat alerts: one summary email to people with messages unread for over an hour (even when event emails are off).
+    // chat_digest() only counts messages newer than each person's last alert, so nobody gets more than one per batch.
+    let chatAlerts = 0;
+    if (cfg?.chat_alerts !== false) {
+      const { data: digest } = await db.rpc('chat_digest');
+      const list = (digest || []) as { email: string; first: string; unread: number; chats: string }[];
+      const chatFooter = `You're getting this because you have unread messages on the Wolverine Finance Association site. To stop these emails, turn off message emails in My account: <a href="${site}/#account" style="color:#1f4d2e">${site}/#account</a>`;
+      for (let i = 0; i < list.length; i += 100) {
+        const chunk = list.slice(i, i + 100);
+        const r = await resendBatch(chunk.map((d) => {
+          const what = `You have ${d.unread} unread message${d.unread === 1 ? '' : 's'} in ${d.chats}.`;
+          return { to: [d.email], subject: `You have ${d.unread} unread message${d.unread === 1 ? '' : 's'} on the WFA site`,
+            html: htmlEmail(`<p style="margin:0 0 12px">${escHtml(`Hi ${d.first || 'there'},`)}</p><p style="margin:0 0 12px">${escHtml(what)}</p>`, { label: 'Open Messages', url: `${site}/#messages` }, chatFooter),
+            text: `Hi ${d.first || 'there'},\n\n${what}\n\nOpen Messages: ${site}/#messages` };
+        }));
+        if (r.ok) {
+          await db.from('chat_alerts').upsert(chunk.map((d) => ({ email: d.email, last_alert_at: new Date().toISOString() })));
+          chatAlerts += chunk.length;
+        }
+        await new Promise((res) => setTimeout(res, 600));
+      }
+    }
+
+    if (!cfg?.enabled) return json({ ok: true, sent: 0, chat_alerts: chatAlerts, note: 'Automatic emails are off.' });
     const now = Date.now();
 
     // Daily limit (a safety net): emails sent automatically in the last 24 hours, one per person.
@@ -75,7 +101,7 @@ Deno.serve(async () => {
     const { data: events } = await db.from('events').select('id, title, cat, date, start_time, end_time, loc, descr, draft, test')
       .eq('draft', false).eq('test', false).neq('cat', 'officer_meeting')
       .gte('date', isoDay(now - 2 * DAY)).lte('date', isoDay(now + 8 * DAY));
-    if (!events?.length) return json({ ok: true, sent: 0 });
+    if (!events?.length) return json({ ok: true, sent: 0, chat_alerts: chatAlerts });
     const ids = events.map((e) => e.id);
     const { data: done } = await db.from('auto_email_log').select('event_id, kind').in('event_id', ids);
     const already = new Set((done || []).map((r) => r.event_id + '|' + r.kind));
@@ -169,7 +195,7 @@ Deno.serve(async () => {
       await db.from('change_log').insert({ who: 'automatic emails', text: `Sent "${j.subject}" to ${j.to.length} ${j.to.length === 1 ? 'person' : 'people'}${fail ? ' (some failed)' : ''}` });
       results.push(j.kind);
     }
-    return json({ ok: true, sent: results.length });
+    return json({ ok: true, sent: results.length, chat_alerts: chatAlerts });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
