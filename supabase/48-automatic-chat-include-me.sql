@@ -54,7 +54,8 @@ begin
 end $$;
 grant execute on function public.delete_rule_chat(uuid) to authenticated;
 
--- Make or change an automatic chat. p_message is the first message (required when the admin leaves themselves out).
+-- Make or change an automatic chat. p_message is the first message (required when the admin leaves themselves out
+-- and doesn't match the filters; an admin who matches is in the chat either way).
 drop function if exists public.save_rule_chat(uuid, text, jsonb);
 create or replace function public.save_rule_chat(p_chat uuid, p_title text, p_rule jsonb, p_message text default '') returns text
 language plpgsql security definer set search_path = public as $$
@@ -67,8 +68,11 @@ begin
                           'tier', to_jsonb(rule_vals(p_rule, 'tier')), 'year', to_jsonb(rule_vals(p_rule, 'year')),
                           'interest', to_jsonb(rule_vals(p_rule, 'interest')), 'include_creator', incl);
   if p_chat is null then
-    if not incl and trim(coalesce(p_message, '')) = '' then return 'err:message'; end if;
     insert into chats (kind, title, rule, created_by) values ('rule', left(trim(p_title), 80), r, me) returning id into cid;
+    if trim(coalesce(p_message, '')) = '' and not exists (select 1 from chat_member_emails(cid) e where e.email = me) then
+      delete from chats where id = cid;
+      return 'err:message';
+    end if;
   else
     update chats set title = left(trim(p_title), 80), rule = r where id = p_chat and kind = 'rule' returning id into cid;
     if cid is null then return 'err:missing'; end if;
