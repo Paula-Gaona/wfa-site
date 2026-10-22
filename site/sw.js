@@ -1,7 +1,7 @@
 // WFA app helper (service worker). It's what lets the site install as an app (its own window and icon).
 // Pages always load fresh from the network when online, so every deploy shows up right away; the last copy is
 // only used if there's no connection. Logos and icons are kept for speed. Club data (Supabase) is never cached here.
-const CACHE = 'wfa-v5';
+const CACHE = 'wfa-v6';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil((async () => {
