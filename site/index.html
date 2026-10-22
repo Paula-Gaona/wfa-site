@@ -4022,17 +4022,42 @@ function chatAddForm(c){
       <button class="btn ghost small" type="submit">Add</button></form>
     ${agents.length ? `<div class="stack" style="gap:4px"><span class="hint">Free agents looking for a team:</span>${agents.map(a => `<div class="row" style="gap:8px;align-items:center">${esc(personName(a))} <span class="hint">${esc(agentMeta(a))}</span><button class="btn ghost small" data-act="chat-add-person" data-id="${c.id}|${esc(a.email)}">Add to chat</button></div>`).join('')}</div>` : ''}`;
 }
+// Starting a chat: filter people by officer/member, branch, and position, then pick them (or select everyone shown).
 function newChatForm(){
   const people = db.users.filter(u => u.email !== session).sort((a, b) => (a.first + a.last).localeCompare(b.first + b.last));
+  const tierName = { president: 'President', vice_president: 'Vice president', advisor: 'Faculty advisor', officer: 'Officer', honorary: 'Honorary officer' };
+  const row = u => {
+    const officer = roleOf(u.email) !== 'member', p = db.profiles[u.email] || {};
+    const tier = officer ? (p.tier || 'officer') : '', branch = officer ? (p.branch || '') : '';
+    const label = officer ? (p.title || tierName[tier] || 'Officer') : (u.year || 'Member');
+    return `<label class="check" data-find="${esc((u.first + ' ' + u.last + ' ' + u.email + ' ' + label).toLowerCase())}" data-who="${officer ? 'officer' : 'member'}" data-branch="${esc(branch)}" data-tier="${esc(tier)}">
+      <input type="checkbox" class="cn-pick" value="${esc(u.email)}"> ${esc(u.first)} ${esc(u.last)} <span class="hint">${esc(label)}</span></label>`;
+  };
+  const sel = (id, label, opts) => `<label style="flex:1;min-width:9rem">${label}<select id="${id}" class="cn-filter">${opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></label>`;
   return `<form class="stack" id="f-chat-new" style="gap:10px;padding:16px;overflow:auto">
     <a class="chat-back" href="#messages">← All chats</a>
     <h3>New chat</h3>
     <label>Chat name <span class="hint">Optional. Leave blank for a one-on-one</span><input id="cn-title" maxlength="80" placeholder="e.g. Fall recruiting"></label>
-    <label>Find people<input id="cn-find" placeholder="Type a name or email" autocomplete="off"></label>
-    <div class="chat-pick" id="cn-list">${people.map(u => `<label class="check" data-find="${esc((u.first + ' ' + u.last + ' ' + u.email).toLowerCase())}"><input type="checkbox" class="cn-pick" value="${esc(u.email)}"> ${esc(u.first)} ${esc(u.last)} <span class="hint">${roleOf(u.email) !== 'member' ? 'Officer' : esc(u.year || 'Member')}</span></label>`).join('') || '<span class="hint">No members yet.</span>'}</div>
+    <label>Find people<input id="cn-find" placeholder="Type a name, email, or title" autocomplete="off"></label>
+    <div class="row" style="gap:8px;align-items:end">
+      ${sel('cn-who', 'Who', [['', 'Everyone'], ['officer', 'Officers'], ['member', 'Members']])}
+      ${sel('cn-branch', 'Branch', [['', 'Any branch'], ...Object.entries(BRANCHES)])}
+      ${sel('cn-tier', 'Position', [['', 'Any position'], ['president', 'Presidents'], ['vice_president', 'Vice presidents'], ['advisor', 'Faculty advisor'], ['officer', 'Officers']])}
+    </div>
+    <div class="row" style="gap:8px;align-items:center"><button type="button" class="btn ghost small" data-act="cn-all">Select all shown</button><button type="button" class="btn ghost small" data-act="cn-none">Clear</button><span class="hint" id="cn-count">0 selected</span></div>
+    <div class="chat-pick" id="cn-list">${people.map(row).join('') || '<span class="hint">No members yet.</span>'}</div>
     <span class="hint">Members can reply in chats you start, but they can’t start chats with officers.</span>
     <div><button class="btn" type="submit">Start chat</button></div><div class="err" id="cn-err"></div></form>`;
 }
+function filterChatPeople(){
+  const q = (document.getElementById('cn-find') || {}).value?.trim().toLowerCase() || '';
+  const who = (document.getElementById('cn-who') || {}).value || '', br = (document.getElementById('cn-branch') || {}).value || '', tier = (document.getElementById('cn-tier') || {}).value || '';
+  document.querySelectorAll('#cn-list [data-find]').forEach(l => {
+    l.hidden = (q && !l.dataset.find.includes(q)) || (who && l.dataset.who !== who) || (br && l.dataset.branch !== br)
+      || (tier && (tier === 'officer' ? !['officer', 'honorary'].includes(l.dataset.tier) : l.dataset.tier !== tier));
+  });
+}
+function countChatPicks(){ const c = document.getElementById('cn-count'); if (c) c.textContent = document.querySelectorAll('.cn-pick:checked').length + ' selected'; }
 // "Message on site" buttons for presidents, VPs, advisors, and admins (officer applications, questions).
 function chatWithBtn(email){
   const e = String(email || '').toLowerCase();
@@ -4445,7 +4470,7 @@ document.addEventListener('keydown', e => {
   if (e.target && e.target.id === 'chat-text' && e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); e.target.form.requestSubmit(); }
 });
 document.addEventListener('input', e => {
-  if (e.target && e.target.id === 'cn-find'){ const q = e.target.value.trim().toLowerCase(); document.querySelectorAll('#cn-list [data-find]').forEach(l => { l.hidden = !!q && !l.dataset.find.includes(q); }); }
+  if (e.target && e.target.id === 'cn-find') filterChatPeople();
 });
 // ---------- Installable app ----------
 // Chrome and Edge offer to install the site as an app; on iPhone it's Share -> Add to Home Screen.
@@ -4625,6 +4650,8 @@ document.addEventListener('click', async ev => {
       if (await act(async () => must(await sb.from('event_questions').update({ starred: !q.starred }).eq('id', id)), q.starred ? 'Unstarred' : 'Starred')) refreshEvent(q.event_id); break; }
     case 'qa-del': { const q = db.evQuestions.find(x => x.id === id);
       if (await act(async () => must(await sb.from('event_questions').delete().eq('id', id)), 'Question deleted')) refreshEvent(q.event_id); break; }
+    case 'cn-all': document.querySelectorAll('#cn-list [data-find]:not([hidden]) .cn-pick').forEach(c => c.checked = true); countChatPicks(); break;
+    case 'cn-none': document.querySelectorAll('.cn-pick').forEach(c => c.checked = false); countChatPicks(); break;
     case 'reveal-code': ui.codeShown = ui.codeShown === id ? null : id; refreshEvent(id); break;
     case 'qr': await showQr(id, t.dataset.kind); break;
     case 'qr-style': await showQr(id, t.dataset.kind, t.dataset.style); break;
@@ -4980,6 +5007,8 @@ document.addEventListener('change', async e => {
     render(); drawQrTool();
   }
   if (id === 'ev-cat') syncCaseBox();
+  if (e.target.classList && e.target.classList.contains('cn-filter')) filterChatPeople();
+  if (e.target.classList && e.target.classList.contains('cn-pick')) countChatPicks();
   if (e.target.dataset && e.target.dataset.caseSort){ ui.caseSort = e.target.value; refreshEvent(e.target.dataset.caseSort); }
   if (e.target.dataset && e.target.dataset.casePlace){
     const place = e.target.value ? +e.target.value : null, evId = e.target.dataset.ev;
