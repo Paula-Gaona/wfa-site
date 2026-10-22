@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
       to = (people || []).map((p: { email: string }) => p.email).filter((e: string) => e !== m.email && wants(e, 'messages_push'));
       const sender = (members || []).find((x) => x.email === m.email);
       const name = sender && sender.first ? sender.first : 'New message';
-      title = chat && chat.title ? `${name} 00b7 ${chat.title}` : name;
+      title = chat && chat.title ? `${name} - ${chat.title}` : name;
       body = String(m.body).slice(0, 160);
       url = `${site}/#messages/${m.chat_id}`; tag = 'msg-' + m.id;
 
