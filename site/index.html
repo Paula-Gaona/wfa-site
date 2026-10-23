@@ -3179,6 +3179,15 @@ const presidentsList = () => Object.keys(db.profiles || {}).filter(e => db.profi
 const isPresident = () => isStaff() && presidentsList().includes(session);
 // A branch's president and vice president review its officers' drafts (every president if the branch has neither).
 const branchReviewers = b => { const p = Object.keys(db.profiles || {}).filter(e => b && db.profiles[e].branch === b && ['president', 'vice_president'].includes(db.profiles[e].tier) && roleOf(e) !== 'member'); return p.length ? p : presidentsList(); };
+// Sign-off for a workshop or social needs one approval from a president other than the scheduler. If the scheduler
+// isn't a president, vice presidents can approve too after 36 hours, and it never publishes on its own.
+const vpsList = () => Object.keys(db.profiles || {}).filter(e => db.profiles[e].tier === 'vice_president' && roleOf(e) !== 'member');
+const rqSmall = r => r.status === 'signoff' && !BIG_CATS.includes((evById(r.event_id) || {}).cat);
+const rqPresSched = r => presidentsList().includes(r.status_by);
+const rqEscalated = r => rqSmall(r) && !rqPresSched(r) && Date.now() - Date.parse(r.status_at) >= 36 * 36e5;
+const rqApprovers = r => rqSmall(r) ? [...presidentsList().filter(p => p !== r.status_by), ...(rqEscalated(r) ? vpsList() : [])] : presidentsList();
+const rqAuto = r => r.status === 'review' || rqPresSched(r);   // moves on by itself after 48 hours
+const rqCanVote = r => ['review', 'signoff'].includes(r.status) && rqApprovers(r).includes(session) && !(session in (r.votes || {})) && !(session in (r.objections || {}));
 const rqReviewing = id => { const r = rqOf(id); return !!r && r.status === 'branch' && branchReviewers(r.branch).includes(session); };
 // Officers (not presidents, vice presidents, advisors, or admins) start with their branch president.
 const needsBranchReview = em => !['president', 'vice_president', 'advisor'].includes((db.profiles[em] || {}).tier) && roleOf(em) !== 'admin';
@@ -3186,10 +3195,15 @@ function rqWaitingOnMe(r){
   if (!r) return false;
   const st = r.status;
   if (st === 'branch') return branchReviewers(r.branch).includes(session);
-  if (st === 'review' || st === 'signoff') return isPresident() && !(session in (r.votes || {})) && !(session in (r.objections || {}));
+  if (st === 'review' || st === 'signoff') return rqCanVote(r);
   if (st === 'sent' || st === 'approved') return isScheduler();
   if (st === 'returned') return r.sent_by === session;
   return false;
+}
+function rqSignoffText(r){
+  const small = rqSmall(r);
+  return (small ? `It needs one approval from a president${rqPresSched(r) ? ' other than the scheduler' : ''}${rqPresSched(r) ? '' : ' (or a vice president after 36 hours)'}.` : 'Every president is signing off.')
+    + (rqAuto(r) ? ` If nobody requests changes, it publishes automatically ${rqDeadline(r)}.` : ' It isn’t published until someone approves it.');
 }
 const rqDeadline = r => fmtMtStamp(Date.parse(r.status_at) + 2 * 864e5);
 const rqSendLabel = cat => needsBranchReview(session) ? 'Send to your branch president or VP' : BIG_CATS.includes(cat) ? 'Send to the presidents' : 'Send to the scheduler';
@@ -3315,7 +3329,7 @@ function rqPanel(e, cat){
     return `<div class="panel stack rq-panel" style="gap:12px">${head}
       <p class="hint" style="margin:0">${{ branch: 'Waiting for your branch president or vice president. They can edit it before approving it, or send it back to you.', review: `Every president is reviewing it before it goes to UVU. If nobody requests changes, it moves on ${rqDeadline(r)}.`,
         sent: 'A scheduler has this request. You can still change the website details above, but the request is locked unless it’s sent back.', submitted: 'The scheduler submitted this to UVU. You’ll be notified when it’s approved.',
-        approved: 'UVU approved this event. A scheduler is setting the final details, then the presidents sign off.', signoff: `The presidents are signing off. It publishes once they all approve, or automatically ${rqDeadline(r)}.`, published: 'Published.' }[st] || ''}</p>
+        approved: 'UVU approved this event. A scheduler is setting the final details, then the presidents sign off.', signoff: rqSignoffText(r), published: 'Published.' }[st] || ''}</p>
       ${notice ? `<div class="rq-warn">${notice}</div>` : ''}${rqLegacy(r) ? `<p class="hint" style="margin:0">${LEGACY_NOTE}</p>` : rqSummary(e, r)}</div>`;
   }
   const d = rqState().d, start = d.start || '18:00', capNow = (document.getElementById('ev-cap') || {}).value ?? ((e && e.cap) || 0);
@@ -3483,7 +3497,7 @@ function schedulingBody(){
   const list = db.events.filter(e => rqOf(e.id) && !['draft', 'published'].includes(rqOf(e.id).status)).sort((a, b) => firstDay(a).localeCompare(firstDay(b)));
   const row = e => { const r = rqOf(e.id), first = [...(r.form.dates || [])].sort()[0], short = rqShortNotice(r.form, e.cat), mine = rqWaitingOnMe(r);
     return `<div class="list-row"><div><div class="ev-title">${esc(e.title)}${rqTag(e.id)}${short ? ' <span class="tag warn">Short notice</span>' : ''}</div>
-      <div class="ev-sub">${rqLegacy(r) ? 'Form sent to the clubs office' : first ? 'Ideal: ' + fmtDay(first) + ((r.form.dates || []).length > 1 ? ` (+${r.form.dates.length - 1} more)` : '') : 'No dates yet'}${r.sent_by ? ' · From ' + esc(userName(r.sent_by)) : ''}${['review', 'signoff'].includes(r.status) ? ' · Moves on ' + rqDeadline(r) : r.status_at ? ' · ' + fmtMtStamp(Date.parse(r.status_at)) : ''}</div></div>
+      <div class="ev-sub">${rqLegacy(r) ? 'Form sent to the clubs office' : first ? 'Ideal: ' + fmtDay(first) + ((r.form.dates || []).length > 1 ? ` (+${r.form.dates.length - 1} more)` : '') : 'No dates yet'}${r.sent_by ? ' · From ' + esc(userName(r.sent_by)) : ''}${['review', 'signoff'].includes(r.status) ? (rqAuto(r) ? ' · Moves on ' + rqDeadline(r) : ' · Waiting since ' + fmtMtStamp(Date.parse(r.status_at))) : r.status_at ? ' · ' + fmtMtStamp(Date.parse(r.status_at)) : ''}</div></div>
       <button class="btn ${mine ? '' : 'ghost '}small" data-act="rq-open" data-id="${e.id}">Open</button></div>`; };
   const group = (title, rows, empty) => `<div class="section-head"><h3>${title}</h3><span class="muted">${rows.length}</span></div><div>${rows.map(row).join('') || `<div class="empty">${empty}</div>`}</div>`;
   const waiting = list.filter(e => rqWaitingOnMe(rqOf(e.id)));
@@ -3505,15 +3519,16 @@ function rqDetail(e, r){
   const short = rqShortNotice(r.form, e.cat), st = r.status;
   const back = (kind, label, hint) => `<form class="stack" id="f-rq-back" data-id="${e.id}" data-kind="${kind}" style="gap:8px"><label>${label} <span class="hint">${hint}</span><textarea id="rq-back-note" rows="3"></textarea></label>
     <div class="row"><button class="btn ghost" type="submit">${label}</button></div><div class="err" id="rq-back-err"></div></form>`;
-  const round = ['review', 'signoff'].includes(st) ? `<div class="panel stack" style="gap:6px;padding:12px 14px"><strong>${st === 'review' ? 'Presidents’ review' : 'Presidents’ sign-off'}</strong>
+  const small = rqSmall(r), who = small ? [...presidentsList().filter(p => p !== r.status_by), ...(rqEscalated(r) ? vpsList() : [])] : presidentsList();
+  const round = ['review', 'signoff'].includes(st) ? `<div class="panel stack" style="gap:6px;padding:12px 14px"><strong>${st === 'review' ? 'Presidents’ review' : small ? 'Sign-off (one approval needed)' : 'Presidents’ sign-off'}</strong>
       ${rqMajority(r) ? `<div class="rq-warn">Majority rules now: it ${st === 'review' ? 'moves on' : 'publishes'} once ${Math.ceil(presidentsList().length / 2)} of ${presidentsList().length} presidents approve. Requests for changes count as objections and only send it back if most presidents object.</div>` : ''}
-      ${presidentsList().map(p => { const yes = (r.votes || {})[p], no = (r.objections || {})[p]; return `<div>${yes ? '✓' : no ? '✗' : '…'} ${esc(userName(p))} <span class="hint">${yes ? 'approved' : no ? 'objected' : 'hasn’t responded'}</span></div>`; }).join('')}
-      <span class="hint">If nobody requests changes, it ${st === 'review' ? 'goes to the scheduler' : 'publishes'} automatically ${rqDeadline(r)}.</span></div>` : '';
+      ${who.map(p => { const yes = (r.votes || {})[p], no = (r.objections || {})[p]; return `<div>${yes ? '✓' : no ? '✗' : '…'} ${esc(userName(p))} <span class="hint">${yes ? 'approved' : no ? 'objected' : 'hasn’t responded'}</span></div>`; }).join('')}
+      <span class="hint">${small ? `Any one of them can approve it${rqPresSched(r) ? '' : rqEscalated(r) ? ' (vice presidents were added after 36 hours)' : '; vice presidents are added if nobody responds within 36 hours'}. ` : ''}${rqAuto(r) ? `If nobody requests changes, it ${st === 'review' ? 'goes to the scheduler' : 'publishes'} automatically ${rqDeadline(r)}.` : `It isn’t published until someone approves it. Waiting since ${fmtMtStamp(Date.parse(r.status_at))}.`}</span></div>` : '';
   let actions = '';
   if (st === 'branch' && branchReviewers(r.branch).includes(session))
     actions = `<div class="row" style="gap:8px"><button class="btn" data-act="rq-branch-ok" data-id="${e.id}">Approve as is</button><button class="btn ghost" data-act="edit-event" data-id="${e.id}">Edit it, then approve</button></div>
       <span class="hint">You can make changes yourself instead of sending it back. The officer sees what you changed in the history.</span>${back('branch', 'Send it back with notes', 'The officer is notified and can fix it and send it again.')}`;
-  else if (['review', 'signoff'].includes(st) && isPresident() && !(session in (r.votes || {})) && !(session in (r.objections || {})))
+  else if (rqCanVote(r))
     actions = `<div class="row"><button class="btn" data-act="rq-vote" data-id="${e.id}">Approve</button></div>${sugForm(e, r)}`;
   else if (isScheduler() && st === 'sent')
     actions = `<div class="row" style="gap:8px"><a class="btn ghost" href="https://www.uvu.edu/clubs/forms/scheduling-request.html" target="_blank" rel="noopener">Open UVU’s form ↗</a><button class="btn" data-act="rq-status" data-id="${e.id}" data-s="submitted">Mark submitted to UVU</button></div>${back('sched', 'Send it back with notes', 'The officer is notified and can fix it and send it again.')}`;
@@ -3650,7 +3665,7 @@ function rqEditSummary(oldForm, newForm, oldEv, row){
   const list = [...new Set(changed)];
   return list.length ? 'Approved with edits: ' + list.join(', ') + '.' : '';
 }
-const rqMajority = r => (r.rounds || 0) >= 2 || (r.step_started_at && Date.now() - Date.parse(r.step_started_at) > 5 * 864e5);
+const rqMajority = r => (r.status === 'review' || !rqSmall(r)) && ((r.rounds || 0) >= 2 || (!!r.step_started_at && Date.now() - Date.parse(r.step_started_at) > 5 * 864e5));
 function sugHistory(r){
   const list = (r.suggestions || []).slice().reverse(); if (!list.length) return '';
   const stateText = { open: 'Waiting for changes', met: 'All made: counted as approval', answered: 'Answered' };

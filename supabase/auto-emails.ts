@@ -153,16 +153,18 @@ Deno.serve(async () => {
       return n > 0 || !to.length;
     };
     await db.rpc('request_timeouts');   // presidents' reviews that waited 48 hours move on
-    const { data: reqs } = await db.from('event_requests').select('event_id, status, note, signoff_note, sent_by, sent_at, status_at, nudged_at, branch, votes, history').in('status', ['branch', 'review', 'sent', 'returned', 'submitted', 'approved', 'signoff', 'published']);
+    const { data: reqs } = await db.from('event_requests').select('event_id, status, status_by, note, signoff_note, sent_by, sent_at, status_at, nudged_at, branch, votes, history').in('status', ['branch', 'review', 'sent', 'returned', 'submitted', 'approved', 'signoff', 'published']);
     if (reqs?.length) {
-      const { data: evs } = await db.from('events').select('id, title').in('id', reqs.map((r) => r.event_id));
-      const titleOf = new Map((evs || []).map((e) => [e.id, e.title]));
+      const { data: evs } = await db.from('events').select('id, title, cat, date').in('id', reqs.map((r) => r.event_id));
+      const titleOf = new Map((evs || []).map((e) => [e.id, e.title])), evOf = new Map((evs || []).map((e) => [e.id, e]));
+      const BIG = ['case_competition', 'excursion', 'guest_speaker', 'career_fair'];
       const { data: sch } = await db.from('event_schedulers').select('email');
       const schedulers = (sch || []).map((s) => s.email);
       const { data: offs } = await db.from('officer_profiles').select('email, tier, branch');
       const { data: acc } = await db.from('access_list').select('email');
       const isOfficer = new Set((acc || []).map((a) => a.email));
       const presidents = (offs || []).filter((o) => o.tier === 'president' && isOfficer.has(o.email));
+      const vps = (offs || []).filter((o) => o.tier === 'vice_president' && isOfficer.has(o.email)).map((o) => o.email);
       const branchPres = (b: string | null) => { const p = (offs || []).filter((o) => b && o.branch === b && ['president', 'vice_president'].includes(o.tier) && isOfficer.has(o.email)); return (p.length ? p : presidents).map((o) => o.email); };
       const nowMs = Date.now(), ms = (t: string | null) => (t ? new Date(t).getTime() : 0);
       const who = (e: string) => firstName.get(e) || e || 'An officer';
@@ -177,12 +179,24 @@ Deno.serve(async () => {
           subject = fresh ? `Review an event: ${t}` : `Still waiting for your review: ${t}`;
           body = `${who(r.sent_by || '')} made "${t}" and needs approval from their branch president or vice president before it moves on. Edit and approve it, or send it back with notes.`;
         } else if (r.status === 'review' || r.status === 'signoff') {
-          const voted = r.votes || {};
-          to = presidents.map((o) => o.email).filter((e) => !(e in voted)); again = DAY;
-          const what = r.status === 'review' ? 'before it goes to UVU' : 'before it is published';
-          subject = fresh ? `Presidents' ${r.status === 'review' ? 'review' : 'sign-off'}: ${t}` : `Reminder: ${t} moves on ${deadline(r)}`;
-          body = `"${t}" needs every president's approval ${what}. Approve it or request changes. If nobody objects, it moves on automatically on ${deadline(r)}.`;
-          if (!fresh && nowMs - ms(r.nudged_at) < DAY) to = [];   // one reminder a day at most
+          const voted = r.votes || {}, ev = evOf.get(r.event_id) || {};
+          const presSched = presidents.some((o) => o.email === r.status_by);
+          const small = r.status === 'signoff' && !BIG.includes(ev.cat);
+          const auto = r.status === 'review' || presSched;              // only these publish/move on by themselves
+          const escalated = small && !presSched && nowMs - ms(r.status_at) >= 36 * HOUR;
+          to = presidents.map((o) => o.email).filter((e) => e !== r.status_by && !(e in voted));
+          if (escalated) to = [...to, ...vps.filter((e) => !(e in voted))];
+          again = DAY;
+          const overdue = !auto && nowMs - ms(r.status_at) >= 2 * DAY;
+          const what = r.status === 'review' ? 'every president\'s approval before it goes to UVU'
+            : small ? `one approval from a president${escalated ? ' or vice president' : ''} before it is published` : 'every president\'s approval before it is published';
+          subject = fresh ? `${r.status === 'review' ? 'Presidents\' review' : 'Sign-off'}: ${t}` : overdue ? `Overdue: ${t} is waiting for approval` : escalated && ms(r.nudged_at) < ms(r.status_at) + 36 * HOUR ? `Sign-off needed: ${t}` : `Reminder: ${t}`;
+          body = `"${t}" needs ${what}. Approve it or request changes. `
+            + (auto ? `If nobody objects, it moves on automatically on ${deadline(r)}.` : `It won't be published until someone approves it${ev.date ? ` (the event is ${fmtDay(mtMs(ev.date, '12:00'))})` : ''}.`);
+          // One reminder a day, plus one right when the vice presidents are brought in.
+          const vpsJustAdded = escalated && ms(r.nudged_at) < ms(r.status_at) + 36 * HOUR;
+          if (!fresh && !vpsJustAdded && nowMs - ms(r.nudged_at) < DAY) to = [];
+          if (vpsJustAdded) again = 1;
         } else if (r.status === 'sent') {
           to = schedulers; again = 2 * DAY;
           const days = Math.floor((nowMs - ms(r.status_at)) / DAY);

@@ -6,9 +6,11 @@
 --   2. Presidents' review (case competitions, excursions, guest speakers, career fairs): every president approves or
 --      requests changes. It moves on once all approve, or automatically after 48 hours with no objection.
 --   3. Scheduler: submits it to UVU (or sends it back), then marks it approved once UVU approves.
---   4. Presidents' sign-off: the scheduler sets the final date, times, location, and RSVP timing and sends it to every
---      president. It publishes once all approve, or automatically after 48 hours. A requested change goes back to the
---      scheduler, and the 48 hours restart when they send it again.
+--   4. Sign-off: the scheduler sets the final date, times, location, and RSVP timing and sends it to the presidents.
+--      Big events: every president approves. Workshops and socials: one approval from a president other than the
+--      scheduler; if the scheduler isn't a president, vice presidents can approve too once 36 hours pass.
+--      It publishes automatically after 48 hours only when the scheduler is a president. A requested change goes back
+--      to the scheduler, and the clock restarts when they send it again.
 -- A president who sent or already approved something counts as approving it, and so does one whose suggested changes
 -- were all made. Majority rules after 5 days in a presidents' step, or from its third round of changes. Admins mark who the event schedulers
 -- are (only officers can see that), and only schedulers can turn on a draft's coming-soon page.
@@ -42,6 +44,10 @@ create or replace function public.wfa_presidents() returns setof text
 language sql stable security definer set search_path = public as $$
   select p.email from officer_profiles p join access_list a on a.email = p.email where p.tier = 'president';
 $$;
+create or replace function public.wfa_vps() returns setof text
+language sql stable security definer set search_path = public as $$
+  select p.email from officer_profiles p join access_list a on a.email = p.email where p.tier = 'vice_president';
+$$;
 create or replace function public.big_event(p_cat text) returns boolean
 language sql immutable as $$ select p_cat in ('case_competition', 'excursion', 'guest_speaker', 'career_fair'); $$;
 -- Officers (not presidents, vice presidents, advisors, or admins) need their branch leadership's approval first.
@@ -59,7 +65,7 @@ language sql stable security definer set search_path = public as $$
   union all
   select e from wfa_presidents() e where not exists (select 1 from leads);
 $$;
-grant execute on function public.wfa_presidents(), public.big_event(text), public.needs_branch_review(text), public.branch_reviewers(text) to authenticated;
+grant execute on function public.wfa_presidents(), public.wfa_vps(), public.big_event(text), public.needs_branch_review(text), public.branch_reviewers(text) to authenticated;
 
 -- ---------- Requests ----------
 create table if not exists public.event_requests (
@@ -110,9 +116,24 @@ begin
   perform rq_move(p_event, 'published', p_by, p_note);
   update events set draft = false where id = p_event;
 end $$;
--- Majority rules: after 5 days in a presidents' step, or from the third round of changes on.
+-- Majority rules (steps that need every president): after 5 days in the step, or from its third round of changes.
 create or replace function public.rq_majority(r event_requests) returns boolean
-language sql stable as $$ select coalesce(r.rounds, 0) >= 2 or r.step_started_at < now() - interval '5 days'; $$;
+language sql stable security definer set search_path = public as $$
+  select (r.status = 'review' or big_event((select e.cat from events e where e.id = r.event_id)))
+     and (coalesce(r.rounds, 0) >= 2 or r.step_started_at < now() - interval '5 days');
+$$;
+-- Sign-off for a workshop or social: who can approve it. Presidents other than the scheduler who sent it; if the
+-- scheduler isn't a president, vice presidents too once it has waited 36 hours.
+create or replace function public.rq_small_approvers(r event_requests) returns setof text
+language sql stable security definer set search_path = public as $$
+  select e from wfa_presidents() e where e is distinct from r.status_by
+  union
+  select v from wfa_vps() v where not exists (select 1 from wfa_presidents() x where x = r.status_by) and r.status_at < now() - interval '36 hours';
+$$;
+create or replace function public.rq_small_signoff(r event_requests) returns boolean
+language sql stable security definer set search_path = public as $$
+  select r.status = 'signoff' and not big_event((select e.cat from events e where e.id = r.event_id));
+$$;
 -- Moves on once every president has approved (or, under majority rules, at least half).
 create or replace function public.rq_check_round(p_event uuid) returns void
 language plpgsql security definer set search_path = public as $$
@@ -120,6 +141,10 @@ declare r event_requests; n int; yes int; note text := '';
 begin
   select * into r from event_requests where event_id = p_event;
   if r.status not in ('review', 'signoff') then return; end if;
+  if rq_small_signoff(r) then
+    if exists (select 1 from rq_small_approvers(r) e where r.votes ? e) then perform rq_publish(p_event, 'system', 'Signed off.'); end if;
+    return;
+  end if;
   select count(*), count(*) filter (where r.votes ? e) into n, yes from wfa_presidents() e;
   if yes < n then
     if not rq_majority(r) or yes * 2 < n then return; end if;
@@ -227,7 +252,9 @@ declare me text := public.jwt_email(); r event_requests; n int; no int;
 begin
   select * into r from event_requests where event_id = p_event;
   if r.status not in ('review', 'signoff') then return 'err:state'; end if;
-  if not exists (select 1 from wfa_presidents() e where e = me) then return 'err:notpresident'; end if;
+  if not (exists (select 1 from wfa_presidents() e where e = me) or (rq_small_signoff(r) and exists (select 1 from rq_small_approvers(r) e where e = me))) then
+    return 'err:notpresident';
+  end if;
   if p_ok then
     update event_requests set votes = votes || jsonb_build_object(me, now()), objections = objections - me,
       history = history || jsonb_build_array(jsonb_build_object('at', now(), 'by', me, 'status', 'vote', 'note', ''))
@@ -309,12 +336,14 @@ end $$;
 grant execute on function public.scheduler_update(uuid, text, text) to authenticated;
 
 -- Presidents' steps that have waited 48 hours move on by themselves (the automatic-emails job calls this). Any
--- objection that would stop it has already sent it back, so whatever is still waiting passes.
+-- objection that would stop it has already sent it back, so whatever is still waiting passes. Sign-offs only do this
+-- when the scheduler who sent it is a president; otherwise someone has to approve it.
 create or replace function public.request_timeouts() returns int
 language plpgsql security definer set search_path = public as $$
 declare r record; n int := 0;
 begin
-  for r in select event_id, status from event_requests where status in ('review', 'signoff') and status_at < now() - interval '48 hours' loop
+  for r in select event_id, status from event_requests where status in ('review', 'signoff') and status_at < now() - interval '48 hours'
+             and (status = 'review' or exists (select 1 from wfa_presidents() e where e = status_by)) loop
     if r.status = 'review' then perform rq_move(r.event_id, 'sent', 'system', 'No objections in 48 hours.');
     else perform rq_publish(r.event_id, 'system', 'No objections in 48 hours.'); end if;
     n := n + 1;
