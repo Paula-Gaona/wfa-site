@@ -231,6 +231,8 @@ begin
     branch = coalesce(branch, (select p.branch from officer_profiles p where p.email = me)) where event_id = p_event;
   if target = 'review' then perform rq_start_round(p_event, 'review', me);
   else perform rq_move(p_event, target, me); end if;
+  -- A scheduler sending their own event to the scheduler step handles it themselves: don't notify the others.
+  if target = 'sent' and public.is_scheduler() then update event_requests set nudged_at = now() where event_id = p_event; end if;
   return 'ok';
 end $$;
 grant execute on function public.save_event_request(uuid, jsonb, boolean) to authenticated;

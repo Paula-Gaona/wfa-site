@@ -3234,7 +3234,8 @@ function businessAdd(ms, hours){
   return t;
 }
 const rqDeadline = r => fmtMtStamp(businessAdd(Date.parse(r.status_at), 48));
-const rqSendLabel = cat => needsBranchReview(session) ? 'Send to your branch president or VP' : BIG_CATS.includes(cat) ? 'Send to the presidents' : 'Send to the scheduler';
+// A scheduler whose own event goes straight to the scheduler step handles it themselves.
+const rqSendLabel = cat => needsBranchReview(session) ? 'Send to your branch president or VP' : BIG_CATS.includes(cat) ? 'Send to the presidents' : isScheduler() ? 'Continue to scheduling' : 'Send to the scheduler';
 const rqOf = id => (db.requests || {})[id] || null;
 const rqTag = id => { const r = rqOf(id); if (!r) return ''; const [l, c] = RQ_STATUS[r.status] || ['', '']; return ` <span class="tag ${c}">${l}</span>`; };
 const RQ_LOCATIONS = ['Auditorium', 'Ballroom', 'Event room', 'Classroom', 'Conference room', 'Bloomberg Lab', 'Computer lab', 'Table location (booth or hallway table)', 'Outdoor space (plaza or lawn)', 'Gym or fieldhouse', 'External location (off campus)'];
@@ -4270,8 +4271,8 @@ function viewAdmin(){
         </div>
         <label>Custom title <span class="hint">Optional, like “Treasurer” or “Firm Outreach Officer.” Shown on the Officers page and around the site instead of the automatic title. Rank and branch still decide permissions and chats.</span>
           <input id="of-ctitle" maxlength="60" value="${esc(p.customTitle || '')}" placeholder="Leave blank to use: ${esc(buildTitle(p.tier || 'officer', p.branch || ''))}"></label>
-        <label class="check"><input type="checkbox" id="of-publish" ${p.canPublish ? 'checked' : ''}> Can publish without approval</label>
-        <span class="hint" style="margin-top:-8px">Presidents, vice presidents, faculty advisors, and admins always can. Other officers’ changes that members can see go to the Approvals inbox unless this is checked.</span>
+        <label class="check"><input type="checkbox" id="of-publish" ${p.canPublish ? 'checked' : ''}> Can publish updates without approval</label>
+        <span class="hint" style="margin-top:-8px">Announcements, recaps, the archive, resources, careers, the recruiting timeline, the About page, officer meetings, and edits to events that are already published. Presidents, vice presidents, faculty advisors, and admins always can; other officers’ changes go to the Approvals inbox unless this is checked. New events always go through Scheduling.</span>
         <label class="check"><input type="checkbox" id="of-sched" ${ed && (db.schedulers || []).includes(ed) ? 'checked' : ''}> Event scheduler</label>
         <span class="hint" style="margin-top:-8px">Gets every event’s scheduling request, submits it to UVU, and publishes events once UVU approves them. Only officers can see who’s a scheduler.</span>
         <fieldset class="pwset">
@@ -6349,7 +6350,7 @@ async function handleSubmit(f, v, err){
         await logChange((mode === 'send' ? 'Sent for approval: “' : mode === 'branchok' ? 'Approved (branch): “' : editing ? 'Edited draft “' : 'Saved draft “') + e.title + '”');
         ui.editEvent = null; ui.rq = null;
         if (mode === 'send' || mode === 'branchok'){ ui.officerTab = 'scheduling'; ui.schedOpen = evId; }
-      }, mode === 'send' ? 'Sent. You’ll be notified as it moves along.' : mode === 'branchok' ? 'Approved and sent on.' : 'Saved as a draft. Only officers can see it.');
+      }, mode === 'send' ? (isScheduler() && !needsBranchReview(session) && !BIG_CATS.includes(e.cat) ? 'Ready for UVU. Submit it, then mark it submitted.' : 'Sent. You’ll be notified as it moves along.') : mode === 'branchok' ? 'Approved and sent on.' : 'Saved as a draft. Only officers can see it.');
       return;
     }
     if (sched) return err('ev-err', 'This event publishes after UVU approves it and the presidents sign off. Use Scheduling.');
