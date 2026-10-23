@@ -214,6 +214,7 @@ main{padding-block:36px 64px}
 .rq-sum dt{font-weight:600;font-size:.88rem;color:var(--muted)}
 .rq-sum dd{margin:0}
 .rq-thumb{max-width:220px;margin-top:6px;border:1px solid var(--line);background:#fff}
+.field-err{display:block;font-size:.82rem;margin-top:4px;font-weight:600}.field-err:empty{display:none}.warn-text{color:var(--warn)}
 .rq-hist{margin:0;padding-left:1.2rem;display:flex;flex-direction:column;gap:6px}
 @media (max-width:640px){.rq-sum{grid-template-columns:1fr;gap:2px}.rq-sum dd{margin-bottom:10px}.grid3{grid-template-columns:1fr 1fr}.grid3 label:first-child{grid-column:1/-1}}
 .tag.soon{color:#fff;background:var(--gold,#B8923A);border-color:var(--gold,#B8923A)}
@@ -3180,7 +3181,7 @@ const RQ_CAMPUS = { on: 'On campus', off: 'Off campus', hybrid: 'Hybrid' };
 
 function rqDefaults(e){
   return { dates: e && e.date ? [e.date] : [], altDates: [], start: (e && e.start) || '18:00', end: (e && e.end) || '19:00', setup: 30, after: 0, locType: '', building: 'Keller Building (KB)', uvuName: (e ? e.title : '').slice(0, 40), guestPref: '',
-    evType: 'General Club', campus: 'on', sponsor: '', sp: {}, food: '', tablecloths: '', speaker: e && e.cat === 'guest_speaker' ? 'yes' : '', speakers: [], av: '', avNeeds: '',
+    evType: 'General Club', campus: 'on', sponsor: '', sp: {}, food: '', tablecloths: '', speaker: e && GUEST_CATS.includes(e.cat) ? 'yes' : '', locCount: 1, locs: [], speakers: [], av: '', avNeeds: '',
     tech: '', techTime: '', techStay: '', layout: '', chairs: '', tables: '', layoutImg: null, flyer: null, other: '' };
 }
 // The request being edited in the event editor (kept in ui so redraws don't lose what's typed).
@@ -3201,9 +3202,9 @@ const LEGACY_NOTE = 'This event’s form was sent to the clubs office before sch
 const rqLocked = id => ['sent', 'submitted', 'approved'].includes((rqOf(id) || {}).status);
 const hhmmAdd = (t, mins) => { const [h, m] = (t || '00:00').split(':').map(Number), x = ((h * 60 + m + mins) % 1440 + 1440) % 1440; return String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0'); };
 const fmtShortDay = iso => parseDay(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-const noLayout = d => d.locType === 'Auditorium' || (isExternal(d.locType) && d.campus === 'off');
-const hasSpeaker = (d, cat) => d.speaker === 'yes' || (!d.speaker && cat === 'guest_speaker');
-// Short notice: under 3 weeks away, or under 10 weeks with a guest speaker.
+const noLayout = d => d.campus === 'off' || d.locType === 'Auditorium';
+const hasSpeaker = (d, cat) => d.speaker === 'yes' || (!d.speaker && GUEST_CATS.includes(cat));
+// Short notice: under 3 weeks away, or under 10 weeks with external guests (speakers, judges, recruiters).
 function rqShortNotice(d, cat){
   const first = [...(d.dates || [])].sort()[0]; if (!first) return '';
   const days = (parseDay(first) - parseDay(todayIso())) / 864e5;
@@ -3233,6 +3234,48 @@ const rqYN = (k, label, d, hint = '') => `<fieldset class="rq-q"><legend>${label
   `<label class="check"><input type="radio" name="rq-${k.replace(/\W/g, '-')}" data-rq="${k}" data-rr="1" value="${v}" ${d[k] === v ? 'checked' : ''}> ${t}</label>`).join('')}</div></fieldset>`;
 const rqFileLine = (k, d) => d[k] ? `<span class="hint">${d[k].pending ? 'Will upload when you save: ' : 'Attached: '}${esc(d[k].name)} <button type="button" class="btn ghost small" data-act="rq-file-clear" data-id="${k}">Remove</button></span>` : '';
 
+// Event types that always have outside guests (speakers, judges, recruiters).
+const GUEST_CATS = ['guest_speaker', 'case_competition', 'career_fair'];
+const US_STATES = [['AL', 'Alabama'], ['AK', 'Alaska'], ['AZ', 'Arizona'], ['AR', 'Arkansas'], ['CA', 'California'], ['CO', 'Colorado'], ['CT', 'Connecticut'], ['DE', 'Delaware'], ['DC', 'District of Columbia'],
+  ['FL', 'Florida'], ['GA', 'Georgia'], ['HI', 'Hawaii'], ['ID', 'Idaho'], ['IL', 'Illinois'], ['IN', 'Indiana'], ['IA', 'Iowa'], ['KS', 'Kansas'], ['KY', 'Kentucky'], ['LA', 'Louisiana'], ['ME', 'Maine'],
+  ['MD', 'Maryland'], ['MA', 'Massachusetts'], ['MI', 'Michigan'], ['MN', 'Minnesota'], ['MS', 'Mississippi'], ['MO', 'Missouri'], ['MT', 'Montana'], ['NE', 'Nebraska'], ['NV', 'Nevada'], ['NH', 'New Hampshire'],
+  ['NJ', 'New Jersey'], ['NM', 'New Mexico'], ['NY', 'New York'], ['NC', 'North Carolina'], ['ND', 'North Dakota'], ['OH', 'Ohio'], ['OK', 'Oklahoma'], ['OR', 'Oregon'], ['PA', 'Pennsylvania'], ['RI', 'Rhode Island'],
+  ['SC', 'South Carolina'], ['SD', 'South Dakota'], ['TN', 'Tennessee'], ['TX', 'Texas'], ['UT', 'Utah'], ['VT', 'Vermont'], ['VA', 'Virginia'], ['WA', 'Washington'], ['WV', 'West Virginia'], ['WI', 'Wisconsin'], ['WY', 'Wyoming']];
+// The first 3 digits of each state's ZIP codes (used to catch a ZIP that doesn't match the state).
+const ZIP3 = Object.fromEntries('AL:350-369;AK:995-999;AZ:850-865;AR:716-729,755;CA:900-961;CO:800-816;CT:060-069;DE:197-199;DC:200-205,569;FL:320-349;GA:300-319,398-399;HI:967-968;ID:832-838;IL:600-629;IN:460-479;IA:500-528;KS:660-679;KY:400-427;LA:700-714;ME:039-049;MD:206-219;MA:010-027,055;MI:480-499;MN:550-567;MS:386-397;MO:630-658;MT:590-599;NE:680-693;NV:889-898;NH:030-038;NJ:070-089;NM:870-884;NY:005,100-149;NC:270-289;ND:580-588;OH:430-459;OK:730-749;OR:970-979;PA:150-196;RI:028-029;SC:290-299;SD:570-577;TN:370-385;TX:733,750-799,885;UT:840-847;VT:050-059;VA:201,220-246;WA:980-994;WV:247-268;WI:530-549;WY:820-831'
+  .split(';').map(x => { const [st, r] = x.split(':'); return [st, r.split(',').map(y => { const [a, b] = y.split('-'); return [+a, +(b || a)]; })]; }));
+const UT_CITIES = ['Alpine', 'American Fork', 'Bluffdale', 'Bountiful', 'Cedar City', 'Cedar Hills', 'Clearfield', 'Cottonwood Heights', 'Draper', 'Eagle Mountain', 'Farmington', 'Heber City', 'Herriman', 'Highland',
+  'Holladay', 'Kaysville', 'Layton', 'Lehi', 'Lindon', 'Logan', 'Mapleton', 'Midvale', 'Millcreek', 'Murray', 'Ogden', 'Orem', 'Park City', 'Payson', 'Pleasant Grove', 'Provo', 'Riverton', 'Salem',
+  'Salt Lake City', 'Sandy', 'Santaquin', 'Saratoga Springs', 'South Jordan', 'Spanish Fork', 'Springville', 'St. George', 'Taylorsville', 'Vineyard', 'West Jordan', 'West Valley City', 'Woodland Hills'];
+// Checks one field: returns '' when fine, or [message, onlyAWarning].
+function rqCheck(kind, val, state){
+  val = String(val || '').trim(); if (!val) return '';
+  if (kind === 'email') return EMAIL_RE.test(val) ? '' : ['Enter a valid email, like name@company.com.', false];
+  if (kind === 'phone') return validPhone(val) ? '' : ['Enter a 10-digit phone number with area code, like (801) 555-0123.', false];
+  if (kind === 'zip'){
+    if (!/^\d{5}(-\d{4})?$/.test(val)) return ['ZIP codes are 5 digits, like 84058.', false];
+    const z = +val.slice(0, 3), r = ZIP3[state];
+    if (r && !r.some(([a, b]) => z >= a && z <= b)) return [`That ZIP doesn’t look like it’s in ${(US_STATES.find(x => x[0] === state) || ['', state])[1]}. Double-check the ZIP and state.`, true];
+  }
+  return '';
+}
+const rqGet = (obj, path) => path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj);
+const fmtPhone = x => { const n = String(x).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, ''); return n.length === 10 ? `(${n.slice(0, 3)}) ${n.slice(3, 6)}-${n.slice(6)}` : x; };
+// A field that's checked when you leave it (and shows its message right under it).
+function rqField(path, label, val, kind, extra = ''){
+  const c = rqCheck(kind, val, kind === 'zip' ? rqGet(rqState().d, path.replace(/zip$/, 'state')) : '');
+  return `<label>${label}<input data-rq="${path}" data-check="${kind}" value="${esc(val || '')}" ${extra}><span class="${c && c[1] ? 'hint field-err warn-text' : 'err field-err'}">${c ? esc(c[0]) : ''}</span></label>`;
+}
+function rqAddr(path, a, streetLabel){
+  if (!a.state) a.state = 'UT';
+  return `<label>${streetLabel}<input data-rq="${path}.street" autocomplete="off" value="${esc(a.street || '')}"></label>
+    <div class="grid3"><label>City<input data-rq="${path}.city" list="rq-cities" autocomplete="off" value="${esc(a.city || '')}"></label>
+      <label>State<select data-rq="${path}.state" data-zipfor="${path}.zip">${US_STATES.map(([c, n]) => `<option value="${c}" ${a.state === c ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+      ${rqField(path + '.zip', 'ZIP', a.zip, 'zip', 'inputmode="numeric" maxlength="10" placeholder="84058"')}</div>`;
+}
+const addrLine = a => a ? `${a.street || ''}, ${a.city || ''}, ${a.state || ''} ${a.zip || ''}`.trim() : '';
+const offSite = d => d.campus === 'off' || d.campus === 'hybrid';
+
 // The form itself (inside the event editor). Locked while a scheduler has it.
 function rqPanel(e, cat){
   if (!needsSched(cat)) return '';
@@ -3245,11 +3288,20 @@ function rqPanel(e, cat){
       ${notice ? `<div class="rq-warn">${notice}</div>` : ''}${rqLegacy(r) ? `<p class="hint" style="margin:0">${LEGACY_NOTE}</p>` : rqSummary(e, r)}</div>`;
   }
   const d = rqState().d, start = d.start || '18:00', capNow = (document.getElementById('ev-cap') || {}).value ?? ((e && e.cap) || 0);
+  if (!d.speaker && GUEST_CATS.includes(cat)) d.speaker = 'yes';
   const notice = rqShortNotice(d, cat), lay = RQ_LAYOUTS.find(x => x[0] === d.layout);
-  const n = Math.max(0, Math.min(10, +d.speakerCount || (d.speakers || []).length || (hasSpeaker(d, cat) ? 1 : 0)));
+  const n = Math.max(1, Math.min(10, +d.speakerCount || (d.speakers || []).length || 1));
+  const nLoc = Math.max(1, Math.min(5, +d.locCount || (d.locs || []).length || 1));
+  d.sp = d.sp || {}; d.locs = d.locs || [];
   return `<div class="panel stack rq-panel" style="gap:16px">${head}
+    <datalist id="rq-cities">${UT_CITIES.map(c => `<option value="${c}">`).join('')}</datalist>
     <p class="hint" style="margin:0">UVU has to approve club events before they’re advertised. Fill this out and send it to an event scheduler, who submits it to UVU. Nothing here is shown on the website.</p>
     ${st === 'returned' ? `<div class="rq-warn"><strong>The scheduler sent this back.</strong> What to fix:<div style="white-space:pre-wrap;margin-top:4px">${esc(r.note)}</div></div>` : ''}
+    <label>Will this event be on campus, off campus, or hybrid?<select data-rq="campus" data-rr="1">${Object.entries(RQ_CAMPUS).map(([k, l]) => `<option value="${k}" ${d.campus === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    ${offSite(d) ? `<div class="panel stack" style="gap:10px;padding:12px">
+      <label style="max-width:16rem">${d.campus === 'hybrid' ? 'How many off-campus locations?' : 'How many locations?'}<select data-rq="locCount" data-rr="1">${[1, 2, 3, 4, 5].map(i => `<option ${nLoc === i ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
+      ${Array.from({ length: nLoc }, (_, i) => { const a = (d.locs[i] = d.locs[i] || {}); return `<div class="stack" style="gap:8px;${i ? 'border-top:1px solid var(--line);padding-top:10px' : ''}"><strong>Location ${i + 1}</strong>
+        <label>Name of the place<input data-rq="locs.${i}.name" placeholder="e.g. Goldman Sachs Salt Lake City office" value="${esc(a.name || '')}"></label>${rqAddr('locs.' + i, a, 'Street address')}</div>`; }).join('')}</div>` : ''}
     <div class="stack" style="gap:6px"><strong>What is your ideal event date?</strong><span class="hint">Pick more than one if you don’t have a strong preference.</span>${rqCal('dates', d.dates)}</div>
     ${notice ? `<div class="rq-warn">${notice}</div>` : ''}
     <div class="stack" style="gap:6px"><strong>Any other days you’re willing to include if those don’t work?</strong><span class="hint">Optional.</span>${rqCal('altDates', d.altDates)}</div>
@@ -3257,28 +3309,27 @@ function rqPanel(e, cat){
       <label>End time <span class="hint">Not counting setup or time after</span><input type="time" data-rq="end" value="${esc(d.end)}"></label></div>
     <div class="grid2"><label>Setup time before the event <span class="hint">Minutes, at least 15</span><input type="number" min="15" step="5" data-rq="setup" data-rr="1" value="${esc(d.setup)}"></label>
       <label>Time needed after <span class="hint">Minutes (for one-on-one conversations, cleanup). Can be 0.</span><input type="number" min="0" step="5" data-rq="after" value="${esc(d.after)}"></label></div>
-    <div class="grid2"><label>What do you need in an event location?<select data-rq="locType" data-rr="1"><option value="">Choose one…</option>${RQ_LOCATIONS.map(x => `<option ${d.locType === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
-      <label>Ideal building<select data-rq="building">${['Keller Building (KB)', 'Any', ...UVU_BUILDINGS].map(x => `<option ${d.building === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label></div>
+    ${d.campus === 'off' ? '' : `<div class="grid2"><label>What do you need in an event location?${d.campus === 'hybrid' ? ' <span class="hint">For the on-campus part</span>' : ''}<select data-rq="locType" data-rr="1"><option value="">Choose one…</option>${RQ_LOCATIONS.filter(x => !isExternal(x)).map(x => `<option ${d.locType === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
+      <label>Ideal building<select data-rq="building">${['Keller Building (KB)', 'Any', ...UVU_BUILDINGS].map(x => `<option ${d.building === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label></div>`}
     <label>Event name for UVU <span class="hint">Max 40 characters. Can be shorter than the website title.</span><input data-rq="uvuName" maxlength="40" value="${esc(d.uvuName)}"></label>
     <p class="hint" style="margin:0"><strong>Event description:</strong> the Description above goes on UVU’s form too.</p>
     <label>Maximum attendees <span class="hint">Same as the seat limit above (0 = no limit)</span><input type="number" min="0" id="rq-cap" value="${esc(capNow)}"></label>
     ${+capNow ? '' : `<label>About how many people do you expect, at most? <span class="hint">Required when there’s no seat limit, so UVU can plan the room.</span><input type="number" min="1" data-rq="estMax" value="${esc(d.estMax || '')}"></label>`}
-    <div class="grid2"><label>Type of event<select data-rq="evType">${RQ_TYPES.map(x => `<option ${d.evType === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
-      <label>On campus, off campus, or hybrid?<select data-rq="campus" data-rr="1">${Object.entries(RQ_CAMPUS).map(([k, l]) => `<option value="${k}" ${d.campus === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+    <label>Type of event<select data-rq="evType">${RQ_TYPES.map(x => `<option ${d.evType === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
     ${rqYN('sponsor', 'Does this event have an external sponsor?', d)}
     ${d.sponsor === 'yes' ? `<div class="panel stack" style="gap:10px;padding:12px">
       <div class="grid2"><label>Contact person<input data-rq="sp.name" value="${esc(d.sp.name || '')}"></label><label>Sponsoring organization<input data-rq="sp.org" value="${esc(d.sp.org || '')}"></label></div>
-      <div class="grid2"><label>Contact email<input type="email" autocomplete="off" data-rq="sp.email" value="${esc(d.sp.email || '')}"></label><label>Contact phone <span class="hint">With area code</span><input type="tel" placeholder="(801) 555-0123" data-rq="sp.phone" value="${esc(d.sp.phone || '')}"></label></div>
-      <label>Organization street address<input data-rq="sp.street" value="${esc(d.sp.street || '')}"></label>
-      <div class="grid3"><label>City<input data-rq="sp.city" value="${esc(d.sp.city || '')}"></label><label>State<input data-rq="sp.state" maxlength="20" value="${esc(d.sp.state || '')}"></label><label>ZIP<input data-rq="sp.zip" maxlength="10" value="${esc(d.sp.zip || '')}"></label></div></div>` : ''}
+      <div class="grid2">${rqField('sp.email', 'Contact email', d.sp.email, 'email', 'type="email" autocomplete="off"')}${rqField('sp.phone', 'Contact phone <span class="hint">With area code</span>', d.sp.phone, 'phone', 'type="tel" placeholder="(801) 555-0123"')}</div>
+      ${rqAddr('sp', d.sp, 'Organization street address')}</div>` : ''}
     ${rqYN('food', 'Will the event have food, snacks, or beverages?', d)}
     ${rqYN('tablecloths', 'Will the event need tablecloths?', d)}
-    ${rqYN('speaker', 'Will there be a guest speaker?', d)}
+    ${rqYN('speaker', 'Will there be any external guests?', d, 'Guest speakers, judges, recruiters, panelists, or anyone else from outside UVU.')}
     ${d.speaker === 'yes' ? `<div class="panel stack" style="gap:10px;padding:12px">
-      <label style="max-width:14rem">How many guest speakers?<select data-rq="speakerCount" data-rr="1">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => `<option ${(n || 1) === i ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
-      ${Array.from({ length: n || 1 }, (_, i) => { const s = (d.speakers || [])[i] || {}; return `<div class="stack" style="gap:8px;border-top:1px solid var(--line);padding-top:10px"><strong>Speaker ${i + 1}</strong>
-        <div class="grid2"><label>Name<input data-rq="speakers.${i}.name" value="${esc(s.name || '')}"></label><label>Job title and company<input data-rq="speakers.${i}.job" value="${esc(s.job || '')}"></label></div>
-        <label>Speaking topic<input data-rq="speakers.${i}.topic" value="${esc(s.topic || '')}"></label><label>Bio<textarea rows="3" data-rq="speakers.${i}.bio">${esc(s.bio || '')}</textarea></label></div>`; }).join('')}</div>` : ''}
+      <label style="max-width:14rem">How many external guests?<select data-rq="speakerCount" data-rr="1">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => `<option ${n === i ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
+      ${Array.from({ length: n }, (_, i) => { const s = (d.speakers || [])[i] || {}; return `<div class="stack" style="gap:8px;border-top:1px solid var(--line);padding-top:10px"><strong>Guest ${i + 1}</strong>
+        <label>Name<input data-rq="speakers.${i}.name" value="${esc(s.name || '')}"></label>
+        <div class="grid2"><label>Job title<input data-rq="speakers.${i}.title" value="${esc(s.title || s.job || '')}"></label><label>Company<input data-rq="speakers.${i}.company" value="${esc(s.company || '')}"></label></div>
+        <label>Speaking topic or role <span class="hint">Like “Building a fintech company” or “Judge”</span><input data-rq="speakers.${i}.topic" value="${esc(s.topic || '')}"></label><label>Bio<textarea rows="3" data-rq="speakers.${i}.bio">${esc(s.bio || '')}</textarea></label></div>`; }).join('')}</div>` : ''}
     ${rqYN('av', 'Will your event need additional A/V equipment?', d, 'Most locations have two mics and a projector.')}
     ${d.av === 'yes' ? `<label>What A/V equipment do you need?<textarea rows="2" data-rq="avNeeds">${esc(d.avNeeds)}</textarea></label>` : ''}
     ${rqYN('tech', 'Would you like an AVSE technician to meet you before the event starts?', d)}
@@ -3302,22 +3353,28 @@ function rqPanel(e, cat){
 const validPhone = x => /^1?\d{10}$/.test(String(x).replace(/[\s().+-]/g, '')) && !/[^\d\s().+-]/.test(x);
 function rqProblems(d, cat){
   const p = [], yn = (k, q) => { if (!['yes', 'no'].includes(d[k])) p.push('Answer: ' + q); };
+  const addr = (a, what) => {
+    a = a || {};
+    if (['street', 'city', 'state', 'zip'].some(k => !(a[k] || '').trim())) p.push(`Fill in the full address for ${what} (street, city, state, and ZIP).`);
+    else { const z = rqCheck('zip', a.zip, a.state); if (z && !z[1]) p.push(`Fix the ZIP code for ${what}: ${z[0]}`); }
+  };
+  if (offSite(d)) Array.from({ length: Math.max(1, +d.locCount || 1) }, (_, i) => { const a = (d.locs || [])[i] || {}; if (!(a.name || '').trim()) p.push(`Enter the name of location ${i + 1}.`); addr(a, 'location ' + (i + 1)); });
   if (!(d.dates || []).length) p.push('Pick at least one ideal date.');
+  if (!d.start || !d.end) p.push('Enter the start and end times.'); else if (d.end <= d.start) p.push('The end time must be after the start time.');
   if (!(+d.setup >= 15)) p.push('Setup time must be at least 15 minutes.');
   if (d.after === '' || +d.after < 0) p.push('Enter the time needed after (0 is fine).');
-  if (!d.locType) p.push('Choose what you need in a location.');
+  if (d.campus !== 'off' && !d.locType) p.push('Choose what you need in a location.');
   if (!(d.uvuName || '').trim()) p.push('Enter the event name for UVU.');
-  if (!d.start || !d.end) p.push('Enter the start and end times.'); else if (d.end <= d.start) p.push('The end time must be after the start time.');
-  if (cat !== 'case_competition' && !d.guestPref) p.push('Choose when guest RSVPs should open.');
-  yn('sponsor', 'external sponsor?'); yn('food', 'food?'); yn('tablecloths', 'tablecloths?'); yn('speaker', 'guest speaker?'); yn('av', 'additional A/V?'); yn('tech', 'AVSE technician?');
+  if (!(+((document.getElementById('ev-cap') || {}).value || 0) > 0) && !(+d.estMax > 0)) p.push('There’s no seat limit, so enter about how many people you expect at most.');
+  yn('sponsor', 'external sponsor?'); yn('food', 'food?'); yn('tablecloths', 'tablecloths?'); yn('speaker', 'external guests?'); yn('av', 'additional A/V?'); yn('tech', 'AVSE technician?');
   if (d.sponsor === 'yes'){
     const sp = d.sp || {};
-    if (['name', 'org', 'email', 'phone', 'street', 'city', 'state', 'zip'].some(k => !(sp[k] || '').trim())) p.push('Fill in all the sponsor contact details.');
-    if ((sp.email || '').trim() && !EMAIL_RE.test(sp.email.trim())) p.push('Enter a valid sponsor contact email, like name@company.com.');
-    if ((sp.phone || '').trim() && !validPhone(sp.phone)) p.push('Enter a valid sponsor contact phone number with area code, like (801) 555-0123.');
+    if (['name', 'org', 'email', 'phone'].some(k => !(sp[k] || '').trim())) p.push('Fill in the sponsor’s contact person, organization, email, and phone.');
+    const em = rqCheck('email', sp.email), ph = rqCheck('phone', sp.phone);
+    if (em) p.push('Sponsor email: ' + em[0]); if (ph) p.push('Sponsor phone: ' + ph[0]);
+    addr(sp, 'the sponsoring organization');
   }
-  if (!(+((document.getElementById('ev-cap') || {}).value || 0) > 0) && !(+d.estMax > 0)) p.push('There’s no seat limit, so enter about how many people you expect at most.');
-  if (d.speaker === 'yes' && (d.speakers || []).slice(0, +d.speakerCount || 1).filter(s => s && (s.name || '').trim()).length < (+d.speakerCount || 1)) p.push('Enter each guest speaker’s name (and job, topic, and bio if you have them).');
+  if (d.speaker === 'yes' && (d.speakers || []).slice(0, +d.speakerCount || 1).filter(s => s && (s.name || '').trim()).length < (+d.speakerCount || 1)) p.push('Enter each external guest’s name (and their job title, company, topic, and bio if you have them).');
   if (d.av === 'yes' && !(d.avNeeds || '').trim()) p.push('Say what A/V equipment you need.');
   if (d.tech === 'yes'){ if ((+d.setup || 0) < 30) p.push('An AVSE technician needs at least 30 minutes of setup time.'); else if (!d.techTime) p.push('Choose when the AVSE technician should meet you.'); if (!['yes', 'no'].includes(d.techStay)) p.push('Answer: AVSE technician for the whole event?'); }
   if (!noLayout(d)){
@@ -3327,6 +3384,7 @@ function rqProblems(d, cat){
     else if (lay[3] === 'tables' && !(+d.tables > 0)) p.push('Enter how many tables.');
     else if (lay[3] === 'both' && (!d.layoutImg || d.tables === '' || d.chairs === '')) p.push('Upload a picture of your layout and enter how many tables and chairs.');
   }
+  if (cat !== 'case_competition' && !d.guestPref) p.push('Choose when guest RSVPs should open.');
   return p;
 }
 // Uploads any files picked in the form, then saves (and maybe sends) the request.
@@ -3348,16 +3406,19 @@ function rqRows(e, r){
   const d = { ...rqDefaults(e), ...r.form }, yn = v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : '';
   const sp = d.sp || {}, lay = RQ_LAYOUTS.find(x => x[0] === d.layout);
   const speakers = (d.speakers || []).slice(0, +d.speakerCount || (d.speakers || []).length || 1).filter(Boolean)
-    .map((s, i) => `${i + 1}. ${s.name || ''}${s.job ? ', ' + s.job : ''}${s.topic ? '\nTopic: ' + s.topic : ''}${s.bio ? '\nBio: ' + s.bio : ''}`).join('\n\n');
-  const layout = noLayout(d) ? 'Not needed (' + (d.locType === 'Auditorium' ? 'auditorium' : 'off-campus location') + ')'
+    .map((s, i) => `${i + 1}. ${s.name || ''}${[s.title || s.job, s.company].filter(Boolean).length ? ', ' + [s.title || s.job, s.company].filter(Boolean).join(', ') : ''}${s.topic ? '\nTopic or role: ' + s.topic : ''}${s.bio ? '\nBio: ' + s.bio : ''}`).join('\n\n');
+  const locs = offSite(d) ? (d.locs || []).slice(0, +d.locCount || 1).map((a, i) => `${i + 1}. ${a.name || ''}\n${addrLine(a)}`).join('\n\n') : '';
+  const layout = noLayout(d) ? 'Not needed (' + (d.campus === 'off' ? 'off campus' : 'auditorium') + ')'
     : lay ? lay[1] + (lay[3] === 'chairs' ? `, ${d.chairs} chairs` : lay[3] === 'tables' ? `, ${d.tables} tables` : lay[3] === 'both' ? `, ${d.tables} tables, ${d.chairs} chairs` : '') : '';
   return [
-    ['Event name', d.uvuName], ['Ideal dates', (d.dates || []).slice().sort().map(fmtShortDay).join('\n')], ['Other dates that work', (d.altDates || []).slice().sort().map(fmtShortDay).join('\n') || 'None'],
+    ['Event name', d.uvuName], ['On campus, off campus, or hybrid', RQ_CAMPUS[d.campus] || ''],
+    ...(offSite(d) ? [[d.campus === 'hybrid' ? 'Off-campus locations' : 'Locations', locs]] : []), ['Ideal dates', (d.dates || []).slice().sort().map(fmtShortDay).join('\n')], ['Other dates that work', (d.altDates || []).slice().sort().map(fmtShortDay).join('\n') || 'None'],
     ['Start and end times', `${fmtTime(d.start)} – ${fmtTime(d.end)}`], ['Setup time before', `${d.setup} minutes (from ${fmtTime(hhmmAdd(d.start, -(+d.setup || 0)))})`],
-    ['Time needed after', `${d.after || 0} minutes (until ${fmtTime(hhmmAdd(d.end, +d.after || 0))})`], ['Location type', d.locType], ['Ideal building', d.building],
-    ['Event description', e.desc], ['Maximum attendees', e.cap ? String(e.cap) : `No RSVP limit; expecting up to ${d.estMax || '?'}`], ['Type of event', d.evType], ['On campus, off campus, or hybrid', RQ_CAMPUS[d.campus] || ''],
-    ['External sponsor', d.sponsor === 'yes' ? `${sp.org || ''}\nContact: ${sp.name || ''}\n${sp.email || ''} · ${sp.phone || ''}\n${sp.street || ''}, ${sp.city || ''}, ${sp.state || ''} ${sp.zip || ''}` : yn(d.sponsor)],
-    ['Food, snacks, or beverages', yn(d.food)], ['Tablecloths', yn(d.tablecloths)], ['Guest speakers', d.speaker === 'yes' ? speakers : yn(d.speaker)],
+    ['Time needed after', `${d.after || 0} minutes (until ${fmtTime(hhmmAdd(d.end, +d.after || 0))})`],
+    ...(d.campus === 'off' ? [] : [['Location type' + (d.campus === 'hybrid' ? ' (on-campus part)' : ''), d.locType], ['Ideal building', d.building]]),
+    ['Event description', e.desc], ['Maximum attendees', e.cap ? String(e.cap) : `No RSVP limit; expecting up to ${d.estMax || '?'}`], ['Type of event', d.evType],
+    ['External sponsor', d.sponsor === 'yes' ? `${sp.org || ''}\nContact: ${sp.name || ''}\n${sp.email || ''} · ${sp.phone || ''}\n${addrLine(sp)}` : yn(d.sponsor)],
+    ['Food, snacks, or beverages', yn(d.food)], ['Tablecloths', yn(d.tablecloths)], ['External guests', d.speaker === 'yes' ? speakers : yn(d.speaker)],
     ['Additional A/V equipment', d.av === 'yes' ? 'Yes: ' + d.avNeeds : yn(d.av)],
     ['AVSE technician before the event', d.tech === 'yes' ? `Yes, at ${fmtTime(hhmmAdd(d.start, -(+d.techTime || 0)))} (${d.techTime} min before)` : yn(d.tech)],
     ...(d.tech === 'yes' ? [['AVSE technician for the whole event', yn(d.techStay)]] : []),
@@ -3447,10 +3508,23 @@ function rqRedraw(){
   if (!t.dataset.rq || !ui.rq || (t.type === 'radio' && !t.checked)) return;
   const d = ui.rq.d, k = t.dataset.rq;
   rqSet(d, k, t.value);
-  if (k === 'locType' && isExternal(t.value)) d.campus = 'off';
+  if (k === 'campus'){ if (t.value === 'off') d.locType = 'External location (off campus)'; else if (isExternal(d.locType)) d.locType = ''; }
+  if (t.dataset.check) rqShowCheck(t, false);
+  if (t.dataset.zipfor){ const z = document.querySelector(`[data-rq="${t.dataset.zipfor}"]`); if (z && z.value) rqShowCheck(z, true); }
   if (k === 'speakerCount') d.speakers = (d.speakers || []).slice(0, +t.value);
   if (type === 'change' && t.dataset.rr) rqRedraw();
 }, true));
+// Email, phone, and ZIP fields are checked when you leave them; while typing, a message only clears once it's fixed.
+function rqShowCheck(t, show){
+  const span = t.parentElement && t.parentElement.querySelector('.field-err'); if (!span || !ui.rq) return;
+  const kind = t.dataset.check, state = kind === 'zip' ? rqGet(ui.rq.d, t.dataset.rq.replace(/zip$/, 'state')) : '';
+  const c = rqCheck(kind, t.value, state);
+  if (!show && !c){ span.textContent = ''; return; }
+  if (!show) return;
+  if (!c && kind === 'phone' && t.value.trim()){ t.value = fmtPhone(t.value); rqSet(ui.rq.d, t.dataset.rq, t.value); }
+  span.className = c && c[1] ? 'hint field-err warn-text' : 'err field-err'; span.textContent = c ? c[0] : '';
+}
+document.addEventListener('focusout', ev => { const t = ev.target; if (t && t.dataset && t.dataset.check) rqShowCheck(t, true); });
 async function saveSchedFlag(email, on){
   if (on === (db.schedulers || []).includes(email)) return;
   const r = on ? await sb.from('event_schedulers').insert({ email }) : await sb.from('event_schedulers').delete().eq('email', email);
