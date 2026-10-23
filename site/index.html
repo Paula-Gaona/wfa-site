@@ -240,6 +240,7 @@ main{padding-block:36px 64px}
 .helper.same{border-left-color:var(--brand)}
 .desc-preview{border:1px dashed var(--line);border-radius:var(--radius);padding:10px 12px;background:var(--surface,transparent)}
 .speaker-card{border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}
+.rsvp-times{border-left:4px solid var(--gold,#B8923A);padding:8px 12px;background:var(--tint,transparent);border-radius:2px}
 .role-list{margin:0;padding-left:1.2rem;display:flex;flex-direction:column;gap:6px}
 .seg-tabs{display:flex;flex-wrap:wrap;gap:6px}
 .policy-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:12px}
@@ -4687,7 +4688,8 @@ function eventInner(id, page){
   else if (!session) action = '';   // visitors: guestRsvpBox (or the members-only note) below
   else if (mine) action = `<span class="going">You’re going.</span><button class="btn ghost small" data-act="unrsvp" data-id="${id}">Cancel RSVP</button>`;
   else if (e.draft) action = `<button class="btn" type="button" disabled>RSVP</button><span class="hint">RSVPs open when the event is published.</span>`;
-  else if (e.rsvpOpens && Date.now() < Date.parse(e.rsvpOpens)) action = `<button class="btn" type="button" disabled>RSVP</button><span class="hint">RSVPs open ${fmtMtStamp(Date.parse(e.rsvpOpens))}.</span>`;
+  else if (e.rsvpOpens && Date.now() < Date.parse(e.rsvpOpens) && !can('officer')) action = `<button class="btn" type="button" disabled>RSVP</button><span class="hint">RSVPs open ${fmtMtStamp(Date.parse(e.rsvpOpens))}.</span>`;
+  else if (e.rsvpOpens && Date.now() < Date.parse(e.rsvpOpens) && !full) action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button><span class="hint">Officers can RSVP before RSVPs open for everyone.</span>`;
   else if (full) action = `<span class="muted">All ${e.cap} seats are taken.</span>`;
   else action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button>`;
   let checkin = '';
@@ -4728,6 +4730,7 @@ function eventInner(id, page){
     ${(e.speakers || []).length ? `<div class="stack" style="gap:10px"><h3 style="margin:0">${e.speakers.length === 1 ? 'Guest' : 'Guests'}</h3>${e.speakers.map(sp => `<div class="speaker-card"><strong>${esc(sp.name)}</strong>${sp.title || sp.company ? `<div class="hint">${esc([sp.title, sp.company].filter(Boolean).join(', '))}</div>` : ''}${sp.bio ? `<p style="white-space:pre-wrap;margin:6px 0 0">${esc(sp.bio)}</p>` : ''}</div>`).join('')}</div>` : ''}
     ${isCase(e) && !e.draft ? caseSection(e) : ''}
     ${checkin}
+    ${rsvpTimesNote(e)}
     ${!session && !isCase(e) && !hasStarted(e) && !e.draft ? (e.membersOnly ? membersOnlyNote(e, 'RSVP') : guestRsvpBox(e)) : ''}
     ${e.qaEnabled && !isPast(e) && !e.draft ? qaBox(e) : ''}
     <div class="row">${action}${can('officer') ? `<span style="margin-left:auto" class="row"><button class="btn ghost small" data-act="edit-event" data-id="${id}">Edit event</button></span>` : ''}</div>
@@ -4749,13 +4752,22 @@ function membersOnlyNote(e, what){
 }
 // RSVP without an account: name, email, and an opt-in for email reminders about this one event.
 function guestRsvpDone(id){ try { return JSON.parse(localStorage.getItem('wfa-grsvp-' + id) || 'null'); } catch(e){ return null; } }
+// When RSVPs open, while they aren't open yet for members or for guests.
+function rsvpTimesNote(e){
+  if (e.draft || isCase(e) || hasStarted(e) || e.cat === 'officer_meeting') return '';
+  const now = Date.now(), m = e.rsvpOpens ? Date.parse(e.rsvpOpens) : 0, g = e.guestOpens ? Date.parse(e.guestOpens) : m;
+  if (!(m > now) && !(g > now && !e.membersOnly)) return '';
+  const when = t => t > now ? fmtMtStamp(t) : 'Open now';
+  return `<div class="rsvp-times"><strong>When RSVPs open</strong><dl class="facts" style="margin:4px 0 0"><dt>Members</dt><dd>${when(m)}</dd>${e.membersOnly ? '<dt>Guests</dt><dd>Members only</dd>' : `<dt>Guests</dt><dd>${when(Math.max(g, m))}</dd>`}</dl></div>`;
+}
 function guestRsvpBox(e){
   const id = e.id, done = guestRsvpDone(id), full = e.cap && rsvpCount(id) >= e.cap;
   const join = `<div class="row" style="gap:8px"><button class="btn" data-act="event-auth" data-to="signup" data-id="${id}">Join WFA (free) and RSVP</button><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">I have an account: sign in</button></div>`;
   if (done) return `<div class="panel stack" style="gap:10px"><div class="notice"><span><strong>You’re going, ${esc(done.first)}!</strong> ${done.reminders ? 'We’ll email you reminders about this event.' : ''} Join WFA to earn points for coming and get the full calendar.</span></div>${join}</div>`;
   if (full) return `<div class="panel"><span class="muted">All ${e.cap} seats are taken.</span></div>`;
+  const memberWait = e.rsvpOpens && Date.now() < Date.parse(e.rsvpOpens);
   if (e.guestOpens && Date.now() < Date.parse(e.guestOpens)) return `<div class="panel stack" style="gap:10px"><div><strong>Members get early access</strong>
-      <div class="hint">Guest RSVPs open ${fmtMtStamp(Date.parse(e.guestOpens))}${e.cap ? `, and there are ${e.cap} seats` : ''}. Join WFA (free) to RSVP now.</div></div>${join}</div>`;
+      <div class="hint">Guest RSVPs open ${fmtMtStamp(Date.parse(e.guestOpens))}${e.cap ? `, and there are ${e.cap} seats` : ''}. ${memberWait ? `Join WFA (free) to RSVP as soon as member RSVPs open, ${fmtMtStamp(Date.parse(e.rsvpOpens))}.` : 'Join WFA (free) to RSVP now.'}</div></div>${join}</div>`;
   return `<div class="panel stack" style="gap:12px">
     <strong style="font-size:1.1rem">RSVP</strong>
     <p style="margin:0">Members ${PTS[e.cat] ? `earn <strong>${PTS[e.cat]} points</strong> for coming, ` : ''}get reminders for every event, and can join the resume book. Joining is free.</p>

@@ -14,7 +14,7 @@
 --    (not the officer). A president's comment is marked "just context" or "more changes"; with "more changes", making
 --    their field edits doesn't count as their approval. Each request for changes keeps a snapshot, so presidents can
 --    see what was changed since. Events can show their external guests (name, title, company, bio) on the event page,
---    and Q&A questions can be addressed to specific guests.
+--    and Q&A questions can be addressed to specific guests. Officers can RSVP as soon as an event is published.
 -- 3. Admins can edit the officer application's questions. Answers are saved with the question text they answered.
 -- Run once in Supabase -> SQL Editor, after 52. Safe to run again.
 
@@ -46,6 +46,19 @@ begin
   return 'ok';
 end $$;
 grant execute on function public.ask_question(uuid, text, text, text[]) to anon, authenticated;
+
+-- ---------- RSVPs: officers can RSVP as soon as an event is published, before RSVPs open for everyone ----------
+create or replace function public.no_draft_rsvps() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if exists (select 1 from events e where e.id = new.event_id and e.draft) then
+    raise exception 'RSVPs open when the event is published.';
+  end if;
+  if not public.is_officer() and exists (select 1 from events e where e.id = new.event_id and e.rsvp_opens > now()) then
+    raise exception 'RSVPs for this event aren''t open yet.';
+  end if;
+  return new;
+end $$;
 
 -- ---------- Events: branch leadership fixes presidents' changes; comment types; snapshots ----------
 alter table public.event_requests add column if not exists branch_by text;   -- who approved it in the branch review
