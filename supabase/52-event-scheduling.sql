@@ -11,7 +11,8 @@
 --      scheduler; if the scheduler isn't a president, vice presidents can approve too once 36 hours pass.
 --      It publishes automatically after 48 hours only when the scheduler is a president. A requested change goes back
 --      to the scheduler, and the clock restarts when they send it again.
--- A president who sent or already approved something counts as approving it, and so does one whose suggested changes
+-- Every timer counts business hours only (weekends do not count; see business_add). A president who sent or
+-- already approved something counts as approving it, and so does one whose suggested changes
 -- were all made. Majority rules after 5 days in a presidents' step, or from its third round of changes. Admins mark who the event schedulers
 -- are (only officers can see that), and only schedulers can turn on a draft's coming-soon page.
 -- Also: events can open RSVPs at a set time (not just when published), and guests can open a set time or a number of
@@ -48,6 +49,20 @@ create or replace function public.wfa_vps() returns setof text
 language sql stable security definer set search_path = public as $$
   select p.email from officer_profiles p join access_list a on a.email = p.email where p.tier = 'vice_president';
 $$;
+-- Business hours: a start time plus some hours, not counting Saturdays or Sundays (Mountain Time). The approval
+-- timers use this, so nothing is approved over a weekend just because nobody was online.
+create or replace function public.business_add(p_start timestamptz, p_hours numeric) returns timestamptz
+language plpgsql stable as $$
+declare t timestamp := p_start at time zone 'America/Denver'; rest interval := make_interval(secs => p_hours * 3600); dow int; sat timestamp;
+begin
+  loop
+    dow := extract(isodow from t);
+    if dow >= 6 then t := date_trunc('day', t) + make_interval(days => 8 - dow); continue; end if;
+    sat := date_trunc('day', t) + make_interval(days => 6 - dow);
+    if t + rest <= sat then return (t + rest) at time zone 'America/Denver'; end if;
+    rest := rest - (sat - t); t := sat;
+  end loop;
+end $$;
 create or replace function public.big_event(p_cat text) returns boolean
 language sql immutable as $$ select p_cat in ('case_competition', 'excursion', 'guest_speaker', 'career_fair'); $$;
 -- Officers (not presidents, vice presidents, advisors, or admins) need their branch leadership's approval first.
@@ -116,11 +131,11 @@ begin
   perform rq_move(p_event, 'published', p_by, p_note);
   update events set draft = false where id = p_event;
 end $$;
--- Majority rules (steps that need every president): after 5 days in the step, or from its third round of changes.
+-- Majority rules (steps that need every president): after 5 business days in the step, or from its third round of changes.
 create or replace function public.rq_majority(r event_requests) returns boolean
 language sql stable security definer set search_path = public as $$
   select (r.status = 'review' or big_event((select e.cat from events e where e.id = r.event_id)))
-     and (coalesce(r.rounds, 0) >= 2 or r.step_started_at < now() - interval '5 days');
+     and (coalesce(r.rounds, 0) >= 2 or now() >= business_add(r.step_started_at, 120));   -- 5 business days
 $$;
 -- Sign-off for a workshop or social: who can approve it. Presidents other than the scheduler who sent it; if the
 -- scheduler isn't a president, vice presidents too once it has waited 36 hours.
@@ -128,7 +143,7 @@ create or replace function public.rq_small_approvers(r event_requests) returns s
 language sql stable security definer set search_path = public as $$
   select e from wfa_presidents() e where e is distinct from r.status_by
   union
-  select v from wfa_vps() v where not exists (select 1 from wfa_presidents() x where x = r.status_by) and r.status_at < now() - interval '36 hours';
+  select v from wfa_vps() v where not exists (select 1 from wfa_presidents() x where x = r.status_by) and now() >= business_add(r.status_at, 36);
 $$;
 create or replace function public.rq_small_signoff(r event_requests) returns boolean
 language sql stable security definer set search_path = public as $$
@@ -335,14 +350,14 @@ begin
 end $$;
 grant execute on function public.scheduler_update(uuid, text, text) to authenticated;
 
--- Presidents' steps that have waited 48 hours move on by themselves (the automatic-emails job calls this). Any
+-- Presidents' steps that have waited 48 business hours (weekends don't count) move on by themselves (the automatic-emails job calls this). Any
 -- objection that would stop it has already sent it back, so whatever is still waiting passes. Sign-offs only do this
 -- when the scheduler who sent it is a president; otherwise someone has to approve it.
 create or replace function public.request_timeouts() returns int
 language plpgsql security definer set search_path = public as $$
 declare r record; n int := 0;
 begin
-  for r in select event_id, status from event_requests where status in ('review', 'signoff') and status_at < now() - interval '48 hours'
+  for r in select event_id, status from event_requests where status in ('review', 'signoff') and now() >= business_add(status_at, 48)
              and (status = 'review' or exists (select 1 from wfa_presidents() e where e = status_by)) loop
     if r.status = 'review' then perform rq_move(r.event_id, 'sent', 'system', 'No objections in 48 hours.');
     else perform rq_publish(r.event_id, 'system', 'No objections in 48 hours.'); end if;

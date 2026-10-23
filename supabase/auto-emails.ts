@@ -44,6 +44,19 @@ function mtMs(date: string, time: string) {
 }
 const fmtDay = (ms: number) => new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'long', month: 'long', day: 'numeric' }).format(new Date(ms));
 const fmtTime = (ms: number) => new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(new Date(ms));
+// A moment plus some hours, not counting Saturdays or Sundays (Mountain Time); the approval timers use this.
+function businessAdd(start: number, hours: number) {
+  let t = start, rest = hours * HOUR;
+  for (let i = 0; i < 60 && rest > 0; i++) {
+    const p = mtParts(t), day = Date.UTC(p.year, p.month - 1, p.day), dow = new Date(day).getUTCDay();
+    const dayIso = (n: number) => new Date(day + n * DAY).toISOString().slice(0, 10);
+    if (dow === 0 || dow === 6) { t = mtMs(dayIso(dow === 6 ? 2 : 1), '00:00'); continue; }
+    const sat = mtMs(dayIso(6 - dow), '00:00');
+    if (t + rest <= sat) return t + rest;
+    rest -= sat - t; t = sat;
+  }
+  return t;
+}
 const isoDay = (ms: number) => { const p = mtParts(ms); return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`; };
 
 // ---------- Email ----------
@@ -168,7 +181,7 @@ Deno.serve(async () => {
       const branchPres = (b: string | null) => { const p = (offs || []).filter((o) => b && o.branch === b && ['president', 'vice_president'].includes(o.tier) && isOfficer.has(o.email)); return (p.length ? p : presidents).map((o) => o.email); };
       const nowMs = Date.now(), ms = (t: string | null) => (t ? new Date(t).getTime() : 0);
       const who = (e: string) => firstName.get(e) || e || 'An officer';
-      const deadline = (r: { status_at: string }) => `${fmtDay(ms(r.status_at) + 2 * DAY)} at ${fmtTime(ms(r.status_at) + 2 * DAY)}`;
+      const deadline = (r: { status_at: string }) => { const d = businessAdd(ms(r.status_at), 48); return `${fmtDay(d)} at ${fmtTime(d)}`; };
       for (const r of reqs) {
         const t = titleOf.get(r.event_id) || 'an event';
         const link = `${site}/#officer/scheduling/${r.event_id}`, tag = `sched-${r.event_id}`;
@@ -183,18 +196,19 @@ Deno.serve(async () => {
           const presSched = presidents.some((o) => o.email === r.status_by);
           const small = r.status === 'signoff' && !BIG.includes(ev.cat);
           const auto = r.status === 'review' || presSched;              // only these publish/move on by themselves
-          const escalated = small && !presSched && nowMs - ms(r.status_at) >= 36 * HOUR;
+          const escalated = small && !presSched && nowMs >= businessAdd(ms(r.status_at), 36);
           to = presidents.map((o) => o.email).filter((e) => e !== r.status_by && !(e in voted));
           if (escalated) to = [...to, ...vps.filter((e) => !(e in voted))];
           again = DAY;
-          const overdue = !auto && nowMs - ms(r.status_at) >= 2 * DAY;
+          const overdue = !auto && nowMs >= businessAdd(ms(r.status_at), 48);
+          const vpsJustAdded0 = escalated && ms(r.nudged_at) < businessAdd(ms(r.status_at), 36);
           const what = r.status === 'review' ? 'every president\'s approval before it goes to UVU'
             : small ? `one approval from a president${escalated ? ' or vice president' : ''} before it is published` : 'every president\'s approval before it is published';
-          subject = fresh ? `${r.status === 'review' ? 'Presidents\' review' : 'Sign-off'}: ${t}` : overdue ? `Overdue: ${t} is waiting for approval` : escalated && ms(r.nudged_at) < ms(r.status_at) + 36 * HOUR ? `Sign-off needed: ${t}` : `Reminder: ${t}`;
+          subject = fresh ? `${r.status === 'review' ? 'Presidents\' review' : 'Sign-off'}: ${t}` : overdue ? `Overdue: ${t} is waiting for approval` : vpsJustAdded0 ? `Sign-off needed: ${t}` : `Reminder: ${t}`;
           body = `"${t}" needs ${what}. Approve it or request changes. `
             + (auto ? `If nobody objects, it moves on automatically on ${deadline(r)}.` : `It won't be published until someone approves it${ev.date ? ` (the event is ${fmtDay(mtMs(ev.date, '12:00'))})` : ''}.`);
           // One reminder a day, plus one right when the vice presidents are brought in.
-          const vpsJustAdded = escalated && ms(r.nudged_at) < ms(r.status_at) + 36 * HOUR;
+          const vpsJustAdded = escalated && ms(r.nudged_at) < businessAdd(ms(r.status_at), 36);
           if (!fresh && !vpsJustAdded && nowMs - ms(r.nudged_at) < DAY) to = [];
           if (vpsJustAdded) again = 1;
         } else if (r.status === 'sent') {

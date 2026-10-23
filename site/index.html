@@ -3196,13 +3196,13 @@ const isPresident = () => isStaff() && presidentsList().includes(session);
 // A branch's president and vice president review its officers' drafts (every president if the branch has neither).
 const branchReviewers = b => { const p = Object.keys(db.profiles || {}).filter(e => b && db.profiles[e].branch === b && ['president', 'vice_president'].includes(db.profiles[e].tier) && roleOf(e) !== 'member'); return p.length ? p : presidentsList(); };
 // Sign-off for a workshop or social needs one approval from a president other than the scheduler. If the scheduler
-// isn't a president, vice presidents can approve too after 36 hours, and it never publishes on its own.
+// isn't a president, vice presidents can approve too after 36 business hours, and it never publishes on its own.
 const vpsList = () => Object.keys(db.profiles || {}).filter(e => db.profiles[e].tier === 'vice_president' && roleOf(e) !== 'member');
 const rqSmall = r => r.status === 'signoff' && !BIG_CATS.includes((evById(r.event_id) || {}).cat);
 const rqPresSched = r => presidentsList().includes(r.status_by);
-const rqEscalated = r => rqSmall(r) && !rqPresSched(r) && Date.now() - Date.parse(r.status_at) >= 36 * 36e5;
+const rqEscalated = r => rqSmall(r) && !rqPresSched(r) && Date.now() >= businessAdd(Date.parse(r.status_at), 36);
 const rqApprovers = r => rqSmall(r) ? [...presidentsList().filter(p => p !== r.status_by), ...(rqEscalated(r) ? vpsList() : [])] : presidentsList();
-const rqAuto = r => r.status === 'review' || rqPresSched(r);   // moves on by itself after 48 hours
+const rqAuto = r => r.status === 'review' || rqPresSched(r);   // moves on by itself after 48 business hours
 const rqCanVote = r => ['review', 'signoff'].includes(r.status) && rqApprovers(r).includes(session) && !(session in (r.votes || {})) && !(session in (r.objections || {}));
 const rqReviewing = id => { const r = rqOf(id); return !!r && r.status === 'branch' && branchReviewers(r.branch).includes(session); };
 // Officers (not presidents, vice presidents, advisors, or admins) start with their branch president.
@@ -3218,10 +3218,22 @@ function rqWaitingOnMe(r){
 }
 function rqSignoffText(r){
   const small = rqSmall(r);
-  return (small ? `It needs one approval from a president${rqPresSched(r) ? ' other than the scheduler' : ''}${rqPresSched(r) ? '' : ' (or a vice president after 36 hours)'}.` : 'Every president is signing off.')
+  return (small ? `It needs one approval from a president${rqPresSched(r) ? ' other than the scheduler' : ''}${rqPresSched(r) ? '' : ' (or a vice president after 36 business hours)'}.` : 'Every president is signing off.')
     + (rqAuto(r) ? ` If nobody requests changes, it publishes automatically ${rqDeadline(r)}.` : ' It isn’t published until someone approves it.');
 }
-const rqDeadline = r => fmtMtStamp(Date.parse(r.status_at) + 2 * 864e5);
+// The approval timers count business hours: weekends (Mountain Time) don't count.
+function businessAdd(ms, hours){
+  let t = ms, rest = hours * 36e5;
+  for (let i = 0; i < 60 && rest > 0; i++){
+    const p = mtParts(t), d = `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`, dow = parseDay(d).getDay();
+    if (dow === 0 || dow === 6){ t = mtMs(shiftDay(d, dow === 6 ? 2 : 1), '00:00'); continue; }
+    const sat = mtMs(shiftDay(d, 6 - dow), '00:00');
+    if (t + rest <= sat) return t + rest;
+    rest -= sat - t; t = sat;
+  }
+  return t;
+}
+const rqDeadline = r => fmtMtStamp(businessAdd(Date.parse(r.status_at), 48));
 const rqSendLabel = cat => needsBranchReview(session) ? 'Send to your branch president or VP' : BIG_CATS.includes(cat) ? 'Send to the presidents' : 'Send to the scheduler';
 const rqOf = id => (db.requests || {})[id] || null;
 const rqTag = id => { const r = rqOf(id); if (!r) return ''; const [l, c] = RQ_STATUS[r.status] || ['', '']; return ` <span class="tag ${c}">${l}</span>`; };
@@ -3547,7 +3559,7 @@ function policyBody(){
         skip('Presidents, vice presidents, the faculty advisor, and admins skip this step.'))}
       ${arrow()}
       ${ask('Is it a case competition, excursion, guest speaker, or career fair?',
-        step('2', 'Presidents’ review (before UVU)', 'Every president approves it or requests changes. It moves on when all approve, or <b>automatically after 48 hours</b> with no objection.'),
+        step('2', 'Presidents’ review (before UVU)', 'Every president approves it or requests changes. It moves on when all approve, or <b>automatically after 2 business days</b> with no objection.'),
         skip('Workshops and socials skip this step.'))}
       ${arrow()}
       ${step('3', 'Scheduler submits it to UVU', 'A scheduler enters it in <a href="https://www.uvu.edu/clubs/forms/scheduling-request.html" target="_blank" rel="noopener">UVU’s scheduling form ↗</a>, marks it <b>submitted</b>, then marks it <b>approved</b> when UVU approves. If there’s a problem, they send it back with notes.')}
@@ -3555,8 +3567,8 @@ function policyBody(){
       ${step('4', 'Scheduler finalizes it', 'Sets the final date, times, location, and when RSVPs open (for members and for guests), starting from what the officer asked for.')}
       ${arrow()}
       ${ask('Is it a case competition, excursion, guest speaker, or career fair?',
-        step('5', 'Every president signs off', 'Publishes when all approve. If the scheduler is a president, it also publishes <b>after 48 hours</b> with no objection.'),
-        step('5', 'One president signs off', 'One approval from a president <b>other than the scheduler</b>. If the scheduler isn’t a president, vice presidents can approve too <b>after 36 hours</b>.'))}
+        step('5', 'Every president signs off', 'Publishes when all approve. If the scheduler is a president, it also publishes <b>after 2 business days</b> with no objection.'),
+        step('5', 'One president signs off', 'One approval from a president <b>other than the scheduler</b>. If the scheduler isn’t a president, vice presidents can approve too <b>after 36 business hours</b>.'))}
       ${arrow()}
       ${step('', 'Published', 'It’s on the calendar and can be promoted. The officer who sent it is notified.', 'end')}
     </section>
@@ -3568,10 +3580,11 @@ function policyBody(){
         <div class="panel stack" style="gap:6px;padding:14px"><strong>Nothing goes out early</strong><span>No flyers, posts, or emails about an event until it’s published. Before then, a scheduler can turn on a <b>coming-soon page</b> that shows only the title and a short teaser.</span></div>
         <div class="panel stack" style="gap:6px;padding:14px"><strong>Sent back</strong><span>Anyone reviewing can send it back with notes. When it’s fixed and sent again, it returns to the step that sent it back, not the beginning.</span></div>
         <div class="panel stack" style="gap:6px;padding:14px"><strong>Suggested changes</strong><span>Presidents can edit the fields themselves when they request changes, with a reason for each. If every suggestion gets made, it counts as their approval. Suggestions that aren’t made need a reason, which the president sees.</span></div>
-        <div class="panel stack" style="gap:6px;padding:14px"><strong>Majority rules</strong><span>When every president has to approve, and the step has gone <b>5 days</b> or reached its <b>third round</b> of changes, it passes once a majority approve. Objections only send it back if most presidents object. Everyone is notified when something passes by majority.</span></div>
-        <div class="panel stack" style="gap:6px;padding:14px"><strong>Automatic approval</strong><span>The presidents’ review (step 2) moves on after <b>48 hours</b> with no objection. Sign-off (step 5) only publishes on its own when the scheduler is a president. Otherwise someone has to approve it.</span></div>
+        <div class="panel stack" style="gap:6px;padding:14px"><strong>Majority rules</strong><span>When every president has to approve, and the step has gone <b>5 business days</b> or reached its <b>third round</b> of changes, it passes once a majority approve. Objections only send it back if most presidents object. Everyone is notified when something passes by majority.</span></div>
+        <div class="panel stack" style="gap:6px;padding:14px"><strong>Automatic approval</strong><span>The presidents’ review (step 2) moves on after <b>2 business days</b> with no objection. Sign-off (step 5) only publishes on its own when the scheduler is a president. Otherwise someone has to approve it.</span></div>
         <div class="panel stack" style="gap:6px;padding:14px"><strong>Notifications</strong><span>Whoever a step is waiting on is notified right away, by pop-up if they have notifications on, otherwise by email. Reminders follow: every day for presidents’ steps, every 2 days for branch reviews and schedulers.</span></div>
         <div class="panel stack" style="gap:6px;padding:14px"><strong>Who does what</strong><span><b>Admins</b> choose the event schedulers (only officers can see who they are). <b>Schedulers</b> submit to UVU, finalize, and control coming-soon pages. <b>Presidents</b> review and sign off. <b>Branch presidents and VPs</b> review their officers’ drafts.</span></div>
+        <div class="panel stack" style="gap:6px;padding:14px"><strong>Business days only</strong><span>Every timer skips weekends: 2 business days is 48 hours of Monday–Friday time (Mountain Time), so something sent Friday at 3 PM moves on Tuesday at 3 PM, not Sunday. University holidays still count, so allow extra time around breaks.</span></div>
       </div>
     </section></div>`;
 }
@@ -3583,7 +3596,7 @@ function rqDetail(e, r){
   const round = ['review', 'signoff'].includes(st) ? `<div class="panel stack" style="gap:6px;padding:12px 14px"><strong>${st === 'review' ? 'Presidents’ review' : small ? 'Sign-off (one approval needed)' : 'Presidents’ sign-off'}</strong>
       ${rqMajority(r) ? `<div class="rq-warn">Majority rules now: it ${st === 'review' ? 'moves on' : 'publishes'} once ${Math.ceil(presidentsList().length / 2)} of ${presidentsList().length} presidents approve. Requests for changes count as objections and only send it back if most presidents object.</div>` : ''}
       ${who.map(p => { const yes = (r.votes || {})[p], no = (r.objections || {})[p]; return `<div>${yes ? '✓' : no ? '✗' : '…'} ${esc(userName(p))} <span class="hint">${yes ? 'approved' : no ? 'objected' : 'hasn’t responded'}</span></div>`; }).join('')}
-      <span class="hint">${small ? `Any one of them can approve it${rqPresSched(r) ? '' : rqEscalated(r) ? ' (vice presidents were added after 36 hours)' : '; vice presidents are added if nobody responds within 36 hours'}. ` : ''}${rqAuto(r) ? `If nobody requests changes, it ${st === 'review' ? 'goes to the scheduler' : 'publishes'} automatically ${rqDeadline(r)}.` : `It isn’t published until someone approves it. Waiting since ${fmtMtStamp(Date.parse(r.status_at))}.`}</span></div>` : '';
+      <span class="hint">${small ? `Any one of them can approve it${rqPresSched(r) ? '' : rqEscalated(r) ? ' (vice presidents were added after 36 business hours)' : '; vice presidents are added if nobody responds within 36 business hours'}. ` : ''}${rqAuto(r) ? `If nobody requests changes, it ${st === 'review' ? 'goes to the scheduler' : 'publishes'} automatically ${rqDeadline(r)}.` : `It isn’t published until someone approves it. Waiting since ${fmtMtStamp(Date.parse(r.status_at))}.`}</span></div>` : '';
   let actions = '';
   if (st === 'branch' && branchReviewers(r.branch).includes(session))
     actions = `<div class="row" style="gap:8px"><button class="btn" data-act="rq-branch-ok" data-id="${e.id}">Approve as is</button><button class="btn ghost" data-act="edit-event" data-id="${e.id}">Edit it, then approve</button></div>
@@ -3725,7 +3738,7 @@ function rqEditSummary(oldForm, newForm, oldEv, row){
   const list = [...new Set(changed)];
   return list.length ? 'Approved with edits: ' + list.join(', ') + '.' : '';
 }
-const rqMajority = r => (r.status === 'review' || !rqSmall(r)) && ((r.rounds || 0) >= 2 || (!!r.step_started_at && Date.now() - Date.parse(r.step_started_at) > 5 * 864e5));
+const rqMajority = r => (r.status === 'review' || !rqSmall(r)) && ((r.rounds || 0) >= 2 || (!!r.step_started_at && Date.now() >= businessAdd(Date.parse(r.step_started_at), 120)));
 function sugHistory(r){
   const list = (r.suggestions || []).slice().reverse(); if (!list.length) return '';
   const stateText = { open: 'Waiting for changes', met: 'All made: counted as approval', answered: 'Answered' };
@@ -3899,7 +3912,7 @@ function viewOfficer(){
         <label>Check-in code <span class="hint">(optional)</span>
           <span class="row" style="gap:8px;flex-wrap:nowrap"><input id="ev-code" maxlength="8" autocomplete="off" value="${esc(e?.code || '')}" placeholder="e.g. BULL" style="font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;flex:1;min-width:0"><button type="button" class="btn ghost small" data-act="ev-gen-code">Generate</button></span>
           <span class="hint">Members type this at the event to check in. It only works on the event’s date. Leave blank to make one on the day.</span></label>
-        ${rqFinalizing(e?.id) ? '<div class="rq-warn"><strong>UVU approved this event.</strong> Set the final date, times, location, and RSVP timing, then send it to the presidents for sign-off. It publishes once they all approve, or after 48 hours.</div>' + (rqOf(e.id).signoff_note ? `<div class="rq-warn"><strong>A president requested changes:</strong><div style="white-space:pre-wrap">${esc(rqOf(e.id).signoff_note)}</div></div>` : '') : ''}
+        ${rqFinalizing(e?.id) ? '<div class="rq-warn"><strong>UVU approved this event.</strong> Set the final date, times, location, and RSVP timing, then send it to the presidents for sign-off. It publishes once they all approve, or after 2 business days.</div>' + (rqOf(e.id).signoff_note ? `<div class="rq-warn"><strong>A president requested changes:</strong><div style="white-space:pre-wrap">${esc(rqOf(e.id).signoff_note)}</div></div>` : '') : ''}
         <label>Description <span class="hint">(required; for events that need scheduling, it also goes on UVU’s form)</span><textarea id="ev-desc" placeholder="What members will do or learn, who it’s for, and anything to bring">${esc(e?.desc)}</textarea></label>
         <div id="rq-box">${rqPanel(e, e?.cat || Object.keys(CATS)[0])}</div>
         <div class="err" id="ev-err"></div>
@@ -6310,7 +6323,7 @@ async function handleSubmit(f, v, err){
         if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
         await logChange('Sent for presidents’ sign-off: “' + e.title + '”');
         ui.officerTab = 'scheduling'; ui.schedOpen = editing; ui.editEvent = null; ui.rq = null;
-      }, 'Sent to the presidents. It publishes once they all approve, or automatically after 48 hours.');
+      }, 'Sent for sign-off. You’ll be notified when it’s published.');
       return;
     }
     if (sched && mode !== 'publish'){
