@@ -3170,8 +3170,8 @@ const rqOf = id => (db.requests || {})[id] || null;
 const rqTag = id => { const r = rqOf(id); if (!r) return ''; const [l, c] = RQ_STATUS[r.status] || ['', '']; return ` <span class="tag ${c}">${l}</span>`; };
 const RQ_LOCATIONS = ['Auditorium', 'Ballroom', 'Event room', 'Classroom', 'Conference room', 'Bloomberg Lab', 'Computer lab', 'Table location (booth or hallway table)', 'Outdoor space (plaza or lawn)', 'Gym or fieldhouse', 'External location (off campus)'];
 const isExternal = loc => /^External/.test(loc || '');
-// Orem campus buildings. Keller first (the Woodbury default), then Any, then the rest alphabetically.
-const UVU_BUILDINGS = ['Browning Administration Building (BA)', 'Business Resource Center (BRC)', 'Classroom Building (CB)', 'Computer Science Building (CS)', 'Fulton Library (LI)', 'Gunther Technology Building (GT)', 'Health Professions Building (HP)', 'Liberal Arts Building (LA)', 'Losee Center (LC)', 'Noorda Center for the Performing Arts (NC)', 'Pope Science Building (PS)', 'Science Building (SB)', 'Sorensen Student Center (SC)', 'Student Life and Wellness Center (SL)', 'UCCU Center (UC)', 'Woodbury Business Building (WB)', 'Young Living Alumni Center (AC)'];
+// UVU's building directory (Orem campus map). Keller first (the Woodbury default), then Any, then the rest.
+const UVU_BUILDINGS = ['Auxiliary Services (AX)', 'Browning Administration (BA)', 'Business Resource Center (BR)', 'Clarke Classroom Building (CB)', 'Computer Sciences (CS)', 'Digital Transformation (DX)', 'Environmental Technology (EN)', 'Extension Building (EX)', 'Facilities Complex (FC)', 'Faculty Annex (FA)', 'Fugal Gateway (FG)', 'Fulton Library (FL)', 'Gunther Technology (GT)', 'Hall of Flags (HF)', 'Health Professions (HP)', 'Liberal Arts (LA)', 'Losee Center (LC)', 'McKay Education (ME)', 'National Guard (NG)', 'Nellesen Autism Building (NB)', 'Noorda Center (NC)', 'NUVI Basketball Center (BC)', 'Pope Science (PS)', 'Rebecca Lockhart Building (RL)', 'Science Building (SB)', 'Smith Engineering (SE)', 'Sorensen Center (SC)', 'Sparks Automotive (SA)', 'Student Life (SL)', 'UCCU Events Center (EC)', 'Wee Care Center (WE)', 'Wolverine Services (WS)', 'Woodbury Business (WB)', 'Young Alumni Building (YA)'];
 const RQ_LAYOUTS = [['classroom', 'Classroom style', 'classroom.jpg', 'chairs'], ['theater', 'Theater style', 'theater.jpg', 'chairs'], ['banquet', 'Banquet style', 'banquet.jpg', 'chairs'],
   ['boardroom', 'Boardroom style', 'boardroom.jpg', 'chairs'], ['u_shape', 'U shape', 'u-shape.jpg', 'chairs'], ['rounds_10', 'Round tables, 10 per table', 'rounds-10.jpg', 'tables'],
   ['rounds_8', 'Round tables, 8 per table', 'rounds-8.jpg', 'tables'], ['meet_firms', 'UVU Meet the Firms setup', '', ''], ['custom', 'Custom (upload a picture)', '', 'both']];
@@ -3179,7 +3179,7 @@ const RQ_TYPES = ['General Club', 'Service/Civic Engagement', 'Fundraising'];
 const RQ_CAMPUS = { on: 'On campus', off: 'Off campus', hybrid: 'Hybrid' };
 
 function rqDefaults(e){
-  return { dates: e && e.date ? [e.date] : [], altDates: [], setup: 30, after: 0, locType: '', building: 'Keller Building (KB)', uvuName: (e ? e.title : '').slice(0, 40), uvuDesc: e ? e.desc : '',
+  return { dates: e && e.date ? [e.date] : [], altDates: [], start: (e && e.start) || '18:00', end: (e && e.end) || '19:00', setup: 30, after: 0, locType: '', building: 'Keller Building (KB)', uvuName: (e ? e.title : '').slice(0, 40), guestPref: '',
     evType: 'General Club', campus: 'on', sponsor: '', sp: {}, food: '', tablecloths: '', speaker: e && e.cat === 'guest_speaker' ? 'yes' : '', speakers: [], av: '', avNeeds: '',
     tech: '', techTime: '', techStay: '', layout: '', chairs: '', tables: '', layoutImg: null, flyer: null, other: '' };
 }
@@ -3192,6 +3192,12 @@ function rqState(){
   }
   return ui.rq;
 }
+// A scheduler finalizing an approved draft: the only time the final date, times, location, and guest RSVP time are filled in.
+const rqFinalizing = id => !!id && isScheduler() && (rqOf(id) || {}).status === 'approved' && !!(evById(id) || {}).draft;
+const evHideFinal = (e, cat) => needsSched(cat) && !(e && !e.draft) && !rqFinalizing(e && e.id);
+const RQ_GUEST = [['same', 'Same time as members'], ['1', '1 day after members'], ['2', '2 days after members'], ['3', '3 days after members'], ['7', '1 week after members'], ['14', '2 weeks after members'], ['other', 'Other (explain in the notes at the bottom)']];
+const rqLegacy = r => !!(r && r.form && r.form.legacy);
+const LEGACY_NOTE = 'This event’s form was sent to the clubs office before scheduling requests were on the site, so there are no request details here.';
 const rqLocked = id => ['sent', 'submitted', 'approved'].includes((rqOf(id) || {}).status);
 const hhmmAdd = (t, mins) => { const [h, m] = (t || '00:00').split(':').map(Number), x = ((h * 60 + m + mins) % 1440 + 1440) % 1440; return String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0'); };
 const fmtShortDay = iso => parseDay(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
@@ -3236,9 +3242,9 @@ function rqPanel(e, cat){
     const notice = rqShortNotice(r.form, cat);
     return `<div class="panel stack rq-panel" style="gap:12px">${head}
       <p class="hint" style="margin:0">${{ sent: 'A scheduler has this request. You can still change the website details above, but the request is locked unless they send it back.', submitted: 'The scheduler submitted this to UVU. You’ll be notified when it’s approved.', approved: 'UVU approved this event. A scheduler will finalize the details and publish it.' }[st]}</p>
-      ${notice ? `<div class="rq-warn">${notice}</div>` : ''}${rqSummary(e, r)}</div>`;
+      ${notice ? `<div class="rq-warn">${notice}</div>` : ''}${rqLegacy(r) ? `<p class="hint" style="margin:0">${LEGACY_NOTE}</p>` : rqSummary(e, r)}</div>`;
   }
-  const d = rqState().d, start = (document.getElementById('ev-start') || {}).value || (e && e.start) || '18:00', end = (document.getElementById('ev-end') || {}).value || (e && e.end) || '19:00';
+  const d = rqState().d, start = d.start || '18:00';
   const notice = rqShortNotice(d, cat), lay = RQ_LAYOUTS.find(x => x[0] === d.layout);
   const n = Math.max(0, Math.min(10, +d.speakerCount || (d.speakers || []).length || (hasSpeaker(d, cat) ? 1 : 0)));
   return `<div class="panel stack rq-panel" style="gap:16px">${head}
@@ -3247,13 +3253,14 @@ function rqPanel(e, cat){
     <div class="stack" style="gap:6px"><strong>What is your ideal event date?</strong><span class="hint">Pick more than one if you don’t have a strong preference.</span>${rqCal('dates', d.dates)}</div>
     ${notice ? `<div class="rq-warn">${notice}</div>` : ''}
     <div class="stack" style="gap:6px"><strong>Any other days you’re willing to include if those don’t work?</strong><span class="hint">Optional.</span>${rqCal('altDates', d.altDates)}</div>
-    <div><strong>Start and end times:</strong> ${fmtTime(start)}–${fmtTime(end)} <span class="hint">From Starts and Ends above.</span></div>
+    <div class="grid2"><label>Start time <span class="hint">When the event itself starts</span><input type="time" data-rq="start" data-rr="1" value="${esc(d.start)}"></label>
+      <label>End time <span class="hint">Not counting setup or time after</span><input type="time" data-rq="end" value="${esc(d.end)}"></label></div>
     <div class="grid2"><label>Setup time before the event <span class="hint">Minutes, at least 15</span><input type="number" min="15" step="5" data-rq="setup" data-rr="1" value="${esc(d.setup)}"></label>
       <label>Time needed after <span class="hint">Minutes (for one-on-one conversations, cleanup). Can be 0.</span><input type="number" min="0" step="5" data-rq="after" value="${esc(d.after)}"></label></div>
     <div class="grid2"><label>What do you need in an event location?<select data-rq="locType" data-rr="1"><option value="">Choose one…</option>${RQ_LOCATIONS.map(x => `<option ${d.locType === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
       <label>Ideal building<select data-rq="building">${['Keller Building (KB)', 'Any', ...UVU_BUILDINGS].map(x => `<option ${d.building === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label></div>
     <label>Event name for UVU <span class="hint">Max 40 characters. Can be shorter than the website title.</span><input data-rq="uvuName" maxlength="40" value="${esc(d.uvuName)}"></label>
-    <label>Event description for UVU<textarea data-rq="uvuDesc" rows="4">${esc(d.uvuDesc)}</textarea></label>
+    <p class="hint" style="margin:0"><strong>Event description:</strong> the Description above goes on UVU’s form too.</p>
     <label>Maximum attendees <span class="hint">Same as the seat limit above (0 = no limit)</span><input type="number" min="0" id="rq-cap" value="${esc((document.getElementById('ev-cap') || {}).value || (e && e.cap) || 0)}"></label>
     <div class="grid2"><label>Type of event<select data-rq="evType">${RQ_TYPES.map(x => `<option ${d.evType === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
       <label>On campus, off campus, or hybrid?<select data-rq="campus" data-rr="1">${Object.entries(RQ_CAMPUS).map(([k, l]) => `<option value="${k}" ${d.campus === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
@@ -3285,6 +3292,7 @@ function rqPanel(e, cat){
       ${d.layout === 'custom' ? `<label>Picture of the layout<input type="file" accept="image/*,application/pdf" data-rqfile="layoutImg"></label>${rqFileLine('layoutImg', d)}
         <div class="grid2"><label>How many tables?<input type="number" min="0" data-rq="tables" value="${esc(d.tables)}"></label><label>How many chairs?<input type="number" min="0" data-rq="chairs" value="${esc(d.chairs)}"></label></div>` : ''}</div>`}
     <label>Flyer or image for the flyer <span class="hint">Optional</span><input type="file" accept="image/*,application/pdf" data-rqfile="flyer"></label>${rqFileLine('flyer', d)}
+    ${cat === 'case_competition' ? '' : `<label>When should guest RSVPs open, compared to members? <span class="hint">The scheduler sets the exact time when they publish the event.</span><select data-rq="guestPref"><option value="">Choose one…</option>${RQ_GUEST.map(([k, l]) => `<option value="${k}" ${d.guestPref === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`}
     <label>Anything else the scheduler should know? <span class="hint">Optional</span><textarea rows="3" data-rq="other">${esc(d.other)}</textarea></label>
   </div>`;
 }
@@ -3296,7 +3304,8 @@ function rqProblems(d, cat){
   if (d.after === '' || +d.after < 0) p.push('Enter the time needed after (0 is fine).');
   if (!d.locType) p.push('Choose what you need in a location.');
   if (!(d.uvuName || '').trim()) p.push('Enter the event name for UVU.');
-  if (!(d.uvuDesc || '').trim()) p.push('Enter the event description for UVU.');
+  if (!d.start || !d.end) p.push('Enter the start and end times.'); else if (d.end <= d.start) p.push('The end time must be after the start time.');
+  if (cat !== 'case_competition' && !d.guestPref) p.push('Choose when guest RSVPs should open.');
   yn('sponsor', 'external sponsor?'); yn('food', 'food?'); yn('tablecloths', 'tablecloths?'); yn('speaker', 'guest speaker?'); yn('av', 'additional A/V?'); yn('tech', 'AVSE technician?');
   if (d.sponsor === 'yes' && ['name', 'org', 'email', 'phone', 'street', 'city', 'state', 'zip'].some(k => !((d.sp || {})[k] || '').trim())) p.push('Fill in all the sponsor contact details.');
   if (d.speaker === 'yes' && (d.speakers || []).slice(0, +d.speakerCount || 1).filter(s => s && (s.name || '').trim()).length < (+d.speakerCount || 1)) p.push('Enter each guest speaker’s name (and job, topic, and bio if you have them).');
@@ -3335,18 +3344,20 @@ function rqRows(e, r){
     : lay ? lay[1] + (lay[3] === 'chairs' ? `, ${d.chairs} chairs` : lay[3] === 'tables' ? `, ${d.tables} tables` : lay[3] === 'both' ? `, ${d.tables} tables, ${d.chairs} chairs` : '') : '';
   return [
     ['Event name', d.uvuName], ['Ideal dates', (d.dates || []).slice().sort().map(fmtShortDay).join('\n')], ['Other dates that work', (d.altDates || []).slice().sort().map(fmtShortDay).join('\n') || 'None'],
-    ['Start and end times', `${fmtTime(e.start)} – ${fmtTime(e.end)}`], ['Setup time before', `${d.setup} minutes (from ${fmtTime(hhmmAdd(e.start, -(+d.setup || 0)))})`],
-    ['Time needed after', `${d.after || 0} minutes (until ${fmtTime(hhmmAdd(e.end, +d.after || 0))})`], ['Location type', d.locType], ['Ideal building', d.building],
-    ['Event description', d.uvuDesc], ['Maximum attendees', e.cap ? String(e.cap) : 'No limit'], ['Type of event', d.evType], ['On campus, off campus, or hybrid', RQ_CAMPUS[d.campus] || ''],
+    ['Start and end times', `${fmtTime(d.start)} – ${fmtTime(d.end)}`], ['Setup time before', `${d.setup} minutes (from ${fmtTime(hhmmAdd(d.start, -(+d.setup || 0)))})`],
+    ['Time needed after', `${d.after || 0} minutes (until ${fmtTime(hhmmAdd(d.end, +d.after || 0))})`], ['Location type', d.locType], ['Ideal building', d.building],
+    ['Event description', e.desc], ['Maximum attendees', e.cap ? String(e.cap) : 'No limit'], ['Type of event', d.evType], ['On campus, off campus, or hybrid', RQ_CAMPUS[d.campus] || ''],
     ['External sponsor', d.sponsor === 'yes' ? `${sp.org || ''}\nContact: ${sp.name || ''}\n${sp.email || ''} · ${sp.phone || ''}\n${sp.street || ''}, ${sp.city || ''}, ${sp.state || ''} ${sp.zip || ''}` : yn(d.sponsor)],
     ['Food, snacks, or beverages', yn(d.food)], ['Tablecloths', yn(d.tablecloths)], ['Guest speakers', d.speaker === 'yes' ? speakers : yn(d.speaker)],
     ['Additional A/V equipment', d.av === 'yes' ? 'Yes: ' + d.avNeeds : yn(d.av)],
-    ['AVSE technician before the event', d.tech === 'yes' ? `Yes, at ${fmtTime(hhmmAdd(e.start, -(+d.techTime || 0)))} (${d.techTime} min before)` : yn(d.tech)],
+    ['AVSE technician before the event', d.tech === 'yes' ? `Yes, at ${fmtTime(hhmmAdd(d.start, -(+d.techTime || 0)))} (${d.techTime} min before)` : yn(d.tech)],
     ...(d.tech === 'yes' ? [['AVSE technician for the whole event', yn(d.techStay)]] : []),
     ['Layout', layout, lay && lay[2] && !noLayout(d) ? lay[2] : '', d.layout === 'custom' ? d.layoutImg : null],
-    ['Flyer or image', d.flyer ? d.flyer.name : 'None', '', d.flyer], ['Other details', d.other || 'None']];
+    ['Flyer or image', d.flyer ? d.flyer.name : 'None', '', d.flyer], ['Other details', d.other || 'None'],
+    ...(e.cat === 'case_competition' ? [] : [['Guest RSVPs open (for the website)', (RQ_GUEST.find(x => x[0] === d.guestPref) || ['', 'No preference'])[1]]])];
 }
 function rqSummary(e, r){
+  if (rqLegacy(r)) return `<p class="hint" style="margin:0">${LEGACY_NOTE}</p>`;
   return `<dl class="rq-sum">${rqRows(e, r).map(([l, v, img, file]) => `<dt>${esc(l)}</dt><dd><div class="row" style="gap:8px;align-items:flex-start;justify-content:space-between;flex-wrap:nowrap">
     <span style="white-space:pre-wrap">${esc(v || '—')}</span>${v && !file ? `<button type="button" class="btn ghost small" data-act="copy" data-text="${esc(v)}" data-label="${esc(l)}">Copy</button>` : ''}
     ${file && file.path ? `<button type="button" class="btn ghost small" data-act="rq-open-file" data-id="${esc(file.path)}">Open file</button>` : ''}</div>
@@ -3360,7 +3371,7 @@ function schedulingBody(){
   const list = db.events.filter(e => rqOf(e.id) && (e.draft || rqOf(e.id).status !== 'approved')).sort((a, b) => ([...(rqOf(a.id).form.dates || [])].sort()[0] || a.date).localeCompare([...(rqOf(b.id).form.dates || [])].sort()[0] || b.date));
   const row = e => { const r = rqOf(e.id), first = [...(r.form.dates || [])].sort()[0], short = rqShortNotice(r.form, e.cat);
     return `<div class="list-row"><div><div class="ev-title">${esc(e.title)}${rqTag(e.id)}${short ? ' <span class="tag warn">Short notice</span>' : ''}</div>
-      <div class="ev-sub">${first ? 'Ideal: ' + fmtDay(first) + ((r.form.dates || []).length > 1 ? ` (+${r.form.dates.length - 1} more)` : '') : 'No dates yet'}${r.sent_by ? ' · Sent by ' + esc(userName(r.sent_by)) : ''}${r.status_at ? ' · ' + fmtMtStamp(Date.parse(r.status_at)) : ''}</div></div>
+      <div class="ev-sub">${rqLegacy(r) ? 'Form sent to the clubs office' : first ? 'Ideal: ' + fmtDay(first) + ((r.form.dates || []).length > 1 ? ` (+${r.form.dates.length - 1} more)` : '') : 'No dates yet'}${r.sent_by ? ' · Sent by ' + esc(userName(r.sent_by)) : ''}${r.status_at ? ' · ' + fmtMtStamp(Date.parse(r.status_at)) : ''}</div></div>
       <button class="btn ${r.status === 'sent' && sched ? '' : 'ghost '}small" data-act="rq-open" data-id="${e.id}">Open</button></div>`; };
   const group = (title, rows, empty) => `<div class="section-head"><h3>${title}</h3><span class="muted">${rows.length}</span></div><div>${rows.map(row).join('') || `<div class="empty">${empty}</div>`}</div>`;
   const by = s => list.filter(e => rqOf(e.id).status === s);
@@ -3467,7 +3478,7 @@ function viewOfficer(){
         <label>Title<input id="ev-title" required value="${esc(e?.title)}" placeholder="e.g. DCF Valuation Workshop"></label>
         <div class="grid2">
           <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${e?.cat===k?'selected':''}>${l} · ${PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select></label>
-          <label>Date <span class="hint">Final date once UVU approves</span><input id="ev-date" type="date" required value="${esc(e?.date || dayOffset(7))}"></label>
+          <label class="ev-final" ${evHideFinal(e, e?.cat || Object.keys(CATS)[0]) ? 'hidden' : ''}>Date${rqFinalizing(e?.id) ? ' <span class="hint">Final date approved by UVU</span>' : ''}<input id="ev-date" type="date" required value="${esc(e?.date || dayOffset(7))}"></label>
         </div>
         <div class="panel stack" id="ev-branches" ${e?.cat === 'officer_meeting' ? '' : 'hidden'} style="gap:10px;padding:14px">
           <strong>Who’s expected?</strong>
@@ -3484,14 +3495,14 @@ function viewOfficer(){
           <label>Registration deadline <span class="hint">Mountain Time. Leave blank to close when the event starts.</span><input id="ev-tdeadline" type="datetime-local" value="${mtLocalInput(e?.regDeadline)}"></label>
           <span class="hint">Members register teams on the event page instead of RSVPing. Every teammate needs a WFA account and confirms. After the event, mark 1st–3rd place on the event page: each confirmed teammate gets 50 / 30 / 15 bonus points.</span>
         </div>
-        <div class="grid2">
+        <div class="grid2 ev-final" ${evHideFinal(e, e?.cat || Object.keys(CATS)[0]) ? 'hidden' : ''}>
           <label>Starts<input id="ev-start" type="time" required value="${esc(e?.start || '18:00')}"></label>
           <label>Ends<input id="ev-end" type="time" required value="${esc(e?.end || '19:00')}"></label>
         </div>
-        <label>Location<input id="ev-loc" required value="${esc(e?.loc)}" placeholder="Building and room">
+        <label class="ev-final" ${evHideFinal(e, e?.cat || Object.keys(CATS)[0]) ? 'hidden' : ''}>Location<input id="ev-loc" required value="${esc(rqFinalizing(e?.id) && e?.loc === 'TBD' ? '' : e?.loc)}" placeholder="Building and room">
           <span class="hint">Need a room? <a href="https://www.uvu.edu/woodbury/current-students.html" target="_blank" rel="noopener">Reserve one through Woodbury ↗</a></span></label>
         <label>Seat limit<input id="ev-cap" type="number" min="0" value="${esc(e?.cap || 0)}"><span class="hint">0 means no limit. RSVPs close when the limit is reached. Guest RSVPs count too.</span></label>
-        <label id="ev-go-wrap" ${e?.cat === 'officer_meeting' || e?.cat === 'case_competition' ? 'hidden' : ''}>Guest RSVPs open <span class="hint">Optional. Give members early access: until this time (Mountain Time) only members can RSVP. Leave blank to let guests RSVP right away.</span><input id="ev-guest-opens" type="datetime-local" value="${mtLocalInput(e?.guestOpens)}"></label>
+        <label id="ev-go-wrap" class="ev-final" ${e?.cat === 'officer_meeting' || e?.cat === 'case_competition' || evHideFinal(e, e?.cat || Object.keys(CATS)[0]) ? 'hidden' : ''}>Guest RSVPs open ${rqFinalizing(e?.id) && rqOf(e.id).form.guestPref ? `<span class="hint"><strong>Requested: ${esc((RQ_GUEST.find(x => x[0] === rqOf(e.id).form.guestPref) || ['', ''])[1])}.</strong></span>` : ''}<span class="hint">Optional. Give members early access: until this time (Mountain Time) only members can RSVP. Leave blank to let guests RSVP right away.</span><input id="ev-guest-opens" type="datetime-local" value="${mtLocalInput(e?.guestOpens)}"></label>
         <label class="check" id="ev-mo-wrap" ${e?.cat === 'officer_meeting' ? 'hidden' : ''}><input type="checkbox" id="ev-members-only" ${e?.membersOnly ? 'checked' : ''}> Members only <span class="hint">Everyone can see it, but only members can RSVP and check in (a reason to join).</span></label>
         ${!e || e.draft ? (isScheduler() ? `<label class="check"><input type="checkbox" id="ev-soon" ${e?.comingSoon ? 'checked' : ''}> Coming-soon page <span class="hint">While this is a draft, anyone who opens its link sees only the title and the coming-soon description below (no date or other details) instead of “event not found.” Copy the link or QR code from the Drafts list after saving.</span></label>
           <label id="ev-soon-wrap" ${e?.comingSoon ? '' : 'hidden'}>Coming-soon description <span class="hint">Optional. A short teaser, like “Lunch with a Goldman Sachs VP. Seats are limited; RSVPs open soon.”</span><textarea id="ev-soon-desc" rows="3" maxlength="1000">${esc(e?.soonDesc || '')}</textarea></label>`
@@ -3500,7 +3511,8 @@ function viewOfficer(){
         <label>Check-in code <span class="hint">(optional)</span>
           <span class="row" style="gap:8px;flex-wrap:nowrap"><input id="ev-code" maxlength="8" autocomplete="off" value="${esc(e?.code || '')}" placeholder="e.g. BULL" style="font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;flex:1;min-width:0"><button type="button" class="btn ghost small" data-act="ev-gen-code">Generate</button></span>
           <span class="hint">Members type this at the event to check in. It only works on the event’s date. Leave blank to make one on the day.</span></label>
-        <label>Description <span class="hint">(required to publish)</span><textarea id="ev-desc" placeholder="What members will do or learn, who it’s for, and anything to bring">${esc(e?.desc)}</textarea></label>
+        ${rqFinalizing(e?.id) ? '<div class="rq-warn"><strong>UVU approved this event.</strong> Set the final date, times, location, and when guest RSVPs open, then click Publish to calendar.</div>' : ''}
+        <label>Description <span class="hint">(required; for events that need scheduling, it also goes on UVU’s form)</span><textarea id="ev-desc" placeholder="What members will do or learn, who it’s for, and anything to bring">${esc(e?.desc)}</textarea></label>
         <div id="rq-box">${rqPanel(e, e?.cat || Object.keys(CATS)[0])}</div>
         <div class="err" id="ev-err"></div>
         <div class="row" id="ev-btns">${evButtons(e, e?.cat || Object.keys(CATS)[0])}</div>
@@ -3510,7 +3522,7 @@ function viewOfficer(){
         ${(() => { const drafts = db.events.filter(x => x.draft).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
           return drafts.length ? `<div class="section-head"><h3>Drafts</h3><span class="muted">${drafts.length}</span></div>
           <div>${drafts.map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)} <span class="tag">Draft</span>${needsSched(ev.cat) ? (rqTag(ev.id) || ' <span class="tag">Not sent to scheduler</span>') : ''}${ev.comingSoon ? ' <span class="tag soon">Coming soon</span>' : ''}${pendingFor('event', ev.id).length ? ' <span class="tag warn">Waiting for approval</span>' : ''}</div><div class="ev-sub">${fmtDay(ev.date)} · ${esc(catName(ev.cat))}</div></div>
-            <div class="row" style="gap:6px">${!needsSched(ev.cat) ? `<button class="btn small" data-act="publish-event" data-id="${ev.id}">${canPublish() ? 'Publish' : 'Submit for approval'}</button>` : (rqOf(ev.id) || {}).status === 'approved' && isScheduler() ? `<button class="btn small" data-act="publish-event" data-id="${ev.id}">Publish</button>` : ''}<button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button><button class="btn ghost small" data-act="copy-link" data-id="${ev.id}">Copy link</button><button class="btn ghost small" data-act="qr" data-id="${ev.id}" data-kind="page">QR code</button>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${ev.id}">${ev.comingSoon ? 'Turn off coming soon' : 'Turn on coming soon'}</button>` : ''}${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('')}
+            <div class="row" style="gap:6px">${!needsSched(ev.cat) ? `<button class="btn small" data-act="publish-event" data-id="${ev.id}">${canPublish() ? 'Publish' : 'Submit for approval'}</button>` : (rqOf(ev.id) || {}).status === 'approved' && isScheduler() ? `<button class="btn small" data-act="edit-event" data-id="${ev.id}">Finalize and publish</button>` : ''}<button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button><button class="btn ghost small" data-act="copy-link" data-id="${ev.id}">Copy link</button><button class="btn ghost small" data-act="qr" data-id="${ev.id}" data-kind="page">QR code</button>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${ev.id}">${ev.comingSoon ? 'Turn off coming soon' : 'Turn on coming soon'}</button>` : ''}${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('')}
           <span class="hint">A draft’s link and QR code are already final: they start working when it’s published${drafts.some(x => x.comingSoon) ? ' (drafts with a coming-soon page show that until then)' : ''}.</span></div>` : ''; })()}
         <div class="section-head"><h3>Published events</h3><span class="muted">${sortedEvents().length}</span></div>
         <div>${sortedEvents().reverse().map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)}</div><div class="ev-sub">${fmtDay(ev.date)} · ${going(ev.id).length} RSVP${isPast(ev)?' · '+attended(ev.id).length+' attended':''}</div></div>
@@ -4908,6 +4920,8 @@ function syncCaseBox(){
   const mo = document.getElementById('ev-mo-wrap'), qa = document.getElementById('ev-qa-wrap');
   if (mo) mo.hidden = c.value === 'officer_meeting'; if (qa) qa.hidden = c.value !== 'guest_speaker';
   const go = document.getElementById('ev-go-wrap'); if (go) go.hidden = c.value === 'officer_meeting' || c.value === 'case_competition';
+  if (evHideFinal(ui.editEvent ? evById(ui.editEvent) : null, c.value)) document.querySelectorAll('.ev-final').forEach(el => { el.hidden = true; });
+  else document.querySelectorAll('.ev-final').forEach(el => { if (el.id !== 'ev-go-wrap') el.hidden = false; });
   if (c.dataset.was !== c.value){ c.dataset.was = c.value; rqRedraw(); }
 }
 ['input', 'change', 'click', 'keyup'].forEach(t => document.addEventListener(t, ev => { if (ev.target && ev.target.id === 'ev-cat') syncCaseBox(); }, true));
@@ -5228,7 +5242,7 @@ document.addEventListener('click', async ev => {
       if (pub && !(e.desc || '').trim()){ ui.editEvent = id; render(); window.scrollTo(0, 0); toast('Add a description first. It’s required to publish an event.'); break; }
       if (pub && needsSched(e.cat)){
         if (!((rqOf(id) || {}).status === 'approved' && isScheduler())){ toast('Only an event scheduler can publish this, once UVU approves it.'); break; }
-        await act(async () => { must(await sb.from('events').update({ draft: false }).eq('id', id)); await logChange('Published “' + e.title + '”'); }, 'Published to the calendar'); break;
+        ui.officerTab = 'events'; ui.editEvent = id; render(); window.scrollTo(0, 0); toast('Set the final date, times, and location, then publish.'); break;
       }
       await doOrPropose('event', pub ? 'publish' : 'unpublish', id, {}, (pub ? 'Publish “' : 'Move back to drafts: “') + e.title + '”',
         pub ? 'Published to the calendar' : 'Moved back to drafts. Members can’t see it now.'); break; }
@@ -5842,12 +5856,14 @@ async function handleSubmit(f, v, err){
 
   if (f.id === 'f-event'){
     const e = { title: v('ev-title'), cat: v('ev-cat'), date: v('ev-date'), start_time: v('ev-start'), end_time: v('ev-end'), loc: v('ev-loc'), cap: Math.max(0, parseInt(v('ev-cap')) || 0), descr: v('ev-desc') };
+    const waitFinal = evHideFinal(ui.editEvent ? evById(ui.editEvent) : null, e.cat), cur0 = evById(ui.editEvent) || {};
+    if (waitFinal){ const d = rqState().d; e.date = [...(d.dates || [])].sort()[0] || cur0.date || dayOffset(21); e.start_time = d.start || cur0.start || '18:00'; e.end_time = d.end || cur0.end || '19:00'; e.loc = cur0.loc || 'TBD'; }
     if (!e.title || !e.date || !e.start_time || !e.end_time || !e.loc) return err('ev-err', 'Fill in the title, date, times, and location.');
     if (e.end_time <= e.start_time) return err('ev-err', 'End time must be after the start time.');
     e.members_only = e.cat !== 'officer_meeting' && document.getElementById('ev-members-only').checked;
     e.qa_enabled = e.cat === 'guest_speaker' && document.getElementById('ev-qa').checked;
     if (document.getElementById('ev-soon')){ e.coming_soon = document.getElementById('ev-soon').checked; e.soon_desc = v('ev-soon-desc'); }
-    e.guest_rsvp_opens = ['officer_meeting', 'case_competition'].includes(e.cat) ? null : mtFromInput(v('ev-guest-opens'));
+    e.guest_rsvp_opens = ['officer_meeting', 'case_competition'].includes(e.cat) ? null : waitFinal ? (cur0.guestOpens || null) : mtFromInput(v('ev-guest-opens'));
     if (e.cat === 'officer_meeting'){ e.meeting_who = {}; f.querySelectorAll('.ev-who').forEach(s => { if (s.value) e.meeting_who[s.dataset.k] = s.value; }); }
     if (e.cat === 'case_competition'){
       e.team_min = parseInt(v('ev-tmin')) || 1; e.team_max = parseInt(v('ev-tmax')) || 1;
@@ -5864,7 +5880,7 @@ async function handleSubmit(f, v, err){
     if (sched && mode !== 'publish'){
       const rq = rqState();
       if (mode === 'send'){
-        const probs = rqProblems(rq.d, e.cat); if (!e.descr) probs.unshift('Add a description for the website.');
+        const probs = rqProblems(rq.d, e.cat); if (!e.descr) probs.unshift('Add the event description (it also goes on UVU’s form).');
         if (probs.length) return err('ev-err', 'Before sending it to the scheduler: ' + probs.join(' '));
       }
       e.draft = true;

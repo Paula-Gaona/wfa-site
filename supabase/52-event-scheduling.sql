@@ -93,6 +93,14 @@ begin
 end $$;
 grant execute on function public.scheduler_update(uuid, text, text) to authenticated;
 
+-- Drafts with a coming-soon page were already sent to the clubs office by hand: count them as submitted to UVU, so a
+-- scheduler only has to mark them approved (no form to fill out again).
+insert into public.event_requests (event_id, form, status, status_at, history)
+  select e.id, '{"legacy": true}'::jsonb, 'submitted', now(),
+    jsonb_build_array(jsonb_build_object('at', now(), 'by', 'system', 'status', 'submitted', 'note', 'Sent to the clubs office before scheduling requests were on the site.'))
+  from public.events e where e.draft and e.coming_soon and e.cat <> 'officer_meeting'
+  on conflict (event_id) do nothing;
+
 -- ---------- Publishing needs UVU approval and a scheduler ----------
 create or replace function public.guard_event_publish() returns trigger
 language plpgsql security definer set search_path = public as $$
