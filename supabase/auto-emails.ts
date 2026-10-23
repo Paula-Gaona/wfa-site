@@ -190,7 +190,12 @@ Deno.serve(async () => {
         if (r.status === 'branch') {
           to = branchPres(r.branch); again = 2 * DAY;
           subject = fresh ? `Review an event: ${t}` : `Still waiting for your review: ${t}`;
-          body = `${who(r.sent_by || '')} made "${t}" and needs approval from their branch president or vice president before it moves on. Edit and approve it, or send it back with notes.`;
+          const lastNote = ((r.history || [])[(r.history || []).length - 1] || {}).note || '';
+          body = /^Back to branch leadership/.test(lastNote)
+            ? `The presidents sent "${t}" back to the branch leadership to fix. Their suggested changes are on the event; make them (or say why not), then approve it again.
+
+${lastNote}`
+            : `${who(r.sent_by || '')} made "${t}" and needs approval from their branch president or vice president before it moves on. Edit and approve it, or send it back with notes.`;
         } else if (r.status === 'review' || r.status === 'signoff') {
           const voted = r.votes || {}, ev = evOf.get(r.event_id) || {};
           const presSched = presidents.some((o) => o.email === r.status_by);

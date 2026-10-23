@@ -235,6 +235,11 @@ main{padding-block:36px 64px}
 .flow-skip{border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;font-size:.9rem;color:var(--muted);flex:1}
 .start-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:12px}
 .aq-row{border-top:1px solid var(--line);padding-top:12px}
+.sug-side{position:sticky;top:90px;align-self:start;max-height:calc(100vh - 110px);overflow:auto}
+.helper{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:.82rem;color:var(--muted);background:var(--tint,transparent);border-left:3px solid var(--gold,#B8923A);padding:4px 8px;margin-top:4px}
+.helper.same{border-left-color:var(--brand)}
+.desc-preview{border:1px dashed var(--line);border-radius:var(--radius);padding:10px 12px;background:var(--surface,transparent)}
+.speaker-card{border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}
 .seg-tabs{display:flex;flex-wrap:wrap;gap:6px}
 .policy-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:12px}
 @media (max-width:640px){.flow-branches{grid-template-columns:1fr}}
@@ -732,7 +737,7 @@ async function load(){
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
-    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
+    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -3260,6 +3265,11 @@ function rqDefaults(e){
 }
 // The request being edited in the event editor (kept in ui so redraws don't lose what's typed).
 function rqState(){
+  if (ui.guestForm){
+    const key = 'guest:' + ui.guestForm;
+    if (!ui.rq || ui.rq.key !== key){ const g = ui.guestForm === 'new' ? null : gqOf(ui.guestForm); ui.rq = { key, d: { ...rqDefaults(null), dates: [], ...(((g || {}).form || {}).req || {}) }, files: {} }; }
+    return ui.rq;
+  }
   const key = ui.editEvent || 'new';
   if (!ui.rq || ui.rq.key !== key){
     const e = ui.editEvent ? evById(ui.editEvent) : null, saved = rqOf(ui.editEvent);
@@ -3359,12 +3369,37 @@ function rqAddr(path, a, streetLabel){
 const addrLine = a => a ? `${a.street || ''}, ${a.city || ''}, ${a.state || ''} ${a.zip || ''}`.trim() : '';
 const offSite = d => d.campus === 'off' || d.campus === 'hybrid';
 
-// The form itself (inside the event editor). Locked while a scheduler has it.
-function rqPanel(e, cat){
-  if (!needsSched(cat)) return '';
-  const r = rqOf(e && e.id), st = r ? r.status : 'draft';
-  const head = `<div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">Scheduling request</h3>${r ? rqTag(e.id) : ''}</div>`;
-  if (rqLocked(e && e.id)){
+// Seats a layout provides (round tables seat 10 or 8 each); null when it can't be worked out.
+function rqSeats(d){
+  const lay = RQ_LAYOUTS.find(x => x[0] === d.layout); if (!lay || noLayout(d)) return null;
+  if (d.layout === 'rounds_10') return +d.tables > 0 ? +d.tables * 10 : null;
+  if (d.layout === 'rounds_8') return +d.tables > 0 ? +d.tables * 8 : null;
+  return +d.chairs > 0 ? +d.chairs : null;
+}
+// The most people expected: the seat limit, or the estimate when there's no limit.
+const rqMaxPeople = (d, est) => est ? +d.estMax || 0 : (+((document.getElementById('ev-cap') || {}).value || 0) || +d.estMax || 0);
+// An approved guest's estimates, shown next to the matching fields when that guest is picked on an event.
+function rqHelperSource(d){
+  const id = ((d.speakers || []).find(s => s && s.guestId) || {}).guestId, g = id && gqOf(id);
+  return g ? { g, req: (g.form || {}).req || {} } : null;
+}
+const RQ_HELP_FMT = { dates: v => (v || []).slice().sort().map(fmtDay).join(', '), start: fmtTime, end: fmtTime, campus: v => RQ_CAMPUS[v] || v, layout: v => (RQ_LAYOUTS.find(x => x[0] === v) || ['', v])[1],
+  food: v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : v, tablecloths: v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : v, av: v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : v };
+function gh(d, k){
+  const src = rqHelperSource(d); if (!src) return '';
+  const v = src.req[k]; if (v == null || v === '' || (Array.isArray(v) && !v.length)) return '';
+  if (JSON.stringify(v) === JSON.stringify(d[k])) return `<span class="helper same">✓ Matches the guest approval</span>`;
+  return `<span class="helper">Guest approval said: <strong>${esc((RQ_HELP_FMT[k] || String)(v))}</strong> <button type="button" class="btn ghost small" data-act="rq-use" data-id="${k}">Use</button></span>`;
+}
+
+// The form itself (inside the event editor). Locked while it's moving through approval. With est: the rough
+// estimates on an external guest request (same questions, no guests or RSVP timing).
+function rqPanel(e, cat, opts = {}){
+  const est = !!opts.est;
+  if (!est && !needsSched(cat)) return '';
+  const r = est ? null : rqOf(e && e.id), st = r ? r.status : 'draft';
+  const head = `<div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">${est ? 'Rough estimates for the event' : 'Scheduling request'}</h3>${r ? rqTag(e.id) : ''}</div>`;
+  if (!est && rqLocked(e && e.id)){
     const notice = rqShortNotice(r.form, cat);
     return `<div class="panel stack rq-panel" style="gap:12px">${head}
       <p class="hint" style="margin:0">${{ branch: 'Waiting for your branch president or vice president. They can edit it before approving it, or send it back to you.', review: `Every president is reviewing it before it goes to UVU. If nobody requests changes, it moves on ${rqDeadline(r)}.`,
@@ -3373,78 +3408,90 @@ function rqPanel(e, cat){
       ${notice ? `<div class="rq-warn">${notice}</div>` : ''}${rqLegacy(r) ? `<p class="hint" style="margin:0">${LEGACY_NOTE}</p>` : rqSummary(e, r)}</div>`;
   }
   const d = rqState().d, start = d.start || '18:00', capNow = (document.getElementById('ev-cap') || {}).value ?? ((e && e.cap) || 0);
-  if (!d.speaker && GUEST_CATS.includes(cat)) d.speaker = 'yes';
-  const notice = rqShortNotice(d, cat), lay = RQ_LAYOUTS.find(x => x[0] === d.layout);
+  if (!est && !d.speaker && GUEST_CATS.includes(cat)) d.speaker = 'yes';
+  const notice = est ? '' : rqShortNotice(d, cat), lay = RQ_LAYOUTS.find(x => x[0] === d.layout);
   const n = Math.max(1, Math.min(10, +d.speakerCount || (d.speakers || []).length || 1));
   const nLoc = Math.max(1, Math.min(5, +d.locCount || (d.locs || []).length || 1));
   d.sp = d.sp || {}; d.locs = d.locs || [];
+  const seats = rqSeats(d), most = rqMaxPeople(d, est), short = seats && most && seats < most;
+  const help = est ? () => '' : k => gh(d, k), src = est ? null : rqHelperSource(d);
+  const pickTop = !est && (GUEST_CATS.includes(cat) || d.speaker === 'yes') && (approvedGuests().length || src);
   return `<div class="panel stack rq-panel" style="gap:16px">${head}
     <datalist id="rq-cities">${UT_CITIES.map(c => `<option value="${c}">`).join('')}</datalist>
-    <p class="hint" style="margin:0">UVU has to approve club events before they’re advertised. Fill this out and send it to an event scheduler, who submits it to UVU. Nothing here is shown on the website.</p>
-    ${st === 'returned' ? `<div class="rq-warn"><strong>The scheduler sent this back.</strong> What to fix:<div style="white-space:pre-wrap;margin-top:4px">${esc(r.note)}</div></div>` : ''}
-    <label>Will this event be on campus, off campus, or hybrid?<select data-rq="campus" data-rr="1">${Object.entries(RQ_CAMPUS).map(([k, l]) => `<option value="${k}" ${d.campus === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    <p class="hint" style="margin:0">${est ? 'Rough guesses are fine for all of these. The event’s own scheduling request will have the real details later.' : 'UVU has to approve club events before they’re advertised. Fill this out and send it for approval; a scheduler submits it to UVU. Nothing here is shown on the website.'}</p>
+    ${!est && st === 'returned' ? `<div class="rq-warn"><strong>This was sent back.</strong> What to fix:<div style="white-space:pre-wrap;margin-top:4px">${esc(r.note)}</div></div>` : ''}
+    ${pickTop ? `<div class="panel stack" style="gap:8px;padding:12px;border-color:var(--gold,#B8923A)"><label>Is this event for an approved external guest?<select data-guestpick="0"><option value="">No / not yet approved</option>${approvedGuests().map(g => `<option value="${g.id}" ${((d.speakers || [])[0] || {}).guestId === g.id ? 'selected' : ''}>${esc(gqName(g))}</option>`).join('')}</select></label>
+      ${src ? `<span class="hint">Their guest approval’s estimates show next to each question below. <button type="button" class="btn ghost small" data-act="rq-use-all">Use all of them</button></span>` : '<span class="hint">Picking an approved guest fills in their details and shows their approval’s estimates next to each question.</span>'}</div>` : ''}
+    <label>Will this event be on campus, off campus, or hybrid?<select data-rq="campus" data-rr="1">${Object.entries(RQ_CAMPUS).map(([k, l]) => `<option value="${k}" ${d.campus === k ? 'selected' : ''}>${l}</option>`).join('')}</select>${help('campus')}</label>
     ${offSite(d) ? `<div class="panel stack" style="gap:10px;padding:12px">
       <label style="max-width:16rem">${d.campus === 'hybrid' ? 'How many off-campus locations?' : 'How many locations?'}<select data-rq="locCount" data-rr="1">${[1, 2, 3, 4, 5].map(i => `<option ${nLoc === i ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
       ${Array.from({ length: nLoc }, (_, i) => { const a = (d.locs[i] = d.locs[i] || {}); return `<div class="stack" style="gap:8px;${i ? 'border-top:1px solid var(--line);padding-top:10px' : ''}"><strong>Location ${i + 1}</strong>
         <label>Name of the place<input data-rq="locs.${i}.name" placeholder="e.g. Goldman Sachs Salt Lake City office" value="${esc(a.name || '')}"></label>${rqAddr('locs.' + i, a, 'Street address')}</div>`; }).join('')}</div>` : ''}
-    <div class="stack" style="gap:6px"><strong>What is your ideal event date?</strong><span class="hint">Pick more than one if you don’t have a strong preference.</span>${rqCal('dates', d.dates)}</div>
+    <div class="stack" style="gap:6px"><strong>${est ? 'What dates are likely?' : 'What is your ideal event date?'}</strong><span class="hint">Pick more than one if you don’t have a strong preference.</span>${rqCal('dates', d.dates)}${help('dates')}</div>
     ${notice ? `<div class="rq-warn">${notice}</div>` : ''}
     <div class="stack" style="gap:6px"><strong>Any other days you’re willing to include if those don’t work?</strong><span class="hint">Optional.</span>${rqCal('altDates', d.altDates)}</div>
-    <div class="grid2"><label>Start time <span class="hint">When the event itself starts</span><input type="time" data-rq="start" data-rr="1" value="${esc(d.start)}"></label>
-      <label>End time <span class="hint">Not counting setup or time after</span><input type="time" data-rq="end" value="${esc(d.end)}"></label></div>
-    <div class="grid2"><label>Setup time before the event <span class="hint">Minutes, at least 15</span><input type="number" min="15" step="5" data-rq="setup" data-rr="1" value="${esc(d.setup)}"></label>
-      <label>Time needed after <span class="hint">Minutes (for one-on-one conversations, cleanup). Can be 0.</span><input type="number" min="0" step="5" data-rq="after" value="${esc(d.after)}"></label></div>
-    ${d.campus === 'off' ? '' : `<div class="grid2"><label>What do you need in an event location?${d.campus === 'hybrid' ? ' <span class="hint">For the on-campus part</span>' : ''}<select data-rq="locType" data-rr="1"><option value="">Choose one…</option>${RQ_LOCATIONS.filter(x => !isExternal(x)).map(x => `<option ${d.locType === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
-      <label>Ideal building<select data-rq="building">${['Keller Building (KB)', 'Any', ...UVU_BUILDINGS].map(x => `<option ${d.building === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label></div>`}
-    <label>Event name for UVU <span class="hint">Max 40 characters. Can be shorter than the website title.</span><input data-rq="uvuName" maxlength="40" value="${esc(d.uvuName)}"></label>
-    <p class="hint" style="margin:0"><strong>Event description:</strong> the Description above goes on UVU’s form too.</p>
+    <div class="grid2"><label>Start time <span class="hint">When the event itself starts</span><input type="time" data-rq="start" data-rr="1" value="${esc(d.start)}">${help('start')}</label>
+      <label>End time <span class="hint">Not counting setup or time after</span><input type="time" data-rq="end" value="${esc(d.end)}">${help('end')}</label></div>
+    <div class="grid2"><label>Setup time before the event <span class="hint">Minutes, at least 15</span><input type="number" min="15" step="5" data-rq="setup" data-rr="1" value="${esc(d.setup)}">${help('setup')}</label>
+      <label>Time needed after <span class="hint">Minutes (for one-on-one conversations, cleanup). Can be 0.</span><input type="number" min="0" step="5" data-rq="after" value="${esc(d.after)}">${help('after')}</label></div>
+    ${d.campus === 'off' ? '' : `<div class="grid2"><label>What do you need in an event location?${d.campus === 'hybrid' ? ' <span class="hint">For the on-campus part</span>' : ''}<select data-rq="locType" data-rr="1"><option value="">Choose one…</option>${RQ_LOCATIONS.filter(x => !isExternal(x)).map(x => `<option ${d.locType === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>${help('locType')}</label>
+      <label>Ideal building<select data-rq="building">${['Keller Building (KB)', 'Any', ...UVU_BUILDINGS].map(x => `<option ${d.building === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>${help('building')}</label></div>
+      <label>Is there a specific room you have in mind? <span class="hint">Optional, like “KB 101”</span><input data-rq="room" value="${esc(d.room || '')}">${help('room')}</label>`}
+    <label>Event name for UVU <span class="hint">Max 40 characters. Can be shorter than the website title.</span><input data-rq="uvuName" maxlength="40" value="${esc(d.uvuName)}">${help('uvuName')}</label>
+    ${est ? `<label>Expected attendance<input type="number" min="1" data-rq="estMax" data-rr="1" value="${esc(d.estMax || '')}"></label>`
+      : `<p class="hint" style="margin:0"><strong>Event description:</strong> the Description above goes on UVU’s form too.</p>
     <label>Maximum attendees <span class="hint">Same as the seat limit above (0 = no limit)</span><input type="number" min="0" id="rq-cap" value="${esc(capNow)}"></label>
-    ${+capNow ? '' : `<label>About how many people do you expect, at most? <span class="hint">Required when there’s no seat limit, so UVU can plan the room.</span><input type="number" min="1" data-rq="estMax" value="${esc(d.estMax || '')}"></label>`}
-    <label>Type of event<select data-rq="evType">${RQ_TYPES.map(x => `<option ${d.evType === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+    ${+capNow ? '' : `<label>About how many people do you expect, at most? <span class="hint">Required when there’s no seat limit, so UVU can plan the room.</span><input type="number" min="1" data-rq="estMax" data-rr="1" value="${esc(d.estMax || '')}">${help('estMax')}</label>`}`}
+    <label>Type of event<select data-rq="evType">${RQ_TYPES.map(x => `<option ${d.evType === x ? 'selected' : ''}>${x}</option>`).join('')}</select>${help('evType')}</label>
     ${rqYN('sponsor', 'Does this event have an external sponsor?', d)}
     ${d.sponsor === 'yes' ? `<div class="panel stack" style="gap:10px;padding:12px">
       <div class="grid2"><label>Contact person<input data-rq="sp.name" value="${esc(d.sp.name || '')}"></label><label>Sponsoring organization<input data-rq="sp.org" value="${esc(d.sp.org || '')}"></label></div>
       <div class="grid2">${rqField('sp.email', 'Contact email', d.sp.email, 'email', 'type="email" autocomplete="off"')}${rqField('sp.phone', 'Contact phone <span class="hint">With area code</span>', d.sp.phone, 'phone', 'type="tel" placeholder="(801) 555-0123"')}</div>
       ${rqAddr('sp', d.sp, 'Organization street address')}</div>` : ''}
-    ${rqYN('food', 'Will the event have food, snacks, or beverages?', d)}
-    ${rqYN('tablecloths', 'Will the event need tablecloths?', d)}
-    ${d.tablecloths === 'yes' ? `<label>What color tablecloths?<input data-rq="clothColor" list="rq-colors" placeholder="e.g. Black" value="${esc(d.clothColor || '')}"></label><datalist id="rq-colors">${['Black', 'White', 'Green (UVU)', 'Gold', 'Navy', 'Gray'].map(c => `<option value="${c}">`).join('')}</datalist>` : ''}
-    ${rqYN('speaker', 'Will there be any external guests?', d, 'Guest speakers, judges, recruiters, panelists, or anyone else from outside UVU.')}
-    ${d.speaker === 'yes' ? `<div class="panel stack" style="gap:10px;padding:12px">
+    ${rqYN('food', 'Will the event have food, snacks, or beverages?', d)}${help('food')}
+    ${rqYN('tablecloths', 'Will the event need tablecloths?', d)}${help('tablecloths')}
+    ${d.tablecloths === 'yes' ? `<label>What color tablecloths?<input data-rq="clothColor" list="rq-colors" placeholder="e.g. Black" value="${esc(d.clothColor || '')}">${help('clothColor')}</label><datalist id="rq-colors">${['Black', 'White', 'Green (UVU)', 'Gold', 'Navy', 'Gray'].map(c => `<option value="${c}">`).join('')}</datalist>` : ''}
+    ${est ? '' : rqYN('speaker', 'Will there be any external guests?', d, 'Guest speakers, judges, recruiters, panelists, or anyone else from outside UVU.')}
+    ${!est && d.speaker === 'yes' ? `<div class="panel stack" style="gap:10px;padding:12px">
       <label style="max-width:14rem">How many external guests?<select data-rq="speakerCount" data-rr="1">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => `<option ${n === i ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
       ${Array.from({ length: n }, (_, i) => { const s = (d.speakers || [])[i] || {}; return `<div class="stack" style="gap:8px;border-top:1px solid var(--line);padding-top:10px"><strong>Guest ${i + 1}</strong>
         ${approvedGuests().length || s.guestId ? `<label>Approved guest <span class="hint">Picked guests already have UVU’s approval, so the event needs 3 weeks’ notice instead of 10.</span><select data-guestpick="${i}"><option value="">Other (not pre-approved)</option>${approvedGuests().map(g => `<option value="${g.id}" ${s.guestId === g.id ? 'selected' : ''}>${esc(gqName(g))}</option>`).join('')}</select></label>` : ''}
         <label>Name<input data-rq="speakers.${i}.name" value="${esc(s.name || '')}"></label>
         <div class="grid2"><label>Job title<input data-rq="speakers.${i}.title" value="${esc(s.title || s.job || '')}"></label><label>Company<input data-rq="speakers.${i}.company" value="${esc(s.company || '')}"></label></div>
         <label>Speaking topic or role <span class="hint">Like “Building a fintech company” or “Judge”</span><input data-rq="speakers.${i}.topic" value="${esc(s.topic || '')}"></label><label>Bio<textarea rows="3" data-rq="speakers.${i}.bio">${esc(s.bio || '')}</textarea></label>
-        <div class="grid2">${rqField(`speakers.${i}.email`, 'Email <span class="hint">Optional</span>', s.email, 'email', 'type="email" autocomplete="off"')}${rqField(`speakers.${i}.phone`, 'Phone <span class="hint">Optional</span>', s.phone, 'phone', 'type="tel" placeholder="(801) 555-0123"')}</div></div>`; }).join('')}</div>` : ''}
-    ${rqYN('av', 'Will your event need additional A/V equipment?', d, 'Most locations have two mics and a projector.')}
-    ${d.av === 'yes' ? `<label>What A/V equipment do you need?<textarea rows="2" data-rq="avNeeds">${esc(d.avNeeds)}</textarea></label>` : ''}
+        <div class="grid2">${rqField(`speakers.${i}.email`, 'Email <span class="hint">Optional</span>', s.email, 'email', 'type="email" autocomplete="off"')}${rqField(`speakers.${i}.phone`, 'Phone <span class="hint">Optional</span>', s.phone, 'phone', 'type="tel" placeholder="(801) 555-0123"')}</div>
+        <label class="check"><input type="checkbox" data-rq="speakers.${i}.show" ${s.show === false ? '' : 'checked'}> Show this guest on the event page <span class="hint">Name, job title, company, and bio. Contact info is never shown.</span></label></div>`; }).join('')}</div>` : ''}
+    ${rqYN('av', 'Will your event need additional A/V equipment?', d, 'Most locations have two mics and a projector.')}${help('av')}
+    ${d.av === 'yes' ? `<label>What A/V equipment do you need?<textarea rows="2" data-rq="avNeeds">${esc(d.avNeeds)}</textarea>${help('avNeeds')}</label>` : ''}
     ${rqYN('tech', 'Would you like an AVSE technician to meet you before the event starts?', d)}
     ${d.tech === 'yes' ? ((+d.setup || 0) < 30 ? `<div class="rq-warn">An AVSE technician meets you at least 30 minutes before the event. Change the setup time above to 30 minutes or more.</div>`
       : `<label>What time should the AVSE technician meet you at the venue?<select data-rq="techTime"><option value="">Choose a time…</option>${rqTechOpts(d, start).map(([v, l]) => `<option value="${v}" ${String(d.techTime) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`)
       + rqYN('techStay', 'Would you like an AVSE technician to stay for the whole event?', d, 'AVSE charges by the hour for this.') : ''}
-    ${noLayout(d) ? '' : `<div class="stack" style="gap:8px"><strong>What layout do you want?</strong>
+    ${noLayout(d) ? '' : `<div class="stack" style="gap:8px"><strong>What layout do you want?</strong>${help('layout')}
       <div class="rq-layouts">${RQ_LAYOUTS.map(([k, l, img]) => `<label class="rq-layout ${d.layout === k ? 'on' : ''}"><input type="radio" name="rq-layout" data-rq="layout" data-rr="1" value="${k}" ${d.layout === k ? 'checked' : ''}>
         ${img ? `<img src="layouts/${img}" alt="" loading="lazy">` : `<span class="rq-layout-blank">${k === 'custom' ? '＋ Upload' : 'Meet the Firms'}</span>`}<span>${l}</span></label>`).join('')}</div>
-      ${lay && lay[3] === 'chairs' ? `<label style="max-width:14rem">How many chairs?<input type="number" min="1" data-rq="chairs" value="${esc(d.chairs)}"></label>` : ''}
-      ${lay && lay[3] === 'tables' ? `<label style="max-width:14rem">How many tables?<input type="number" min="1" data-rq="tables" value="${esc(d.tables)}"></label>` : ''}
+      ${lay && lay[3] === 'chairs' ? `<label style="max-width:14rem">How many chairs?<input type="number" min="1" data-rq="chairs" data-rr="1" value="${esc(d.chairs)}">${help('chairs')}</label>` : ''}
+      ${lay && lay[3] === 'tables' ? `<label style="max-width:14rem">How many tables?<input type="number" min="1" data-rq="tables" data-rr="1" value="${esc(d.tables)}">${help('tables')}</label>` : ''}
       ${d.layout === 'custom' ? `<label>Picture of the layout<input type="file" accept="image/*,application/pdf" data-rqfile="layoutImg"></label>${rqFileLine('layoutImg', d)}
-        <div class="grid2"><label>How many tables?<input type="number" min="0" data-rq="tables" value="${esc(d.tables)}"></label><label>How many chairs?<input type="number" min="0" data-rq="chairs" value="${esc(d.chairs)}"></label></div>` : ''}</div>`}
+        <div class="grid2"><label>How many tables?<input type="number" min="0" data-rq="tables" value="${esc(d.tables)}"></label><label>How many chairs?<input type="number" min="0" data-rq="chairs" data-rr="1" value="${esc(d.chairs)}"></label></div>` : ''}
+      ${seats ? `<div class="hint"><strong>Available seats: ${seats}</strong>${d.layout === 'rounds_10' ? ` (${d.tables} tables × 10)` : d.layout === 'rounds_8' ? ` (${d.tables} tables × 8)` : ''}</div>` : ''}
+      ${short ? `<div class="rq-warn">Available seats (${seats}) is less than the maximum attendance (${most}).
+        <label class="check" style="margin-top:6px"><input type="checkbox" data-rq="seatOk" ${d.seatOk ? 'checked' : ''}> Ignore: not every guest needs a seat</label></div>` : ''}</div>`}
     <label>Flyer or image for the flyer <span class="hint">Optional</span><input type="file" accept="image/*,application/pdf" data-rqfile="flyer"></label>${rqFileLine('flyer', d)}
-    ${cat === 'case_competition' ? '' : `<div class="stack" style="gap:8px"><strong>RSVP timing you’d like</strong><span class="hint">The scheduler sets the exact times when they finalize the event.</span>
+    ${est || cat === 'case_competition' ? '' : `<div class="stack" style="gap:8px"><strong>RSVP timing you’d like</strong><span class="hint">The scheduler sets the exact times when they finalize the event.</span>
       <label>When should RSVPs open?<select data-rq="rsvpWhen" data-rr="1"><option value="publish" ${d.rsvpWhen !== 'date' ? 'selected' : ''}>As soon as it’s published</option><option value="date" ${d.rsvpWhen === 'date' ? 'selected' : ''}>On a specific date and time</option></select></label>
-      ${d.rsvpWhen === 'date' ? `<label>RSVPs open <span class="hint">Mountain Time</span><input type="datetime-local" data-rq="rsvpAt" value="${esc(d.rsvpAt)}"></label>` : ''}
+      ${d.rsvpWhen === 'date' ? `<label>Date and time RSVPs open <span class="hint">Pick both the day and the time (Mountain Time)</span><input type="datetime-local" data-rq="rsvpAt" value="${esc(d.rsvpAt)}"></label>` : ''}
       ${(document.getElementById('ev-members-only') || {}).checked ? '' : `<label class="check"><input type="checkbox" data-rq="guestLater" data-rr="1" ${d.guestLater ? 'checked' : ''}> Open RSVPs for guests at a later date?</label>
         ${d.guestLater ? `<label>Guests can RSVP<select data-rq="guestMode" data-rr="1">${RQ_GUEST.map(([k, l]) => `<option value="${k}" ${d.guestMode === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-          ${d.guestMode === 'date' ? `<label>Guest RSVPs open <span class="hint">Mountain Time</span><input type="datetime-local" data-rq="guestAt" value="${esc(d.guestAt)}"></label>` : ''}` : ''}`}</div>`}
-    <label>Anything else the scheduler should know? <span class="hint">Optional</span><textarea rows="3" data-rq="other">${esc(d.other)}</textarea></label>
+          ${d.guestMode === 'date' ? `<label>Date and time guest RSVPs open <span class="hint">Pick both the day and the time (Mountain Time)</span><input type="datetime-local" data-rq="guestAt" value="${esc(d.guestAt)}"></label>` : ''}` : ''}`}</div>`}
+    <label>Anything else the scheduler should know? <span class="hint">Optional</span><textarea rows="3" data-rq="other">${esc(d.other)}</textarea>${help('other')}</label>
   </div>`;
 }
 // What's missing before it can be sent.
 // US phone numbers: 10 digits (an optional leading 1), any punctuation.
 const validPhone = x => /^1?\d{10}$/.test(String(x).replace(/[\s().+-]/g, '')) && !/[^\d\s().+-]/.test(x);
-function rqProblems(d, cat){
+function rqProblems(d, cat, opts = {}){
+  const est = !!opts.est;
   const p = [], yn = (k, q) => { if (!['yes', 'no'].includes(d[k])) p.push('Answer: ' + q); };
   const addr = (a, what) => {
     a = a || {};
@@ -3458,8 +3505,10 @@ function rqProblems(d, cat){
   if (d.after === '' || +d.after < 0) p.push('Enter the time needed after (0 is fine).');
   if (d.campus !== 'off' && !d.locType) p.push('Choose what you need in a location.');
   if (!(d.uvuName || '').trim()) p.push('Enter the event name for UVU.');
-  if (!(+((document.getElementById('ev-cap') || {}).value || 0) > 0) && !(+d.estMax > 0)) p.push('There’s no seat limit, so enter about how many people you expect at most.');
-  yn('sponsor', 'external sponsor?'); yn('food', 'food?'); yn('tablecloths', 'tablecloths?'); yn('speaker', 'external guests?'); yn('av', 'additional A/V?'); yn('tech', 'AVSE technician?');
+  if (est){ if (!(+d.estMax > 0)) p.push('Enter the expected attendance.'); }
+  else if (!(+((document.getElementById('ev-cap') || {}).value || 0) > 0) && !(+d.estMax > 0)) p.push('There’s no seat limit, so enter about how many people you expect at most.');
+  yn('sponsor', 'external sponsor?'); yn('food', 'food?'); yn('tablecloths', 'tablecloths?'); if (!est) yn('speaker', 'external guests?'); yn('av', 'additional A/V?'); yn('tech', 'AVSE technician?');
+  { const seats = rqSeats(d), most = rqMaxPeople(d, est); if (seats && most && seats < most && !d.seatOk) p.push(`Available seats (${seats}) is less than the maximum attendance (${most}). Add seats, or check “Ignore: not every guest needs a seat.”`); }
   if (d.sponsor === 'yes'){
     const sp = d.sp || {};
     if (['name', 'org', 'email', 'phone'].some(k => !(sp[k] || '').trim())) p.push('Fill in the sponsor’s contact person, organization, email, and phone.');
@@ -3467,8 +3516,8 @@ function rqProblems(d, cat){
     if (em) p.push('Sponsor email: ' + em[0]); if (ph) p.push('Sponsor phone: ' + ph[0]);
     addr(sp, 'the sponsoring organization');
   }
-  if (d.speaker === 'yes' && (d.speakers || []).slice(0, +d.speakerCount || 1).filter(s => s && (s.name || '').trim()).length < (+d.speakerCount || 1)) p.push('Enter each external guest’s name (and their job title, company, topic, and bio if you have them).');
-  if (d.speaker === 'yes') (d.speakers || []).slice(0, +d.speakerCount || 1).forEach((s, i) => { if (!s) return;
+  if (!est && d.speaker === 'yes' && (d.speakers || []).slice(0, +d.speakerCount || 1).filter(s => s && (s.name || '').trim()).length < (+d.speakerCount || 1)) p.push('Enter each external guest’s name (and their job title, company, topic, and bio if you have them).');
+  if (!est && d.speaker === 'yes') (d.speakers || []).slice(0, +d.speakerCount || 1).forEach((s, i) => { if (!s) return;
     const em = rqCheck('email', s.email), ph = rqCheck('phone', s.phone); if (em) p.push(`Guest ${i + 1} email: ${em[0]}`); if (ph) p.push(`Guest ${i + 1} phone: ${ph[0]}`); });
   if (d.av === 'yes' && !(d.avNeeds || '').trim()) p.push('Say what A/V equipment you need.');
   if (d.tech === 'yes'){ if ((+d.setup || 0) < 30) p.push('An AVSE technician needs at least 30 minutes of setup time.'); else if (!d.techTime) p.push('Choose when the AVSE technician should meet you.'); if (!['yes', 'no'].includes(d.techStay)) p.push('Answer: AVSE technician for the whole event?'); }
@@ -3479,7 +3528,7 @@ function rqProblems(d, cat){
     else if (lay[3] === 'tables' && !(+d.tables > 0)) p.push('Enter how many tables.');
     else if (lay[3] === 'both' && (!d.layoutImg || d.tables === '' || d.chairs === '')) p.push('Upload a picture of your layout and enter how many tables and chairs.');
   }
-  if (cat !== 'case_competition'){
+  if (!est && cat !== 'case_competition'){
     if (d.rsvpWhen === 'date' && !d.rsvpAt) p.push('Pick when RSVPs should open, or choose “As soon as it’s published.”');
     if (d.guestLater && d.guestMode === 'date' && !d.guestAt) p.push('Pick when guest RSVPs should open.');
     if (d.guestLater && d.guestMode === 'date' && d.guestAt && d.rsvpWhen === 'date' && d.rsvpAt && d.guestAt < d.rsvpAt) p.push('Guest RSVPs can’t open before member RSVPs.');
@@ -3488,21 +3537,25 @@ function rqProblems(d, cat){
   return p;
 }
 // Uploads any files picked in the form, then saves (and maybe sends) the request.
-async function rqSave(evId, send){
+async function rqUploadFiles(prefix){
   const rq = rqState();
   for (const [k, file] of Object.entries(rq.files)){
-    const path = `${evId}/${k}-${Date.now()}-${file.name.replace(/[^\w.-]+/g, '_').slice(-60)}`;
+    const path = `${prefix}/${k}-${Date.now()}-${file.name.replace(/[^\w.-]+/g, '_').slice(-60)}`;
     must(await sb.storage.from('event-files').upload(path, file, { contentType: file.type || undefined }));
     rq.d[k] = { path, name: file.name };
   }
   rq.files = {};
+}
+async function rqSave(evId, send){
+  const rq = rqState();
+  await rqUploadFiles(evId);
   const r = await sb.rpc('save_event_request', { p_event: evId, p_form: rq.d, p_send: !!send });
   if (r.error) throw new Error(/save_event_request|event_requests/.test(r.error.message || '') ? 'Event scheduling isn’t set up yet. An admin needs to run 52-event-scheduling.sql.' : r.error.message);
   if (r.data === 'err:locked' && send) throw new Error('A scheduler already has this request.');
 }
 
 // The request as the scheduler reads it, in the order of UVU's form, with a Copy button on each answer.
-function rqRows(e, r){
+function rqRows(e, r, est = false){
   const d = { ...rqDefaults(e), ...r.form }, yn = v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : '';
   const sp = d.sp || {}, lay = RQ_LAYOUTS.find(x => x[0] === d.layout);
   const speakers = (d.speakers || []).slice(0, +d.speakerCount || (d.speakers || []).length || 1).filter(Boolean)
@@ -3515,7 +3568,7 @@ function rqRows(e, r){
     ...(offSite(d) ? [[d.campus === 'hybrid' ? 'Off-campus locations' : 'Locations', locs]] : []), ['Ideal dates', (d.dates || []).slice().sort().map(fmtShortDay).join('\n')], ['Other dates that work', (d.altDates || []).slice().sort().map(fmtShortDay).join('\n') || 'None'],
     ['Start and end times', `${fmtTime(d.start)} – ${fmtTime(d.end)}`], ['Setup time before', `${d.setup} minutes (from ${fmtTime(hhmmAdd(d.start, -(+d.setup || 0)))})`],
     ['Time needed after', `${d.after || 0} minutes (until ${fmtTime(hhmmAdd(d.end, +d.after || 0))})`],
-    ...(d.campus === 'off' ? [] : [['Location type' + (d.campus === 'hybrid' ? ' (on-campus part)' : ''), d.locType], ['Ideal building', d.building]]),
+    ...(d.campus === 'off' ? [] : [['Location type' + (d.campus === 'hybrid' ? ' (on-campus part)' : ''), d.locType], ['Ideal building', d.building], ['Specific room', d.room || 'No preference']]),
     ['Event description', e.desc], ['Maximum attendees', e.cap ? String(e.cap) : `No RSVP limit; expecting up to ${d.estMax || '?'}`], ['Type of event', d.evType],
     ['External sponsor', d.sponsor === 'yes' ? `${sp.org || ''}\nContact: ${sp.name || ''}\n${sp.email || ''} · ${sp.phone || ''}\n${addrLine(sp)}` : yn(d.sponsor)],
     ['Food, snacks, or beverages', yn(d.food)], ['Tablecloths', d.tablecloths === 'yes' ? 'Yes, ' + (d.clothColor || 'color not given') : yn(d.tablecloths)], ['External guests', d.speaker === 'yes' ? speakers : yn(d.speaker)],
@@ -3524,11 +3577,12 @@ function rqRows(e, r){
     ...(d.tech === 'yes' ? [['AVSE technician for the whole event', yn(d.techStay)]] : []),
     ['Layout', layout, lay && lay[2] && !noLayout(d) ? lay[2] : '', d.layout === 'custom' ? d.layoutImg : null],
     ['Flyer or image', d.flyer ? d.flyer.name : 'None', '', d.flyer], ['Other details', d.other || 'None'],
-    ...(e.cat === 'case_competition' ? [] : [['RSVPs open (for the website)', rqRsvpText(d)], ['Guest RSVPs (for the website)', rqGuestText(d)]])];
+    ...(est || e.cat === 'case_competition' ? [] : [['RSVPs open (for the website)', rqRsvpText(d)], ['Guest RSVPs (for the website)', rqGuestText(d)]])]
+    .filter(row => !(est && row[0] === 'External guests'));
 }
-function rqSummary(e, r){
+function rqSummary(e, r, est = false){
   if (rqLegacy(r)) return `<p class="hint" style="margin:0">${LEGACY_NOTE}</p>`;
-  return `<dl class="rq-sum">${rqRows(e, r).map(([l, v, img, file]) => `<dt>${esc(l)}</dt><dd><div class="row" style="gap:8px;align-items:flex-start;justify-content:space-between;flex-wrap:nowrap">
+  return `<dl class="rq-sum">${rqRows(e, r, est).map(([l, v, img, file]) => `<dt>${esc(l)}</dt><dd><div class="row" style="gap:8px;align-items:flex-start;justify-content:space-between;flex-wrap:nowrap">
     <span style="white-space:pre-wrap">${esc(v || '—')}</span>${v && !file ? `<button type="button" class="btn ghost small" data-act="copy" data-text="${esc(v)}" data-label="${esc(l)}">Copy</button>` : ''}
     ${file && file.path ? `<button type="button" class="btn ghost small" data-act="rq-open-file" data-id="${esc(file.path)}">Open file</button>` : ''}</div>
     ${img ? `<img src="layouts/${img}" alt="${esc(v)}" class="rq-thumb">` : ''}</dd>`).join('')}</dl>`;
@@ -3664,7 +3718,7 @@ function rqDetail(e, r){
     ${round}${actions}
     ${st === 'signoff' || st === 'approved' ? `<section class="panel stack" style="gap:10px"><h3 style="margin:0">On the website</h3>${evFinalSummary(e)}</section>` : ''}
     <section class="panel stack" style="gap:10px"><h3 style="margin:0">Request details</h3>${rqSummary(e, r)}</section>
-    ${sugHistory(r)}
+    ${sugHistory(r, e)}
     ${hist ? `<section class="stack" style="gap:6px"><h3 style="margin:0">History</h3><ul class="rq-hist">${hist}</ul></section>` : ''}</div>`;
 }
 // What the presidents are signing off on: the event as it'll appear on the site.
@@ -3720,6 +3774,9 @@ function sugForm(e, r){
       <span class="hint">Change anything below right in the field, and say why. If every change you suggest gets made, it counts as your approval when it comes back.${r.status === 'signoff' ? ' The date, room, and times are already approved by UVU, so only these can change.' : ''}</span>
       ${sugDefs(e, r.status).map(([t, f, l, type]) => `<div class="sug-row"><span class="sug-label">${esc(l)}</span>${sugInput(t, f, type, sugCur(e, r, t, f))}<input class="sug-why" data-why="${t}:${f}" placeholder="Why? (needed if you change this)"></div>`).join('')}
       <label>Other comments <span class="hint">Optional if you changed something above</span><textarea id="sug-note" rows="2"></textarea></label>
+      <fieldset class="rq-q"><legend>If you wrote a comment, what is it? <span class="hint">Needed with a comment</span></legend><div class="stack" style="gap:6px">
+        <label class="check"><input type="radio" name="sug-kind" value="context"> Just context: making my field changes is enough</label>
+        <label class="check"><input type="radio" name="sug-kind" value="more"> It describes more changes: I need to look at it again</label></div></fieldset>
       <div class="row"><button class="btn ghost" type="submit">Request these changes</button></div><div class="err" id="sug-err"></div></form></details>`;
 }
 function readSuggestions(e, r){
@@ -3740,12 +3797,12 @@ function readSuggestions(e, r){
 const sugOpen = (r, step) => (r && r.suggestions || []).filter(s => s.step === step && s.state === 'open');
 function sugPanel(e){
   const r = rqOf(e && e.id); if (!r) return '';
-  const step = rqFinalizing(e.id) ? 'signoff' : r.status === 'returned' && r.returned_from === 'review' && r.sent_by === session ? 'review' : '';
+  const step = rqFinalizing(e.id) ? 'signoff' : (r.status === 'returned' && r.returned_from === 'review' && r.sent_by === session) || (r.status === 'branch' && rqReviewing(e.id)) ? 'review' : '';
   const list = step ? sugOpen(r, step) : []; if (!list.length) return '';
   ui.sugDone = ui.sugDone || {}; ui.sugReplies = ui.sugReplies || {};
-  return `<div class="panel stack rq-panel" id="sug-box" style="gap:12px"><strong>Suggested changes</strong>
-    <span class="hint">Accept a change to fill it in below, or decline it and say why. A president whose changes are all made counts as approving when you send it again.</span>
-    ${list.map(s => `<div class="stack" style="gap:8px"><div><strong>${esc(userName(s.by))}</strong>${s.note ? `<div style="white-space:pre-wrap">${esc(s.note)}</div>` : ''}</div>
+  return `<div class="panel stack rq-panel" id="sug-box" style="gap:12px"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><strong>Suggested changes</strong><button type="button" class="btn small" data-act="sug-all">Implement all changes</button></div>
+    <span class="hint">Accept a change to fill it in on the form, or decline it and say why. A president whose changes are all made counts as approving when you send it again, unless their comment says they need another look.</span>
+    ${list.map(s => `<div class="stack" style="gap:8px"><div><strong>${esc(userName(s.by))}</strong>${s.note ? `<div style="white-space:pre-wrap">${esc(s.note)}</div>${s.note_kind === 'more' ? '<span class="tag warn">Needs another look</span>' : ''}` : ''}</div>
       ${(s.changes || []).map(c => { const k = s.by + '|' + c.field, done = ui.sugDone[k], type = sugType(c.target, c.field);
         return `<div class="sug-change ${done || ''}"><div><strong>${esc(c.label)}:</strong> ${esc(sugShow(type, c.from))} → <strong>${esc(sugShow(type, c.to))}</strong>${c.why ? `<div class="hint">Why: ${esc(c.why)}</div>` : ''}</div>
           <div class="row" style="gap:6px">${done === 'accepted' ? '<span class="tag ok">Accepted</span>' : `<button type="button" class="btn ghost small" data-act="sug-accept" data-id="${esc(k)}">Accept</button>`}
@@ -3783,14 +3840,30 @@ function rqEditSummary(oldForm, newForm, oldEv, row){
   return list.length ? 'Approved with edits: ' + list.join(', ') + '.' : '';
 }
 const rqMajority = r => (r.status === 'review' || !rqSmall(r)) && ((r.rounds || 0) >= 2 || (!!r.step_started_at && Date.now() >= businessAdd(Date.parse(r.step_started_at), 120)));
-function sugHistory(r){
+// What changed since a president asked for changes: each requested change (made or not), and anything else changed.
+function sugChecklist(e, r, s){
+  if (s.state === 'open') return '';
+  const made = c => { const type = sugType(c.target, c.field), cur = sugCur(e, r, c.target, c.field); return type === 'datetime' ? (Date.parse(cur) || 0) === (Date.parse(c.to) || 0) : cur === c.to; };
+  const asked = new Set((s.changes || []).map(c => c.field));
+  const snap = s.snapshot || {}, before = snap.ev || {}, now = { title: e.title, desc: e.desc, cap: e.cap, membersOnly: e.membersOnly, qaEnabled: e.qaEnabled, rsvpOpens: e.rsvpOpens, guestDelay: e.guestDelay, date: e.date, start: e.start, end: e.end, loc: e.loc };
+  const evLabels = { title: ['title', 'Title'], desc: ['descr', 'Description'], cap: ['cap', 'Seat limit'], membersOnly: ['members_only', 'Members only'], qaEnabled: ['qa_enabled', 'Q&A'], rsvpOpens: ['rsvp_opens', 'RSVP opening time'], guestDelay: ['guest_rsvp_delay', 'Guest RSVP timing'], date: ['', 'Date'], start: ['', 'Start time'], end: ['', 'End time'], loc: ['', 'Location'] };
+  const other = [];
+  if (snap.ev) Object.entries(evLabels).forEach(([k, [f, l]]) => { if (!asked.has(f) && JSON.stringify(before[k] ?? null) !== JSON.stringify(now[k] ?? null)) other.push(l); });
+  if (snap.form){ const labels = Object.fromEntries(SUG_FORM.map(([k, l]) => [k, l])), a = snap.form, b = r.form || {};
+    [...new Set([...Object.keys(a), ...Object.keys(b)])].forEach(k => { if (!asked.has(k) && JSON.stringify(a[k] ?? '') !== JSON.stringify(b[k] ?? '')) other.push(labels[k] || ({ dates: 'Ideal dates', altDates: 'Other dates', campus: 'On/off campus', locs: 'Locations', sp: 'Sponsor', speakers: 'External guests', layout: 'Layout', chairs: 'Chairs', tables: 'Tables', room: 'Specific room' })[k] || k); }); }
+  return `<div class="stack" style="gap:4px;margin-top:4px"><span class="hint"><strong>Since this request:</strong></span>
+    ${(s.changes || []).map(c => `<div>${made(c) ? '✓' : '✗'} ${esc(c.label)}${made(c) ? ' <span class="hint">made</span>' : ` <span class="hint">not made${(s.replies || {})[c.field] ? ': ' + esc(s.replies[c.field]) : ''}</span>`}</div>`).join('')}
+    ${[...new Set(other)].length ? `<div>➕ Also changed: ${esc([...new Set(other)].join(', '))}</div>` : '<div class="hint">Nothing else was changed.</div>'}</div>`;
+}
+function sugHistory(r, e){
   const list = (r.suggestions || []).slice().reverse(); if (!list.length) return '';
   const stateText = { open: 'Waiting for changes', met: 'All made: counted as approval', answered: 'Answered' };
   return `<section class="stack" style="gap:8px"><h3 style="margin:0">Suggested changes</h3>${list.map(s => `<div class="panel stack" style="gap:6px;padding:10px 14px">
     <div><strong>${esc(userName(s.by))}</strong> <span class="hint">${s.step === 'review' ? 'Presidents’ review' : 'Sign-off'} · ${fmtMtStamp(Date.parse(s.at))} · ${stateText[s.state] || ''}</span></div>
-    ${s.note ? `<div style="white-space:pre-wrap">${esc(s.note)}</div>` : ''}
+    ${s.note ? `<div style="white-space:pre-wrap">${esc(s.note)}</div>${s.note_kind === 'more' ? '<span class="tag warn">Needs another look</span>' : ''}` : ''}
     ${(s.changes || []).map(c => { const type = sugType(c.target, c.field), rep = (s.replies || {})[c.field];
-      return `<div>${esc(c.label)}: ${esc(sugShow(type, c.from))} → <strong>${esc(sugShow(type, c.to))}</strong>${c.why ? ` <span class="hint">(${esc(c.why)})</span>` : ''}${rep ? `<div class="hint">Declined: ${esc(rep)}</div>` : ''}</div>`; }).join('')}</div>`).join('')}</section>`;
+      return `<div>${esc(c.label)}: ${esc(sugShow(type, c.from))} → <strong>${esc(sugShow(type, c.to))}</strong>${c.why ? ` <span class="hint">(${esc(c.why)})</span>` : ''}${rep ? `<div class="hint">Declined: ${esc(rep)}</div>` : ''}</div>`; }).join('')}
+    ${e ? sugChecklist(e, r, s) : ''}</div>`).join('')}</section>`;
 }
 // When RSVPs open: as soon as it's published or at a set time; guests can open later (a number of days after members,
 // or a set time). Finalizing a scheduled event starts from what the officer asked for.
@@ -3802,11 +3875,11 @@ function rsvpBox(e){
   return `<div id="ev-go-wrap" class="ev-final stack" style="gap:10px" ${cat === 'officer_meeting' || cat === 'case_competition' || evHideFinal(e, cat) ? 'hidden' : ''}>
     ${fin ? `<span class="hint"><strong>Requested: RSVPs open ${esc(rqRsvpText(want).toLowerCase())}; guests ${esc(rqGuestText(want).toLowerCase())}.</strong></span>` : ''}
     <label>When do RSVPs open?<select id="ev-rsvp-when"><option value="publish" ${when === 'publish' ? 'selected' : ''}>As soon as it’s published</option><option value="date" ${when === 'date' ? 'selected' : ''}>On a specific date and time</option></select></label>
-    <label id="ev-rsvp-at-wrap" ${when === 'date' ? '' : 'hidden'}>RSVPs open <span class="hint">Mountain Time</span><input id="ev-rsvp-at" type="datetime-local" value="${esc(at)}"></label>
+    <label id="ev-rsvp-at-wrap" ${when === 'date' ? '' : 'hidden'}>Date and time RSVPs open <span class="hint">Pick both the day and the time (Mountain Time)</span><input id="ev-rsvp-at" type="datetime-local" value="${esc(at)}"></label>
     <div id="ev-guest-wrap" class="stack" style="gap:10px" ${e?.membersOnly ? 'hidden' : ''}>
       <label class="check"><input type="checkbox" id="ev-guest-later" ${later ? 'checked' : ''}> Open RSVPs for guests at a later date?</label>
       <label id="ev-guest-mode-wrap" ${later ? '' : 'hidden'}>Guests can RSVP<select id="ev-guest-mode">${RQ_GUEST.map(([k, l]) => `<option value="${k}" ${mode === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-      <label id="ev-guest-at-wrap" ${later && mode === 'date' ? '' : 'hidden'}>Guest RSVPs open <span class="hint">Mountain Time</span><input id="ev-guest-at" type="datetime-local" value="${esc(gat)}"></label></div></div>`;
+      <label id="ev-guest-at-wrap" ${later && mode === 'date' ? '' : 'hidden'}>Date and time guest RSVPs open <span class="hint">Pick both the day and the time (Mountain Time)</span><input id="ev-guest-at" type="datetime-local" value="${esc(gat)}"></label></div></div>`;
 }
 function syncRsvpBox(){
   const g = id => document.getElementById(id); if (!g('ev-rsvp-when')) return;
@@ -3832,12 +3905,14 @@ function rqSet(obj, path, val){
 }
 function rqRedraw(){
   const box = document.getElementById('rq-box'); if (!box) return;
+  if (document.getElementById('f-guest-req')){ const y = window.scrollY; box.innerHTML = rqPanel(null, 'guest_speaker', { est: true }); window.scrollTo(0, y); return; }
   const e = ui.editEvent ? evById(ui.editEvent) : null, cat = (document.getElementById('ev-cat') || {}).value;
   const y = window.scrollY; box.innerHTML = rqPanel(e, cat); window.scrollTo(0, y);
   const b = document.getElementById('ev-btns'); if (b) b.innerHTML = evButtons(e, cat);
 }
 ['input', 'change'].forEach(type => document.addEventListener(type, ev => {
   const t = ev.target; if (!t || !t.dataset) return;
+  if (t.id === 'ev-desc' || t.dataset.gq === 'evDesc'){ const pv = document.getElementById(t.id === 'ev-desc' ? 'ev-desc-preview' : 'gq-desc-preview'); if (pv){ pv.hidden = !t.value.trim(); pv.querySelector('p').textContent = t.value; } }
   if (t.dataset.gq && ui.gq){ ui.gq.d[t.dataset.gq] = t.value; if (t.dataset.check) rqShowCheck(t, false); if (type === 'change' && t.dataset.gq === 'estFrom') render(); return; }
   if (t.dataset.aq !== undefined && ui.appQ){ const [i, f] = t.dataset.aq.split(':'), q = ui.appQ[+i]; if (!q) return;
     q[f] = f === 'required' ? t.checked : f === 'options' ? t.value.split('\n').map(x => x.trim()).filter(Boolean) : t.value; if (f === 'type' && type === 'change') render(); return; }
@@ -3902,10 +3977,11 @@ async function saveSchedFlag(email, on){
 }
 
 /* ---------- External guest pre-approval ---------- */
-// Officers can get an outside guest (speaker, judge, panelist...) approved by UVU before the event is planned, using
-// estimates. Branch review (regular officers), then one president other than the sender (moves on after 48 business
-// hours), then a scheduler submits it to UVU and marks it approved for the semester (or a narrower window). Approved
-// guests can be picked on an event's scheduling request; an event whose guests are all approved needs 3 weeks' notice.
+// Officers can get an outside guest (speaker, judge, panelist...) approved by UVU before the event is planned, with
+// rough estimates of the whole event (the same questions as an event's request). Branch review for regular officers
+// (a president's approval there sends it straight to the schedulers), then one president (or, after 36 business
+// hours, a VP), then a scheduler submits it to UVU and marks it approved for the semester (or a narrower window).
+// Approved guests can be picked on an event's request; an event whose guests are all approved needs 3 weeks' notice.
 const GQ_STATUS = { draft: ['Not sent yet', ''], branch: ['Waiting for branch review', 'warn'], review: ['Waiting for a president', 'warn'], sent: ['With the scheduler', 'warn'],
   returned: ['Sent back: needs changes', 'warn'], submitted: ['Submitted to UVU', 'ok'], approved: ['Approved by UVU', 'ok'], removed: ['Removed', ''] };
 const gqOf = id => (db.guestReqs || []).find(g => g.id === id) || null;
@@ -3913,19 +3989,26 @@ const gqTag = g => { const [l, c] = GQ_STATUS[g.status] || ['', '']; return ` <s
 // Semesters: Spring Jan 1–Apr 30, Summer May 1–Jul 31, Fall Aug 1–Dec 31 (matches semester_bounds in the database).
 function semesterBounds(isoDay){ const [y, m] = isoDay.split('-').map(Number); return m <= 4 ? [`${y}-01-01`, `${y}-04-30`] : m <= 7 ? [`${y}-05-01`, `${y}-07-31`] : [`${y}-08-01`, `${y}-12-31`]; }
 const semesterName = isoDay => { const m = +isoDay.slice(5, 7); return (m <= 4 ? 'Spring ' : m <= 7 ? 'Summer ' : 'Fall ') + isoDay.slice(0, 4); };
-const gqWindow = g => { const [s, e] = semesterBounds((g.form || {}).estFrom || todayIso()); return [g.window_start || s, g.window_end || e]; };
+const gqLikely = g => [...(((g.form || {}).req || {}).dates || [])].sort()[0] || (g.form || {}).estFrom || todayIso();
+const gqWindow = g => { const [s, e] = semesterBounds(gqLikely(g)); return [g.window_start || s, g.window_end || e]; };
 // Guests that can still be picked: approved, not removed, and their window isn't over.
 const approvedGuests = () => (db.guestReqs || []).filter(g => g.status === 'approved' && gqWindow(g)[1] >= todayIso());
 const gqName = g => { const f = g.form || {}; return [f.name, [f.title, f.company].filter(Boolean).join(', ')].filter(Boolean).join(' · '); };
+// Who can approve it in the presidents' step (matches gq_approvers in the database).
+function gqApprovers(g){
+  const skip = e => e === g.sent_by || e === g.status_by, presSent = presidentsList().includes(g.sent_by);
+  const late = !presSent && Date.now() >= businessAdd(Date.parse(g.status_at), 36);
+  return [...presidentsList().filter(e => !skip(e)), ...(late ? vpsList().filter(e => !skip(e)) : [])];
+}
+const gqReviewing = g => !!g && ((g.status === 'branch' && branchReviewers(g.branch).includes(session)) || (g.status === 'review' && gqApprovers(g).includes(session)));
 function gqWaitingOnMe(g){
   const st = g.status;
-  if (st === 'branch') return branchReviewers(g.branch).includes(session);
-  if (st === 'review') return isPresident() && g.sent_by !== session;
+  if (st === 'branch' || st === 'review') return gqReviewing(g);
   if (st === 'sent' || st === 'submitted') return isScheduler();
   if (st === 'returned') return g.sent_by === session;
   return false;
 }
-const gqDefaults = () => ({ name: '', title: '', company: '', topic: '', bio: '', email: '', phone: '', estFrom: '', estTo: '', dateNote: '', campus: 'on', locType: '', layout: '', attendance: '', food: '', av: '', notes: '' });
+const gqDefaults = () => ({ name: '', title: '', company: '', topic: '', bio: '', email: '', phone: '', evTitle: '', evDesc: '' });
 function gqState(){
   const key = ui.guestForm || 'new';
   if (!ui.gq || ui.gq.key !== key){ const g = key === 'new' ? null : gqOf(key); ui.gq = { key, d: { ...gqDefaults(), ...((g && g.form) || {}) } }; }
@@ -3935,62 +4018,58 @@ function gqField(k, label, kind = '', extra = ''){
   const d = gqState().d, c = kind ? rqCheck(kind, d[k]) : '';
   return `<label>${label}<input data-gq="${k}" ${kind ? `data-check="${kind}"` : ''} value="${esc(d[k] || '')}" ${extra}>${kind ? `<span class="err field-err">${c ? esc(c[0]) : ''}</span>` : ''}</label>`;
 }
+// A description as it will look on the site.
+const descPreview = (id, text) => `<div class="desc-preview" id="${id}" ${text ? '' : 'hidden'}><span class="eyebrow">Preview</span><p style="white-space:pre-wrap;margin:4px 0 0">${esc(text || '')}</p></div>`;
 function guestFormBody(){
   const st = gqState(), d = st.d, g = st.key === 'new' ? null : gqOf(st.key);
-  if (g && !['draft', 'returned'].includes(g.status)) return gqDetail(g);
-  const sel = (k, opts) => `<select data-gq="${k}" ${k === 'estFrom' ? '' : ''}>${opts.map(([v, l]) => `<option value="${esc(v)}" ${d[k] === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  const reviewing = gqReviewing(g);
+  if (g && !['draft', 'returned'].includes(g.status) && !reviewing) return gqDetail(g);
+  const likely = [...((rqState().d || {}).dates || [])].sort()[0];
   return `<form class="stack" id="f-guest-req" novalidate style="gap:14px;max-width:47.5rem">
     <div><button type="button" class="btn ghost small" data-act="gq-close">← Back</button></div>
-    <div><div class="eyebrow">External guest</div><h2 style="margin:4px 0">Submit an external guest for approval</h2>
-      <p class="muted" style="margin:0">Get a speaker, judge, panelist, or other outside guest approved by UVU before the event itself is planned. Estimates are fine, and nothing goes on the calendar. Once UVU approves them, they can be picked on an event’s scheduling request, and that event needs only 3 weeks’ notice instead of 10. The event still goes through its own approval.</p></div>
-    ${g && g.status === 'returned' ? `<div class="rq-warn"><strong>Sent back.</strong> What to fix:<div style="white-space:pre-wrap;margin-top:4px">${esc(g.note)}</div></div>` : ''}
+    <div><div class="eyebrow">External guest</div><h2 style="margin:4px 0">${reviewing ? 'Review an external guest' : 'Submit an external guest for approval'}</h2>
+      <p class="muted" style="margin:0">${reviewing ? 'Make any changes, then approve it. The officer who sent it sees what was approved.' : 'Get a speaker, judge, panelist, or other outside guest approved by UVU before the event itself is planned. Give a rough estimate of everything; nothing goes on the calendar. Once UVU approves them, they can be picked on an event’s scheduling request, and that event needs only 3 weeks’ notice instead of 10. The event still goes through its own approval.'}</p></div>
+    ${g && (g.status === 'returned' || (reviewing && g.note)) ? `<div class="rq-warn"><strong>Sent back.</strong> What to fix:<div style="white-space:pre-wrap;margin-top:4px">${esc(g.note)}</div></div>` : ''}
     <section class="panel stack" style="gap:10px"><h3 style="margin:0">The guest</h3>
       ${gqField('name', 'Name')}<div class="grid2">${gqField('title', 'Job title')}${gqField('company', 'Company')}</div>
       ${gqField('topic', 'Speaking topic or role <span class="hint">Like “Building a fintech company” or “Judge”</span>')}
       <label>Bio<textarea rows="4" data-gq="bio">${esc(d.bio)}</textarea></label>
       <div class="grid2">${gqField('email', 'Email', 'email', 'type="email" autocomplete="off"')}${gqField('phone', 'Phone <span class="hint">Optional, with area code</span>', 'phone', 'type="tel" placeholder="(801) 555-0123"')}</div></section>
-    <section class="panel stack" style="gap:10px"><h3 style="margin:0">Estimates for the event</h3><span class="hint">Your best guesses. The event’s own scheduling request will have the real details.</span>
-      <div class="grid2"><label>Earliest likely date<input type="date" data-gq="estFrom" min="${todayIso()}" value="${esc(d.estFrom)}"></label><label>Latest likely date <span class="hint">Optional</span><input type="date" data-gq="estTo" value="${esc(d.estTo)}"></label></div>
-      ${d.estFrom ? `<span class="hint">If approved, it covers ${semesterName(d.estFrom)}. The scheduler can narrow that if UVU gives a shorter window.</span>` : ''}
-      <label>Anything about timing? <span class="hint">Optional, like “a Tuesday or Thursday at lunch”</span><input data-gq="dateNote" value="${esc(d.dateNote)}"></label>
-      <div class="grid2"><label>On campus, off campus, or hybrid?${sel('campus', Object.entries(RQ_CAMPUS))}</label><label>Expected attendance<input type="number" min="1" data-gq="attendance" value="${esc(d.attendance)}"></label></div>
-      <div class="grid2"><label>Likely location type${sel('locType', [['', 'Not sure yet'], ...RQ_LOCATIONS.map(x => [x, x])])}</label><label>Likely layout${sel('layout', [['', 'Not sure yet'], ...RQ_LAYOUTS.map(([k, l]) => [k, l])])}</label></div>
-      <div class="grid2"><label>Food or drinks?${sel('food', [['', 'Not sure yet'], ['yes', 'Yes'], ['no', 'No']])}</label><label>A/V needs <span class="hint">Optional</span><input data-gq="av" value="${esc(d.av)}"></label></div>
-      <label>Anything else? <span class="hint">Optional</span><textarea rows="3" data-gq="notes">${esc(d.notes)}</textarea></label></section>
+    <section class="panel stack" style="gap:10px"><h3 style="margin:0">The event, roughly</h3>
+      ${gqField('evTitle', 'Working title')}
+      <label>Rough description<textarea rows="4" data-gq="evDesc">${esc(d.evDesc)}</textarea></label>${descPreview('gq-desc-preview', d.evDesc)}
+      ${likely ? `<span class="hint">If approved, the guest is approved for ${semesterName(likely)}. The scheduler can narrow that if UVU gives a shorter window.</span>` : ''}</section>
+    <div id="rq-box">${rqPanel(null, 'guest_speaker', { est: true })}</div>
     <div class="err" id="gq-err"></div>
-    <div class="row"><button class="btn" type="submit" data-mode="send">${g && g.status === 'returned' ? 'Send it again' : needsBranchReview(session) ? 'Send to your branch president or VP' : 'Send for approval'}</button><button class="btn ghost" type="submit" data-mode="save">Save draft</button></div></form>`;
+    <div class="row">${reviewing ? `<button class="btn" type="submit" data-mode="approve">Approve and send it on</button><button class="btn ghost" type="submit" data-mode="save">Save changes</button>`
+      : `<button class="btn" type="submit" data-mode="send">${g && g.status === 'returned' ? 'Send it again' : needsBranchReview(session) ? 'Send to your branch president or VP' : 'Send for approval'}</button><button class="btn ghost" type="submit" data-mode="save">Save draft</button>`}</div></form>`;
 }
-function gqProblems(d){
+function gqProblems(d, req){
   const p = [], em = rqCheck('email', d.email), ph = rqCheck('phone', d.phone);
   if (!d.name.trim()) p.push('Enter the guest’s name.');
   if (!d.title.trim() && !d.company.trim()) p.push('Enter their job title or company.');
   if (!d.topic.trim()) p.push('Enter their topic or role.');
   if (!d.email.trim()) p.push('Enter the guest’s email.'); else if (em) p.push('Email: ' + em[0]);
   if (ph) p.push('Phone: ' + ph[0]);
-  if (!d.estFrom) p.push('Pick the earliest likely date.'); else if (d.estFrom < todayIso()) p.push('The earliest likely date has already passed.');
-  if (d.estTo && d.estFrom && d.estTo < d.estFrom) p.push('The latest likely date is before the earliest.');
-  return p;
+  if (!d.evTitle.trim()) p.push('Enter a working title for the event.');
+  if (!d.evDesc.trim()) p.push('Enter a rough description of the event.');
+  return [...p, ...rqProblems(req, 'guest_speaker', { est: true })];
 }
-function gqRows(g){
-  const f = { ...gqDefaults(), ...(g.form || {}) }, yn = v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : 'Not sure yet';
-  return [['Name', f.name], ['Job title', f.title], ['Company', f.company], ['Topic or role', f.topic], ['Bio', f.bio], ['Email', f.email], ['Phone', f.phone],
-    ['Likely dates', f.estFrom ? fmtShortDay(f.estFrom) + (f.estTo ? ' – ' + fmtShortDay(f.estTo) : '') : ''], ['Timing notes', f.dateNote], ['On campus, off campus, or hybrid', RQ_CAMPUS[f.campus] || ''],
-    ['Expected attendance', f.attendance], ['Location type', f.locType || 'Not sure yet'], ['Layout', (RQ_LAYOUTS.find(x => x[0] === f.layout) || ['', 'Not sure yet'])[1]],
-    ['Food or drinks', yn(f.food)], ['A/V needs', f.av], ['Other notes', f.notes]];
-}
+// A guest request's rough event, shaped like an event so the request summary can show it.
+const gqPseudoEvent = g => ({ id: 'g:' + g.id, title: (g.form || {}).evTitle || '', desc: (g.form || {}).evDesc || '', cap: 0, cat: 'guest_speaker' });
 function gqDetail(g){
-  const st = g.status, est = (g.form || {}).estFrom || todayIso(), [ss, se] = semesterBounds(est), [ws, we] = gqWindow(g);
+  const f = { ...gqDefaults(), ...(g.form || {}) }, st = g.status, likely = gqLikely(g), [ss, se] = semesterBounds(likely), [ws, we] = gqWindow(g);
   const back = (kind, label, hint) => `<form class="stack" id="f-gq-back" data-id="${g.id}" data-kind="${kind}" style="gap:8px"><label>${label} <span class="hint">${hint}</span><textarea id="gq-back-note" rows="3"></textarea></label>
     <div class="row"><button class="btn ghost" type="submit">${label}</button></div><div class="err" id="gq-back-err"></div></form>`;
   const windowForm = (title, btn, s) => `<form class="stack panel" id="f-gq-window" data-id="${g.id}" data-s="${s}" style="gap:8px;padding:12px 14px"><strong>${title}</strong>
-    <span class="hint">Approval covers ${semesterName(est)} (${fmtShortDay(ss)} – ${fmtShortDay(se)}). Narrow it if UVU gave a shorter window.</span>
+    <span class="hint">Approval covers ${semesterName(likely)} (${fmtShortDay(ss)} – ${fmtShortDay(se)}). Narrow it if UVU gave a shorter window.</span>
     <div class="grid2"><label>From<input type="date" id="gq-ws" min="${ss}" max="${se}" value="${esc(ws)}"></label><label>To<input type="date" id="gq-we" min="${ss}" max="${se}" value="${esc(we)}"></label></div>
     <div class="row"><button class="btn" type="submit">${btn}</button></div><div class="err" id="gq-w-err"></div></form>`;
+  const presSent = presidentsList().includes(g.sent_by);
   let actions = '';
-  if (st === 'branch' && branchReviewers(g.branch).includes(session))
-    actions = `<div class="row"><button class="btn" data-act="gq-branch-ok" data-id="${g.id}">Approve and send it on</button></div>${back('branch', 'Send it back with notes', 'The officer is notified.')}`;
-  else if (st === 'review' && isPresident() && g.sent_by !== session)
-    actions = `<div class="row"><button class="btn" data-act="gq-vote" data-id="${g.id}">Approve</button></div>${back('vote', 'Send it back with notes', 'It goes back to the officer who sent it.')}`;
+  if (gqReviewing(g))
+    actions = `<div class="row" style="gap:8px"><button class="btn" data-act="${st === 'branch' ? 'gq-branch-ok' : 'gq-vote'}" data-id="${g.id}">Approve as is</button><button class="btn ghost" data-act="gq-edit" data-id="${g.id}">Edit it, then approve</button></div>
+      ${back(st === 'branch' ? 'branch' : 'vote', 'Send it back with notes', st === 'review' && g.branch_by ? 'It goes back to the branch leadership to fix.' : 'It goes back to the officer who sent it.')}`;
   else if (st === 'sent' && isScheduler())
     actions = `<div class="row" style="gap:8px"><a class="btn ghost" href="https://www.uvu.edu/clubs/forms/scheduling-request.html" target="_blank" rel="noopener">Open UVU’s form ↗</a><button class="btn" data-act="gq-status" data-id="${g.id}" data-s="submitted">Mark submitted to UVU</button></div>${back('sched', 'Send it back with notes', 'The officer is notified.')}`;
   else if (st === 'submitted' && isScheduler())
@@ -4000,19 +4079,23 @@ function gqDetail(g){
   else if (st === 'returned' && g.sent_by === session)
     actions = `<div class="row"><button class="btn" data-act="gq-edit" data-id="${g.id}">Edit and send again</button></div>`;
   const hist = (g.history || []).slice().reverse().map(h => `<li><strong>${esc((GQ_STATUS[h.status] || [h.status])[0])}</strong> · ${esc(h.by === 'system' ? 'Automatic' : userName(h.by))} · ${fmtMtStamp(Date.parse(h.at))}${h.note ? `<div style="white-space:pre-wrap" class="hint">${esc(h.note)}</div>` : ''}</li>`).join('');
+  const guestRows = [['Name', f.name], ['Job title', f.title], ['Company', f.company], ['Topic or role', f.topic], ['Bio', f.bio], ['Email', f.email], ['Phone', f.phone]];
   return `<div class="stack" style="gap:16px;max-width:56rem"><div><button type="button" class="btn ghost small" data-act="gq-close">← Back</button></div>
-    <div><div class="eyebrow">External guest</div><h2 style="margin:4px 0">${esc((g.form || {}).name || 'Guest')}</h2>${gqTag(g)}${g.sent_by ? ` <span class="hint">From ${esc(userName(g.sent_by))}</span>` : ''}</div>
+    <div><div class="eyebrow">External guest</div><h2 style="margin:4px 0">${esc(f.name || 'Guest')}</h2>${gqTag(g)}${g.sent_by ? ` <span class="hint">From ${esc(userName(g.sent_by))}</span>` : ''}</div>
     ${st === 'approved' ? `<div class="notice">Approved for ${fmtShortDay(ws)} – ${fmtShortDay(we)}. Officers can pick this guest on an event’s scheduling request.</div>` : ''}
-    ${st === 'review' ? `<span class="hint">Needs one president other than ${esc(userName(g.sent_by))}. If nobody sends it back, it moves on automatically ${fmtMtStamp(businessAdd(Date.parse(g.status_at), 48))}.</span>` : ''}
+    ${st === 'review' ? `<span class="hint">Needs one approval from: ${esc(gqApprovers(g).map(userName).join(', ') || 'nobody yet')}${presSent ? `. If nobody sends it back, it moves on automatically ${fmtMtStamp(businessAdd(Date.parse(g.status_at), 48))}.` : '. Vice presidents can approve too after 36 business hours. It won’t move on until someone approves it.'}</span>` : ''}
     ${st === 'returned' ? `<div class="rq-warn"><strong>Sent back:</strong><div style="white-space:pre-wrap">${esc(g.note)}</div></div>` : ''}
     ${actions}
-    <section class="panel stack" style="gap:10px"><h3 style="margin:0">Details</h3><dl class="rq-sum">${gqRows(g).map(([l, v]) => `<dt>${esc(l)}</dt><dd><div class="row" style="gap:8px;align-items:flex-start;justify-content:space-between;flex-wrap:nowrap">
+    <section class="panel stack" style="gap:10px"><h3 style="margin:0">The guest</h3><dl class="rq-sum">${guestRows.map(([l, v]) => `<dt>${esc(l)}</dt><dd><div class="row" style="gap:8px;align-items:flex-start;justify-content:space-between;flex-wrap:nowrap">
       <span style="white-space:pre-wrap">${esc(v || '—')}</span>${v ? `<button type="button" class="btn ghost small" data-act="copy" data-text="${esc(v)}" data-label="${esc(l)}">Copy</button>` : ''}</div></dd>`).join('')}</dl></section>
+    <section class="panel stack" style="gap:10px"><h3 style="margin:0">The event, roughly</h3>
+      <dl class="rq-sum"><dt>Working title</dt><dd>${esc(f.evTitle || '—')}</dd><dt>Rough description</dt><dd style="white-space:pre-wrap">${esc(f.evDesc || '—')}</dd></dl>
+      ${f.req ? rqSummary(gqPseudoEvent(g), { form: f.req }, true) : ''}</section>
     ${hist ? `<section class="stack" style="gap:6px"><h3 style="margin:0">History</h3><ul class="rq-hist">${hist}</ul></section>` : ''}</div>`;
 }
 const gqRow = g => { const f = g.form || {};
   return `<div class="list-row"><div><div class="ev-title">Guest: ${esc(f.name || 'Unnamed')}${gqTag(g)}</div>
-    <div class="ev-sub">${esc([f.title, f.company].filter(Boolean).join(', ') || 'No job title yet')}${f.estFrom ? ' · Likely ' + fmtDay(f.estFrom) : ''}${g.sent_by ? ' · From ' + esc(userName(g.sent_by)) : ''}</div></div>
+    <div class="ev-sub">${esc([f.title, f.company].filter(Boolean).join(', ') || 'No job title yet')} · Likely ${fmtDay(gqLikely(g))}${g.sent_by ? ' · From ' + esc(userName(g.sent_by)) : ''}</div></div>
     <button class="btn ${gqWaitingOnMe(g) ? '' : 'ghost '}small" data-act="rq-open" data-id="g:${g.id}">Open</button></div>`; };
 
 // Officer tools → Get started with an event: where to begin, approved guests, and the planning checklists.
@@ -4091,7 +4174,6 @@ function viewOfficer(){
     body = `<div class="split">
       <form class="panel stack" id="f-event" novalidate>
         <h3>${e ? (e.draft ? 'Edit draft' : 'Edit event') : 'Create an event'}${e && e.draft ? ' <span class="tag">Draft</span>' : ''}</h3>
-        ${sugPanel(e)}
         <label>Title<input id="ev-title" required value="${esc(e?.title)}" placeholder="e.g. DCF Valuation Workshop"></label>
         <div class="grid2">
           <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${e?.cat===k?'selected':''}>${l} · ${PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select></label>
@@ -4129,13 +4211,14 @@ function viewOfficer(){
           <span class="row" style="gap:8px;flex-wrap:nowrap"><input id="ev-code" maxlength="8" autocomplete="off" value="${esc(e?.code || '')}" placeholder="e.g. BULL" style="font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;flex:1;min-width:0"><button type="button" class="btn ghost small" data-act="ev-gen-code">Generate</button></span>
           <span class="hint">Members type this at the event to check in. It only works on the event’s date. Leave blank to make one on the day.</span></label>
         ${rqFinalizing(e?.id) ? '<div class="rq-warn"><strong>UVU approved this event.</strong> Set the final date, times, location, and RSVP timing, then send it to the presidents for sign-off. It publishes once they all approve, or after 2 business days.</div>' + (rqOf(e.id).signoff_note ? `<div class="rq-warn"><strong>A president requested changes:</strong><div style="white-space:pre-wrap">${esc(rqOf(e.id).signoff_note)}</div></div>` : '') : ''}
-        <label>Description <span class="hint">(required; for events that need scheduling, it also goes on UVU’s form)</span><textarea id="ev-desc" placeholder="What members will do or learn, who it’s for, and anything to bring">${esc(e?.desc)}</textarea></label>
+        <label>Description <span class="hint">(required; for events that need scheduling, it also goes on UVU’s form)</span><textarea id="ev-desc" placeholder="What members will do or learn, who it’s for, and anything to bring">${esc(e?.desc)}</textarea></label>${descPreview('ev-desc-preview', e?.desc)}
         <div id="rq-box">${rqPanel(e, e?.cat || Object.keys(CATS)[0])}</div>
         <div class="err" id="ev-err"></div>
         <div class="row" id="ev-btns">${evButtons(e, e?.cat || Object.keys(CATS)[0])}</div>
         <span class="hint">Drafts are only visible to officers. Members see an event once it’s published.</span>
       </form>
-      <section class="stack">
+      ${sugPanel(e) ? `<aside class="sug-side">${sugPanel(e)}</aside>` : ''}
+      <section class="stack" ${sugPanel(e) ? 'hidden' : ''}>
         ${(() => { const drafts = db.events.filter(x => x.draft).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
           return drafts.length ? `<div class="section-head"><h3>Drafts</h3><span class="muted">${drafts.length}</span></div>
           <div>${drafts.map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)} <span class="tag">Draft</span>${needsSched(ev.cat) ? (rqTag(ev.id) || ' <span class="tag">Not sent to scheduler</span>') : ''}${ev.comingSoon ? ' <span class="tag soon">Coming soon</span>' : ''}${pendingFor('event', ev.id).length ? ' <span class="tag warn">Waiting for approval</span>' : ''}</div><div class="ev-sub">${fmtDay(ev.date)} · ${esc(catName(ev.cat))}</div></div>
@@ -4613,6 +4696,7 @@ function eventInner(id, page){
       <dt>Where</dt><dd>${esc(e.loc)}</dd>${e.cat === 'officer_meeting' ? `<dt>Who</dt><dd>${meetingFor(e)}${session && can('officer') ? `<br><strong>${{ required: 'You’re required.', invited: 'You’re invited (optional).', '': 'You’re not expected at this one.' }[myMeetingStatus(e)]}</strong>` : ''}</dd>` : ''}${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : `<dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}`}${hasStarted(e)?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
     ${e.cap && !isCase(e) ? `<div class="meter"><span style="width:${Math.min(100,n/e.cap*100)}%"></span></div>` : ''}
     <p style="white-space:pre-wrap">${esc(e.desc)}</p>
+    ${(e.speakers || []).length ? `<div class="stack" style="gap:10px"><h3 style="margin:0">${e.speakers.length === 1 ? 'Guest' : 'Guests'}</h3>${e.speakers.map(sp => `<div class="speaker-card"><strong>${esc(sp.name)}</strong>${sp.title || sp.company ? `<div class="hint">${esc([sp.title, sp.company].filter(Boolean).join(', '))}</div>` : ''}${sp.bio ? `<p style="white-space:pre-wrap;margin:6px 0 0">${esc(sp.bio)}</p>` : ''}</div>`).join('')}</div>` : ''}
     ${isCase(e) && !e.draft ? caseSection(e) : ''}
     ${checkin}
     ${!session && !isCase(e) && !hasStarted(e) && !e.draft ? (e.membersOnly ? membersOnlyNote(e, 'RSVP') : guestRsvpBox(e)) : ''}
@@ -4660,9 +4744,10 @@ function qaBox(e){
   if (e.membersOnly && !session) return '';
   const mine = (db.evQuestions || []).filter(q => q.event_id === e.id && q.email === session);
   return `<div class="panel stack" style="gap:10px">
-    <div><strong>Questions for the speaker</strong><div class="hint">Send a question ahead of time. Officers pick which ones to ask.</div></div>
+    <div><strong>${(e.speakers || []).length > 1 ? 'Questions for the guests' : 'Questions for the speaker'}</strong><div class="hint">Send a question ahead of time. Officers pick which ones to ask.</div></div>
     <form class="stack" id="f-qa" data-id="${e.id}" style="gap:8px">
       ${session ? '' : '<label>Your name<input id="qa-name" autocomplete="name" required></label>'}
+      ${(e.speakers || []).length > 1 ? `<fieldset class="rq-q"><legend>Who is it for?</legend><div class="row" style="gap:14px"><label class="check"><input type="checkbox" class="qa-sp" value="" checked> All of them</label>${e.speakers.map(sp => `<label class="check"><input type="checkbox" class="qa-sp" value="${esc(sp.name)}"> ${esc(sp.name)}</label>`).join('')}</div></fieldset>` : ''}
       <label>Your question<textarea id="qa-text" rows="2" maxlength="600" required></textarea></label>
       <div><button class="btn ghost" type="submit">Send question</button></div><div class="err" id="qa-err"></div></form>
     ${mine.length && !can('officer') ? `<div class="stack" style="gap:4px"><span class="hint">Your questions:</span>${mine.map(q => `<div class="row" style="gap:8px;align-items:center"><span>${esc(q.question)}</span>${delBtn('qd-' + q.id, 'Delete', 'qa-del', q.id)}</div>`).join('')}</div>` : ''}
@@ -4679,8 +4764,8 @@ function eventOfficerExtras(e){
   if (e.qaEnabled){
     const sorted = qs.slice().sort((a, b) => (b.starred - a.starred) || String(a.created_at).localeCompare(String(b.created_at)));
     h += `<div class="panel stack" style="gap:8px;padding:12px 14px"><div class="row" style="justify-content:space-between;align-items:center"><strong>Questions for the speaker (${qs.length})</strong>
-        ${qs.length ? `<button class="btn ghost small" data-act="copy-text" data-text="${esc(sorted.map((q, i) => (i + 1) + '. ' + q.question + (q.starred ? ' ★' : '')).join('\n'))}">Copy all</button>` : ''}</div>
-      ${sorted.map(q => `<div class="row" style="gap:8px;align-items:start;justify-content:space-between"><div><div>${esc(q.question)}</div><div class="hint">${esc(q.name || 'Someone')} · ${fmtStamp(q.created_at)}</div></div>
+        ${qs.length ? `<button class="btn ghost small" data-act="copy-text" data-text="${esc(sorted.map((q, i) => (i + 1) + '. ' + q.question + ((q.speakers || []).length ? ' (for ' + q.speakers.join(', ') + ')' : '') + (q.starred ? ' ★' : '')).join('\n'))}">Copy all</button>` : ''}</div>
+      ${sorted.map(q => `<div class="row" style="gap:8px;align-items:start;justify-content:space-between"><div><div>${esc(q.question)}</div><div class="hint">${esc(q.name || 'Someone')} · ${fmtStamp(q.created_at)}${(q.speakers || []).length ? ' · For ' + esc(q.speakers.join(', ')) : (e.speakers || []).length > 1 ? ' · For all of them' : ''}</div></div>
         <span class="row" style="gap:6px"><button class="btn ghost small" data-act="qa-star" data-id="${q.id}" aria-pressed="${q.starred}" title="Star to ask">${q.starred ? '★ Starred' : '☆ Star'}</button>${delBtn('qd-' + q.id, 'Delete', 'qa-del', q.id)}</span></div>`).join('') || '<div class="empty">No questions yet.</div>'}
       <span class="hint">Star the ones to ask. “Copy all” puts starred questions first, ready to send to the speaker.</span></div>`;
   }
@@ -5756,7 +5841,7 @@ document.addEventListener('click', async ev => {
     // pushState so the back button returns to the previous tab
     case 'otab': ui.officerTab = t.dataset.tab; history.pushState(null, '', ui._hash = '#officer/' + ui.officerTab); render(); break;
     case 'atab': ui.adminTab = t.dataset.tab; history.pushState(null, '', ui._hash = '#admin/' + ui.adminTab); render(); break;
-    case 'edit-event': closeModal(); ui.officerTab = 'events'; ui.editEvent = id; if (route() !== 'officer') location.hash = 'officer'; else render(); window.scrollTo(0,0); break;
+    case 'edit-event': closeModal(); ui.officerTab = 'events'; ui.editEvent = id; ui.guestForm = null; ui.rq = null; if (route() !== 'officer') location.hash = 'officer'; else render(); window.scrollTo(0,0); break;
     case 'cancel-edit': ui.editEvent = null; ui.rq = null; render(); break;
     case 'rq-day': { const d = rqState().d, k = t.dataset.k; d[k] = d[k].includes(id) ? d[k].filter(x => x !== id) : [...d[k], id];
       if (k === 'dates' && d.dates.length){ const de = document.getElementById('ev-date'); if (de) de.value = [...d.dates].sort()[0]; } rqRedraw(); break; }
@@ -5764,10 +5849,10 @@ document.addEventListener('click', async ev => {
       const [y, m] = cur.split('-').map(Number), n = new Date(y, m - 1 + (+id), 1); ui.rqMonth[k] = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0'); rqRedraw(); break; }
     case 'rq-file-clear': { const rq = rqState(); delete rq.files[id]; rq.d[id] = null; rqRedraw(); break; }
     case 'rq-open': ui.schedOpen = id || null; if (id && id.startsWith('g:')) ui.officerTab = 'scheduling'; render(); window.scrollTo(0, 0); break;
-    case 'start-event': ui.officerTab = 'events'; ui.editEvent = null; ui.rq = null; render(); window.scrollTo(0, 0); break;
-    case 'gq-new': ui.officerTab = 'plan'; ui.guestForm = 'new'; ui.gq = null; render(); window.scrollTo(0, 0); break;
-    case 'gq-edit': ui.officerTab = 'plan'; ui.guestForm = id; ui.gq = null; ui.schedOpen = null; render(); window.scrollTo(0, 0); break;
-    case 'gq-close': ui.guestForm = null; ui.gq = null; ui.schedOpen = null; render(); window.scrollTo(0, 0); break;
+    case 'start-event': ui.officerTab = 'events'; ui.editEvent = null; ui.guestForm = null; ui.rq = null; render(); window.scrollTo(0, 0); break;
+    case 'gq-new': ui.officerTab = 'plan'; ui.guestForm = 'new'; ui.gq = null; ui.rq = null; render(); window.scrollTo(0, 0); break;
+    case 'gq-edit': ui.officerTab = 'plan'; ui.guestForm = id; ui.gq = null; ui.rq = null; ui.schedOpen = null; render(); window.scrollTo(0, 0); break;
+    case 'gq-close': ui.guestForm = null; ui.gq = null; ui.rq = null; ui.schedOpen = null; render(); window.scrollTo(0, 0); break;
     case 'gq-branch-ok': case 'gq-vote': { const g = gqOf(id) || { form: {} }, branch = t.dataset.act === 'gq-branch-ok';
       await act(async () => { const r = await sb.rpc(branch ? 'guest_branch_review' : 'guest_vote', { p_id: id, p_ok: true, p_note: '' }); if (r.error) throw r.error;
         if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data); await logChange('Approved external guest ' + (g.form.name || '')); }, 'Approved'); break; }
@@ -5794,6 +5879,14 @@ document.addEventListener('click', async ev => {
       await act(async () => { const r = await sb.rpc(branch ? 'branch_review' : 'president_vote', { p_event: id, p_ok: true, p_note: '' }); if (r.error) throw r.error;
         if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
         await logChange((branch ? 'Approved (branch): “' : 'Approved (president): “') + e.title + '”'); }, 'Approved'); break; }
+    case 'rq-use': case 'rq-use-all': { const d = rqState().d, src = rqHelperSource(d); if (!src) break;
+      const keys = t.dataset.act === 'rq-use' ? [id] : ['dates', 'altDates', 'start', 'end', 'setup', 'after', 'campus', 'locs', 'locCount', 'locType', 'building', 'room', 'uvuName', 'evType', 'estMax', 'food', 'tablecloths', 'clothColor', 'av', 'avNeeds', 'tech', 'techTime', 'techStay', 'layout', 'chairs', 'tables', 'other'];
+      keys.forEach(k => { const v = src.req[k]; if (v != null && v !== '' && !(Array.isArray(v) && !v.length)) d[k] = JSON.parse(JSON.stringify(v)); });
+      if (d.dates && d.dates.length){ const de = document.getElementById('ev-date'); if (de) de.value = [...d.dates].sort()[0]; }
+      rqRedraw(); toast(t.dataset.act === 'rq-use' ? 'Filled in from the guest approval' : 'Filled in everything from the guest approval'); break; }
+    case 'sug-all': { const r = rqOf(ui.editEvent), step = rqFinalizing(ui.editEvent) ? 'signoff' : 'review'; ui.sugDone = ui.sugDone || {};
+      sugOpen(r, step).forEach(s => (s.changes || []).forEach(c => { ui.sugDone[s.by + '|' + c.field] = 'accepted'; sugApply(c); }));
+      const box = document.getElementById('sug-box'); if (box) box.outerHTML = sugPanel(evById(ui.editEvent)); toast('All suggested changes filled in. Check them, then send it again.'); break; }
     case 'sug-accept': case 'sug-decline': { const [by, field] = id.split('|'), r = rqOf(ui.editEvent);
       const c = sugOpen(r, rqFinalizing(ui.editEvent) ? 'signoff' : 'review').filter(s => s.by === by).flatMap(s => s.changes || []).find(x => x.field === field);
       ui.sugDone = ui.sugDone || {}; ui.sugDone[id] = t.dataset.act === 'sug-accept' ? 'accepted' : 'declined';
@@ -6459,7 +6552,9 @@ async function handleSubmit(f, v, err){
   }
   if (f.id === 'f-qa'){
     const id = f.dataset.id, text = v('qa-text'), name = document.getElementById('qa-name') ? v('qa-name') : '';
-    const r = await sb.rpc('ask_question', { p_event: id, p_question: text, p_name: name });
+    const picked = [...f.querySelectorAll('.qa-sp:checked')].map(x => x.value), speakers = picked.includes('') ? [] : picked;
+    if (f.querySelector('.qa-sp') && !picked.length) return err('qa-err', 'Pick who your question is for.');
+    const r = await sb.rpc('ask_question', { p_event: id, p_question: text, p_name: name, p_speakers: speakers });
     if (r.error) return err('qa-err', /ask_question/.test(r.error.message || '') ? 'Q&A isn’t set up yet.' : errMsg(r.error));
     const msg = { missing: 'Questions aren’t open for this event.', closed: 'This event has ended.', empty: 'Write a question first.', long: 'Keep it under 600 characters.',
       name: 'Enter your name.', many: 'That’s a lot of questions! Try again in a bit.' }[r.data];
@@ -6499,16 +6594,21 @@ async function handleSubmit(f, v, err){
   }
 
   if (f.id === 'f-guest-req'){
-    const mode = (f._submitter && f._submitter.dataset.mode) || 'save', st = gqState(), d = st.d;
-    if (mode === 'send'){ const probs = gqProblems(d); if (probs.length){ const box = document.getElementById('gq-err');
-      box.innerHTML = `<div class="rq-warn" style="color:inherit;font-weight:400"><strong>Almost there. Before it can be sent:</strong><ul style="margin:6px 0 0;padding-left:1.2rem">${probs.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
+    const mode = (f._submitter && f._submitter.dataset.mode) || 'save', st = gqState(), d = st.d, req = rqState().d;
+    if (mode !== 'save'){ const probs = gqProblems(d, req); if (probs.length){ const box = document.getElementById('gq-err');
+      box.innerHTML = `<div class="rq-warn" style="color:inherit;font-weight:400"><strong>Almost there. Before it can ${mode === 'approve' ? 'be approved' : 'be sent'}:</strong><ul style="margin:6px 0 0;padding-left:1.2rem">${probs.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
       box.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; } }
     else if (!d.name.trim()) return err('gq-err', 'Enter the guest’s name to save a draft.');
-    return act(async () => { const r = await sb.rpc('save_guest_request', { p_id: st.key === 'new' ? null : st.key, p_form: d, p_send: mode === 'send' });
+    const g = st.key === 'new' ? null : gqOf(st.key);
+    return act(async () => {
+      await rqUploadFiles('guests/' + (g ? g.id : crypto.randomUUID()));
+      const r = await sb.rpc('save_guest_request', { p_id: g ? g.id : null, p_form: { ...d, req: rqState().d }, p_send: mode === 'send' });
       if (r.error) throw new Error(/guest_request/.test(r.error.message || '') ? 'Guest approvals aren’t set up yet. Run 53-guest-approvals-and-application-questions.sql.' : r.error.message);
       if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
-      await logChange((mode === 'send' ? 'Sent external guest for approval: ' : 'Saved external guest draft: ') + d.name);
-      ui.guestForm = null; ui.gq = null; if (mode === 'send'){ ui.officerTab = 'scheduling'; ui.schedOpen = 'g:' + r.data; } }, mode === 'send' ? 'Sent. You’ll be notified as it moves along.' : 'Draft saved');
+      if (mode === 'approve'){ const x = await sb.rpc(g.status === 'branch' ? 'guest_branch_review' : 'guest_vote', { p_id: g.id, p_ok: true, p_note: '' }); if (x.error) throw x.error; if (String(x.data).startsWith('err:')) throw new Error(RQ_ERR[x.data] || x.data); }
+      await logChange((mode === 'send' ? 'Sent external guest for approval: ' : mode === 'approve' ? 'Approved external guest: ' : 'Saved external guest: ') + d.name);
+      ui.guestForm = null; ui.gq = null; ui.rq = null;
+      if (mode !== 'save'){ ui.officerTab = 'scheduling'; ui.schedOpen = 'g:' + r.data; } }, mode === 'send' ? 'Sent. You’ll be notified as it moves along.' : mode === 'approve' ? 'Approved and sent on.' : 'Saved');
   }
   if (f.id === 'f-gq-back'){
     const note = v('gq-back-note'), id = f.dataset.id, kind = f.dataset.kind; if (!note) return err('gq-back-err', 'Write what needs to be fixed.');
@@ -6528,7 +6628,10 @@ async function handleSubmit(f, v, err){
     const id = f.dataset.id, e = evById(id), r = rqOf(id), note = v('sug-note'), { changes, missing } = readSuggestions(e, r);
     if (missing.length) return err('sug-err', 'Say why for: ' + missing.join(', ') + '.');
     if (!changes.length && !note) return err('sug-err', 'Change a field above or write a comment.');
-    return act(async () => { const x = await sb.rpc('president_vote', { p_event: id, p_ok: false, p_note: note, p_changes: changes }); if (x.error) throw x.error;
+    const kind = (f.querySelector('[name="sug-kind"]:checked') || {}).value || '';
+    if (note && !kind) return err('sug-err', 'Say whether your comment is just context or describes more changes.');
+    const snapshot = { ev: { title: e.title, desc: e.desc, cap: e.cap, membersOnly: e.membersOnly, qaEnabled: e.qaEnabled, rsvpOpens: e.rsvpOpens, guestDelay: e.guestDelay, date: e.date, start: e.start, end: e.end, loc: e.loc }, form: r.form };
+    return act(async () => { const x = await sb.rpc('president_vote', { p_event: id, p_ok: false, p_note: note, p_changes: changes, p_note_kind: kind || 'context', p_snapshot: snapshot }); if (x.error) throw x.error;
       if (String(x.data).startsWith('err:')) throw new Error(RQ_ERR[x.data] || x.data);
       await logChange('Requested changes to “' + e.title + '”'); }, rqMajority(r) ? 'Your objection is recorded.' : 'Changes requested. They’ll be notified.');
   }
@@ -6545,6 +6648,9 @@ async function handleSubmit(f, v, err){
   if (f.id === 'f-event'){
     const e = { title: v('ev-title'), cat: v('ev-cat'), date: v('ev-date'), start_time: v('ev-start'), end_time: v('ev-end'), loc: v('ev-loc'), cap: Math.max(0, parseInt(v('ev-cap')) || 0), descr: v('ev-desc') };
     const waitFinal = evHideFinal(ui.editEvent ? evById(ui.editEvent) : null, e.cat), cur0 = evById(ui.editEvent) || {};
+    // External guests shown on the event page: from the request (editable form, or the saved one once it's locked).
+    if (needsSched(e.cat) && !ui.guestForm){ const rf = ui.rq && ui.rq.key === (ui.editEvent || 'new') && !rqLocked(ui.editEvent) ? ui.rq.d : (rqOf(ui.editEvent) || {}).form || {};
+      e.speakers = rf.speaker === 'yes' ? (rf.speakers || []).slice(0, +rf.speakerCount || 1).filter(x => x && (x.name || '').trim() && x.show !== false).map(x => ({ name: x.name.trim(), title: x.title || '', company: x.company || '', bio: x.bio || '' })) : []; }
     if (waitFinal){ const d = rqState().d; e.date = [...(d.dates || [])].sort()[0] || cur0.date || dayOffset(21); e.start_time = d.start || cur0.start || '18:00'; e.end_time = d.end || cur0.end || '19:00'; e.loc = cur0.loc || 'TBD'; }
     if (!e.title || !e.date || !e.start_time || !e.end_time || !e.loc) return err('ev-err', 'Fill in the title, date, times, and location.');
     if (e.end_time <= e.start_time) return err('ev-err', 'End time must be after the start time.');
@@ -6610,7 +6716,7 @@ async function handleSubmit(f, v, err){
         if (code) must(await sb.from('checkin_codes').upsert({ event_id: evId, code }));
         if (!locked && mode === 'send' && editing) await sugSendReplies(evId);
         if (!locked) await rqSave(evId, mode === 'send');
-        if (mode === 'branchok'){ const r = await sb.rpc('branch_review', { p_event: evId, p_ok: true, p_note: before }); if (r.error) throw r.error; if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data); }
+        if (mode === 'branchok'){ await sugSendReplies(evId); const r = await sb.rpc('branch_review', { p_event: evId, p_ok: true, p_note: before }); if (r.error) throw r.error; if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data); }
         await logChange((mode === 'send' ? 'Sent for approval: “' : mode === 'branchok' ? 'Approved (branch): “' : editing ? 'Edited draft “' : 'Saved draft “') + e.title + '”');
         ui.editEvent = null; ui.rq = null;
         if (mode === 'send' || mode === 'branchok'){ ui.officerTab = 'scheduling'; ui.schedOpen = evId; }
