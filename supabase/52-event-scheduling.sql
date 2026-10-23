@@ -53,15 +53,17 @@ $$;
 -- timers use this, so nothing is approved over a weekend just because nobody was online.
 create or replace function public.business_add(p_start timestamptz, p_hours numeric) returns timestamptz
 language plpgsql stable as $$
-declare t timestamp := p_start at time zone 'America/Denver'; rest interval := make_interval(secs => p_hours * 3600); dow int; sat timestamp;
+declare t timestamp := p_start at time zone 'America/Denver'; rest interval := make_interval(secs => coalesce(p_hours, 0) * 3600); dow int; sat timestamp;
 begin
-  loop
+  if p_start is null then return null; end if;
+  for i in 1..200 loop
     dow := extract(isodow from t);
     if dow >= 6 then t := date_trunc('day', t) + make_interval(days => 8 - dow); continue; end if;
     sat := date_trunc('day', t) + make_interval(days => 6 - dow);
     if t + rest <= sat then return (t + rest) at time zone 'America/Denver'; end if;
     rest := rest - (sat - t); t := sat;
   end loop;
+  return t at time zone 'America/Denver';
 end $$;
 create or replace function public.big_event(p_cat text) returns boolean
 language sql immutable as $$ select p_cat in ('case_competition', 'excursion', 'guest_speaker', 'career_fair'); $$;
@@ -135,7 +137,7 @@ end $$;
 create or replace function public.rq_majority(r event_requests) returns boolean
 language sql stable security definer set search_path = public as $$
   select (r.status = 'review' or big_event((select e.cat from events e where e.id = r.event_id)))
-     and (coalesce(r.rounds, 0) >= 2 or now() >= business_add(r.step_started_at, 120));   -- 5 business days
+     and (coalesce(r.rounds, 0) >= 2 or (r.step_started_at is not null and now() >= business_add(r.step_started_at, 120)));   -- 5 business days
 $$;
 -- Sign-off for a workshop or social: who can approve it. Presidents other than the scheduler who sent it; if the
 -- scheduler isn't a president, vice presidents too once it has waited 36 hours.
@@ -143,7 +145,7 @@ create or replace function public.rq_small_approvers(r event_requests) returns s
 language sql stable security definer set search_path = public as $$
   select e from wfa_presidents() e where e is distinct from r.status_by
   union
-  select v from wfa_vps() v where not exists (select 1 from wfa_presidents() x where x = r.status_by) and now() >= business_add(r.status_at, 36);
+  select v from wfa_vps() v where not exists (select 1 from wfa_presidents() x where x = r.status_by) and r.status_at is not null and now() >= business_add(r.status_at, 36);
 $$;
 create or replace function public.rq_small_signoff(r event_requests) returns boolean
 language sql stable security definer set search_path = public as $$
@@ -266,7 +268,7 @@ language plpgsql security definer set search_path = public as $$
 declare me text := public.jwt_email(); r event_requests; n int; no int;
 begin
   select * into r from event_requests where event_id = p_event;
-  if r.status not in ('review', 'signoff') then return 'err:state'; end if;
+  if r.status is null or r.status not in ('review', 'signoff') then return 'err:state'; end if;
   if not (exists (select 1 from wfa_presidents() e where e = me) or (rq_small_signoff(r) and exists (select 1 from rq_small_approvers(r) e where e = me))) then
     return 'err:notpresident';
   end if;
