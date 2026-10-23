@@ -5,7 +5,7 @@
 //     Guests who RSVP'd without an account and asked for reminders get that event's reminders by email.
 //   * "check-in is open" notifications 15 minutes before an event, to people who RSVP'd (notification only)
 //   * a survey request 30 minutes after an event ends, to people who checked in and haven't answered the survey
-//   * event scheduling steps: whoever a scheduling request is waiting on, and the officer who sent it
+//   * event scheduling and external guest approval steps: whoever a request is waiting on, and the officer who sent it
 //   * a summary email when chat messages sit unread for over an hour (see 42-chats.sql; works even when the
 //     event emails are off)
 // Each member chooses email and/or notification per kind in Notification settings (members.notify). By default,
@@ -242,6 +242,33 @@ Deno.serve(async () => {
         if (!fresh && !(again && nowMs - ms(r.nudged_at) >= again)) continue;
         if (await tell(to, subject, body, 'Open it', r.status === 'published' ? `${site}/#event/${r.event_id}` : link, tag))
           await db.from('event_requests').update({ nudged_at: new Date().toISOString() }).eq('event_id', r.event_id);
+      }
+    }
+
+    // External guest approvals (see 53-guest-approvals-and-application-questions.sql): the same idea, lighter steps.
+    const { data: gqs } = await db.from('guest_requests').select('id, status, status_by, note, sent_by, status_at, nudged_at, branch, form').in('status', ['branch', 'review', 'sent', 'returned', 'submitted', 'approved']);
+    if (gqs?.length) {
+      const { data: sch } = await db.from('event_schedulers').select('email');
+      const schedulers = (sch || []).map((s) => s.email);
+      const { data: offs } = await db.from('officer_profiles').select('email, tier, branch');
+      const { data: acc } = await db.from('access_list').select('email');
+      const isOfficer = new Set((acc || []).map((a) => a.email));
+      const presidents = (offs || []).filter((o) => o.tier === 'president' && isOfficer.has(o.email)).map((o) => o.email);
+      const branchLeads = (b: string | null) => { const p = (offs || []).filter((o) => b && o.branch === b && ['president', 'vice_president'].includes(o.tier) && isOfficer.has(o.email)).map((o) => o.email); return p.length ? p : presidents; };
+      const nowMs = Date.now(), ms = (t: string | null) => (t ? new Date(t).getTime() : 0);
+      for (const g of gqs) {
+        const name = (g.form || {}).name || 'an external guest', link = `${site}/#officer/scheduling/g:${g.id}`;
+        const fresh = ms(g.nudged_at) < ms(g.status_at);
+        let to: string[] = [], subject = '', body = '', again = 0;
+        if (g.status === 'branch') { to = branchLeads(g.branch); again = 2 * DAY; subject = `Review an external guest: ${name}`; body = `${firstName.get(g.sent_by) || 'An officer'} wants to get ${name} approved by UVU as an external guest. Approve it or send it back with notes.`; }
+        else if (g.status === 'review') { to = presidents.filter((e) => e !== g.sent_by); again = DAY; subject = `External guest for approval: ${name}`; const d = businessAdd(ms(g.status_at), 48); body = `${name} needs one president's approval before going to UVU. If nobody sends it back, it moves on automatically on ${fmtDay(d)} at ${fmtTime(d)}.`; }
+        else if (g.status === 'sent') { to = schedulers; again = 2 * DAY; subject = `External guest to submit: ${name}`; body = `${name} is ready to submit to UVU for approval as an external guest.`; }
+        else if (g.status === 'returned') { to = [g.sent_by]; subject = `Changes needed: ${name}`; body = `Your external guest request for ${name} was sent back. What to fix:\n${g.note || '(no note)'}`; }
+        else if (g.status === 'submitted') { to = [g.sent_by]; subject = `Submitted to UVU: ${name}`; body = `The scheduler submitted ${name} to UVU for approval.`; }
+        else if (g.status === 'approved') { if (nowMs - ms(g.status_at) > 3 * DAY) continue; to = [g.sent_by]; subject = `Approved by UVU: ${name}`; body = `${name} is approved as an external guest. Pick them on an event's scheduling request; that event needs only 3 weeks' notice.`; }
+        if (!to.length || !subject) continue;
+        if (!fresh && !(again && nowMs - ms(g.nudged_at) >= again)) continue;
+        if (await tell(to, subject, body, 'Open it', link, `guest-${g.id}`)) await db.from('guest_requests').update({ nudged_at: new Date().toISOString() }).eq('id', g.id);
       }
     }
 

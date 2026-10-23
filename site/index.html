@@ -233,6 +233,8 @@ main{padding-block:36px 64px}
 .flow-branch{display:flex;flex-direction:column;gap:6px}
 .flow-tag{align-self:flex-start;font-family:var(--mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:3px;border:1px solid currentColor;color:var(--muted)}
 .flow-skip{border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;font-size:.9rem;color:var(--muted);flex:1}
+.start-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:12px}
+.aq-row{border-top:1px solid var(--line);padding-top:12px}
 .seg-tabs{display:flex;flex-wrap:wrap;gap:6px}
 .policy-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:12px}
 @media (max-width:640px){.flow-branches{grid-template-columns:1fr}}
@@ -611,7 +613,7 @@ function buildTitle(tier, branch){
   if (tier === 'honorary') return 'Honorary Officer';
   return b ? b + ' Officer' : 'Officer';
 }
-const OFFICER_TABS = [['stats','Statistics'],['approvals','Approvals'],['questions','Questions'],['events','Events'],['scheduling','Scheduling'],['process','How scheduling works'],['plan','Event planning'],['checkin','Check-in & attendance'],['surveys','Event surveys'],['qr','QR codes'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
+const OFFICER_TABS = [['stats','Statistics'],['approvals','Approvals'],['questions','Questions'],['events','Events'],['scheduling','Scheduling'],['process','How scheduling works'],['plan','Get started with an event'],['checkin','Check-in & attendance'],['surveys','Event surveys'],['qr','QR codes'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
 const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['points','Award points'],['seasons','Leaderboard seasons'],['auto','Automatic emails'],['test','Test accounts'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
@@ -641,7 +643,7 @@ function parseDay(s){ const [y,m,d] = s.split('-').map(Number); return new Date(
 let authUser = null, session = null, myRole = 'guest', testRole = null, loaded = false;   // testRole: 'admin' or 'member' for test accounts
 const db = { settings:{ semester:'', dues:0 }, adminEmails:[], officerEmails:[], profiles:{}, users:[], events:[], stats:{},
   rsvps:{}, attendance:{}, announcements:[], recaps:[], archive:[], tasks:[], dues:{}, leader:[], log:[],
-  app:{ open:false, branches:[], deadline:'', opened_at:null }, apps:[], avail:{}, pending:[], questions:[], schedulers:[], requests:{} };
+  app:{ open:false, branches:[], deadline:'', opened_at:null }, apps:[], avail:{}, pending:[], questions:[], schedulers:[], requests:{}, guestReqs:[] };
 
 async function load(){
   const { data: { session: s } } = await sb.auth.getSession();
@@ -698,6 +700,7 @@ async function load(){
     tasks: off && t('tasks'),
     schedulers: off && t('event_schedulers'),
     requests: off && t('event_requests'),
+    guestReqs: off && t('guest_requests'),
     log: myRole === 'admin' && sb.from('change_log').select('*').order('ts', { ascending:false }).limit(500)
   };
   const keys = Object.keys(reqs);
@@ -709,6 +712,7 @@ async function load(){
   db.autoLog = Array.isArray(R.autoLog) ? R.autoLog : [];
   db.schedulers = (R.schedulers || []).map(x => x.email);
   db.requests = Object.fromEntries((R.requests || []).map(r => [r.event_id, r]));
+  db.guestReqs = Array.isArray(R.guestReqs) ? R.guestReqs : [];
   db.lbHistory = Array.isArray(R.lbHistory) ? R.lbHistory : [];
   db.awards = R.awards || [];
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
@@ -766,7 +770,7 @@ async function load(){
   db.mres = {}; (R.mres || []).forEach(r => (db.mres[r.member_id] = db.mres[r.member_id] || {})[r.category] = { path: r.path, updated: r.updated_at });
   db.pstats = R.pstats || null;
   db.pending = R.pending || [];
-  db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null, info: R.appset?.branch_info || {}, planTpl: R.appset?.plan_templates || {}, declineTpl: R.appset?.decline_template || {} };
+  db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null, info: R.appset?.branch_info || {}, planTpl: R.appset?.plan_templates || {}, declineTpl: R.appset?.decline_template || {}, questions: R.appset?.questions || null };
   db.apps = (R.apps || []).map(a => ({ ...a, date: iso(new Date(a.created_at)) }));
   db.avail = {}; (R.avail || []).forEach(a => db.avail[a.email] = [...normSlots(a.slots)]);
   db.log = (R.log || []).map(l => ({ ts:l.ts, who:l.who, text:l.text }));
@@ -1003,7 +1007,7 @@ function tabCounts(which){
     approvals: db.pending.filter(c => c.status === 'pending' && (isApprover() || c.author === session)).length,
     questions: db.questions.filter(q => q.status === 'new').length,
     tasks: db.tasks.filter(t => !t.done && t.who === session && t.due <= todayIso()).length,   // your tasks due today or overdue
-    scheduling: Object.values(db.requests || {}).filter(rqWaitingOnMe).length
+    scheduling: Object.values(db.requests || {}).filter(rqWaitingOnMe).length + (db.guestReqs || []).filter(gqWaitingOnMe).length
   };
 }
 function countTotal(which){ return Object.values(tabCounts(which)).reduce((a, b) => a + b, 0); }
@@ -2144,13 +2148,11 @@ function viewApply(){
         <label>Year in school<select id="ap-year"><option value="">Choose one</option>${YEARS.map(y => `<option>${y}</option>`).join('')}</select></label>
         <label>Expected graduation<span class="row" style="gap:8px;flex-wrap:nowrap"><select id="ap-grad-term" aria-label="Graduation semester"><option>Spring</option><option>Summer</option><option>Fall</option></select><select id="ap-grad-year" aria-label="Graduation year">${gradYears().map(y => `<option>${y}</option>`).join('')}</select></span></label>
       </div>
-      <label>Why do you want this role?<textarea id="ap-why"></textarea></label>
-      <label>What ideas do you have for WFA?<textarea id="ap-ideas"></textarea></label>
+      ${appQuestions().map(appQField).join('')}
       <div class="grid2">
         <label>Resume (one-page PDF, up to 5 MB)<input id="ap-resume" type="file" accept="application/pdf,.pdf"><span class="hint">Only admins can open it.</span></label>
         <label>LinkedIn <span class="hint">(optional)</span><input id="ap-linkedin" type="url" placeholder="https://www.linkedin.com/in/…"></label>
       </div>
-      <label>Anything else you’d like us to know? <span class="hint">(optional)</span><textarea id="ap-other" style="min-height:80px"></textarea></label>
       <div class="err" id="ap-err"></div>
       <div class="row"><button class="btn" type="submit">Submit application</button></div>
     </form></div>`;
@@ -2181,6 +2183,7 @@ function adminApplicationsBody(){
       <div class="err" id="as-err"></div>
       <div class="row"><button class="btn" type="submit">Save settings</button>${appsOpen() ? '<a href="#apply">See the application page</a>' : ''}</div>
     </form>
+    ${appQEditor()}
     <section class="stack">
       <div class="section-head"><h3>Applications</h3><span class="muted">${db.apps.length}</span></div>
       ${(() => { const n = db.apps.filter(x => x.status === 'declined' && !x.decline_emailed_at).length;
@@ -2204,9 +2207,10 @@ function appCard(x){
       <dt>Attendance</dt><dd>${st.came} of ${st.held} events (${st.pctEvents === null ? '—' : st.pctEvents + '%'}) · ${st.pctRsvp === null ? 'no RSVPs yet' : 'showed up to ' + st.pctRsvp + '% of ' + st.rsvps + ' RSVP' + (st.rsvps === 1 ? '' : 's')}</dd>
     </dl>
     <details><summary style="cursor:pointer;font-weight:600">Answers</summary><div class="stack" style="gap:10px;margin-top:10px">
-      <div><div class="eyebrow">Why this role</div><p class="ann-body">${esc(x.why)}</p></div>
+      ${(x.answers || []).length ? x.answers.filter(a => a.value).map(a => `<div><div class="eyebrow">${esc(a.label)}</div><p class="ann-body">${esc(a.value)}</p></div>`).join('')
+        : `<div><div class="eyebrow">Why this role</div><p class="ann-body">${esc(x.why)}</p></div>
       <div><div class="eyebrow">Their ideas for WFA</div><p class="ann-body">${esc(x.ideas)}</p></div>
-      ${x.other ? `<div><div class="eyebrow">Anything else</div><p class="ann-body">${esc(x.other)}</p></div>` : ''}
+      ${x.other ? `<div><div class="eyebrow">Anything else</div><p class="ann-body">${esc(x.other)}</p></div>` : ''}`}
     </div></details>
     <div class="row">${chatWithBtn(x.email)}${x.resume_path ? `<button class="btn ghost small" data-act="open-resume" data-id="${esc(x.resume_path)}">Open resume (PDF)</button>` : ''}${x.linkedin ? `<a class="btn ghost small" href="${esc(x.linkedin)}" target="_blank" rel="noopener">LinkedIn ↗</a>` : ''}${x.status === 'accepted' && roleOf(x.email) === 'member' ? `<button class="btn small" data-act="change-status" data-id="${esc(x.email)}">Make officer</button>` : ''}
       ${x.status === 'declined' ? (x.decline_emailed_at
@@ -3278,10 +3282,16 @@ const fmtShortDay = iso => parseDay(iso).toLocaleDateString('en-US', { weekday: 
 const noLayout = d => d.campus === 'off' || d.locType === 'Auditorium';
 const hasSpeaker = (d, cat) => d.speaker === 'yes' || (!d.speaker && GUEST_CATS.includes(cat));
 // Short notice: under 3 weeks away, or under 10 weeks with external guests (speakers, judges, recruiters).
+// Every external guest on the request was picked from the approved guests (so 3 weeks' notice is enough).
+function rqGuestsApproved(d){
+  if (d.speaker !== 'yes') return false;
+  const ok = new Set(approvedGuests().map(g => g.id)), list = (d.speakers || []).slice(0, +d.speakerCount || 1);
+  return list.length > 0 && list.every(s => s && s.guestId && ok.has(s.guestId));
+}
 function rqShortNotice(d, cat){
   const first = [...(d.dates || [])].sort()[0]; if (!first) return '';
   const days = (parseDay(first) - parseDay(todayIso())) / 864e5;
-  return days < (hasSpeaker(d, cat) ? 70 : 21) ? 'This is short notice, event may not be scheduled in time.' : '';
+  return days < (hasSpeaker(d, cat) && !rqGuestsApproved(d) ? 70 : 21) ? 'This is short notice, event may not be scheduled in time.' : '';
 }
 // AVSE technician arrival: every 30 minutes from 30 minutes before the start up to the setup time.
 const rqTechOpts = (d, start) => { const out = []; for (let m = 30; m <= (+d.setup || 0); m += 30) out.push([String(m), `${fmtTime(hhmmAdd(start, -m))} (${m} min before)`]); return out; };
@@ -3403,9 +3413,11 @@ function rqPanel(e, cat){
     ${d.speaker === 'yes' ? `<div class="panel stack" style="gap:10px;padding:12px">
       <label style="max-width:14rem">How many external guests?<select data-rq="speakerCount" data-rr="1">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => `<option ${n === i ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
       ${Array.from({ length: n }, (_, i) => { const s = (d.speakers || [])[i] || {}; return `<div class="stack" style="gap:8px;border-top:1px solid var(--line);padding-top:10px"><strong>Guest ${i + 1}</strong>
+        ${approvedGuests().length || s.guestId ? `<label>Approved guest <span class="hint">Picked guests already have UVU’s approval, so the event needs 3 weeks’ notice instead of 10.</span><select data-guestpick="${i}"><option value="">Other (not pre-approved)</option>${approvedGuests().map(g => `<option value="${g.id}" ${s.guestId === g.id ? 'selected' : ''}>${esc(gqName(g))}</option>`).join('')}</select></label>` : ''}
         <label>Name<input data-rq="speakers.${i}.name" value="${esc(s.name || '')}"></label>
         <div class="grid2"><label>Job title<input data-rq="speakers.${i}.title" value="${esc(s.title || s.job || '')}"></label><label>Company<input data-rq="speakers.${i}.company" value="${esc(s.company || '')}"></label></div>
-        <label>Speaking topic or role <span class="hint">Like “Building a fintech company” or “Judge”</span><input data-rq="speakers.${i}.topic" value="${esc(s.topic || '')}"></label><label>Bio<textarea rows="3" data-rq="speakers.${i}.bio">${esc(s.bio || '')}</textarea></label></div>`; }).join('')}</div>` : ''}
+        <label>Speaking topic or role <span class="hint">Like “Building a fintech company” or “Judge”</span><input data-rq="speakers.${i}.topic" value="${esc(s.topic || '')}"></label><label>Bio<textarea rows="3" data-rq="speakers.${i}.bio">${esc(s.bio || '')}</textarea></label>
+        <div class="grid2">${rqField(`speakers.${i}.email`, 'Email <span class="hint">Optional</span>', s.email, 'email', 'type="email" autocomplete="off"')}${rqField(`speakers.${i}.phone`, 'Phone <span class="hint">Optional</span>', s.phone, 'phone', 'type="tel" placeholder="(801) 555-0123"')}</div></div>`; }).join('')}</div>` : ''}
     ${rqYN('av', 'Will your event need additional A/V equipment?', d, 'Most locations have two mics and a projector.')}
     ${d.av === 'yes' ? `<label>What A/V equipment do you need?<textarea rows="2" data-rq="avNeeds">${esc(d.avNeeds)}</textarea></label>` : ''}
     ${rqYN('tech', 'Would you like an AVSE technician to meet you before the event starts?', d)}
@@ -3456,6 +3468,8 @@ function rqProblems(d, cat){
     addr(sp, 'the sponsoring organization');
   }
   if (d.speaker === 'yes' && (d.speakers || []).slice(0, +d.speakerCount || 1).filter(s => s && (s.name || '').trim()).length < (+d.speakerCount || 1)) p.push('Enter each external guest’s name (and their job title, company, topic, and bio if you have them).');
+  if (d.speaker === 'yes') (d.speakers || []).slice(0, +d.speakerCount || 1).forEach((s, i) => { if (!s) return;
+    const em = rqCheck('email', s.email), ph = rqCheck('phone', s.phone); if (em) p.push(`Guest ${i + 1} email: ${em[0]}`); if (ph) p.push(`Guest ${i + 1} phone: ${ph[0]}`); });
   if (d.av === 'yes' && !(d.avNeeds || '').trim()) p.push('Say what A/V equipment you need.');
   if (d.tech === 'yes'){ if ((+d.setup || 0) < 30) p.push('An AVSE technician needs at least 30 minutes of setup time.'); else if (!d.techTime) p.push('Choose when the AVSE technician should meet you.'); if (!['yes', 'no'].includes(d.techStay)) p.push('Answer: AVSE technician for the whole event?'); }
   if (!noLayout(d)){
@@ -3492,7 +3506,7 @@ function rqRows(e, r){
   const d = { ...rqDefaults(e), ...r.form }, yn = v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : '';
   const sp = d.sp || {}, lay = RQ_LAYOUTS.find(x => x[0] === d.layout);
   const speakers = (d.speakers || []).slice(0, +d.speakerCount || (d.speakers || []).length || 1).filter(Boolean)
-    .map((s, i) => `${i + 1}. ${s.name || ''}${[s.title || s.job, s.company].filter(Boolean).length ? ', ' + [s.title || s.job, s.company].filter(Boolean).join(', ') : ''}${s.topic ? '\nTopic or role: ' + s.topic : ''}${s.bio ? '\nBio: ' + s.bio : ''}`).join('\n\n');
+    .map((s, i) => `${i + 1}. ${s.name || ''}${[s.title || s.job, s.company].filter(Boolean).length ? ', ' + [s.title || s.job, s.company].filter(Boolean).join(', ') : ''}${s.guestId ? ' (already approved by UVU)' : ''}${s.topic ? '\nTopic or role: ' + s.topic : ''}${s.email || s.phone ? '\nContact: ' + [s.email, s.phone].filter(Boolean).join(' · ') : ''}${s.bio ? '\nBio: ' + s.bio : ''}`).join('\n\n');
   const locs = offSite(d) ? (d.locs || []).slice(0, +d.locCount || 1).map((a, i) => `${i + 1}. ${a.name || ''}\n${addrLine(a)}`).join('\n\n') : '';
   const layout = noLayout(d) ? 'Not needed (' + (d.campus === 'off' ? 'off campus' : 'auditorium') + ')'
     : lay ? lay[1] + (lay[3] === 'chairs' ? `, ${d.chairs} chairs` : lay[3] === 'tables' ? `, ${d.tables} tables` : lay[3] === 'both' ? `, ${d.tables} tables, ${d.chairs} chairs` : '') : '';
@@ -3521,6 +3535,7 @@ function rqSummary(e, r){
 }
 // Officer tools → Scheduling: the schedulers' queue, and everyone's own requests.
 function schedulingBody(){
+  if (ui.schedOpen && ui.schedOpen.startsWith('g:') && gqOf(ui.schedOpen.slice(2))) return gqDetail(gqOf(ui.schedOpen.slice(2)));
   const open = ui.schedOpen && evById(ui.schedOpen) && rqOf(ui.schedOpen);
   if (open) return rqDetail(evById(ui.schedOpen), rqOf(ui.schedOpen));
   const firstDay = e => [...((rqOf(e.id).form || {}).dates || [])].sort()[0] || e.date;
@@ -3529,16 +3544,19 @@ function schedulingBody(){
     return `<div class="list-row"><div><div class="ev-title">${esc(e.title)}${rqTag(e.id)}${short ? ' <span class="tag warn">Short notice</span>' : ''}</div>
       <div class="ev-sub">${rqLegacy(r) ? 'Form sent to the clubs office' : first ? 'Ideal: ' + fmtDay(first) + ((r.form.dates || []).length > 1 ? ` (+${r.form.dates.length - 1} more)` : '') : 'No dates yet'}${r.sent_by ? ' · From ' + esc(userName(r.sent_by)) : ''}${['review', 'signoff'].includes(r.status) ? (rqAuto(r) ? ' · Moves on ' + rqDeadline(r) : ' · Waiting since ' + fmtMtStamp(Date.parse(r.status_at))) : r.status_at ? ' · ' + fmtMtStamp(Date.parse(r.status_at)) : ''}</div></div>
       <button class="btn ${mine ? '' : 'ghost '}small" data-act="rq-open" data-id="${e.id}">Open</button></div>`; };
-  const group = (title, rows, empty) => `<div class="section-head"><h3>${title}</h3><span class="muted">${rows.length}</span></div><div>${rows.map(row).join('') || `<div class="empty">${empty}</div>`}</div>`;
+  const group = (title, rows, empty, guests = []) => `<div class="section-head"><h3>${title}</h3><span class="muted">${rows.length + guests.length}</span></div><div>${rows.map(row).join('') + guests.map(gqRow).join('') || `<div class="empty">${empty}</div>`}</div>`;
   const waiting = list.filter(e => rqWaitingOnMe(rqOf(e.id)));
   const yours = list.filter(e => rqOf(e.id).sent_by === session && !waiting.includes(e));
-  const others = (isPresident() || isScheduler() || myRole === 'admin') ? list.filter(e => !waiting.includes(e) && !yours.includes(e)) : [];
+  const leader = isPresident() || isScheduler() || myRole === 'admin';
+  const others = leader ? list.filter(e => !waiting.includes(e) && !yours.includes(e)) : [];
+  const gList = (db.guestReqs || []).filter(g => !['draft', 'approved', 'removed'].includes(g.status));
+  const gWait = gList.filter(gqWaitingOnMe), gYours = gList.filter(g => g.sent_by === session && !gWait.includes(g)), gOthers = leader ? gList.filter(g => !gWait.includes(g) && !gYours.includes(g)) : [];
   const names = (db.schedulers || []).map(userName).join(', ');
   return `<div class="stack" style="gap:18px">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span class="hint">Every event except officer meetings is approved here before it’s published.</span><button type="button" class="btn ghost small" data-act="proc-tab" data-id="all">How scheduling works</button></div>
-    ${group('Waiting on you', waiting, 'Nothing needs you right now.')}
-    ${group('Your requests', yours, 'Requests you send show up here.')}
-    ${others.length ? group('Everything else in progress', others, '') : ''}
+    ${group('Waiting on you', waiting, 'Nothing needs you right now.', gWait)}
+    ${group('Your requests', yours, 'Requests you send show up here.', gYours)}
+    ${others.length || gOthers.length ? group('Everything else in progress', others, '', gOthers) : ''}
     <span class="hint">Event schedulers: ${esc(names || 'none yet')}.</span></div>`;
 }
 // Officer tools → How scheduling works: what UVU requires, the club's own checks and balances, and the whole process.
@@ -3805,7 +3823,7 @@ function evButtons(e, cat){
   if (rqReviewing(e && e.id)) return `<button class="btn" type="submit" data-mode="branchok">Approve and send it on</button><button class="btn ghost" type="submit" data-mode="draft">Save changes</button>${cancel}`;
   return `${st === 'approved' && isScheduler() ? '<button class="btn" type="submit" data-mode="signoff">Send to the presidents for sign-off</button>' : ''}${['draft', 'returned'].includes(st) ? `<button class="btn" type="submit" data-mode="send">${st === 'returned' ? 'Send it again' : rqSendLabel(cat)}</button>` : ''}<button class="btn ghost" type="submit" data-mode="draft">${e ? 'Save draft' : 'Save as draft'}</button>${cancel}`;
 }
-const RQ_ERR = { 'err:notscheduler': 'Only event schedulers can do that.', 'err:notpresident': 'Only presidents can do that.', 'err:notreviewer': 'Only the branch president can do that.', 'err:state': 'This request changed since you opened it. Refresh and try again.', 'err:note': 'Write what needs to be fixed.', 'err:missing': 'That request doesn’t exist anymore.' };
+const RQ_ERR = { 'err:notscheduler': 'Only event schedulers can do that.', 'err:notyours': 'Only the officer who made it can change it.', 'err:window': 'The window has to be inside the semester.', 'err:notpresident': 'Only presidents can do that.', 'err:notreviewer': 'Only the branch president can do that.', 'err:state': 'This request changed since you opened it. Refresh and try again.', 'err:note': 'Write what needs to be fixed.', 'err:missing': 'That request doesn’t exist anymore.' };
 // Typing in the scheduling form keeps ui.rq up to date; some answers redraw the form (they show or hide questions).
 function rqSet(obj, path, val){
   const ks = path.split('.'); let o = obj;
@@ -3820,6 +3838,14 @@ function rqRedraw(){
 }
 ['input', 'change'].forEach(type => document.addEventListener(type, ev => {
   const t = ev.target; if (!t || !t.dataset) return;
+  if (t.dataset.gq && ui.gq){ ui.gq.d[t.dataset.gq] = t.value; if (t.dataset.check) rqShowCheck(t, false); if (type === 'change' && t.dataset.gq === 'estFrom') render(); return; }
+  if (t.dataset.aq !== undefined && ui.appQ){ const [i, f] = t.dataset.aq.split(':'), q = ui.appQ[+i]; if (!q) return;
+    q[f] = f === 'required' ? t.checked : f === 'options' ? t.value.split('\n').map(x => x.trim()).filter(Boolean) : t.value; if (f === 'type' && type === 'change') render(); return; }
+  if (t.dataset.guestpick !== undefined && ui.rq){ if (type !== 'change') return;
+    const i = +t.dataset.guestpick, g = gqOf(t.value), d = ui.rq.d; d.speakers = d.speakers || [];
+    if (g){ const f = g.form || {}; d.speakers[i] = { name: f.name || '', title: f.title || '', company: f.company || '', topic: f.topic || '', bio: f.bio || '', email: f.email || '', phone: f.phone || '', guestId: g.id }; }
+    else if (d.speakers[i]) delete d.speakers[i].guestId;
+    rqRedraw(); return; }
   if (t.dataset.sugreply){ ui.sugReplies = ui.sugReplies || {}; ui.sugReplies[t.dataset.sugreply] = t.value; return; }
   if (t.id === 'ev-members-only' && type === 'change'){ rqRedraw(); syncRsvpBox(); }
   if (['ev-rsvp-when', 'ev-guest-later', 'ev-guest-mode'].includes(t.id)) syncRsvpBox();
@@ -3843,12 +3869,13 @@ function rqRedraw(){
 }, true));
 // Email, phone, and ZIP fields are checked when you leave them; while typing, a message only clears once it's fixed.
 function rqShowCheck(t, show){
-  const span = t.parentElement && t.parentElement.querySelector('.field-err'); if (!span || !ui.rq) return;
-  const kind = t.dataset.check, state = kind === 'zip' ? rqGet(ui.rq.d, t.dataset.rq.replace(/zip$/, 'state')) : '';
+  const span = t.parentElement && t.parentElement.querySelector('.field-err'); if (!span) return;
+  const store = t.dataset.gq ? ui.gq && ui.gq.d : ui.rq && ui.rq.d; if (!store) return;
+  const kind = t.dataset.check, state = kind === 'zip' && t.dataset.rq ? rqGet(store, t.dataset.rq.replace(/zip$/, 'state')) : '';
   const c = rqCheck(kind, t.value, state);
   if (!show && !c){ span.textContent = ''; return; }
   if (!show) return;
-  if (!c && kind === 'phone' && t.value.trim()){ t.value = fmtPhone(t.value); rqSet(ui.rq.d, t.dataset.rq, t.value); }
+  if (!c && kind === 'phone' && t.value.trim()){ t.value = fmtPhone(t.value); if (t.dataset.gq) store[t.dataset.gq] = t.value; else rqSet(store, t.dataset.rq, t.value); }
   span.className = c && c[1] ? 'hint field-err warn-text' : 'err field-err'; span.textContent = c ? c[0] : '';
 }
 // Any US ZIP: fills in the city and state (from the free zippopotam.us lookup; only the ZIP is sent).
@@ -3874,6 +3901,168 @@ async function saveSchedFlag(email, on){
   if (r.error) toast(/event_schedulers/.test(r.error.message || '') ? 'Event schedulers aren’t set up yet. Run 52-event-scheduling.sql.' : errMsg(r.error));
 }
 
+/* ---------- External guest pre-approval ---------- */
+// Officers can get an outside guest (speaker, judge, panelist...) approved by UVU before the event is planned, using
+// estimates. Branch review (regular officers), then one president other than the sender (moves on after 48 business
+// hours), then a scheduler submits it to UVU and marks it approved for the semester (or a narrower window). Approved
+// guests can be picked on an event's scheduling request; an event whose guests are all approved needs 3 weeks' notice.
+const GQ_STATUS = { draft: ['Not sent yet', ''], branch: ['Waiting for branch review', 'warn'], review: ['Waiting for a president', 'warn'], sent: ['With the scheduler', 'warn'],
+  returned: ['Sent back: needs changes', 'warn'], submitted: ['Submitted to UVU', 'ok'], approved: ['Approved by UVU', 'ok'], removed: ['Removed', ''] };
+const gqOf = id => (db.guestReqs || []).find(g => g.id === id) || null;
+const gqTag = g => { const [l, c] = GQ_STATUS[g.status] || ['', '']; return ` <span class="tag ${c}">${l}</span>`; };
+// Semesters: Spring Jan 1–Apr 30, Summer May 1–Jul 31, Fall Aug 1–Dec 31 (matches semester_bounds in the database).
+function semesterBounds(isoDay){ const [y, m] = isoDay.split('-').map(Number); return m <= 4 ? [`${y}-01-01`, `${y}-04-30`] : m <= 7 ? [`${y}-05-01`, `${y}-07-31`] : [`${y}-08-01`, `${y}-12-31`]; }
+const semesterName = isoDay => { const m = +isoDay.slice(5, 7); return (m <= 4 ? 'Spring ' : m <= 7 ? 'Summer ' : 'Fall ') + isoDay.slice(0, 4); };
+const gqWindow = g => { const [s, e] = semesterBounds((g.form || {}).estFrom || todayIso()); return [g.window_start || s, g.window_end || e]; };
+// Guests that can still be picked: approved, not removed, and their window isn't over.
+const approvedGuests = () => (db.guestReqs || []).filter(g => g.status === 'approved' && gqWindow(g)[1] >= todayIso());
+const gqName = g => { const f = g.form || {}; return [f.name, [f.title, f.company].filter(Boolean).join(', ')].filter(Boolean).join(' · '); };
+function gqWaitingOnMe(g){
+  const st = g.status;
+  if (st === 'branch') return branchReviewers(g.branch).includes(session);
+  if (st === 'review') return isPresident() && g.sent_by !== session;
+  if (st === 'sent' || st === 'submitted') return isScheduler();
+  if (st === 'returned') return g.sent_by === session;
+  return false;
+}
+const gqDefaults = () => ({ name: '', title: '', company: '', topic: '', bio: '', email: '', phone: '', estFrom: '', estTo: '', dateNote: '', campus: 'on', locType: '', layout: '', attendance: '', food: '', av: '', notes: '' });
+function gqState(){
+  const key = ui.guestForm || 'new';
+  if (!ui.gq || ui.gq.key !== key){ const g = key === 'new' ? null : gqOf(key); ui.gq = { key, d: { ...gqDefaults(), ...((g && g.form) || {}) } }; }
+  return ui.gq;
+}
+function gqField(k, label, kind = '', extra = ''){
+  const d = gqState().d, c = kind ? rqCheck(kind, d[k]) : '';
+  return `<label>${label}<input data-gq="${k}" ${kind ? `data-check="${kind}"` : ''} value="${esc(d[k] || '')}" ${extra}>${kind ? `<span class="err field-err">${c ? esc(c[0]) : ''}</span>` : ''}</label>`;
+}
+function guestFormBody(){
+  const st = gqState(), d = st.d, g = st.key === 'new' ? null : gqOf(st.key);
+  if (g && !['draft', 'returned'].includes(g.status)) return gqDetail(g);
+  const sel = (k, opts) => `<select data-gq="${k}" ${k === 'estFrom' ? '' : ''}>${opts.map(([v, l]) => `<option value="${esc(v)}" ${d[k] === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  return `<form class="stack" id="f-guest-req" novalidate style="gap:14px;max-width:47.5rem">
+    <div><button type="button" class="btn ghost small" data-act="gq-close">← Back</button></div>
+    <div><div class="eyebrow">External guest</div><h2 style="margin:4px 0">Submit an external guest for approval</h2>
+      <p class="muted" style="margin:0">Get a speaker, judge, panelist, or other outside guest approved by UVU before the event itself is planned. Estimates are fine, and nothing goes on the calendar. Once UVU approves them, they can be picked on an event’s scheduling request, and that event needs only 3 weeks’ notice instead of 10. The event still goes through its own approval.</p></div>
+    ${g && g.status === 'returned' ? `<div class="rq-warn"><strong>Sent back.</strong> What to fix:<div style="white-space:pre-wrap;margin-top:4px">${esc(g.note)}</div></div>` : ''}
+    <section class="panel stack" style="gap:10px"><h3 style="margin:0">The guest</h3>
+      ${gqField('name', 'Name')}<div class="grid2">${gqField('title', 'Job title')}${gqField('company', 'Company')}</div>
+      ${gqField('topic', 'Speaking topic or role <span class="hint">Like “Building a fintech company” or “Judge”</span>')}
+      <label>Bio<textarea rows="4" data-gq="bio">${esc(d.bio)}</textarea></label>
+      <div class="grid2">${gqField('email', 'Email', 'email', 'type="email" autocomplete="off"')}${gqField('phone', 'Phone <span class="hint">Optional, with area code</span>', 'phone', 'type="tel" placeholder="(801) 555-0123"')}</div></section>
+    <section class="panel stack" style="gap:10px"><h3 style="margin:0">Estimates for the event</h3><span class="hint">Your best guesses. The event’s own scheduling request will have the real details.</span>
+      <div class="grid2"><label>Earliest likely date<input type="date" data-gq="estFrom" min="${todayIso()}" value="${esc(d.estFrom)}"></label><label>Latest likely date <span class="hint">Optional</span><input type="date" data-gq="estTo" value="${esc(d.estTo)}"></label></div>
+      ${d.estFrom ? `<span class="hint">If approved, it covers ${semesterName(d.estFrom)}. The scheduler can narrow that if UVU gives a shorter window.</span>` : ''}
+      <label>Anything about timing? <span class="hint">Optional, like “a Tuesday or Thursday at lunch”</span><input data-gq="dateNote" value="${esc(d.dateNote)}"></label>
+      <div class="grid2"><label>On campus, off campus, or hybrid?${sel('campus', Object.entries(RQ_CAMPUS))}</label><label>Expected attendance<input type="number" min="1" data-gq="attendance" value="${esc(d.attendance)}"></label></div>
+      <div class="grid2"><label>Likely location type${sel('locType', [['', 'Not sure yet'], ...RQ_LOCATIONS.map(x => [x, x])])}</label><label>Likely layout${sel('layout', [['', 'Not sure yet'], ...RQ_LAYOUTS.map(([k, l]) => [k, l])])}</label></div>
+      <div class="grid2"><label>Food or drinks?${sel('food', [['', 'Not sure yet'], ['yes', 'Yes'], ['no', 'No']])}</label><label>A/V needs <span class="hint">Optional</span><input data-gq="av" value="${esc(d.av)}"></label></div>
+      <label>Anything else? <span class="hint">Optional</span><textarea rows="3" data-gq="notes">${esc(d.notes)}</textarea></label></section>
+    <div class="err" id="gq-err"></div>
+    <div class="row"><button class="btn" type="submit" data-mode="send">${g && g.status === 'returned' ? 'Send it again' : needsBranchReview(session) ? 'Send to your branch president or VP' : 'Send for approval'}</button><button class="btn ghost" type="submit" data-mode="save">Save draft</button></div></form>`;
+}
+function gqProblems(d){
+  const p = [], em = rqCheck('email', d.email), ph = rqCheck('phone', d.phone);
+  if (!d.name.trim()) p.push('Enter the guest’s name.');
+  if (!d.title.trim() && !d.company.trim()) p.push('Enter their job title or company.');
+  if (!d.topic.trim()) p.push('Enter their topic or role.');
+  if (!d.email.trim()) p.push('Enter the guest’s email.'); else if (em) p.push('Email: ' + em[0]);
+  if (ph) p.push('Phone: ' + ph[0]);
+  if (!d.estFrom) p.push('Pick the earliest likely date.'); else if (d.estFrom < todayIso()) p.push('The earliest likely date has already passed.');
+  if (d.estTo && d.estFrom && d.estTo < d.estFrom) p.push('The latest likely date is before the earliest.');
+  return p;
+}
+function gqRows(g){
+  const f = { ...gqDefaults(), ...(g.form || {}) }, yn = v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : 'Not sure yet';
+  return [['Name', f.name], ['Job title', f.title], ['Company', f.company], ['Topic or role', f.topic], ['Bio', f.bio], ['Email', f.email], ['Phone', f.phone],
+    ['Likely dates', f.estFrom ? fmtShortDay(f.estFrom) + (f.estTo ? ' – ' + fmtShortDay(f.estTo) : '') : ''], ['Timing notes', f.dateNote], ['On campus, off campus, or hybrid', RQ_CAMPUS[f.campus] || ''],
+    ['Expected attendance', f.attendance], ['Location type', f.locType || 'Not sure yet'], ['Layout', (RQ_LAYOUTS.find(x => x[0] === f.layout) || ['', 'Not sure yet'])[1]],
+    ['Food or drinks', yn(f.food)], ['A/V needs', f.av], ['Other notes', f.notes]];
+}
+function gqDetail(g){
+  const st = g.status, est = (g.form || {}).estFrom || todayIso(), [ss, se] = semesterBounds(est), [ws, we] = gqWindow(g);
+  const back = (kind, label, hint) => `<form class="stack" id="f-gq-back" data-id="${g.id}" data-kind="${kind}" style="gap:8px"><label>${label} <span class="hint">${hint}</span><textarea id="gq-back-note" rows="3"></textarea></label>
+    <div class="row"><button class="btn ghost" type="submit">${label}</button></div><div class="err" id="gq-back-err"></div></form>`;
+  const windowForm = (title, btn, s) => `<form class="stack panel" id="f-gq-window" data-id="${g.id}" data-s="${s}" style="gap:8px;padding:12px 14px"><strong>${title}</strong>
+    <span class="hint">Approval covers ${semesterName(est)} (${fmtShortDay(ss)} – ${fmtShortDay(se)}). Narrow it if UVU gave a shorter window.</span>
+    <div class="grid2"><label>From<input type="date" id="gq-ws" min="${ss}" max="${se}" value="${esc(ws)}"></label><label>To<input type="date" id="gq-we" min="${ss}" max="${se}" value="${esc(we)}"></label></div>
+    <div class="row"><button class="btn" type="submit">${btn}</button></div><div class="err" id="gq-w-err"></div></form>`;
+  let actions = '';
+  if (st === 'branch' && branchReviewers(g.branch).includes(session))
+    actions = `<div class="row"><button class="btn" data-act="gq-branch-ok" data-id="${g.id}">Approve and send it on</button></div>${back('branch', 'Send it back with notes', 'The officer is notified.')}`;
+  else if (st === 'review' && isPresident() && g.sent_by !== session)
+    actions = `<div class="row"><button class="btn" data-act="gq-vote" data-id="${g.id}">Approve</button></div>${back('vote', 'Send it back with notes', 'It goes back to the officer who sent it.')}`;
+  else if (st === 'sent' && isScheduler())
+    actions = `<div class="row" style="gap:8px"><a class="btn ghost" href="https://www.uvu.edu/clubs/forms/scheduling-request.html" target="_blank" rel="noopener">Open UVU’s form ↗</a><button class="btn" data-act="gq-status" data-id="${g.id}" data-s="submitted">Mark submitted to UVU</button></div>${back('sched', 'Send it back with notes', 'The officer is notified.')}`;
+  else if (st === 'submitted' && isScheduler())
+    actions = windowForm('Mark approved by UVU', 'Mark approved', 'approved') + back('sched', 'Send it back with notes', 'For a problem with UVU’s approval.');
+  else if (st === 'approved' && isScheduler())
+    actions = windowForm('Approval window', 'Save window', 'window') + `<div class="row"><button class="btn ghost small" data-act="gq-status" data-id="${g.id}" data-s="removed">Remove from approved guests</button></div>`;
+  else if (st === 'returned' && g.sent_by === session)
+    actions = `<div class="row"><button class="btn" data-act="gq-edit" data-id="${g.id}">Edit and send again</button></div>`;
+  const hist = (g.history || []).slice().reverse().map(h => `<li><strong>${esc((GQ_STATUS[h.status] || [h.status])[0])}</strong> · ${esc(h.by === 'system' ? 'Automatic' : userName(h.by))} · ${fmtMtStamp(Date.parse(h.at))}${h.note ? `<div style="white-space:pre-wrap" class="hint">${esc(h.note)}</div>` : ''}</li>`).join('');
+  return `<div class="stack" style="gap:16px;max-width:56rem"><div><button type="button" class="btn ghost small" data-act="gq-close">← Back</button></div>
+    <div><div class="eyebrow">External guest</div><h2 style="margin:4px 0">${esc((g.form || {}).name || 'Guest')}</h2>${gqTag(g)}${g.sent_by ? ` <span class="hint">From ${esc(userName(g.sent_by))}</span>` : ''}</div>
+    ${st === 'approved' ? `<div class="notice">Approved for ${fmtShortDay(ws)} – ${fmtShortDay(we)}. Officers can pick this guest on an event’s scheduling request.</div>` : ''}
+    ${st === 'review' ? `<span class="hint">Needs one president other than ${esc(userName(g.sent_by))}. If nobody sends it back, it moves on automatically ${fmtMtStamp(businessAdd(Date.parse(g.status_at), 48))}.</span>` : ''}
+    ${st === 'returned' ? `<div class="rq-warn"><strong>Sent back:</strong><div style="white-space:pre-wrap">${esc(g.note)}</div></div>` : ''}
+    ${actions}
+    <section class="panel stack" style="gap:10px"><h3 style="margin:0">Details</h3><dl class="rq-sum">${gqRows(g).map(([l, v]) => `<dt>${esc(l)}</dt><dd><div class="row" style="gap:8px;align-items:flex-start;justify-content:space-between;flex-wrap:nowrap">
+      <span style="white-space:pre-wrap">${esc(v || '—')}</span>${v ? `<button type="button" class="btn ghost small" data-act="copy" data-text="${esc(v)}" data-label="${esc(l)}">Copy</button>` : ''}</div></dd>`).join('')}</dl></section>
+    ${hist ? `<section class="stack" style="gap:6px"><h3 style="margin:0">History</h3><ul class="rq-hist">${hist}</ul></section>` : ''}</div>`;
+}
+const gqRow = g => { const f = g.form || {};
+  return `<div class="list-row"><div><div class="ev-title">Guest: ${esc(f.name || 'Unnamed')}${gqTag(g)}</div>
+    <div class="ev-sub">${esc([f.title, f.company].filter(Boolean).join(', ') || 'No job title yet')}${f.estFrom ? ' · Likely ' + fmtDay(f.estFrom) : ''}${g.sent_by ? ' · From ' + esc(userName(g.sent_by)) : ''}</div></div>
+    <button class="btn ${gqWaitingOnMe(g) ? '' : 'ghost '}small" data-act="rq-open" data-id="g:${g.id}">Open</button></div>`; };
+
+// Officer tools → Get started with an event: where to begin, approved guests, and the planning checklists.
+function startBody(){
+  if (ui.guestForm) return guestFormBody();
+  const ag = approvedGuests(), mine = (db.guestReqs || []).filter(g => g.sent_by === session && !['approved', 'removed'].includes(g.status));
+  const card = (title, text, btn) => `<div class="panel stack" style="gap:8px;padding:16px"><strong style="font-size:1.05rem">${title}</strong><span class="muted">${text}</span><div style="margin-top:auto">${btn}</div></div>`;
+  return `<div class="stack" style="gap:18px">
+    <div class="start-grid">
+      ${card('Plan an event', 'Create the event, fill out its scheduling request, and send it for approval. Nothing is published or promoted until it’s approved.', '<button class="btn" data-act="start-event">Start an event</button>')}
+      ${card('Get an external guest approved', 'Have a speaker, judge, or other outside guest in mind but no set date? Get them approved by UVU first, with estimates. Events with approved guests need only 3 weeks’ notice.', '<button class="btn ghost" data-act="gq-new">Submit a guest</button>')}
+      ${card('How scheduling works', 'What UVU requires, the club’s reviews, and how long each step takes.', '<button class="btn ghost" data-act="proc-tab" data-id="uvu">Read it</button>')}
+    </div>
+    ${mine.length ? `<div class="section-head"><h3>Your guest requests</h3><span class="muted">${mine.length}</span></div><div>${mine.map(g => g.status === 'draft'
+      ? `<div class="list-row"><div><div class="ev-title">Guest: ${esc((g.form || {}).name || 'Unnamed')}${gqTag(g)}</div></div><button class="btn small" data-act="gq-edit" data-id="${g.id}">Finish it</button></div>` : gqRow(g)).join('')}</div>` : ''}
+    <div class="section-head"><h3>Approved guests</h3><span class="muted">${ag.length}</span></div>
+    <div>${ag.map(g => { const [ws, we] = gqWindow(g); return `<div class="list-row"><div><div class="ev-title">${esc((g.form || {}).name || 'Guest')}</div><div class="ev-sub">${esc([(g.form || {}).title, (g.form || {}).company].filter(Boolean).join(', '))} · Approved ${fmtDay(ws)} – ${fmtDay(we)}</div></div><button class="btn ghost small" data-act="rq-open" data-id="g:${g.id}">Details</button></div>`; }).join('') || '<div class="empty">No approved guests yet.</div>'}</div>
+    <div class="section-head"><h3>Planning checklists</h3></div>
+    ${planBody()}</div>`;
+}
+
+// Officer application questions: admins can edit them in Admin → Applications. Every application also asks for year,
+// graduation, branch choices, resume, and LinkedIn. Answers are saved with the question text they answered.
+const APP_Q_DEFAULT = [{ id: 'why', label: 'Why do you want this role?', type: 'long', required: true, hint: '' },
+  { id: 'ideas', label: 'What ideas do you have for WFA?', type: 'long', required: true, hint: '' },
+  { id: 'other', label: 'Anything else you’d like us to know?', type: 'long', required: false, hint: '' }];
+const appQuestions = () => (Array.isArray(db.app.questions) && db.app.questions.length ? db.app.questions : APP_Q_DEFAULT);
+function appQField(q, i){
+  const label = `${esc(q.label)}${q.required ? '' : ' <span class="hint">(optional)</span>'}${q.hint ? `<span class="hint">${esc(q.hint)}</span>` : ''}`;
+  if (q.type === 'short') return `<label>${label}<input id="apq-${i}"></label>`;
+  if (q.type === 'choice') return `<label>${label}<select id="apq-${i}"><option value="">Choose one</option>${(q.options || []).map(o => `<option>${esc(o)}</option>`).join('')}</select></label>`;
+  return `<label>${label}<textarea id="apq-${i}" style="min-height:${q.required ? 110 : 80}px"></textarea></label>`;
+}
+function appQEditor(){
+  const qs = ui.appQ || (ui.appQ = JSON.parse(JSON.stringify(appQuestions())));
+  return `<section class="panel stack" style="gap:12px"><h3 style="margin:0">Application questions</h3>
+    <span class="hint">Applicants always give their year, expected graduation, branch choices, resume, and LinkedIn. These are the questions after that. Applications already submitted keep the questions they answered.</span>
+    ${qs.map((q, i) => `<div class="aq-row stack" style="gap:8px">
+      <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap"><label style="flex:1;min-width:14rem">Question ${i + 1}<input data-aq="${i}:label" value="${esc(q.label)}"></label>
+        <label style="width:auto">Answer<select data-aq="${i}:type">${[['short', 'Short answer'], ['long', 'Long answer'], ['choice', 'Multiple choice']].map(([k, l]) => `<option value="${k}" ${q.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="check" style="padding-bottom:10px"><input type="checkbox" data-aq="${i}:required" ${q.required ? 'checked' : ''}> Required</label></div>
+      <label>Hint <span class="hint">Optional, shown with the question</span><input data-aq="${i}:hint" value="${esc(q.hint || '')}"></label>
+      ${q.type === 'choice' ? `<label>Choices <span class="hint">One per line</span><textarea rows="3" data-aq="${i}:options">${esc((q.options || []).join('\n'))}</textarea></label>` : ''}
+      <div class="row" style="gap:4px"><button type="button" class="btn ghost small" data-act="aq-move" data-id="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+        <button type="button" class="btn ghost small" data-act="aq-move" data-id="${i}" data-d="1" ${i === qs.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+        <button type="button" class="btn ghost small" data-act="aq-rm" data-id="${i}">Remove</button></div></div>`).join('')}
+    <div class="row" style="gap:8px"><button type="button" class="btn ghost small" data-act="aq-add">+ Add a question</button><button type="button" class="btn" data-act="aq-save">Save questions</button>
+      <button type="button" class="btn ghost small" data-act="aq-reset">Start over from the original questions</button></div><div class="err" id="aq-err"></div></section>`;
+}
+
 function viewOfficer(){
   if (!can('officer')) return gate('officer');
   const counts = tabCounts('officer');
@@ -3889,7 +4078,7 @@ function viewOfficer(){
 
   else if (T === 'resumes'){ body = resumeBookBody(); }
 
-  else if (T === 'plan'){ body = planBody(); }
+  else if (T === 'plan'){ body = startBody(); }
 
   else if (T === 'scheduling'){ body = schedulingBody(); }
   else if (T === 'process'){ body = processBody(); }
@@ -5574,7 +5763,29 @@ document.addEventListener('click', async ev => {
     case 'rq-mon': { ui.rqMonth = ui.rqMonth || {}; const k = t.dataset.k, d = rqState().d, cur = ui.rqMonth[k] || ([...d[k]].sort()[0] || todayIso()).slice(0, 7);
       const [y, m] = cur.split('-').map(Number), n = new Date(y, m - 1 + (+id), 1); ui.rqMonth[k] = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0'); rqRedraw(); break; }
     case 'rq-file-clear': { const rq = rqState(); delete rq.files[id]; rq.d[id] = null; rqRedraw(); break; }
-    case 'rq-open': ui.schedOpen = id || null; ui.schedPolicy = false; render(); window.scrollTo(0, 0); break;
+    case 'rq-open': ui.schedOpen = id || null; if (id && id.startsWith('g:')) ui.officerTab = 'scheduling'; render(); window.scrollTo(0, 0); break;
+    case 'start-event': ui.officerTab = 'events'; ui.editEvent = null; ui.rq = null; render(); window.scrollTo(0, 0); break;
+    case 'gq-new': ui.officerTab = 'plan'; ui.guestForm = 'new'; ui.gq = null; render(); window.scrollTo(0, 0); break;
+    case 'gq-edit': ui.officerTab = 'plan'; ui.guestForm = id; ui.gq = null; ui.schedOpen = null; render(); window.scrollTo(0, 0); break;
+    case 'gq-close': ui.guestForm = null; ui.gq = null; ui.schedOpen = null; render(); window.scrollTo(0, 0); break;
+    case 'gq-branch-ok': case 'gq-vote': { const g = gqOf(id) || { form: {} }, branch = t.dataset.act === 'gq-branch-ok';
+      await act(async () => { const r = await sb.rpc(branch ? 'guest_branch_review' : 'guest_vote', { p_id: id, p_ok: true, p_note: '' }); if (r.error) throw r.error;
+        if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data); await logChange('Approved external guest ' + (g.form.name || '')); }, 'Approved'); break; }
+    case 'gq-status': { const s2 = t.dataset.s, g = gqOf(id) || { form: {} };
+      await act(async () => { const r = await sb.rpc('guest_scheduler_update', { p_id: id, p_status: s2, p_note: '' }); if (r.error) throw r.error;
+        if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data); await logChange((s2 === 'removed' ? 'Removed approved guest ' : 'Submitted guest to UVU: ') + (g.form.name || '')); },
+        s2 === 'removed' ? 'Removed from approved guests' : 'Marked submitted to UVU'); break; }
+    case 'aq-add': ui.appQ.push({ id: 'q' + Date.now().toString(36), label: '', type: 'long', required: false, hint: '' }); render(); break;
+    case 'aq-rm': ui.appQ.splice(+id, 1); render(); break;
+    case 'aq-move': { const i = +id, j = i + (+t.dataset.d); if (ui.appQ[j]){ [ui.appQ[i], ui.appQ[j]] = [ui.appQ[j], ui.appQ[i]]; } render(); break; }
+    case 'aq-reset': ui.appQ = JSON.parse(JSON.stringify(APP_Q_DEFAULT)); render(); toast('Original questions restored here. Save to use them.'); break;
+    case 'aq-save': { const qs = ui.appQ, bad = qs.findIndex(q => !q.label.trim()), badChoice = qs.findIndex(q => q.type === 'choice' && (q.options || []).length < 2);
+      if (!qs.length) { err('aq-err', 'Keep at least one question.'); break; }
+      if (bad >= 0) { err('aq-err', `Question ${bad + 1} needs wording.`); break; }
+      if (badChoice >= 0) { err('aq-err', `Question ${badChoice + 1} needs at least two choices.`); break; }
+      await act(async () => { const r = await sb.from('app_settings').update({ questions: qs.map(q => ({ ...q, label: q.label.trim(), hint: (q.hint || '').trim() })) }).eq('id', 1);
+        if (r.error) throw new Error(/questions/.test(r.error.message || '') ? 'Editable questions aren’t set up yet. Run 53-guest-approvals-and-application-questions.sql.' : r.error.message);
+        ui.appQ = null; await logChange('Edited the officer application questions'); }, 'Application questions saved'); break; }
     case 'proc-tab': ui.procTab = id || 'uvu'; ui.officerTab = 'process'; if (route() !== 'officer') location.hash = 'officer/process'; else render(); window.scrollTo(0, 0); break;
     case 'go-scheduling': ui.officerTab = 'scheduling'; ui.schedOpen = null; render(); window.scrollTo(0, 0); break;
     case 'rq-open-file': { const w = window.open('', '_blank'); const { data, error } = await sb.storage.from('event-files').createSignedUrl(id, 300);
@@ -6287,6 +6498,32 @@ async function handleSubmit(f, v, err){
     await act(async () => { must(await sb.from('attendance').insert({ event_id: id, email: who })); await logChange('Marked ' + userName(who) + ' present at “' + evById(id).title + '”'); }, userName(who) + ' marked present');
   }
 
+  if (f.id === 'f-guest-req'){
+    const mode = (f._submitter && f._submitter.dataset.mode) || 'save', st = gqState(), d = st.d;
+    if (mode === 'send'){ const probs = gqProblems(d); if (probs.length){ const box = document.getElementById('gq-err');
+      box.innerHTML = `<div class="rq-warn" style="color:inherit;font-weight:400"><strong>Almost there. Before it can be sent:</strong><ul style="margin:6px 0 0;padding-left:1.2rem">${probs.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
+      box.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; } }
+    else if (!d.name.trim()) return err('gq-err', 'Enter the guest’s name to save a draft.');
+    return act(async () => { const r = await sb.rpc('save_guest_request', { p_id: st.key === 'new' ? null : st.key, p_form: d, p_send: mode === 'send' });
+      if (r.error) throw new Error(/guest_request/.test(r.error.message || '') ? 'Guest approvals aren’t set up yet. Run 53-guest-approvals-and-application-questions.sql.' : r.error.message);
+      if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
+      await logChange((mode === 'send' ? 'Sent external guest for approval: ' : 'Saved external guest draft: ') + d.name);
+      ui.guestForm = null; ui.gq = null; if (mode === 'send'){ ui.officerTab = 'scheduling'; ui.schedOpen = 'g:' + r.data; } }, mode === 'send' ? 'Sent. You’ll be notified as it moves along.' : 'Draft saved');
+  }
+  if (f.id === 'f-gq-back'){
+    const note = v('gq-back-note'), id = f.dataset.id, kind = f.dataset.kind; if (!note) return err('gq-back-err', 'Write what needs to be fixed.');
+    return act(async () => { const r = kind === 'branch' ? await sb.rpc('guest_branch_review', { p_id: id, p_ok: false, p_note: note }) : kind === 'vote' ? await sb.rpc('guest_vote', { p_id: id, p_ok: false, p_note: note })
+        : await sb.rpc('guest_scheduler_update', { p_id: id, p_status: 'returned', p_note: note }); if (r.error) throw r.error;
+      if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data); await logChange('Sent back an external guest request'); }, 'Sent back. The officer will be notified.');
+  }
+  if (f.id === 'f-gq-window'){
+    const id = f.dataset.id, s2 = f.dataset.s, ws = v('gq-ws'), we = v('gq-we');
+    if (!ws || !we || we < ws) return err('gq-w-err', 'Pick a start and end date, with the end on or after the start.');
+    return act(async () => { const r = await sb.rpc('guest_scheduler_update', { p_id: id, p_status: s2, p_note: '', p_start: ws, p_end: we }); if (r.error) throw r.error;
+      if (String(r.data).startsWith('err:')) throw new Error(r.data === 'err:window' ? 'The window has to be inside the semester.' : RQ_ERR[r.data] || r.data);
+      await logChange((s2 === 'approved' ? 'Marked external guest approved: ' : 'Changed the approval window for ') + ((gqOf(id) || {}).form || {}).name); }, s2 === 'approved' ? 'Marked approved by UVU' : 'Window saved');
+  }
+
   if (f.id === 'f-rq-suggest'){
     const id = f.dataset.id, e = evById(id), r = rqOf(id), note = v('sug-note'), { changes, missing } = readSuggestions(e, r);
     if (missing.length) return err('sug-err', 'Say why for: ' + missing.join(', ') + '.');
@@ -6565,17 +6802,19 @@ async function handleSubmit(f, v, err){
       if (picks.some((x, i) => x.r !== i + 1)) return err('ap-err', 'Use each choice once, starting with 1st choice.');
       branches = picks.map(x => x.b);
     }
-    const year = v('ap-year'), grad = v('ap-grad-term') + ' ' + v('ap-grad-year'), why = v('ap-why'), ideas = v('ap-ideas'), linkedin = v('ap-linkedin'), other = v('ap-other');
+    const year = v('ap-year'), grad = v('ap-grad-term') + ' ' + v('ap-grad-year'), linkedin = v('ap-linkedin');
+    const qs = appQuestions(), answers = qs.map((q, i) => ({ id: q.id, label: q.label, value: v('apq-' + i) })), ans = id => (answers.find(a => a.id === id) || {}).value || '';
+    const why = ans('why'), ideas = ans('ideas'), other = ans('other'), missing = qs.find((q, i) => q.required && !answers[i].value);
     const file = document.getElementById('ap-resume').files[0];
     if (!year) return err('ap-err', 'Choose your year in school.');
-    if (!why || !ideas) return err('ap-err', 'Answer both questions about the role.');
+    if (missing) return err('ap-err', 'Answer: ' + missing.label);
     if (!file) return err('ap-err', 'Attach your resume as a PDF.');
     const bad = await checkResume(file); if (bad) return err('ap-err', bad);
     if (linkedin && !/^https?:\/\//i.test(linkedin)) return err('ap-err', 'The LinkedIn link must start with https://');
     const path = authUser.id + '/' + crypto.randomUUID() + '.pdf';
     const up = await sb.storage.from('resumes').upload(path, file, { contentType: 'application/pdf' });
     if (up.error) return err('ap-err', 'Your resume didn’t upload: ' + errMsg(up.error));
-    const ins = await sb.from('applications').insert({ cycle: db.app.opened_at, branches, year, grad, why, ideas, linkedin, other, resume_path: path });
+    const ins = await sb.from('applications').insert({ cycle: db.app.opened_at, branches, year, grad, why, ideas, linkedin, other, answers, resume_path: path });
     if (ins.error){ await sb.storage.from('resumes').remove([path]); return err('ap-err', errMsg(ins.error)); }
     await load(); toast('Application submitted'); render(); window.scrollTo(0,0);
   }
