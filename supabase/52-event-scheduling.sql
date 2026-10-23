@@ -1,7 +1,8 @@
 -- WFA update: event scheduling (UVU requires club events to be approved before they're marketed).
 -- Every event except officer meetings goes through these steps before it's published:
 --   1. Branch review: drafts made by officers (not presidents, vice presidents, advisors, or admins) go to the
---      president of the officer's branch (all presidents if the branch has none), who approves or sends it back.
+--      president and vice president of the officer's branch (all presidents if the branch has neither). Either one can
+--      edit it and approve it, or send it back.
 --   2. Presidents' review (case competitions, excursions, guest speakers, career fairs): every president approves or
 --      requests changes. It moves on once all approve, or automatically after 48 hours with no objection.
 --   3. Scheduler: submits it to UVU (or sends it back), then marks it approved once UVU approves.
@@ -43,18 +44,20 @@ language sql stable security definer set search_path = public as $$
 $$;
 create or replace function public.big_event(p_cat text) returns boolean
 language sql immutable as $$ select p_cat in ('case_competition', 'excursion', 'guest_speaker', 'career_fair'); $$;
--- Officers (not presidents, vice presidents, advisors, or admins) need their branch president's approval first.
+-- Officers (not presidents, vice presidents, advisors, or admins) need their branch leadership's approval first.
 create or replace function public.needs_branch_review(p_email text) returns boolean
 language sql stable security definer set search_path = public as $$
   select not exists (select 1 from officer_profiles p where p.email = p_email and p.tier in ('president', 'vice_president', 'advisor'))
      and not exists (select 1 from access_list a where a.email = p_email and a.role = 'admin');
 $$;
--- The presidents of a branch, or every president if the branch has none.
+-- A branch's president and vice president, or every president if the branch has neither.
 create or replace function public.branch_reviewers(p_branch text) returns setof text
 language sql stable security definer set search_path = public as $$
-  select e from wfa_presidents() e join officer_profiles p on p.email = e where p.branch = p_branch
+  with leads as (select p.email from officer_profiles p join access_list a on a.email = p.email
+                 where p.branch = p_branch and p.tier in ('president', 'vice_president'))
+  select email from leads
   union all
-  select e from wfa_presidents() e where not exists (select 1 from wfa_presidents() x join officer_profiles p on p.email = x where p.branch = p_branch);
+  select e from wfa_presidents() e where not exists (select 1 from leads);
 $$;
 grant execute on function public.wfa_presidents(), public.big_event(text), public.needs_branch_review(text), public.branch_reviewers(text) to authenticated;
 
@@ -169,7 +172,11 @@ begin
   select e.cat into cat from events e where e.id = p_event;
   if cat is null or cat = 'officer_meeting' then return 'err:event'; end if;
   select * into r from event_requests where event_id = p_event;
-  if r.status is not null and r.status not in ('draft', 'returned') then return 'err:locked'; end if;
+  -- The sender edits it while it's a draft or sent back; branch leadership can edit it while reviewing it.
+  if r.status is not null and r.status not in ('draft', 'returned')
+     and not (r.status = 'branch' and not p_send and (public.is_admin() or exists (select 1 from branch_reviewers(r.branch) e where e = me))) then
+    return 'err:locked';
+  end if;
   insert into event_requests (event_id, form) values (p_event, coalesce(p_form, '{}'))
     on conflict (event_id) do update set form = excluded.form;
   if not p_send then return 'ok'; end if;
@@ -200,8 +207,12 @@ begin
     perform rq_move(p_event, 'returned', me, trim(p_note)); return 'ok';
   end if;
   select e.cat into cat from events e where e.id = p_event;
+  if trim(coalesce(p_note, '')) <> '' and big_event(cat) then
+    update event_requests set history = history || jsonb_build_array(jsonb_build_object('at', now(), 'by', me, 'status', 'branch_ok', 'note', trim(p_note)))
+      where event_id = p_event;
+  end if;
   if big_event(cat) then perform rq_start_round(p_event, 'review', me);
-  else perform rq_move(p_event, 'sent', me, 'Approved by the branch president.'); end if;
+  else perform rq_move(p_event, 'sent', me, coalesce(nullif(trim(p_note), ''), 'Approved by branch leadership.')); end if;
   return 'ok';
 end $$;
 grant execute on function public.branch_review(uuid, boolean, text) to authenticated;

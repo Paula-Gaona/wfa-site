@@ -163,7 +163,7 @@ Deno.serve(async () => {
       const { data: acc } = await db.from('access_list').select('email');
       const isOfficer = new Set((acc || []).map((a) => a.email));
       const presidents = (offs || []).filter((o) => o.tier === 'president' && isOfficer.has(o.email));
-      const branchPres = (b: string | null) => { const p = presidents.filter((o) => o.branch && o.branch === b); return (p.length ? p : presidents).map((o) => o.email); };
+      const branchPres = (b: string | null) => { const p = (offs || []).filter((o) => b && o.branch === b && ['president', 'vice_president'].includes(o.tier) && isOfficer.has(o.email)); return (p.length ? p : presidents).map((o) => o.email); };
       const nowMs = Date.now(), ms = (t: string | null) => (t ? new Date(t).getTime() : 0);
       const who = (e: string) => firstName.get(e) || e || 'An officer';
       const deadline = (r: { status_at: string }) => `${fmtDay(ms(r.status_at) + 2 * DAY)} at ${fmtTime(ms(r.status_at) + 2 * DAY)}`;
@@ -175,7 +175,7 @@ Deno.serve(async () => {
         if (r.status === 'branch') {
           to = branchPres(r.branch); again = 2 * DAY;
           subject = fresh ? `Review an event: ${t}` : `Still waiting for your review: ${t}`;
-          body = `${who(r.sent_by || '')} made "${t}" and needs their branch president's approval before it goes to the scheduler. Approve it or send it back with notes.`;
+          body = `${who(r.sent_by || '')} made "${t}" and needs approval from their branch president or vice president before it moves on. Edit and approve it, or send it back with notes.`;
         } else if (r.status === 'review' || r.status === 'signoff') {
           const voted = r.votes || {};
           to = presidents.map((o) => o.email).filter((e) => !(e in voted)); again = DAY;
