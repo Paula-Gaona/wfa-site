@@ -8,7 +8,8 @@
 --   4. Presidents' sign-off: the scheduler sets the final date, times, location, and RSVP timing and sends it to every
 --      president. It publishes once all approve, or automatically after 48 hours. A requested change goes back to the
 --      scheduler, and the 48 hours restart when they send it again.
--- A president who sent or already approved something counts as approving it. Admins mark who the event schedulers
+-- A president who sent or already approved something counts as approving it, and so does one whose suggested changes
+-- were all made. Majority rules after 5 days in a presidents' step, or from its third round of changes. Admins mark who the event schedulers
 -- are (only officers can see that), and only schedulers can turn on a draft's coming-soon page.
 -- Also: events can open RSVPs at a set time (not just when published), and guests can open a set time or a number of
 -- days after members. Files people attach go in a private "event-files" storage folder officers can open.
@@ -76,6 +77,11 @@ alter table public.event_requests add column if not exists branch text;         
 alter table public.event_requests add column if not exists votes jsonb not null default '{}';        -- presidents who approved this round
 alter table public.event_requests add column if not exists signoff_note text not null default '';    -- a president's requested change
 alter table public.event_requests add column if not exists returned_from text;                       -- where a resend goes back to
+alter table public.event_requests add column if not exists suggestions jsonb not null default '[]';  -- presidents' suggested changes
+alter table public.event_requests add column if not exists objections jsonb not null default '{}';  -- under majority rules
+alter table public.event_requests add column if not exists step_kind text;                           -- the presidents' step it's in
+alter table public.event_requests add column if not exists step_started_at timestamptz;              -- when that step first started
+alter table public.event_requests add column if not exists rounds int not null default 0;            -- times it was sent back in that step
 alter table public.event_requests drop constraint if exists event_requests_status_check;
 alter table public.event_requests add constraint event_requests_status_check
   check (status in ('draft', 'branch', 'review', 'sent', 'returned', 'submitted', 'approved', 'signoff', 'published'));
@@ -90,35 +96,67 @@ create or replace function public.rq_move(p_event uuid, p_status text, p_by text
 language sql security definer set search_path = public as $$
   update event_requests set status = p_status, status_at = now(), status_by = p_by, nudged_at = null,
     votes = case when p_status in ('review', 'signoff') then '{}'::jsonb else votes end,
+    objections = case when p_status in ('review', 'signoff') then '{}'::jsonb else objections end,
     history = history || jsonb_build_array(jsonb_build_object('at', now(), 'by', p_by, 'status', p_status, 'note', coalesce(p_note, '')))
     where event_id = p_event;
 $$;
 -- Publishes the event (the only way an event that needs scheduling gets published).
-create or replace function public.rq_publish(p_event uuid, p_by text) returns void
+create or replace function public.rq_publish(p_event uuid, p_by text, p_note text default '') returns void
 language plpgsql security definer set search_path = public as $$
 begin
-  perform rq_move(p_event, 'published', p_by);
+  perform rq_move(p_event, 'published', p_by, p_note);
   update events set draft = false where id = p_event;
 end $$;
--- After a president approves (or when a review starts): once every president has approved, move on.
+-- Majority rules: after 5 days in a presidents' step, or from the third round of changes on.
+create or replace function public.rq_majority(r event_requests) returns boolean
+language sql stable as $$ select coalesce(r.rounds, 0) >= 2 or r.step_started_at < now() - interval '5 days'; $$;
+-- Moves on once every president has approved (or, under majority rules, at least half).
 create or replace function public.rq_check_round(p_event uuid) returns void
 language plpgsql security definer set search_path = public as $$
-declare r event_requests;
+declare r event_requests; n int; yes int; note text := '';
 begin
   select * into r from event_requests where event_id = p_event;
   if r.status not in ('review', 'signoff') then return; end if;
-  if exists (select 1 from wfa_presidents() e where not (r.votes ? e)) then return; end if;
-  if r.status = 'review' then perform rq_move(p_event, 'sent', 'system', 'Every president approved.');
-  else perform rq_publish(p_event, 'system'); end if;
+  select count(*), count(*) filter (where r.votes ? e) into n, yes from wfa_presidents() e;
+  if yes < n then
+    if not rq_majority(r) or yes * 2 < n then return; end if;
+    note := format('Passed by majority (%s of %s presidents approved).', yes, n);
+  else note := 'Every president approved.'; end if;
+  if r.status = 'review' then perform rq_move(p_event, 'sent', 'system', note);
+  else perform rq_publish(p_event, 'system', note); end if;
 end $$;
--- Starts a presidents' round; a president who's moving it along counts as approving.
+-- Does the event or form now have the value a president suggested?
+create or replace function public.rq_change_met(ev events, form jsonb, c jsonb) returns boolean
+language sql stable as $$
+  select case when c->>'target' = 'event' and c->>'field' in ('rsvp_opens', 'guest_rsvp_opens')
+                then (to_jsonb(ev)->>(c->>'field'))::timestamptz is not distinct from nullif(c->>'to', '')::timestamptz
+              when c->>'target' = 'event' then coalesce(to_jsonb(ev)->>(c->>'field'), '') = coalesce(c->>'to', '')
+              else coalesce(form->>(c->>'field'), '') = coalesce(c->>'to', '') end;
+$$;
+-- Starts a presidents' round. A president moving it along counts as approving, and so does a president whose
+-- suggested changes were all made.
 create or replace function public.rq_start_round(p_event uuid, p_status text, p_by text) returns void
 language plpgsql security definer set search_path = public as $$
+declare r event_requests; ev events; s jsonb; out jsonb := '[]'; v jsonb := '{}';
 begin
-  perform rq_move(p_event, p_status, p_by);
-  if exists (select 1 from wfa_presidents() e where e = p_by) then
-    update event_requests set votes = jsonb_build_object(p_by, now()) where event_id = p_event;
+  select * into r from event_requests where event_id = p_event;
+  if r.step_kind is distinct from p_status then
+    update event_requests set step_kind = p_status, step_started_at = now(), rounds = 0 where event_id = p_event;
   end if;
+  perform rq_move(p_event, p_status, p_by);
+  select * into r from event_requests where event_id = p_event;
+  select * into ev from events where id = p_event;
+  if exists (select 1 from wfa_presidents() e where e = p_by) then v := jsonb_build_object(p_by, now()); end if;
+  for s in select x from jsonb_array_elements(r.suggestions) x loop
+    if s->>'step' = p_status and s->>'state' = 'open' then
+      if jsonb_array_length(coalesce(s->'changes', '[]')) > 0
+         and not exists (select 1 from jsonb_array_elements(s->'changes') c where not rq_change_met(ev, r.form, c)) then
+        v := v || jsonb_build_object(s->>'by', now()); s := s || '{"state": "met"}';
+      else s := s || '{"state": "answered"}'; end if;
+    end if;
+    out := out || jsonb_build_array(s);
+  end loop;
+  update event_requests set votes = v, suggestions = out where event_id = p_event;
   perform rq_check_round(p_event);
 end $$;
 
@@ -141,8 +179,8 @@ begin
                  when needs_branch_review(me) then 'branch'
                  when big_event(cat) then 'review' else 'sent' end;
   update event_requests set sent_by = coalesce(sent_by, me), sent_at = now(), note = '', returned_from = null,
-    branch = (select p.branch from officer_profiles p where p.email = me) where event_id = p_event;
-  if target in ('review') then perform rq_start_round(p_event, 'review', me);
+    branch = coalesce(branch, (select p.branch from officer_profiles p where p.email = me)) where event_id = p_event;
+  if target = 'review' then perform rq_start_round(p_event, 'review', me);
   else perform rq_move(p_event, target, me); end if;
   return 'ok';
 end $$;
@@ -168,32 +206,67 @@ begin
 end $$;
 grant execute on function public.branch_review(uuid, boolean, text) to authenticated;
 
--- Steps 2 and 4: a president approves, or requests changes.
-create or replace function public.president_vote(p_event uuid, p_ok boolean, p_note text default '') returns text
+-- Steps 2 and 4: a president approves, or requests changes (a note and/or suggested values:
+-- [{target: 'event'|'form', field, label, from, to, why}]). Under majority rules a request for changes is an
+-- objection: it only sends the event back once more than half the presidents object.
+drop function if exists public.president_vote(uuid, boolean, text);
+create or replace function public.president_vote(p_event uuid, p_ok boolean, p_note text default '', p_changes jsonb default '[]') returns text
 language plpgsql security definer set search_path = public as $$
-declare me text := public.jwt_email(); r event_requests;
+declare me text := public.jwt_email(); r event_requests; n int; no int;
 begin
   select * into r from event_requests where event_id = p_event;
   if r.status not in ('review', 'signoff') then return 'err:state'; end if;
   if not exists (select 1 from wfa_presidents() e where e = me) then return 'err:notpresident'; end if;
-  if not p_ok then
-    if trim(coalesce(p_note, '')) = '' then return 'err:note'; end if;
-    if r.status = 'review' then
-      update event_requests set note = left(trim(p_note), 4000), returned_from = 'review' where event_id = p_event;
-      perform rq_move(p_event, 'returned', me, trim(p_note));
-    else
-      update event_requests set signoff_note = left(trim(p_note), 4000) where event_id = p_event;
-      perform rq_move(p_event, 'approved', me, 'Changes requested: ' || trim(p_note));
-    end if;
+  if p_ok then
+    update event_requests set votes = votes || jsonb_build_object(me, now()), objections = objections - me,
+      history = history || jsonb_build_array(jsonb_build_object('at', now(), 'by', me, 'status', 'vote', 'note', ''))
+      where event_id = p_event;
+    perform rq_check_round(p_event);
     return 'ok';
   end if;
-  update event_requests set votes = votes || jsonb_build_object(me, now()),
-    history = history || jsonb_build_array(jsonb_build_object('at', now(), 'by', me, 'status', 'vote', 'note', ''))
+  if trim(coalesce(p_note, '')) = '' and jsonb_array_length(coalesce(p_changes, '[]')) = 0 then return 'err:note'; end if;
+  update event_requests set votes = votes - me,
+    suggestions = suggestions || jsonb_build_array(jsonb_build_object('by', me, 'at', now(), 'step', r.status, 'state', 'open',
+      'note', trim(coalesce(p_note, '')), 'changes', coalesce(p_changes, '[]'), 'replies', '{}'::jsonb))
     where event_id = p_event;
-  perform rq_check_round(p_event);
+  if rq_majority(r) then
+    update event_requests set objections = objections || jsonb_build_object(me, now()),
+      history = history || jsonb_build_array(jsonb_build_object('at', now(), 'by', me, 'status', 'objection', 'note', trim(coalesce(p_note, ''))))
+      where event_id = p_event;
+    select * into r from event_requests where event_id = p_event;
+    select count(*), count(*) filter (where r.objections ? e) into n, no from wfa_presidents() e;
+    if no * 2 <= n then perform rq_check_round(p_event); return 'ok'; end if;
+  end if;
+  update event_requests set rounds = coalesce(rounds, 0) + 1 where event_id = p_event;
+  if r.status = 'review' then
+    update event_requests set note = left(trim(coalesce(p_note, '')), 4000), returned_from = 'review' where event_id = p_event;
+    perform rq_move(p_event, 'returned', me, coalesce(nullif(trim(p_note), ''), 'Suggested changes.'));
+  else
+    update event_requests set signoff_note = left(coalesce(nullif(trim(p_note), ''), 'See the suggested changes.'), 4000) where event_id = p_event;
+    perform rq_move(p_event, 'approved', me, 'Changes requested: ' || coalesce(nullif(trim(p_note), ''), 'see the suggestions'));
+  end if;
   return 'ok';
 end $$;
-grant execute on function public.president_vote(uuid, boolean, text) to authenticated;
+grant execute on function public.president_vote(uuid, boolean, text, jsonb) to authenticated;
+
+-- Whoever is fixing it (the sender after a review, or a scheduler after sign-off) explains suggestions they didn't make:
+-- p_replies = {"president@uvu.edu": {"field": "reason", ...}}.
+create or replace function public.reply_suggestions(p_event uuid, p_replies jsonb) returns text
+language plpgsql security definer set search_path = public as $$
+declare me text := public.jwt_email(); r event_requests; s jsonb; out jsonb := '[]';
+begin
+  select * into r from event_requests where event_id = p_event;
+  if not (r.sent_by = me or public.is_scheduler()) then return 'err:notallowed'; end if;
+  for s in select x from jsonb_array_elements(r.suggestions) x loop
+    if s->>'state' = 'open' and p_replies ? (s->>'by') then
+      s := jsonb_set(s, '{replies}', coalesce(s->'replies', '{}') || (p_replies->(s->>'by')));
+    end if;
+    out := out || jsonb_build_array(s);
+  end loop;
+  update event_requests set suggestions = out where event_id = p_event;
+  return 'ok';
+end $$;
+grant execute on function public.reply_suggestions(uuid, jsonb) to authenticated;
 
 -- Step 3 (and starting step 4): schedulers send it back, mark it submitted or approved by UVU, or send the finalized
 -- event to the presidents.
@@ -224,21 +297,23 @@ begin
 end $$;
 grant execute on function public.scheduler_update(uuid, text, text) to authenticated;
 
--- Presidents' reviews that have waited 48 hours move on by themselves (the automatic-emails job calls this).
+-- Presidents' steps that have waited 48 hours move on by themselves (the automatic-emails job calls this). Any
+-- objection that would stop it has already sent it back, so whatever is still waiting passes.
 create or replace function public.request_timeouts() returns int
 language plpgsql security definer set search_path = public as $$
 declare r record; n int := 0;
 begin
   for r in select event_id, status from event_requests where status in ('review', 'signoff') and status_at < now() - interval '48 hours' loop
     if r.status = 'review' then perform rq_move(r.event_id, 'sent', 'system', 'No objections in 48 hours.');
-    else perform rq_publish(r.event_id, 'system'); end if;
+    else perform rq_publish(r.event_id, 'system', 'No objections in 48 hours.'); end if;
     n := n + 1;
   end loop;
   return n;
 end $$;
 revoke execute on function public.request_timeouts() from public, anon, authenticated;
 grant execute on function public.request_timeouts() to service_role;
-revoke execute on function public.rq_move(uuid, text, text, text), public.rq_publish(uuid, text), public.rq_check_round(uuid), public.rq_start_round(uuid, text, text) from public, anon, authenticated;
+revoke execute on function public.rq_move(uuid, text, text, text), public.rq_publish(uuid, text, text), public.rq_check_round(uuid),
+  public.rq_start_round(uuid, text, text) from public, anon, authenticated;
 
 -- Drafts with a coming-soon page were already sent to the clubs office by hand: count them as submitted to UVU.
 insert into public.event_requests (event_id, form, status, status_at, history)

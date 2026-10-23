@@ -215,6 +215,10 @@ main{padding-block:36px 64px}
 .rq-sum dd{margin:0}
 .rq-thumb{max-width:220px;margin-top:6px;border:1px solid var(--line);background:#fff}
 .field-err{display:block;font-size:.82rem;margin-top:4px;font-weight:600}.field-err:empty{display:none}.warn-text{color:var(--warn)}
+.sug-row{display:grid;grid-template-columns:minmax(8rem,12rem) 1fr 1fr;gap:8px 12px;align-items:start;border-top:1px solid var(--line);padding-top:8px}
+.sug-label{font-weight:600;font-size:.88rem;padding-top:8px}
+.sug-change{display:flex;flex-direction:column;gap:6px;border-left:3px solid var(--line);padding-left:10px}.sug-change.accepted{border-color:var(--brand)}.sug-change.declined{border-color:var(--warn)}
+@media (max-width:640px){.sug-row{grid-template-columns:1fr}.sug-label{padding-top:0}}
 .rq-hist{margin:0;padding-left:1.2rem;display:flex;flex-direction:column;gap:6px}
 @media (max-width:640px){.rq-sum{grid-template-columns:1fr;gap:2px}.rq-sum dd{margin-bottom:10px}.grid3{grid-template-columns:1fr 1fr}.grid3 label:first-child{grid-column:1/-1}}
 .tag.soon{color:#fff;background:var(--gold,#B8923A);border-color:var(--gold,#B8923A)}
@@ -3168,7 +3172,7 @@ const needsSched = cat => cat !== 'officer_meeting';
 function isScheduler(){ return isStaff() && (db.schedulers || []).includes(session); }
 const RQ_STATUS = { draft: ['Not sent yet', ''], branch: ['Waiting for the branch president', 'warn'], review: ['Presidents’ review', 'warn'], sent: ['With the scheduler', 'warn'],
   returned: ['Sent back: needs changes', 'warn'], submitted: ['Submitted to UVU', 'ok'], approved: ['Approved by UVU: being finalized', 'ok'], signoff: ['Presidents’ sign-off', 'warn'],
-  published: ['Published', 'ok'], vote: ['Approved', 'ok'] };
+  published: ['Published', 'ok'], vote: ['Approved', 'ok'], objection: ['Objected', 'warn'] };
 // Bigger events get every president's review before they go to UVU.
 const BIG_CATS = ['case_competition', 'excursion', 'guest_speaker', 'career_fair'];
 const presidentsList = () => Object.keys(db.profiles || {}).filter(e => db.profiles[e].tier === 'president' && roleOf(e) !== 'member');
@@ -3180,7 +3184,7 @@ function rqWaitingOnMe(r){
   if (!r) return false;
   const st = r.status;
   if (st === 'branch') return branchReviewers(r.branch).includes(session);
-  if (st === 'review' || st === 'signoff') return isPresident() && !(session in (r.votes || {}));
+  if (st === 'review' || st === 'signoff') return isPresident() && !(session in (r.votes || {})) && !(session in (r.objections || {}));
   if (st === 'sent' || st === 'approved') return isScheduler();
   if (st === 'returned') return r.sent_by === session;
   return false;
@@ -3500,15 +3504,14 @@ function rqDetail(e, r){
   const back = (kind, label, hint) => `<form class="stack" id="f-rq-back" data-id="${e.id}" data-kind="${kind}" style="gap:8px"><label>${label} <span class="hint">${hint}</span><textarea id="rq-back-note" rows="3"></textarea></label>
     <div class="row"><button class="btn ghost" type="submit">${label}</button></div><div class="err" id="rq-back-err"></div></form>`;
   const round = ['review', 'signoff'].includes(st) ? `<div class="panel stack" style="gap:6px;padding:12px 14px"><strong>${st === 'review' ? 'Presidents’ review' : 'Presidents’ sign-off'}</strong>
-      ${presidentsList().map(p => `<div>${(r.votes || {})[p] ? '✓' : '…'} ${esc(userName(p))} <span class="hint">${(r.votes || {})[p] ? 'approved' : 'hasn’t responded'}</span></div>`).join('')}
+      ${rqMajority(r) ? `<div class="rq-warn">Majority rules now: it ${st === 'review' ? 'moves on' : 'publishes'} once ${Math.ceil(presidentsList().length / 2)} of ${presidentsList().length} presidents approve. Requests for changes count as objections and only send it back if most presidents object.</div>` : ''}
+      ${presidentsList().map(p => { const yes = (r.votes || {})[p], no = (r.objections || {})[p]; return `<div>${yes ? '✓' : no ? '✗' : '…'} ${esc(userName(p))} <span class="hint">${yes ? 'approved' : no ? 'objected' : 'hasn’t responded'}</span></div>`; }).join('')}
       <span class="hint">If nobody requests changes, it ${st === 'review' ? 'goes to the scheduler' : 'publishes'} automatically ${rqDeadline(r)}.</span></div>` : '';
   let actions = '';
   if (st === 'branch' && branchReviewers(r.branch).includes(session))
     actions = `<div class="row"><button class="btn" data-act="rq-branch-ok" data-id="${e.id}">Approve and send it on</button></div>${back('branch', 'Send it back with notes', 'The officer is notified and can fix it and send it again.')}`;
-  else if (['review', 'signoff'].includes(st) && isPresident() && !(session in (r.votes || {})))
-    actions = `<div class="row"><button class="btn" data-act="rq-vote" data-id="${e.id}">Approve</button></div>${back('vote', 'Request changes', st === 'signoff'
-      ? 'It goes back to the scheduler. Only ask for things that can still change: Q&A, members only, RSVP timing, seat limit, wording, or the coming-soon page. The date, room, and times are already approved by UVU.'
-      : 'It goes back to the officer who sent it.')}`;
+  else if (['review', 'signoff'].includes(st) && isPresident() && !(session in (r.votes || {})) && !(session in (r.objections || {})))
+    actions = `<div class="row"><button class="btn" data-act="rq-vote" data-id="${e.id}">Approve</button></div>${sugForm(e, r)}`;
   else if (isScheduler() && st === 'sent')
     actions = `<div class="row" style="gap:8px"><a class="btn ghost" href="https://www.uvu.edu/clubs/forms/scheduling-request.html" target="_blank" rel="noopener">Open UVU’s form ↗</a><button class="btn" data-act="rq-status" data-id="${e.id}" data-s="submitted">Mark submitted to UVU</button></div>${back('sched', 'Send it back with notes', 'The officer is notified and can fix it and send it again.')}`;
   else if (isScheduler() && st === 'submitted')
@@ -3526,6 +3529,7 @@ function rqDetail(e, r){
     ${round}${actions}
     ${st === 'signoff' || st === 'approved' ? `<section class="panel stack" style="gap:10px"><h3 style="margin:0">On the website</h3>${evFinalSummary(e)}</section>` : ''}
     <section class="panel stack" style="gap:10px"><h3 style="margin:0">Request details</h3>${rqSummary(e, r)}</section>
+    ${sugHistory(r)}
     ${hist ? `<section class="stack" style="gap:6px"><h3 style="margin:0">History</h3><ul class="rq-hist">${hist}</ul></section>` : ''}</div>`;
 }
 // What the presidents are signing off on: the event as it'll appear on the site.
@@ -3537,6 +3541,113 @@ function evFinalSummary(e){
   return `<dl class="rq-sum">${rows.map(([l, v]) => `<dt>${esc(l)}</dt><dd style="white-space:pre-wrap">${esc(v || '—')}</dd>`).join('')}</dl>`;
 }
 
+// ---------- Presidents' suggested changes ----------
+// A president can edit the fields that can still change (and say why). If whoever fixes it makes every change they
+// suggested, that president counts as approving when it comes back (checked by the database).
+const SUG_EVENT = [['title', 'Title', 'text'], ['descr', 'Description', 'textarea'], ['cap', 'Seat limit (0 = no limit)', 'number'], ['members_only', 'Members only', 'check'],
+  ['qa_enabled', 'Q&A', 'check'], ['rsvp_opens', 'RSVPs open (blank = as soon as it’s published)', 'datetime'], ['guest_rsvp_delay', 'Guests can RSVP', 'guest']];
+const SUG_FORM = [['uvuName', 'Event name for UVU', 'text'], ['start', 'Start time', 'time'], ['end', 'End time', 'time'], ['setup', 'Setup minutes before', 'number'], ['after', 'Minutes needed after', 'number'],
+  ['locType', 'Location type', 'loc'], ['building', 'Ideal building', 'bld'], ['evType', 'Type of event', 'type'], ['food', 'Food, snacks, or beverages', 'yn'], ['tablecloths', 'Tablecloths', 'yn'],
+  ['clothColor', 'Tablecloth color', 'text'], ['av', 'Additional A/V equipment', 'yn'], ['avNeeds', 'A/V needed', 'textarea'], ['estMax', 'Expected attendance (no seat limit)', 'number'], ['other', 'Other details', 'textarea']];
+// What a president can suggest: before UVU, the request and the website basics; at sign-off, the website settings.
+function sugDefs(e, step){
+  const ev = SUG_EVENT.filter(([f]) => f !== 'qa_enabled' || e.cat === 'guest_speaker').filter(([f]) => e.cat !== 'case_competition' || !['rsvp_opens', 'guest_rsvp_delay'].includes(f));
+  return step === 'review' ? [...ev.filter(([f]) => ['title', 'descr', 'cap'].includes(f)).map(x => ['event', ...x]), ...SUG_FORM.map(x => ['form', ...x])] : ev.map(x => ['event', ...x]);
+}
+function sugCur(e, r, target, field){
+  if (target === 'event') return { title: e.title, descr: e.desc || '', cap: String(e.cap || 0), members_only: String(!!e.membersOnly), qa_enabled: String(!!e.qaEnabled),
+    rsvp_opens: e.rsvpOpens || '', guest_rsvp_delay: e.guestDelay == null ? '' : String(e.guestDelay) }[field] ?? '';
+  const v = { ...rqDefaults(e), ...(r.form || {}) }[field]; return v == null ? '' : String(v);
+}
+function sugShow(type, v){
+  if (type === 'check') return v === 'true' ? 'On' : 'Off';
+  if (type === 'yn') return v === 'yes' ? 'Yes' : v === 'no' ? 'No' : '(not answered)';
+  if (type === 'datetime') return v ? fmtMtStamp(Date.parse(v)) : 'As soon as it’s published';
+  if (type === 'guest') return v ? `${v} day${v === '1' ? '' : 's'} after members` : 'Same time as members (or a set date)';
+  if (type === 'time') return v ? fmtTime(v) : '(blank)';
+  return v === '' ? '(blank)' : v;
+}
+const sugType = (target, field) => ((target === 'event' ? SUG_EVENT : SUG_FORM).find(x => x[0] === field) || [])[2] || 'text';
+function sugInput(t, f, type, cur){
+  const a = `data-sug="${t}:${f}" data-type="${type}"`;
+  if (type === 'textarea') return `<textarea rows="3" ${a}>${esc(cur)}</textarea>`;
+  if (type === 'check') return `<label class="check"><input type="checkbox" ${a} ${cur === 'true' ? 'checked' : ''}> On</label>`;
+  if (type === 'yn') return `<select ${a}>${[['', '(not answered)'], ['yes', 'Yes'], ['no', 'No']].map(([k, l]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  if (type === 'guest') return `<select ${a}>${[['', 'Same time as members'], ['1', '1 day after'], ['2', '2 days after'], ['3', '3 days after'], ['7', '1 week after'], ['14', '2 weeks after']].map(([k, l]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  if (type === 'datetime') return `<input type="datetime-local" ${a} value="${esc(mtLocalInput(cur || null))}">`;
+  const opts = { loc: RQ_LOCATIONS, bld: ['Keller Building (KB)', 'Any', ...UVU_BUILDINGS], type: RQ_TYPES }[type];
+  if (opts) return `<select ${a}>${opts.map(x => `<option ${cur === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`;
+  return `<input type="${type === 'number' ? 'number' : type === 'time' ? 'time' : 'text'}" ${a} value="${esc(cur)}">`;
+}
+function sugForm(e, r){
+  return `<details class="panel" style="padding:12px 16px"><summary><strong>Request changes</strong></summary>
+    <form class="stack" id="f-rq-suggest" data-id="${e.id}" style="gap:12px;margin-top:10px">
+      <span class="hint">Change anything below right in the field, and say why. If every change you suggest gets made, it counts as your approval when it comes back.${r.status === 'signoff' ? ' The date, room, and times are already approved by UVU, so only these can change.' : ''}</span>
+      ${sugDefs(e, r.status).map(([t, f, l, type]) => `<div class="sug-row"><span class="sug-label">${esc(l)}</span>${sugInput(t, f, type, sugCur(e, r, t, f))}<input class="sug-why" data-why="${t}:${f}" placeholder="Why? (needed if you change this)"></div>`).join('')}
+      <label>Other comments <span class="hint">Optional if you changed something above</span><textarea id="sug-note" rows="2"></textarea></label>
+      <div class="row"><button class="btn ghost" type="submit">Request these changes</button></div><div class="err" id="sug-err"></div></form></details>`;
+}
+function readSuggestions(e, r){
+  const changes = [], missing = [];
+  document.querySelectorAll('#f-rq-suggest [data-sug]').forEach(el => {
+    const [target, field] = el.dataset.sug.split(':'), type = el.dataset.type, cur = sugCur(e, r, target, field);
+    const to = type === 'check' ? String(el.checked) : type === 'datetime' ? (el.value ? mtFromInput(el.value) : '') : el.value.trim();
+    const same = type === 'datetime' ? (Date.parse(to) || 0) === (Date.parse(cur) || 0) : to === cur;
+    if (same) return;
+    const why = (document.querySelector(`#f-rq-suggest [data-why="${target}:${field}"]`) || {}).value?.trim() || '';
+    const label = (sugDefs(e, r.status).find(x => x[0] === target && x[1] === field) || [])[2] || field;
+    if (!why) missing.push(label);
+    changes.push({ target, field, label, from: cur, to, why });
+  });
+  return { changes, missing };
+}
+// Open suggestions for whoever is fixing it: the sender after the presidents' review, a scheduler after sign-off.
+const sugOpen = (r, step) => (r && r.suggestions || []).filter(s => s.step === step && s.state === 'open');
+function sugPanel(e){
+  const r = rqOf(e && e.id); if (!r) return '';
+  const step = rqFinalizing(e.id) ? 'signoff' : r.status === 'returned' && r.returned_from === 'review' && r.sent_by === session ? 'review' : '';
+  const list = step ? sugOpen(r, step) : []; if (!list.length) return '';
+  ui.sugDone = ui.sugDone || {}; ui.sugReplies = ui.sugReplies || {};
+  return `<div class="panel stack rq-panel" id="sug-box" style="gap:12px"><strong>Suggested changes</strong>
+    <span class="hint">Accept a change to fill it in below, or decline it and say why. A president whose changes are all made counts as approving when you send it again.</span>
+    ${list.map(s => `<div class="stack" style="gap:8px"><div><strong>${esc(userName(s.by))}</strong>${s.note ? `<div style="white-space:pre-wrap">${esc(s.note)}</div>` : ''}</div>
+      ${(s.changes || []).map(c => { const k = s.by + '|' + c.field, done = ui.sugDone[k], type = sugType(c.target, c.field);
+        return `<div class="sug-change ${done || ''}"><div><strong>${esc(c.label)}:</strong> ${esc(sugShow(type, c.from))} → <strong>${esc(sugShow(type, c.to))}</strong>${c.why ? `<div class="hint">Why: ${esc(c.why)}</div>` : ''}</div>
+          <div class="row" style="gap:6px">${done === 'accepted' ? '<span class="tag ok">Accepted</span>' : `<button type="button" class="btn ghost small" data-act="sug-accept" data-id="${esc(k)}">Accept</button>`}
+            ${done === 'declined' ? '<span class="tag warn">Declined</span>' : `<button type="button" class="btn ghost small" data-act="sug-decline" data-id="${esc(k)}">Decline</button>`}</div>
+          ${done === 'declined' ? `<input class="sug-reply" data-sugreply="${esc(k)}" placeholder="Why not? (they’ll see this)" value="${esc(ui.sugReplies[k] || '')}">` : ''}</div>`; }).join('')}</div>`).join('')}</div>`;
+}
+function sugApply(c){
+  if (c.target === 'form'){ rqState().d[c.field] = c.to; rqRedraw(); return; }
+  const g = id => document.getElementById(id) || {};
+  if (c.field === 'title') g('ev-title').value = c.to;
+  if (c.field === 'descr') g('ev-desc').value = c.to;
+  if (c.field === 'cap'){ g('ev-cap').value = c.to; g('rq-cap').value = c.to; }
+  if (c.field === 'members_only') g('ev-members-only').checked = c.to === 'true';
+  if (c.field === 'qa_enabled') g('ev-qa').checked = c.to === 'true';
+  if (c.field === 'rsvp_opens'){ g('ev-rsvp-when').value = c.to ? 'date' : 'publish'; g('ev-rsvp-at').value = mtLocalInput(c.to || null); }
+  if (c.field === 'guest_rsvp_delay'){ g('ev-guest-later').checked = !!c.to; if (c.to) g('ev-guest-mode').value = c.to; }
+  syncRsvpBox();
+}
+// Before sending it again: save why any suggestions were declined.
+async function sugSendReplies(evId){
+  const out = {}; let missing = '';
+  Object.entries(ui.sugDone || {}).forEach(([k, st]) => { if (st !== 'declined') return; const [by, field] = k.split('|'), why = (ui.sugReplies[k] || '').trim();
+    if (!why) missing = field; (out[by] = out[by] || {})[field] = why; });
+  if (missing) throw new Error('Say why you declined each suggested change.');
+  if (Object.keys(out).length){ const r = await sb.rpc('reply_suggestions', { p_event: evId, p_replies: out }); if (r.error) throw r.error; }
+  ui.sugDone = {}; ui.sugReplies = {};
+}
+const rqMajority = r => (r.rounds || 0) >= 2 || (r.step_started_at && Date.now() - Date.parse(r.step_started_at) > 5 * 864e5);
+function sugHistory(r){
+  const list = (r.suggestions || []).slice().reverse(); if (!list.length) return '';
+  const stateText = { open: 'Waiting for changes', met: 'All made: counted as approval', answered: 'Answered' };
+  return `<section class="stack" style="gap:8px"><h3 style="margin:0">Suggested changes</h3>${list.map(s => `<div class="panel stack" style="gap:6px;padding:10px 14px">
+    <div><strong>${esc(userName(s.by))}</strong> <span class="hint">${s.step === 'review' ? 'Presidents’ review' : 'Sign-off'} · ${fmtMtStamp(Date.parse(s.at))} · ${stateText[s.state] || ''}</span></div>
+    ${s.note ? `<div style="white-space:pre-wrap">${esc(s.note)}</div>` : ''}
+    ${(s.changes || []).map(c => { const type = sugType(c.target, c.field), rep = (s.replies || {})[c.field];
+      return `<div>${esc(c.label)}: ${esc(sugShow(type, c.from))} → <strong>${esc(sugShow(type, c.to))}</strong>${c.why ? ` <span class="hint">(${esc(c.why)})</span>` : ''}${rep ? `<div class="hint">Declined: ${esc(rep)}</div>` : ''}</div>`; }).join('')}</div>`).join('')}</section>`;
+}
 // When RSVPs open: as soon as it's published or at a set time; guests can open later (a number of days after members,
 // or a set time). Finalizing a scheduled event starts from what the officer asked for.
 function rsvpBox(e){
@@ -3582,6 +3693,7 @@ function rqRedraw(){
 }
 ['input', 'change'].forEach(type => document.addEventListener(type, ev => {
   const t = ev.target; if (!t || !t.dataset) return;
+  if (t.dataset.sugreply){ ui.sugReplies = ui.sugReplies || {}; ui.sugReplies[t.dataset.sugreply] = t.value; return; }
   if (t.id === 'ev-members-only' && type === 'change'){ rqRedraw(); syncRsvpBox(); }
   if (['ev-rsvp-when', 'ev-guest-later', 'ev-guest-mode'].includes(t.id)) syncRsvpBox();
   if (t.id === 'rq-cap' || t.id === 'ev-cap'){ const o = document.getElementById(t.id === 'rq-cap' ? 'ev-cap' : 'rq-cap'); if (o) o.value = t.value; if (type === 'change') rqRedraw(); }
@@ -3662,6 +3774,7 @@ function viewOfficer(){
     body = `<div class="split">
       <form class="panel stack" id="f-event">
         <h3>${e ? (e.draft ? 'Edit draft' : 'Edit event') : 'Create an event'}${e && e.draft ? ' <span class="tag">Draft</span>' : ''}</h3>
+        ${sugPanel(e)}
         <label>Title<input id="ev-title" required value="${esc(e?.title)}" placeholder="e.g. DCF Valuation Workshop"></label>
         <div class="grid2">
           <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${e?.cat===k?'selected':''}>${l} · ${PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select></label>
@@ -5340,6 +5453,11 @@ document.addEventListener('click', async ev => {
       await act(async () => { const r = await sb.rpc(branch ? 'branch_review' : 'president_vote', { p_event: id, p_ok: true, p_note: '' }); if (r.error) throw r.error;
         if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
         await logChange((branch ? 'Approved (branch): “' : 'Approved (president): “') + e.title + '”'); }, 'Approved'); break; }
+    case 'sug-accept': case 'sug-decline': { const [by, field] = id.split('|'), r = rqOf(ui.editEvent);
+      const c = sugOpen(r, rqFinalizing(ui.editEvent) ? 'signoff' : 'review').filter(s => s.by === by).flatMap(s => s.changes || []).find(x => x.field === field);
+      ui.sugDone = ui.sugDone || {}; ui.sugDone[id] = t.dataset.act === 'sug-accept' ? 'accepted' : 'declined';
+      if (c && t.dataset.act === 'sug-accept') sugApply(c);
+      const box = document.getElementById('sug-box'); if (box) box.outerHTML = sugPanel(evById(ui.editEvent)); break; }
     case 'rq-status': { const s = t.dataset.s, e = evById(id) || {};
       await act(async () => { const r = await sb.rpc('scheduler_update', { p_event: id, p_status: s, p_note: '' }); if (r.error) throw r.error;
         if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
@@ -6039,6 +6157,15 @@ async function handleSubmit(f, v, err){
     await act(async () => { must(await sb.from('attendance').insert({ event_id: id, email: who })); await logChange('Marked ' + userName(who) + ' present at “' + evById(id).title + '”'); }, userName(who) + ' marked present');
   }
 
+  if (f.id === 'f-rq-suggest'){
+    const id = f.dataset.id, e = evById(id), r = rqOf(id), note = v('sug-note'), { changes, missing } = readSuggestions(e, r);
+    if (missing.length) return err('sug-err', 'Say why for: ' + missing.join(', ') + '.');
+    if (!changes.length && !note) return err('sug-err', 'Change a field above or write a comment.');
+    return act(async () => { const x = await sb.rpc('president_vote', { p_event: id, p_ok: false, p_note: note, p_changes: changes }); if (x.error) throw x.error;
+      if (String(x.data).startsWith('err:')) throw new Error(RQ_ERR[x.data] || x.data);
+      await logChange('Requested changes to “' + e.title + '”'); }, rqMajority(r) ? 'Your objection is recorded.' : 'Changes requested. They’ll be notified.');
+  }
+
   if (f.id === 'f-rq-back'){
     const note = v('rq-back-note'), id = f.dataset.id; if (!note) return err('rq-back-err', 'Write what needs to be fixed.');
     const kind = f.dataset.kind;
@@ -6089,6 +6216,7 @@ async function handleSubmit(f, v, err){
       await act(async () => {
         must(await sb.from('events').update(e).eq('id', editing));
         if (code) must(await sb.from('checkin_codes').upsert({ event_id: editing, code }));
+        await sugSendReplies(editing);
         const r = await sb.rpc('scheduler_update', { p_event: editing, p_status: 'signoff', p_note: '' }); if (r.error) throw r.error;
         if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
         await logChange('Sent for presidents’ sign-off: “' + e.title + '”');
@@ -6113,6 +6241,7 @@ async function handleSubmit(f, v, err){
         if (editing) must(await sb.from('events').update(e).eq('id', editing));
         else evId = must(await sb.from('events').insert(e).select('id').single()).id;
         if (code) must(await sb.from('checkin_codes').upsert({ event_id: evId, code }));
+        if (!locked && mode === 'send' && editing) await sugSendReplies(evId);
         if (!locked) await rqSave(evId, mode === 'send');
         await logChange((mode === 'send' ? 'Sent to the scheduler: “' : editing ? 'Edited draft “' : 'Saved draft “') + e.title + '”');
         ui.editEvent = null; ui.rq = null;

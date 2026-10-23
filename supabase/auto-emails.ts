@@ -153,7 +153,7 @@ Deno.serve(async () => {
       return n > 0 || !to.length;
     };
     await db.rpc('request_timeouts');   // presidents' reviews that waited 48 hours move on
-    const { data: reqs } = await db.from('event_requests').select('event_id, status, note, signoff_note, sent_by, sent_at, status_at, nudged_at, branch, votes').in('status', ['branch', 'review', 'sent', 'returned', 'submitted', 'approved', 'signoff', 'published']);
+    const { data: reqs } = await db.from('event_requests').select('event_id, status, note, signoff_note, sent_by, sent_at, status_at, nudged_at, branch, votes, history').in('status', ['branch', 'review', 'sent', 'returned', 'submitted', 'approved', 'signoff', 'published']);
     if (reqs?.length) {
       const { data: evs } = await db.from('events').select('id, title').in('id', reqs.map((r) => r.event_id));
       const titleOf = new Map((evs || []).map((e) => [e.id, e.title]));
@@ -203,6 +203,12 @@ Deno.serve(async () => {
           if (nowMs - ms(r.status_at) > 3 * DAY) continue;
           to = [r.sent_by || '']; subject = `Published: ${t}`;
           body = `"${t}" is approved and on the calendar. You can start promoting it.`;
+        }
+        // Passed by majority: every president hears about it too.
+        const last = (r.history || [])[(r.history || []).length - 1] || {};
+        if (fresh && /majority/i.test(last.note || '') && (r.status === 'sent' || r.status === 'published')) {
+          to = [...to, ...presidents.map((o) => o.email)];
+          body += `\n\n${last.note}`;
         }
         if (!to.length || !subject) continue;
         if (!fresh && !(again && nowMs - ms(r.nudged_at) >= again)) continue;
