@@ -5,6 +5,7 @@
 //     Guests who RSVP'd without an account and asked for reminders get that event's reminders by email.
 //   * "check-in is open" notifications 15 minutes before an event, to people who RSVP'd (notification only)
 //   * a survey request 30 minutes after an event ends, to people who checked in and haven't answered the survey
+//   * event scheduling steps: whoever a scheduling request is waiting on, and the officer who sent it
 //   * a summary email when chat messages sit unread for over an hour (see 42-chats.sql; works even when the
 //     event emails are off)
 // Each member chooses email and/or notification per kind in Notification settings (members.notify). By default,
@@ -132,13 +133,13 @@ Deno.serve(async () => {
       }
     }
 
-    // Event scheduling (see 52-event-scheduling.sql; works even when the event emails are off):
-    //   * schedulers hear about a request sent to them right away, then every 2 days while nobody acts on it
-    //   * the officer who sent it hears when it's sent back, submitted to UVU, or approved
+    // Event scheduling (see 52-event-scheduling.sql; works even when the event emails are off). Each step tells the
+    // people it's waiting on: branch presidents, presidents, or schedulers (right away, then a reminder), and the
+    // officer who sent it hears when it's sent back, submitted to UVU, or published.
     // As a notification on a device if they have one signed up, otherwise by email.
     let schedNotes = 0;
     const tell = async (to: string[], subject: string, body: string, label: string, url: string, tag: string) => {
-      to = [...new Set(to)].filter((e) => !testSet.has(e));
+      to = [...new Set(to)].filter((e) => e && !testSet.has(e));
       const viaPush = to.filter((e) => pushOn && hasDevice.has(e)), viaEmail = to.filter((e) => !viaPush.includes(e));
       let n = await sendPush(viaPush, subject, body, url, tag);
       if (viaEmail.length) {
@@ -151,37 +152,62 @@ Deno.serve(async () => {
       schedNotes += n;
       return n > 0 || !to.length;
     };
-    const { data: reqs } = await db.from('event_requests').select('event_id, status, note, sent_by, sent_at, status_at, nudged_at, sender_notified_at').in('status', ['sent', 'returned', 'submitted', 'approved']);
+    await db.rpc('request_timeouts');   // presidents' reviews that waited 48 hours move on
+    const { data: reqs } = await db.from('event_requests').select('event_id, status, note, signoff_note, sent_by, sent_at, status_at, nudged_at, branch, votes').in('status', ['branch', 'review', 'sent', 'returned', 'submitted', 'approved', 'signoff', 'published']);
     if (reqs?.length) {
       const { data: evs } = await db.from('events').select('id, title').in('id', reqs.map((r) => r.event_id));
       const titleOf = new Map((evs || []).map((e) => [e.id, e.title]));
       const { data: sch } = await db.from('event_schedulers').select('email');
       const schedulers = (sch || []).map((s) => s.email);
+      const { data: offs } = await db.from('officer_profiles').select('email, tier, branch');
+      const { data: acc } = await db.from('access_list').select('email');
+      const isOfficer = new Set((acc || []).map((a) => a.email));
+      const presidents = (offs || []).filter((o) => o.tier === 'president' && isOfficer.has(o.email));
+      const branchPres = (b: string | null) => { const p = presidents.filter((o) => o.branch && o.branch === b); return (p.length ? p : presidents).map((o) => o.email); };
       const nowMs = Date.now(), ms = (t: string | null) => (t ? new Date(t).getTime() : 0);
       const who = (e: string) => firstName.get(e) || e || 'An officer';
+      const deadline = (r: { status_at: string }) => `${fmtDay(ms(r.status_at) + 2 * DAY)} at ${fmtTime(ms(r.status_at) + 2 * DAY)}`;
       for (const r of reqs) {
         const t = titleOf.get(r.event_id) || 'an event';
-        const link = `${site}/#officer/scheduling/${r.event_id}`;
-        if (r.status === 'sent') {
-          const fresh = ms(r.nudged_at) < ms(r.sent_at);
-          if (fresh || nowMs - ms(r.nudged_at) >= 2 * DAY) {
-            const days = Math.floor((nowMs - ms(r.sent_at)) / DAY);
-            const ok = await tell(schedulers, fresh ? `New event to schedule: ${t}` : `Still waiting to be scheduled: ${t}`,
-              fresh ? `${who(r.sent_by || '')} sent "${t}" to the event schedulers. Review it and submit it to UVU, or send it back with notes.`
-                    : `"${t}" was sent to the schedulers ${days} days ago and is still waiting. Submit it to UVU, or send it back with notes.`,
-              'Open the request', link, `sched-${r.event_id}`);
-            if (ok) await db.from('event_requests').update({ nudged_at: new Date().toISOString() }).eq('event_id', r.event_id);
-          }
-        } else if (r.sent_by && ms(r.sender_notified_at) < ms(r.status_at)) {
-          const msg: Record<string, [string, string]> = {
-            returned: [`Changes needed: ${t}`, `The scheduler sent "${t}" back. What to fix:\n${r.note || '(no note)'}\n\nMake the changes, then send it to the scheduler again.`],
-            submitted: [`Submitted to UVU: ${t}`, `The scheduler submitted "${t}" to UVU for approval. You'll hear back when it's approved.`],
-            approved: [`Approved by UVU: ${t}`, `"${t}" was approved by UVU. The scheduler will finalize the details and publish it.`],
-          };
-          const [subject, body] = msg[r.status];
-          const ok = await tell([r.sent_by], subject, body, 'Open the event', `${site}/#officer/scheduling/${r.event_id}`, `sched-${r.event_id}`);
-          if (ok) await db.from('event_requests').update({ sender_notified_at: new Date().toISOString() }).eq('event_id', r.event_id);
+        const link = `${site}/#officer/scheduling/${r.event_id}`, tag = `sched-${r.event_id}`;
+        const fresh = ms(r.nudged_at) < ms(r.status_at);
+        let to: string[] = [], subject = '', body = '', again = 0;   // again: remind after this long (0 = once)
+        if (r.status === 'branch') {
+          to = branchPres(r.branch); again = 2 * DAY;
+          subject = fresh ? `Review an event: ${t}` : `Still waiting for your review: ${t}`;
+          body = `${who(r.sent_by || '')} made "${t}" and needs their branch president's approval before it goes to the scheduler. Approve it or send it back with notes.`;
+        } else if (r.status === 'review' || r.status === 'signoff') {
+          const voted = r.votes || {};
+          to = presidents.map((o) => o.email).filter((e) => !(e in voted)); again = DAY;
+          const what = r.status === 'review' ? 'before it goes to UVU' : 'before it is published';
+          subject = fresh ? `Presidents' ${r.status === 'review' ? 'review' : 'sign-off'}: ${t}` : `Reminder: ${t} moves on ${deadline(r)}`;
+          body = `"${t}" needs every president's approval ${what}. Approve it or request changes. If nobody objects, it moves on automatically on ${deadline(r)}.`;
+          if (!fresh && nowMs - ms(r.nudged_at) < DAY) to = [];   // one reminder a day at most
+        } else if (r.status === 'sent') {
+          to = schedulers; again = 2 * DAY;
+          const days = Math.floor((nowMs - ms(r.status_at)) / DAY);
+          subject = fresh ? `New event to schedule: ${t}` : `Still waiting to be scheduled: ${t}`;
+          body = fresh ? `"${t}" is ready for UVU. Submit it, or send it back with notes.` : `"${t}" has been waiting ${days} days. Submit it to UVU, or send it back with notes.`;
+        } else if (r.status === 'approved') {
+          to = schedulers; again = 2 * DAY;
+          subject = r.signoff_note ? `Changes requested: ${t}` : `Finalize and send for sign-off: ${t}`;
+          body = r.signoff_note ? `A president asked for changes to "${t}":\n${r.signoff_note}\n\nMake them, then send it to the presidents again.`
+            : `UVU approved "${t}". Set the final date, times, location, and RSVP timing, then send it to the presidents for sign-off.`;
+        } else if (r.status === 'returned') {
+          to = [r.sent_by || '']; subject = `Changes needed: ${t}`;
+          body = `"${t}" was sent back. What to fix:\n${r.note || '(no note)'}\n\nMake the changes, then send it again.`;
+        } else if (r.status === 'submitted') {
+          to = [r.sent_by || '']; subject = `Submitted to UVU: ${t}`;
+          body = `The scheduler submitted "${t}" to UVU for approval.`;
+        } else if (r.status === 'published') {
+          if (nowMs - ms(r.status_at) > 3 * DAY) continue;
+          to = [r.sent_by || '']; subject = `Published: ${t}`;
+          body = `"${t}" is approved and on the calendar. You can start promoting it.`;
         }
+        if (!to.length || !subject) continue;
+        if (!fresh && !(again && nowMs - ms(r.nudged_at) >= again)) continue;
+        if (await tell(to, subject, body, 'Open it', r.status === 'published' ? `${site}/#event/${r.event_id}` : link, tag))
+          await db.from('event_requests').update({ nudged_at: new Date().toISOString() }).eq('event_id', r.event_id);
       }
     }
 
