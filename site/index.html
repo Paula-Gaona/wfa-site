@@ -3900,7 +3900,7 @@ function viewOfficer(){
   else if (T === 'events'){
     const e = ui.editEvent ? evById(ui.editEvent) : null;
     body = `<div class="split">
-      <form class="panel stack" id="f-event">
+      <form class="panel stack" id="f-event" novalidate>
         <h3>${e ? (e.draft ? 'Edit draft' : 'Edit event') : 'Create an event'}${e && e.draft ? ' <span class="tag">Draft</span>' : ''}</h3>
         ${sugPanel(e)}
         <label>Title<input id="ev-title" required value="${esc(e?.title)}" placeholder="e.g. DCF Valuation Workshop"></label>
