@@ -132,7 +132,60 @@ Deno.serve(async () => {
       }
     }
 
-    if (!cfg?.enabled) return json({ ok: true, sent: 0, chat_alerts: chatAlerts, note: 'Automatic emails are off.' });
+    // Event scheduling (see 52-event-scheduling.sql; works even when the event emails are off):
+    //   * schedulers hear about a request sent to them right away, then every 2 days while nobody acts on it
+    //   * the officer who sent it hears when it's sent back, submitted to UVU, or approved
+    // As a notification on a device if they have one signed up, otherwise by email.
+    let schedNotes = 0;
+    const tell = async (to: string[], subject: string, body: string, label: string, url: string, tag: string) => {
+      to = [...new Set(to)].filter((e) => !testSet.has(e));
+      const viaPush = to.filter((e) => pushOn && hasDevice.has(e)), viaEmail = to.filter((e) => !viaPush.includes(e));
+      let n = await sendPush(viaPush, subject, body, url, tag);
+      if (viaEmail.length) {
+        const footer = `You're getting this because you're an officer on the Wolverine Finance Association site.`;
+        const r = await resendBatch(viaEmail.map((e) => ({ to: [e], subject,
+          html: htmlEmail(`<p style="margin:0 0 12px">${escHtml(hi(e))}</p><p style="margin:0 0 12px;white-space:pre-wrap">${escHtml(body)}</p>`, { label, url }, footer),
+          text: `${hi(e)}\n\n${body}\n\n${label}: ${url}` })));
+        if (r.ok) n += viaEmail.length;
+      }
+      schedNotes += n;
+      return n > 0 || !to.length;
+    };
+    const { data: reqs } = await db.from('event_requests').select('event_id, status, note, sent_by, sent_at, status_at, nudged_at, sender_notified_at').in('status', ['sent', 'returned', 'submitted', 'approved']);
+    if (reqs?.length) {
+      const { data: evs } = await db.from('events').select('id, title').in('id', reqs.map((r) => r.event_id));
+      const titleOf = new Map((evs || []).map((e) => [e.id, e.title]));
+      const { data: sch } = await db.from('event_schedulers').select('email');
+      const schedulers = (sch || []).map((s) => s.email);
+      const nowMs = Date.now(), ms = (t: string | null) => (t ? new Date(t).getTime() : 0);
+      const who = (e: string) => firstName.get(e) || e || 'An officer';
+      for (const r of reqs) {
+        const t = titleOf.get(r.event_id) || 'an event';
+        const link = `${site}/#officer/scheduling/${r.event_id}`;
+        if (r.status === 'sent') {
+          const fresh = ms(r.nudged_at) < ms(r.sent_at);
+          if (fresh || nowMs - ms(r.nudged_at) >= 2 * DAY) {
+            const days = Math.floor((nowMs - ms(r.sent_at)) / DAY);
+            const ok = await tell(schedulers, fresh ? `New event to schedule: ${t}` : `Still waiting to be scheduled: ${t}`,
+              fresh ? `${who(r.sent_by || '')} sent "${t}" to the event schedulers. Review it and submit it to UVU, or send it back with notes.`
+                    : `"${t}" was sent to the schedulers ${days} days ago and is still waiting. Submit it to UVU, or send it back with notes.`,
+              'Open the request', link, `sched-${r.event_id}`);
+            if (ok) await db.from('event_requests').update({ nudged_at: new Date().toISOString() }).eq('event_id', r.event_id);
+          }
+        } else if (r.sent_by && ms(r.sender_notified_at) < ms(r.status_at)) {
+          const msg: Record<string, [string, string]> = {
+            returned: [`Changes needed: ${t}`, `The scheduler sent "${t}" back. What to fix:\n${r.note || '(no note)'}\n\nMake the changes, then send it to the scheduler again.`],
+            submitted: [`Submitted to UVU: ${t}`, `The scheduler submitted "${t}" to UVU for approval. You'll hear back when it's approved.`],
+            approved: [`Approved by UVU: ${t}`, `"${t}" was approved by UVU. The scheduler will finalize the details and publish it.`],
+          };
+          const [subject, body] = msg[r.status];
+          const ok = await tell([r.sent_by], subject, body, 'Open the event', `${site}/#officer/scheduling/${r.event_id}`, `sched-${r.event_id}`);
+          if (ok) await db.from('event_requests').update({ sender_notified_at: new Date().toISOString() }).eq('event_id', r.event_id);
+        }
+      }
+    }
+
+    if (!cfg?.enabled) return json({ ok: true, sent: 0, chat_alerts: chatAlerts, scheduling: schedNotes, note: 'Automatic emails are off.' });
     const now = Date.now();
 
     // Daily limit (a safety net): emails sent automatically in the last 24 hours, one per person.

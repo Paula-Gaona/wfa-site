@@ -192,6 +192,30 @@ main{padding-block:36px 64px}
 .tag.pinned,.tag.ok{color:var(--brand-text)}
 .tag.members{color:var(--cat-workshop)}
 .tag.warn{color:var(--warn)}
+.grid3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px}
+.rq-panel{padding:16px;border-color:var(--gold,#B8923A)}
+.rq-cal{border:1px solid var(--line);border-radius:var(--radius);padding:10px;max-width:22rem;display:flex;flex-direction:column;gap:6px}
+.rq-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.rq-grid .dow{font-size:.7rem;text-align:center;color:var(--muted)}
+.rq-day{border:1px solid var(--line);background:none;border-radius:4px;padding:6px 0;cursor:pointer;font:inherit;color:inherit}
+.rq-day.on{background:var(--brand);color:var(--on-brand,#fff);border-color:var(--brand)}
+.rq-day:disabled{opacity:.3;cursor:default}
+.rq-q{border:0;padding:0;margin:0;min-width:0}
+.rq-q legend{font-weight:600;margin-bottom:4px;font-size:.92rem;padding:0}
+.rq-warn{border-left:4px solid var(--warn);padding:8px 12px;background:var(--tint,transparent);border-radius:2px}
+.rq-layouts{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.rq-layout{position:relative;border:2px solid var(--line);border-radius:var(--radius);padding:6px;cursor:pointer;display:flex;flex-direction:column;gap:4px;font-size:.82rem;text-align:center;font-weight:600}
+.rq-layout input{position:absolute;opacity:0;pointer-events:none}
+.rq-layout img,.rq-layout-blank{width:100%;aspect-ratio:4/3;object-fit:contain;background:#fff;border-radius:2px}
+.rq-layout-blank{display:flex;align-items:center;justify-content:center;color:#5e6b60;border:1px dashed #c9c9c9}
+.rq-layout.on{border-color:var(--gold,#B8923A);box-shadow:0 0 0 2px var(--gold,#B8923A)}
+.rq-layout:focus-within{outline:2px solid var(--brand);outline-offset:2px}
+.rq-sum{display:grid;grid-template-columns:minmax(9rem,13rem) 1fr;gap:10px 16px;margin:0}
+.rq-sum dt{font-weight:600;font-size:.88rem;color:var(--muted)}
+.rq-sum dd{margin:0}
+.rq-thumb{max-width:220px;margin-top:6px;border:1px solid var(--line);background:#fff}
+.rq-hist{margin:0;padding-left:1.2rem;display:flex;flex-direction:column;gap:6px}
+@media (max-width:640px){.rq-sum{grid-template-columns:1fr;gap:2px}.rq-sum dd{margin-bottom:10px}.grid3{grid-template-columns:1fr 1fr}.grid3 label:first-child{grid-column:1/-1}}
 .tag.soon{color:#fff;background:var(--gold,#B8923A);border-color:var(--gold,#B8923A)}
 .soon-card{border:2px solid var(--gold,#B8923A);border-radius:var(--radius);padding:24px;background:var(--surface,transparent)}
 .tag.bad{color:var(--danger)}
@@ -565,7 +589,7 @@ function buildTitle(tier, branch){
   if (tier === 'honorary') return 'Honorary Officer';
   return b ? b + ' Officer' : 'Officer';
 }
-const OFFICER_TABS = [['stats','Statistics'],['approvals','Approvals'],['questions','Questions'],['events','Events'],['plan','Event planning'],['checkin','Check-in & attendance'],['surveys','Event surveys'],['qr','QR codes'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
+const OFFICER_TABS = [['stats','Statistics'],['approvals','Approvals'],['questions','Questions'],['events','Events'],['scheduling','Scheduling'],['plan','Event planning'],['checkin','Check-in & attendance'],['surveys','Event surveys'],['qr','QR codes'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
 const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['points','Award points'],['seasons','Leaderboard seasons'],['auto','Automatic emails'],['test','Test accounts'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
@@ -595,7 +619,7 @@ function parseDay(s){ const [y,m,d] = s.split('-').map(Number); return new Date(
 let authUser = null, session = null, myRole = 'guest', testRole = null, loaded = false;   // testRole: 'admin' or 'member' for test accounts
 const db = { settings:{ semester:'', dues:0 }, adminEmails:[], officerEmails:[], profiles:{}, users:[], events:[], stats:{},
   rsvps:{}, attendance:{}, announcements:[], recaps:[], archive:[], tasks:[], dues:{}, leader:[], log:[],
-  app:{ open:false, branches:[], deadline:'', opened_at:null }, apps:[], avail:{}, pending:[], questions:[] };
+  app:{ open:false, branches:[], deadline:'', opened_at:null }, apps:[], avail:{}, pending:[], questions:[], schedulers:[], requests:{} };
 
 async function load(){
   const { data: { session: s } } = await sb.auth.getSession();
@@ -650,6 +674,8 @@ async function load(){
     access: off && t('access_list'),
     codes: off && t('checkin_codes'),
     tasks: off && t('tasks'),
+    schedulers: off && t('event_schedulers'),
+    requests: off && t('event_requests'),
     log: myRole === 'admin' && sb.from('change_log').select('*').order('ts', { ascending:false }).limit(500)
   };
   const keys = Object.keys(reqs);
@@ -659,6 +685,8 @@ async function load(){
 
   db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0), about: R.settings?.about || {}, lbSince: R.settings?.lb_since || null, autoEmail: R.settings?.auto_email || null, pushKey: R.settings?.push_public_key || '' };
   db.autoLog = Array.isArray(R.autoLog) ? R.autoLog : [];
+  db.schedulers = (R.schedulers || []).map(x => x.email);
+  db.requests = Object.fromEntries((R.requests || []).map(r => [r.event_id, r]));
   db.lbHistory = Array.isArray(R.lbHistory) ? R.lbHistory : [];
   db.awards = R.awards || [];
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
@@ -952,7 +980,8 @@ function tabCounts(which){
   return {
     approvals: db.pending.filter(c => c.status === 'pending' && (isApprover() || c.author === session)).length,
     questions: db.questions.filter(q => q.status === 'new').length,
-    tasks: db.tasks.filter(t => !t.done && t.who === session && t.due <= todayIso()).length   // your tasks due today or overdue
+    tasks: db.tasks.filter(t => !t.done && t.who === session && t.due <= todayIso()).length,   // your tasks due today or overdue
+    scheduling: Object.values(db.requests || {}).filter(r => isScheduler() ? r.status === 'sent' : (r.status === 'returned' && r.sent_by === session)).length
   };
 }
 function countTotal(which){ return Object.values(tabCounts(which)).reduce((a, b) => a + b, 0); }
@@ -2750,38 +2779,49 @@ function thumbsHtml(){
 /* ---------- Event planning (Officer tools): a logistics checklist per event, drafts included ---------- */
 // Standard checklist for each event type: [task, days relative to the event (negative = before, 0 = day of)].
 // Admins can replace these from Event planning > Edit standard checklists; edits are saved in app_settings.plan_templates.
+// Every event except officer meetings goes through the event scheduler and UVU before it's published or advertised:
+// send the request at least 3 weeks out (10 weeks with a guest speaker), and market it only once UVU approves.
 const PLAN_DEFAULTS = {
   guest_speaker: [
-    ['Confirm the speaker and date', -28], ['Reserve a room through Woodbury', -21], ['Coordinate with the faculty advisor', -14],
-    ['Get the speaker’s bio, headshot, and talk title', -14], ['Publish the event on the site', -14], ['Make a flyer and post it on social media', -10],
+    ['Confirm the speaker and a few possible dates', -77], ['Get the speaker’s job title, talk topic, and bio', -72],
+    ['Fill out the scheduling request and send it to the scheduler', -70], ['Scheduler submits the request to UVU', -68],
+    ['Coordinate with the faculty advisor', -56], ['UVU approves; the scheduler finalizes the details and publishes the event', -21],
+    ['Get the speaker’s headshot', -21], ['Make a flyer and post it on social media (only after UVU approval)', -14],
     ['Email members about the event', -7], ['Order food or refreshments', -7], ['Prepare the introduction and audience questions', -3],
     ['Confirm parking, AV, and arrival time with the speaker', -2], ['Set the check-in code', -1], ['Send a reminder email', -1],
     ['Send a thank-you to the speaker', 1], ['Post a recap with photos', 2]],
   workshop: [
-    ['Confirm the presenter and topic', -21], ['Reserve a room or computer lab through Woodbury', -21], ['Publish the event on the site', -14],
-    ['Make a flyer and post it on social media', -10], ['Prepare slides, templates, and practice files', -7], ['Email members about the event', -7],
+    ['Confirm the presenter, topic, and a few possible dates', -28], ['Fill out the scheduling request and send it to the scheduler', -21],
+    ['Scheduler submits the request to UVU', -19], ['UVU approves; the scheduler finalizes the details and publishes the event', -14],
+    ['Make a flyer and post it on social media (only after UVU approval)', -10], ['Prepare slides, templates, and practice files', -7], ['Email members about the event', -7],
     ['Order snacks', -5], ['Test the software and lab access', -3], ['Set the check-in code', -1], ['Send a reminder email', -1],
     ['Upload the materials to the archive', 2], ['Post a recap with photos', 2]],
   case_competition: [
-    ['Set the date, format, and team size', -56], ['Coordinate with the faculty advisor and department', -42], ['Recruit judges', -42],
-    ['Write or source the case', -35], ['Reserve presentation rooms through Woodbury', -35], ['Secure sponsors and prizes', -35],
-    ['Publish the event and open team registration', -28], ['Promote it (flyers, social media, class announcements)', -21],
+    ['Set the format, team size, and a few possible dates', -63], ['Fill out the scheduling request and send it to the scheduler', -56],
+    ['Scheduler submits the request to UVU', -54], ['Coordinate with the faculty advisor and department', -42], ['Recruit judges', -42],
+    ['Write or source the case', -35], ['Secure sponsors and prizes', -35],
+    ['UVU approves; the scheduler finalizes the details, publishes the event, and opens team registration', -28],
+    ['Promote it (flyers, social media, class announcements; only after UVU approval)', -21],
     ['Close team registration', -10], ['Release the case to teams', -7], ['Finalize the schedule and judging rubric', -7],
     ['Order food for teams and judges', -7], ['Confirm logistics with judges', -3], ['Set the check-in code', -1],
     ['Announce winners and award prizes', 1], ['Thank judges and sponsors', 2], ['Post a recap with photos', 3]],
   career_fair: [
-    ['Coordinate with the UVU Career Center', -42], ['Confirm which firms are attending', -35], ['Reserve space and tables', -35],
-    ['Coordinate with the faculty advisor', -28], ['Collect each firm’s info and open roles', -21], ['Publish the event on the site', -21],
-    ['Hold a resume review session for members', -14], ['Make a flyer and post it on social media', -10], ['Email members about the event', -7],
+    ['Coordinate with the UVU Career Center and pick a few possible dates', -49], ['Fill out the scheduling request and send it to the scheduler', -42],
+    ['Scheduler submits the request to UVU', -40], ['Confirm which firms are attending', -35], ['Coordinate with the faculty advisor', -28],
+    ['UVU approves; the scheduler finalizes the details and publishes the event', -21], ['Collect each firm’s info and open roles', -21],
+    ['Hold a resume review session for members', -14], ['Make a flyer and post it on social media (only after UVU approval)', -10], ['Email members about the event', -7],
     ['Print the firm list and name tags', -3], ['Set the check-in code', -1], ['Send a reminder email', -1], ['Set up tables and signage', 0],
     ['Send thank-yous to the firms', 1], ['Send firms the resume book for their area', 3], ['Post a recap with photos', 3]],
   excursion: [
-    ['Confirm the host firm and date', -42], ['Coordinate with the faculty advisor and get UVU travel approval', -35],
-    ['Arrange transportation', -28], ['Publish the event and open sign-ups', -21], ['Collect waivers and travel forms', -10],
-    ['Share the itinerary and dress code', -5], ['Confirm the headcount with the host', -3], ['Send a reminder email', -1],
+    ['Confirm the host firm and a few possible dates', -49], ['Fill out the scheduling request and send it to the scheduler', -42],
+    ['Scheduler submits the request to UVU', -40], ['Coordinate with the faculty advisor and get UVU travel approval', -35],
+    ['Arrange transportation', -28], ['UVU approves; the scheduler finalizes the details, publishes the event, and opens sign-ups', -21],
+    ['Collect waivers and travel forms', -10], ['Share the itinerary and dress code', -5], ['Confirm the headcount with the host', -3], ['Send a reminder email', -1],
     ['Set the check-in code', -1], ['Send a thank-you to the host', 1], ['Post a recap with photos', 2]],
   social: [
-    ['Reserve a space', -14], ['Publish the event on the site', -14], ['Plan activities', -10], ['Make a flyer and post it on social media', -10],
+    ['Pick the activity and a few possible dates', -28], ['Fill out the scheduling request and send it to the scheduler', -21],
+    ['Scheduler submits the request to UVU', -19], ['UVU approves; the scheduler finalizes the details and publishes the event', -14],
+    ['Plan activities', -10], ['Make a flyer and post it on social media (only after UVU approval)', -10],
     ['Email members about the event', -7], ['Order food', -5], ['Buy supplies and decorations', -3], ['Set the check-in code', -1],
     ['Send a reminder email', -1], ['Post a recap with photos', 2]],
   officer_meeting: [
@@ -3119,6 +3159,284 @@ function officerProfileSection(){
     </div>`;
 }
 
+/* ---------- Event scheduling: UVU approves club events before they're marketed ---------- */
+// Every event except officer meetings needs a scheduling request. The officer making the event fills out the form
+// below (part of the event editor) and sends it to the event schedulers. A scheduler submits it to UVU, or sends it
+// back with notes; once UVU approves, the scheduler finalizes the details and publishes it (see 52-event-scheduling.sql).
+const needsSched = cat => cat !== 'officer_meeting';
+function isScheduler(){ return isStaff() && (db.schedulers || []).includes(session); }
+const RQ_STATUS = { draft: ['Not sent to the scheduler yet', ''], sent: ['With the scheduler', 'warn'], returned: ['Sent back: needs changes', 'warn'], submitted: ['Submitted to UVU for approval', 'ok'], approved: ['Approved by UVU', 'ok'] };
+const rqOf = id => (db.requests || {})[id] || null;
+const rqTag = id => { const r = rqOf(id); if (!r) return ''; const [l, c] = RQ_STATUS[r.status] || ['', '']; return ` <span class="tag ${c}">${l}</span>`; };
+const RQ_LOCATIONS = ['Auditorium', 'Ballroom', 'Event room', 'Classroom', 'Conference room', 'Bloomberg Lab', 'Computer lab', 'Table location (booth or hallway table)', 'Outdoor space (plaza or lawn)', 'Gym or fieldhouse', 'External location (off campus)'];
+const isExternal = loc => /^External/.test(loc || '');
+// Orem campus buildings. Keller first (the Woodbury default), then Any, then the rest alphabetically.
+const UVU_BUILDINGS = ['Browning Administration Building (BA)', 'Business Resource Center (BRC)', 'Classroom Building (CB)', 'Computer Science Building (CS)', 'Fulton Library (LI)', 'Gunther Technology Building (GT)', 'Health Professions Building (HP)', 'Liberal Arts Building (LA)', 'Losee Center (LC)', 'Noorda Center for the Performing Arts (NC)', 'Pope Science Building (PS)', 'Science Building (SB)', 'Sorensen Student Center (SC)', 'Student Life and Wellness Center (SL)', 'UCCU Center (UC)', 'Woodbury Business Building (WB)', 'Young Living Alumni Center (AC)'];
+const RQ_LAYOUTS = [['classroom', 'Classroom style', 'classroom.jpg', 'chairs'], ['theater', 'Theater style', 'theater.jpg', 'chairs'], ['banquet', 'Banquet style', 'banquet.jpg', 'chairs'],
+  ['boardroom', 'Boardroom style', 'boardroom.jpg', 'chairs'], ['u_shape', 'U shape', 'u-shape.jpg', 'chairs'], ['rounds_10', 'Round tables, 10 per table', 'rounds-10.jpg', 'tables'],
+  ['rounds_8', 'Round tables, 8 per table', 'rounds-8.jpg', 'tables'], ['meet_firms', 'UVU Meet the Firms setup', '', ''], ['custom', 'Custom (upload a picture)', '', 'both']];
+const RQ_TYPES = ['General Club', 'Service/Civic Engagement', 'Fundraising'];
+const RQ_CAMPUS = { on: 'On campus', off: 'Off campus', hybrid: 'Hybrid' };
+
+function rqDefaults(e){
+  return { dates: e && e.date ? [e.date] : [], altDates: [], setup: 30, after: 0, locType: '', building: 'Keller Building (KB)', uvuName: (e ? e.title : '').slice(0, 40), uvuDesc: e ? e.desc : '',
+    evType: 'General Club', campus: 'on', sponsor: '', sp: {}, food: '', tablecloths: '', speaker: e && e.cat === 'guest_speaker' ? 'yes' : '', speakers: [], av: '', avNeeds: '',
+    tech: '', techTime: '', techStay: '', layout: '', chairs: '', tables: '', layoutImg: null, flyer: null, other: '' };
+}
+// The request being edited in the event editor (kept in ui so redraws don't lose what's typed).
+function rqState(){
+  const key = ui.editEvent || 'new';
+  if (!ui.rq || ui.rq.key !== key){
+    const e = ui.editEvent ? evById(ui.editEvent) : null, saved = rqOf(ui.editEvent);
+    ui.rq = { key, d: { ...rqDefaults(e), ...((saved && saved.form) || {}) }, files: {} };
+  }
+  return ui.rq;
+}
+const rqLocked = id => ['sent', 'submitted', 'approved'].includes((rqOf(id) || {}).status);
+const hhmmAdd = (t, mins) => { const [h, m] = (t || '00:00').split(':').map(Number), x = ((h * 60 + m + mins) % 1440 + 1440) % 1440; return String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0'); };
+const fmtShortDay = iso => parseDay(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+const noLayout = d => d.locType === 'Auditorium' || (isExternal(d.locType) && d.campus === 'off');
+const hasSpeaker = (d, cat) => d.speaker === 'yes' || (!d.speaker && cat === 'guest_speaker');
+// Short notice: under 3 weeks away, or under 10 weeks with a guest speaker.
+function rqShortNotice(d, cat){
+  const first = [...(d.dates || [])].sort()[0]; if (!first) return '';
+  const days = (parseDay(first) - parseDay(todayIso())) / 864e5;
+  return days < (hasSpeaker(d, cat) ? 70 : 21) ? 'This is short notice, event may not be scheduled in time.' : '';
+}
+// AVSE technician arrival: every 30 minutes from 30 minutes before the start up to the setup time.
+const rqTechOpts = (d, start) => { const out = []; for (let m = 30; m <= (+d.setup || 0); m += 30) out.push([String(m), `${fmtTime(hhmmAdd(start, -m))} (${m} min before)`]); return out; };
+
+// A month calendar where people click any number of days.
+function rqCal(key, sel){
+  ui.rqMonth = ui.rqMonth || {};
+  const m = ui.rqMonth[key] || ([...sel].sort()[0] || todayIso()).slice(0, 7), [y, mo] = m.split('-').map(Number);
+  const lead = new Date(y, mo - 1, 1).getDay(), days = new Date(y, mo, 0).getDate(), today = todayIso();
+  let cells = '<span></span>'.repeat(lead);
+  for (let d = 1; d <= days; d++){
+    const iso = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    cells += `<button type="button" class="rq-day ${sel.includes(iso) ? 'on' : ''}" data-act="rq-day" data-k="${key}" data-id="${iso}" ${iso < today ? 'disabled' : ''} aria-pressed="${sel.includes(iso)}">${d}</button>`;
+  }
+  const label = new Date(y, mo - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  return `<div class="rq-cal"><div class="row" style="justify-content:space-between;align-items:center;flex-wrap:nowrap">
+      <button type="button" class="btn ghost small" data-act="rq-mon" data-k="${key}" data-id="-1" aria-label="Previous month">‹</button><strong>${label}</strong>
+      <button type="button" class="btn ghost small" data-act="rq-mon" data-k="${key}" data-id="1" aria-label="Next month">›</button></div>
+    <div class="rq-grid">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(x => `<span class="dow">${x}</span>`).join('')}${cells}</div>
+    <span class="hint">${sel.length ? 'Picked: ' + [...sel].sort().map(fmtDay).join(', ') : 'Click days to pick them. Pick as many as you like.'}</span></div>`;
+}
+const rqYN = (k, label, d, hint = '') => `<fieldset class="rq-q"><legend>${label}${hint ? ` <span class="hint">${hint}</span>` : ''}</legend><div class="row" style="gap:18px">${[['yes', 'Yes'], ['no', 'No']].map(([v, t]) =>
+  `<label class="check"><input type="radio" name="rq-${k.replace(/\W/g, '-')}" data-rq="${k}" data-rr="1" value="${v}" ${d[k] === v ? 'checked' : ''}> ${t}</label>`).join('')}</div></fieldset>`;
+const rqFileLine = (k, d) => d[k] ? `<span class="hint">${d[k].pending ? 'Will upload when you save: ' : 'Attached: '}${esc(d[k].name)} <button type="button" class="btn ghost small" data-act="rq-file-clear" data-id="${k}">Remove</button></span>` : '';
+
+// The form itself (inside the event editor). Locked while a scheduler has it.
+function rqPanel(e, cat){
+  if (!needsSched(cat)) return '';
+  const r = rqOf(e && e.id), st = r ? r.status : 'draft';
+  const head = `<div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">Scheduling request</h3>${r ? rqTag(e.id) : ''}</div>`;
+  if (rqLocked(e && e.id)){
+    const notice = rqShortNotice(r.form, cat);
+    return `<div class="panel stack rq-panel" style="gap:12px">${head}
+      <p class="hint" style="margin:0">${{ sent: 'A scheduler has this request. You can still change the website details above, but the request is locked unless they send it back.', submitted: 'The scheduler submitted this to UVU. You’ll be notified when it’s approved.', approved: 'UVU approved this event. A scheduler will finalize the details and publish it.' }[st]}</p>
+      ${notice ? `<div class="rq-warn">${notice}</div>` : ''}${rqSummary(e, r)}</div>`;
+  }
+  const d = rqState().d, start = (document.getElementById('ev-start') || {}).value || (e && e.start) || '18:00', end = (document.getElementById('ev-end') || {}).value || (e && e.end) || '19:00';
+  const notice = rqShortNotice(d, cat), lay = RQ_LAYOUTS.find(x => x[0] === d.layout);
+  const n = Math.max(0, Math.min(10, +d.speakerCount || (d.speakers || []).length || (hasSpeaker(d, cat) ? 1 : 0)));
+  return `<div class="panel stack rq-panel" style="gap:16px">${head}
+    <p class="hint" style="margin:0">UVU has to approve club events before they’re advertised. Fill this out and send it to an event scheduler, who submits it to UVU. Nothing here is shown on the website.</p>
+    ${st === 'returned' ? `<div class="rq-warn"><strong>The scheduler sent this back.</strong> What to fix:<div style="white-space:pre-wrap;margin-top:4px">${esc(r.note)}</div></div>` : ''}
+    <div class="stack" style="gap:6px"><strong>What is your ideal event date?</strong><span class="hint">Pick more than one if you don’t have a strong preference.</span>${rqCal('dates', d.dates)}</div>
+    ${notice ? `<div class="rq-warn">${notice}</div>` : ''}
+    <div class="stack" style="gap:6px"><strong>Any other days you’re willing to include if those don’t work?</strong><span class="hint">Optional.</span>${rqCal('altDates', d.altDates)}</div>
+    <div><strong>Start and end times:</strong> ${fmtTime(start)}–${fmtTime(end)} <span class="hint">From Starts and Ends above.</span></div>
+    <div class="grid2"><label>Setup time before the event <span class="hint">Minutes, at least 15</span><input type="number" min="15" step="5" data-rq="setup" data-rr="1" value="${esc(d.setup)}"></label>
+      <label>Time needed after <span class="hint">Minutes (for one-on-one conversations, cleanup). Can be 0.</span><input type="number" min="0" step="5" data-rq="after" value="${esc(d.after)}"></label></div>
+    <div class="grid2"><label>What do you need in an event location?<select data-rq="locType" data-rr="1"><option value="">Choose one…</option>${RQ_LOCATIONS.map(x => `<option ${d.locType === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
+      <label>Ideal building<select data-rq="building">${['Keller Building (KB)', 'Any', ...UVU_BUILDINGS].map(x => `<option ${d.building === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label></div>
+    <label>Event name for UVU <span class="hint">Max 40 characters. Can be shorter than the website title.</span><input data-rq="uvuName" maxlength="40" value="${esc(d.uvuName)}"></label>
+    <label>Event description for UVU<textarea data-rq="uvuDesc" rows="4">${esc(d.uvuDesc)}</textarea></label>
+    <label>Maximum attendees <span class="hint">Same as the seat limit above (0 = no limit)</span><input type="number" min="0" id="rq-cap" value="${esc((document.getElementById('ev-cap') || {}).value || (e && e.cap) || 0)}"></label>
+    <div class="grid2"><label>Type of event<select data-rq="evType">${RQ_TYPES.map(x => `<option ${d.evType === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+      <label>On campus, off campus, or hybrid?<select data-rq="campus" data-rr="1">${Object.entries(RQ_CAMPUS).map(([k, l]) => `<option value="${k}" ${d.campus === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+    ${rqYN('sponsor', 'Does this event have an external sponsor?', d)}
+    ${d.sponsor === 'yes' ? `<div class="panel stack" style="gap:10px;padding:12px">
+      <div class="grid2"><label>Contact person<input data-rq="sp.name" value="${esc(d.sp.name || '')}"></label><label>Sponsoring organization<input data-rq="sp.org" value="${esc(d.sp.org || '')}"></label></div>
+      <div class="grid2"><label>Contact email<input type="email" data-rq="sp.email" value="${esc(d.sp.email || '')}"></label><label>Contact phone<input type="tel" data-rq="sp.phone" value="${esc(d.sp.phone || '')}"></label></div>
+      <label>Organization street address<input data-rq="sp.street" value="${esc(d.sp.street || '')}"></label>
+      <div class="grid3"><label>City<input data-rq="sp.city" value="${esc(d.sp.city || '')}"></label><label>State<input data-rq="sp.state" maxlength="20" value="${esc(d.sp.state || '')}"></label><label>ZIP<input data-rq="sp.zip" maxlength="10" value="${esc(d.sp.zip || '')}"></label></div></div>` : ''}
+    ${rqYN('food', 'Will the event have food, snacks, or beverages?', d)}
+    ${rqYN('tablecloths', 'Will the event need tablecloths?', d)}
+    ${rqYN('speaker', 'Will there be a guest speaker?', d)}
+    ${d.speaker === 'yes' ? `<div class="panel stack" style="gap:10px;padding:12px">
+      <label style="max-width:14rem">How many guest speakers?<select data-rq="speakerCount" data-rr="1">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => `<option ${(n || 1) === i ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
+      ${Array.from({ length: n || 1 }, (_, i) => { const s = (d.speakers || [])[i] || {}; return `<div class="stack" style="gap:8px;border-top:1px solid var(--line);padding-top:10px"><strong>Speaker ${i + 1}</strong>
+        <div class="grid2"><label>Name<input data-rq="speakers.${i}.name" value="${esc(s.name || '')}"></label><label>Job title and company<input data-rq="speakers.${i}.job" value="${esc(s.job || '')}"></label></div>
+        <label>Speaking topic<input data-rq="speakers.${i}.topic" value="${esc(s.topic || '')}"></label><label>Bio<textarea rows="3" data-rq="speakers.${i}.bio">${esc(s.bio || '')}</textarea></label></div>`; }).join('')}</div>` : ''}
+    ${rqYN('av', 'Will your event need additional A/V equipment?', d, 'Most locations have two mics and a projector.')}
+    ${d.av === 'yes' ? `<label>What A/V equipment do you need?<textarea rows="2" data-rq="avNeeds">${esc(d.avNeeds)}</textarea></label>` : ''}
+    ${rqYN('tech', 'Would you like an AVSE technician to meet you before the event starts?', d)}
+    ${d.tech === 'yes' ? ((+d.setup || 0) < 30 ? `<div class="rq-warn">An AVSE technician meets you at least 30 minutes before the event. Change the setup time above to 30 minutes or more.</div>`
+      : `<label>What time should the AVSE technician meet you at the venue?<select data-rq="techTime"><option value="">Choose a time…</option>${rqTechOpts(d, start).map(([v, l]) => `<option value="${v}" ${String(d.techTime) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`)
+      + rqYN('techStay', 'Would you like an AVSE technician to stay for the whole event?', d, 'AVSE charges by the hour for this.') : ''}
+    ${noLayout(d) ? '' : `<div class="stack" style="gap:8px"><strong>What layout do you want?</strong>
+      <div class="rq-layouts">${RQ_LAYOUTS.map(([k, l, img]) => `<label class="rq-layout ${d.layout === k ? 'on' : ''}"><input type="radio" name="rq-layout" data-rq="layout" data-rr="1" value="${k}" ${d.layout === k ? 'checked' : ''}>
+        ${img ? `<img src="layouts/${img}" alt="" loading="lazy">` : `<span class="rq-layout-blank">${k === 'custom' ? '＋ Upload' : 'Meet the Firms'}</span>`}<span>${l}</span></label>`).join('')}</div>
+      ${lay && lay[3] === 'chairs' ? `<label style="max-width:14rem">How many chairs?<input type="number" min="1" data-rq="chairs" value="${esc(d.chairs)}"></label>` : ''}
+      ${lay && lay[3] === 'tables' ? `<label style="max-width:14rem">How many tables?<input type="number" min="1" data-rq="tables" value="${esc(d.tables)}"></label>` : ''}
+      ${d.layout === 'custom' ? `<label>Picture of the layout<input type="file" accept="image/*,application/pdf" data-rqfile="layoutImg"></label>${rqFileLine('layoutImg', d)}
+        <div class="grid2"><label>How many tables?<input type="number" min="0" data-rq="tables" value="${esc(d.tables)}"></label><label>How many chairs?<input type="number" min="0" data-rq="chairs" value="${esc(d.chairs)}"></label></div>` : ''}</div>`}
+    <label>Flyer or image for the flyer <span class="hint">Optional</span><input type="file" accept="image/*,application/pdf" data-rqfile="flyer"></label>${rqFileLine('flyer', d)}
+    <label>Anything else the scheduler should know? <span class="hint">Optional</span><textarea rows="3" data-rq="other">${esc(d.other)}</textarea></label>
+  </div>`;
+}
+// What's missing before it can be sent.
+function rqProblems(d, cat){
+  const p = [], yn = (k, q) => { if (!['yes', 'no'].includes(d[k])) p.push('Answer: ' + q); };
+  if (!(d.dates || []).length) p.push('Pick at least one ideal date.');
+  if (!(+d.setup >= 15)) p.push('Setup time must be at least 15 minutes.');
+  if (d.after === '' || +d.after < 0) p.push('Enter the time needed after (0 is fine).');
+  if (!d.locType) p.push('Choose what you need in a location.');
+  if (!(d.uvuName || '').trim()) p.push('Enter the event name for UVU.');
+  if (!(d.uvuDesc || '').trim()) p.push('Enter the event description for UVU.');
+  yn('sponsor', 'external sponsor?'); yn('food', 'food?'); yn('tablecloths', 'tablecloths?'); yn('speaker', 'guest speaker?'); yn('av', 'additional A/V?'); yn('tech', 'AVSE technician?');
+  if (d.sponsor === 'yes' && ['name', 'org', 'email', 'phone', 'street', 'city', 'state', 'zip'].some(k => !((d.sp || {})[k] || '').trim())) p.push('Fill in all the sponsor contact details.');
+  if (d.speaker === 'yes' && (d.speakers || []).slice(0, +d.speakerCount || 1).filter(s => s && (s.name || '').trim()).length < (+d.speakerCount || 1)) p.push('Enter each guest speaker’s name (and job, topic, and bio if you have them).');
+  if (d.av === 'yes' && !(d.avNeeds || '').trim()) p.push('Say what A/V equipment you need.');
+  if (d.tech === 'yes'){ if ((+d.setup || 0) < 30) p.push('An AVSE technician needs at least 30 minutes of setup time.'); else if (!d.techTime) p.push('Choose when the AVSE technician should meet you.'); if (!['yes', 'no'].includes(d.techStay)) p.push('Answer: AVSE technician for the whole event?'); }
+  if (!noLayout(d)){
+    const lay = RQ_LAYOUTS.find(x => x[0] === d.layout);
+    if (!lay) p.push('Choose a layout.');
+    else if (lay[3] === 'chairs' && !(+d.chairs > 0)) p.push('Enter how many chairs.');
+    else if (lay[3] === 'tables' && !(+d.tables > 0)) p.push('Enter how many tables.');
+    else if (lay[3] === 'both' && (!d.layoutImg || d.tables === '' || d.chairs === '')) p.push('Upload a picture of your layout and enter how many tables and chairs.');
+  }
+  return p;
+}
+// Uploads any files picked in the form, then saves (and maybe sends) the request.
+async function rqSave(evId, send){
+  const rq = rqState();
+  for (const [k, file] of Object.entries(rq.files)){
+    const path = `${evId}/${k}-${Date.now()}-${file.name.replace(/[^\w.-]+/g, '_').slice(-60)}`;
+    must(await sb.storage.from('event-files').upload(path, file, { contentType: file.type || undefined }));
+    rq.d[k] = { path, name: file.name };
+  }
+  rq.files = {};
+  const r = await sb.rpc('save_event_request', { p_event: evId, p_form: rq.d, p_send: !!send });
+  if (r.error) throw new Error(/save_event_request|event_requests/.test(r.error.message || '') ? 'Event scheduling isn’t set up yet. An admin needs to run 52-event-scheduling.sql.' : r.error.message);
+  if (r.data === 'err:locked' && send) throw new Error('A scheduler already has this request.');
+}
+
+// The request as the scheduler reads it, in the order of UVU's form, with a Copy button on each answer.
+function rqRows(e, r){
+  const d = { ...rqDefaults(e), ...r.form }, yn = v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : '';
+  const sp = d.sp || {}, lay = RQ_LAYOUTS.find(x => x[0] === d.layout);
+  const speakers = (d.speakers || []).slice(0, +d.speakerCount || (d.speakers || []).length || 1).filter(Boolean)
+    .map((s, i) => `${i + 1}. ${s.name || ''}${s.job ? ', ' + s.job : ''}${s.topic ? '\nTopic: ' + s.topic : ''}${s.bio ? '\nBio: ' + s.bio : ''}`).join('\n\n');
+  const layout = noLayout(d) ? 'Not needed (' + (d.locType === 'Auditorium' ? 'auditorium' : 'off-campus location') + ')'
+    : lay ? lay[1] + (lay[3] === 'chairs' ? `, ${d.chairs} chairs` : lay[3] === 'tables' ? `, ${d.tables} tables` : lay[3] === 'both' ? `, ${d.tables} tables, ${d.chairs} chairs` : '') : '';
+  return [
+    ['Event name', d.uvuName], ['Ideal dates', (d.dates || []).slice().sort().map(fmtShortDay).join('\n')], ['Other dates that work', (d.altDates || []).slice().sort().map(fmtShortDay).join('\n') || 'None'],
+    ['Start and end times', `${fmtTime(e.start)} – ${fmtTime(e.end)}`], ['Setup time before', `${d.setup} minutes (from ${fmtTime(hhmmAdd(e.start, -(+d.setup || 0)))})`],
+    ['Time needed after', `${d.after || 0} minutes (until ${fmtTime(hhmmAdd(e.end, +d.after || 0))})`], ['Location type', d.locType], ['Ideal building', d.building],
+    ['Event description', d.uvuDesc], ['Maximum attendees', e.cap ? String(e.cap) : 'No limit'], ['Type of event', d.evType], ['On campus, off campus, or hybrid', RQ_CAMPUS[d.campus] || ''],
+    ['External sponsor', d.sponsor === 'yes' ? `${sp.org || ''}\nContact: ${sp.name || ''}\n${sp.email || ''} · ${sp.phone || ''}\n${sp.street || ''}, ${sp.city || ''}, ${sp.state || ''} ${sp.zip || ''}` : yn(d.sponsor)],
+    ['Food, snacks, or beverages', yn(d.food)], ['Tablecloths', yn(d.tablecloths)], ['Guest speakers', d.speaker === 'yes' ? speakers : yn(d.speaker)],
+    ['Additional A/V equipment', d.av === 'yes' ? 'Yes: ' + d.avNeeds : yn(d.av)],
+    ['AVSE technician before the event', d.tech === 'yes' ? `Yes, at ${fmtTime(hhmmAdd(e.start, -(+d.techTime || 0)))} (${d.techTime} min before)` : yn(d.tech)],
+    ...(d.tech === 'yes' ? [['AVSE technician for the whole event', yn(d.techStay)]] : []),
+    ['Layout', layout, lay && lay[2] && !noLayout(d) ? lay[2] : '', d.layout === 'custom' ? d.layoutImg : null],
+    ['Flyer or image', d.flyer ? d.flyer.name : 'None', '', d.flyer], ['Other details', d.other || 'None']];
+}
+function rqSummary(e, r){
+  return `<dl class="rq-sum">${rqRows(e, r).map(([l, v, img, file]) => `<dt>${esc(l)}</dt><dd><div class="row" style="gap:8px;align-items:flex-start;justify-content:space-between;flex-wrap:nowrap">
+    <span style="white-space:pre-wrap">${esc(v || '—')}</span>${v && !file ? `<button type="button" class="btn ghost small" data-act="copy" data-text="${esc(v)}" data-label="${esc(l)}">Copy</button>` : ''}
+    ${file && file.path ? `<button type="button" class="btn ghost small" data-act="rq-open-file" data-id="${esc(file.path)}">Open file</button>` : ''}</div>
+    ${img ? `<img src="layouts/${img}" alt="${esc(v)}" class="rq-thumb">` : ''}</dd>`).join('')}</dl>`;
+}
+// Officer tools → Scheduling: the schedulers' queue, and everyone's own requests.
+function schedulingBody(){
+  const sched = isScheduler();
+  const open = ui.schedOpen && evById(ui.schedOpen) && rqOf(ui.schedOpen);
+  if (open) return rqDetail(evById(ui.schedOpen), rqOf(ui.schedOpen), sched);
+  const list = db.events.filter(e => rqOf(e.id) && (e.draft || rqOf(e.id).status !== 'approved')).sort((a, b) => ([...(rqOf(a.id).form.dates || [])].sort()[0] || a.date).localeCompare([...(rqOf(b.id).form.dates || [])].sort()[0] || b.date));
+  const row = e => { const r = rqOf(e.id), first = [...(r.form.dates || [])].sort()[0], short = rqShortNotice(r.form, e.cat);
+    return `<div class="list-row"><div><div class="ev-title">${esc(e.title)}${rqTag(e.id)}${short ? ' <span class="tag warn">Short notice</span>' : ''}</div>
+      <div class="ev-sub">${first ? 'Ideal: ' + fmtDay(first) + ((r.form.dates || []).length > 1 ? ` (+${r.form.dates.length - 1} more)` : '') : 'No dates yet'}${r.sent_by ? ' · Sent by ' + esc(userName(r.sent_by)) : ''}${r.status_at ? ' · ' + fmtMtStamp(Date.parse(r.status_at)) : ''}</div></div>
+      <button class="btn ${r.status === 'sent' && sched ? '' : 'ghost '}small" data-act="rq-open" data-id="${e.id}">Open</button></div>`; };
+  const group = (title, rows, empty) => `<div class="section-head"><h3>${title}</h3><span class="muted">${rows.length}</span></div><div>${rows.map(row).join('') || `<div class="empty">${empty}</div>`}</div>`;
+  const by = s => list.filter(e => rqOf(e.id).status === s);
+  const names = (db.schedulers || []).map(userName).join(', ');
+  if (sched) return `<div class="stack" style="gap:18px">
+    <p class="hint" style="margin:0">Submit each request through <a href="https://www.uvu.edu/clubs/forms/scheduling-request.html" target="_blank" rel="noopener">UVU’s scheduling request form ↗</a>, then mark it submitted. Officers are notified when you send something back, submit it, or mark it approved.</p>
+    ${group('Waiting for you', by('sent'), 'Nothing waiting. New requests show up here.')}
+    ${group('Submitted to UVU', by('submitted'), 'Nothing waiting on UVU.')}
+    ${group('Approved: finalize and publish', by('approved'), 'Nothing to publish.')}
+    ${group('Sent back to the officer', by('returned'), 'Nothing sent back.')}
+    <span class="hint">Event schedulers: ${esc(names || 'none yet')}.</span></div>`;
+  const mine = list.filter(e => rqOf(e.id).sent_by === session || rqOf(e.id).status === 'draft');
+  return `<div class="stack" style="gap:18px"><p class="hint" style="margin:0">Every event except officer meetings goes through an event scheduler, who gets UVU’s approval before it’s published. Create the event under Events, fill out its scheduling request, and click Send to scheduler.</p>
+    ${group('Your requests', mine, 'No requests yet.')}<span class="hint">Event schedulers: ${esc(names || 'none yet')}.</span></div>`;
+}
+function rqDetail(e, r, sched){
+  const short = rqShortNotice(r.form, e.cat), st = r.status;
+  const back = `<form class="stack" id="f-rq-back" data-id="${e.id}" style="gap:8px"><label>Send it back with notes <span class="hint">The officer is notified and can fix it and send it again.</span><textarea id="rq-back-note" rows="3" placeholder="e.g. Keller rooms are booked on Nov 18. Pick other dates, or choose Any building."></textarea></label>
+    <div class="row"><button class="btn ghost" type="submit">Send back with notes</button></div><div class="err" id="rq-back-err"></div></form>`;
+  const actions = !sched ? (st === 'returned' || st === 'draft' ? `<div class="row"><button class="btn" data-act="edit-event" data-id="${e.id}">Edit and resend</button></div>` : '')
+    : st === 'sent' ? `<div class="row" style="gap:8px"><a class="btn ghost" href="https://www.uvu.edu/clubs/forms/scheduling-request.html" target="_blank" rel="noopener">Open UVU’s form ↗</a><button class="btn" data-act="rq-status" data-id="${e.id}" data-s="submitted">Mark submitted for approval</button></div>${back}`
+    : st === 'submitted' ? `<div class="row" style="gap:8px"><button class="btn" data-act="rq-status" data-id="${e.id}" data-s="approved">Mark approved by UVU</button></div>${back}`
+    : st === 'approved' ? `<div class="row" style="gap:8px">${e.draft ? `<button class="btn" data-act="edit-event" data-id="${e.id}">Finalize details and publish</button>` : '<span class="hint">Published.</span>'}</div>${back}` : '';
+  const hist = (r.history || []).slice().reverse().map(h => `<li><strong>${esc((RQ_STATUS[h.status] || [h.status])[0])}</strong> · ${esc(userName(h.by))} · ${fmtMtStamp(Date.parse(h.at))}${h.note ? `<div style="white-space:pre-wrap" class="hint">${esc(h.note)}</div>` : ''}</li>`).join('');
+  return `<div class="stack" style="gap:16px"><div><button type="button" class="btn ghost small" data-act="rq-open" data-id="">← All requests</button></div>
+    <div><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</div><h2 style="margin:4px 0">${esc(e.title)}</h2>${rqTag(e.id)}${r.sent_by ? ` <span class="hint">Sent by ${esc(userName(r.sent_by))}</span>` : ''}</div>
+    ${short ? `<div class="rq-warn">${short}</div>` : ''}
+    ${st === 'returned' ? `<div class="rq-warn"><strong>Sent back:</strong><div style="white-space:pre-wrap">${esc(r.note)}</div></div>` : ''}
+    ${actions}
+    <section class="panel stack" style="gap:10px"><h3 style="margin:0">Request details</h3>${rqSummary(e, r)}</section>
+    ${hist ? `<section class="stack" style="gap:6px"><h3 style="margin:0">History</h3><ul class="rq-hist">${hist}</ul></section>` : ''}</div>`;
+}
+
+function evButtons(e, cat){
+  const cancel = e ? '<button class="btn ghost" type="button" data-act="cancel-edit">Cancel</button>' : '';
+  if (e && !e.draft) return `<button class="btn" type="submit" data-mode="save">Save changes</button>${cancel}`;
+  if (!needsSched(cat)) return `<button class="btn" type="submit" data-mode="publish">${canPublish() ? 'Publish to calendar' : 'Submit for approval'}</button><button class="btn ghost" type="submit" data-mode="draft">${e ? 'Save draft' : 'Save as draft'}</button>${cancel}`;
+  const st = (rqOf(e && e.id) || {}).status || 'draft';
+  return `${st === 'approved' && isScheduler() ? '<button class="btn" type="submit" data-mode="publish">Publish to calendar</button>' : ''}${['draft', 'returned'].includes(st) ? `<button class="btn" type="submit" data-mode="send">${st === 'returned' ? 'Send to scheduler again' : 'Send to scheduler'}</button>` : ''}<button class="btn ghost" type="submit" data-mode="draft">${e ? 'Save draft' : 'Save as draft'}</button>${cancel}`;
+}
+const RQ_ERR = { 'err:notscheduler': 'Only event schedulers can do that.', 'err:state': 'This request changed since you opened it. Refresh and try again.', 'err:note': 'Write what needs to be fixed.', 'err:missing': 'That request doesn’t exist anymore.' };
+// Typing in the scheduling form keeps ui.rq up to date; some answers redraw the form (they show or hide questions).
+function rqSet(obj, path, val){
+  const ks = path.split('.'); let o = obj;
+  ks.slice(0, -1).forEach((k, i) => { if (o[k] == null) o[k] = /^\d+$/.test(ks[i + 1]) ? [] : {}; o = o[k]; });
+  o[ks[ks.length - 1]] = val;
+}
+function rqRedraw(){
+  const box = document.getElementById('rq-box'); if (!box) return;
+  const e = ui.editEvent ? evById(ui.editEvent) : null, cat = (document.getElementById('ev-cat') || {}).value;
+  const y = window.scrollY; box.innerHTML = rqPanel(e, cat); window.scrollTo(0, y);
+  const b = document.getElementById('ev-btns'); if (b) b.innerHTML = evButtons(e, cat);
+}
+['input', 'change'].forEach(type => document.addEventListener(type, ev => {
+  const t = ev.target; if (!t || !t.dataset) return;
+  if (t.id === 'rq-cap' || t.id === 'ev-cap'){ const o = document.getElementById(t.id === 'rq-cap' ? 'ev-cap' : 'rq-cap'); if (o) o.value = t.value; }
+  if ((t.id === 'ev-start' || t.id === 'ev-end') && type === 'change') rqRedraw();
+  if (t.dataset.rqfile){
+    if (type !== 'change') return;
+    const f = t.files && t.files[0]; if (!f) return;
+    if (f.size > 10e6){ toast('Files can be up to 10 MB.'); t.value = ''; return; }
+    const rq = rqState(); rq.files[t.dataset.rqfile] = f; rq.d[t.dataset.rqfile] = { name: f.name, pending: true }; rqRedraw(); return;
+  }
+  if (!t.dataset.rq || !ui.rq || (t.type === 'radio' && !t.checked)) return;
+  const d = ui.rq.d, k = t.dataset.rq;
+  rqSet(d, k, t.value);
+  if (k === 'locType' && isExternal(t.value)) d.campus = 'off';
+  if (k === 'speakerCount') d.speakers = (d.speakers || []).slice(0, +t.value);
+  if (type === 'change' && t.dataset.rr) rqRedraw();
+}, true));
+async function saveSchedFlag(email, on){
+  if (on === (db.schedulers || []).includes(email)) return;
+  const r = on ? await sb.from('event_schedulers').insert({ email }) : await sb.from('event_schedulers').delete().eq('email', email);
+  if (r.error) toast(/event_schedulers/.test(r.error.message || '') ? 'Event schedulers aren’t set up yet. Run 52-event-scheduling.sql.' : errMsg(r.error));
+}
+
 function viewOfficer(){
   if (!can('officer')) return gate('officer');
   const counts = tabCounts('officer');
@@ -3136,6 +3454,8 @@ function viewOfficer(){
 
   else if (T === 'plan'){ body = planBody(); }
 
+  else if (T === 'scheduling'){ body = schedulingBody(); }
+
   else if (T === 'surveys'){ body = surveysBody(); }
   else if (T === 'qr'){ body = qrToolBody(); setTimeout(drawQrTool); }
 
@@ -3147,7 +3467,7 @@ function viewOfficer(){
         <label>Title<input id="ev-title" required value="${esc(e?.title)}" placeholder="e.g. DCF Valuation Workshop"></label>
         <div class="grid2">
           <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${e?.cat===k?'selected':''}>${l} · ${PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select></label>
-          <label>Date<input id="ev-date" type="date" required value="${esc(e?.date || dayOffset(7))}"></label>
+          <label>Date <span class="hint">Final date once UVU approves</span><input id="ev-date" type="date" required value="${esc(e?.date || dayOffset(7))}"></label>
         </div>
         <div class="panel stack" id="ev-branches" ${e?.cat === 'officer_meeting' ? '' : 'hidden'} style="gap:10px;padding:14px">
           <strong>Who’s expected?</strong>
@@ -3173,28 +3493,24 @@ function viewOfficer(){
         <label>Seat limit<input id="ev-cap" type="number" min="0" value="${esc(e?.cap || 0)}"><span class="hint">0 means no limit. RSVPs close when the limit is reached. Guest RSVPs count too.</span></label>
         <label id="ev-go-wrap" ${e?.cat === 'officer_meeting' || e?.cat === 'case_competition' ? 'hidden' : ''}>Guest RSVPs open <span class="hint">Optional. Give members early access: until this time (Mountain Time) only members can RSVP. Leave blank to let guests RSVP right away.</span><input id="ev-guest-opens" type="datetime-local" value="${mtLocalInput(e?.guestOpens)}"></label>
         <label class="check" id="ev-mo-wrap" ${e?.cat === 'officer_meeting' ? 'hidden' : ''}><input type="checkbox" id="ev-members-only" ${e?.membersOnly ? 'checked' : ''}> Members only <span class="hint">Everyone can see it, but only members can RSVP and check in (a reason to join).</span></label>
-        ${!e || e.draft ? (canPublish() ? `<label class="check"><input type="checkbox" id="ev-soon" ${e?.comingSoon ? 'checked' : ''}> Coming-soon page <span class="hint">While this is a draft, anyone who opens its link sees only the title and the coming-soon description below (no date or other details) instead of “event not found.” Copy the link or QR code from the Drafts list after saving.</span></label>
+        ${!e || e.draft ? (isScheduler() ? `<label class="check"><input type="checkbox" id="ev-soon" ${e?.comingSoon ? 'checked' : ''}> Coming-soon page <span class="hint">While this is a draft, anyone who opens its link sees only the title and the coming-soon description below (no date or other details) instead of “event not found.” Copy the link or QR code from the Drafts list after saving.</span></label>
           <label id="ev-soon-wrap" ${e?.comingSoon ? '' : 'hidden'}>Coming-soon description <span class="hint">Optional. A short teaser, like “Lunch with a Goldman Sachs VP. Seats are limited; RSVPs open soon.”</span><textarea id="ev-soon-desc" rows="3" maxlength="1000">${esc(e?.soonDesc || '')}</textarea></label>`
-          : e?.comingSoon ? '<span class="hint">This draft has a coming-soon page: its link shows the title and “coming soon” until it’s published. Only people who can publish events can change that.</span>' : '') : ''}
+          : e?.comingSoon ? '<span class="hint">This draft has a coming-soon page: its link shows the title and “coming soon” until it’s published. Only event schedulers can change that.</span>' : '') : ''}
         <label class="check" id="ev-qa-wrap" ${e?.cat === 'guest_speaker' ? '' : 'hidden'}><input type="checkbox" id="ev-qa" ${e?.qaEnabled ? 'checked' : ''}> Add Q&A <span class="hint">People can submit questions for the speaker ahead of time. Only officers see them.</span></label>
         <label>Check-in code <span class="hint">(optional)</span>
           <span class="row" style="gap:8px;flex-wrap:nowrap"><input id="ev-code" maxlength="8" autocomplete="off" value="${esc(e?.code || '')}" placeholder="e.g. BULL" style="font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;flex:1;min-width:0"><button type="button" class="btn ghost small" data-act="ev-gen-code">Generate</button></span>
           <span class="hint">Members type this at the event to check in. It only works on the event’s date. Leave blank to make one on the day.</span></label>
         <label>Description <span class="hint">(required to publish)</span><textarea id="ev-desc" placeholder="What members will do or learn, who it’s for, and anything to bring">${esc(e?.desc)}</textarea></label>
+        <div id="rq-box">${rqPanel(e, e?.cat || Object.keys(CATS)[0])}</div>
         <div class="err" id="ev-err"></div>
-        <div class="row">
-          ${!e || e.draft
-            ? `<button class="btn" type="submit" data-mode="publish">${canPublish() ? 'Publish to calendar' : 'Submit for approval'}</button><button class="btn ghost" type="submit" data-mode="draft">${e ? 'Save draft' : 'Save as draft'}</button>`
-            : `<button class="btn" type="submit" data-mode="save">Save changes</button>`}
-          ${e ? '<button class="btn ghost" type="button" data-act="cancel-edit">Cancel</button>' : ''}
-        </div>
+        <div class="row" id="ev-btns">${evButtons(e, e?.cat || Object.keys(CATS)[0])}</div>
         <span class="hint">Drafts are only visible to officers. Members see an event once it’s published.</span>
       </form>
       <section class="stack">
         ${(() => { const drafts = db.events.filter(x => x.draft).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
           return drafts.length ? `<div class="section-head"><h3>Drafts</h3><span class="muted">${drafts.length}</span></div>
-          <div>${drafts.map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)} <span class="tag">Draft</span>${ev.comingSoon ? ' <span class="tag soon">Coming soon</span>' : ''}${pendingFor('event', ev.id).length ? ' <span class="tag warn">Waiting for approval</span>' : ''}</div><div class="ev-sub">${fmtDay(ev.date)} · ${esc(catName(ev.cat))}</div></div>
-            <div class="row" style="gap:6px"><button class="btn small" data-act="publish-event" data-id="${ev.id}">${canPublish() ? 'Publish' : 'Submit for approval'}</button><button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button><button class="btn ghost small" data-act="copy-link" data-id="${ev.id}">Copy link</button><button class="btn ghost small" data-act="qr" data-id="${ev.id}" data-kind="page">QR code</button>${canPublish() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${ev.id}">${ev.comingSoon ? 'Turn off coming soon' : 'Turn on coming soon'}</button>` : ''}${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('')}
+          <div>${drafts.map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)} <span class="tag">Draft</span>${needsSched(ev.cat) ? (rqTag(ev.id) || ' <span class="tag">Not sent to scheduler</span>') : ''}${ev.comingSoon ? ' <span class="tag soon">Coming soon</span>' : ''}${pendingFor('event', ev.id).length ? ' <span class="tag warn">Waiting for approval</span>' : ''}</div><div class="ev-sub">${fmtDay(ev.date)} · ${esc(catName(ev.cat))}</div></div>
+            <div class="row" style="gap:6px">${!needsSched(ev.cat) ? `<button class="btn small" data-act="publish-event" data-id="${ev.id}">${canPublish() ? 'Publish' : 'Submit for approval'}</button>` : (rqOf(ev.id) || {}).status === 'approved' && isScheduler() ? `<button class="btn small" data-act="publish-event" data-id="${ev.id}">Publish</button>` : ''}<button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button><button class="btn ghost small" data-act="copy-link" data-id="${ev.id}">Copy link</button><button class="btn ghost small" data-act="qr" data-id="${ev.id}" data-kind="page">QR code</button>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${ev.id}">${ev.comingSoon ? 'Turn off coming soon' : 'Turn on coming soon'}</button>` : ''}${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('')}
           <span class="hint">A draft’s link and QR code are already final: they start working when it’s published${drafts.some(x => x.comingSoon) ? ' (drafts with a coming-soon page show that until then)' : ''}.</span></div>` : ''; })()}
         <div class="section-head"><h3>Published events</h3><span class="muted">${sortedEvents().length}</span></div>
         <div>${sortedEvents().reverse().map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)}</div><div class="ev-sub">${fmtDay(ev.date)} · ${going(ev.id).length} RSVP${isPast(ev)?' · '+attended(ev.id).length+' attended':''}</div></div>
@@ -3543,6 +3859,8 @@ function viewAdmin(){
           <input id="of-ctitle" maxlength="60" value="${esc(p.customTitle || '')}" placeholder="Leave blank to use: ${esc(buildTitle(p.tier || 'officer', p.branch || ''))}"></label>
         <label class="check"><input type="checkbox" id="of-publish" ${p.canPublish ? 'checked' : ''}> Can publish without approval</label>
         <span class="hint" style="margin-top:-8px">Presidents, vice presidents, faculty advisors, and admins always can. Other officers’ changes that members can see go to the Approvals inbox unless this is checked.</span>
+        <label class="check"><input type="checkbox" id="of-sched" ${ed && (db.schedulers || []).includes(ed) ? 'checked' : ''}> Event scheduler</label>
+        <span class="hint" style="margin-top:-8px">Gets every event’s scheduling request, submits it to UVU, and publishes events once UVU approves them. Only officers can see who’s a scheduler.</span>
         <fieldset class="pwset">
           <legend>Sign-in setup</legend>
           <select id="of-setup" aria-label="Sign-in setup">${setupOptions(acct ? 'skip' : 'password', !!acct)}</select>
@@ -3655,8 +3973,8 @@ function eventInner(id, page){
       <span class="hint">${isToday(e) ? 'Check-in is open today.' : 'Members can check in on the day of the event.'}</span></div>`;
   }
   const soonBox = !(e.draft && can('officer')) ? '' : e.comingSoon
-    ? `<div class="stack" style="gap:8px"><div class="row" style="gap:8px;align-items:center"><strong>Coming-soon page is on.</strong>${canPublish() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${id}">Turn off</button>` : ''}</div><span class="hint">Anyone who opens this link before it’s published sees only this:</span>${soonBlock(e.title, e.soonDesc)}</div>`
-    : `<div class="row" style="gap:8px;align-items:center"><span class="hint">Coming-soon page is off: people who open this link before it’s published see “Event not found.”</span>${canPublish() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${id}">Turn on coming soon</button>` : ''}</div>`;
+    ? `<div class="stack" style="gap:8px"><div class="row" style="gap:8px;align-items:center"><strong>Coming-soon page is on.</strong>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${id}">Turn off</button>` : ''}</div><span class="hint">Anyone who opens this link before it’s published sees only this:</span>${soonBlock(e.title, e.soonDesc)}</div>`
+    : `<div class="row" style="gap:8px;align-items:center"><span class="hint">Coming-soon page is off: people who open this link before it’s published see “Event not found.”</span>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${id}">Turn on coming soon</button>` : ''}</div>`;
   const share = e.draft && !can('officer') ? '' : `${e.draft ? '<span class="hint">This link starts working when the event is published.</span>' : ''}<div class="row" style="gap:6px"><button class="btn ghost small" data-act="copy-link" data-id="${id}">Copy link</button>${can('officer') ? `<button class="btn ghost small" data-act="qr" data-id="${id}" data-kind="page">QR code</button>` : ''}${page ? '' : `<a class="btn ghost small" href="#event/${id}">Open event page</a>`}</div>`;
   return `<div><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${PTS[e.cat] ? PTS[e.cat] + ' pts' : 'officers only'}${e.draft ? ' · <span class="tag">Draft</span>' : ''}${e.membersOnly ? ' · <span class="tag">Members only</span>' : ''}</div></div>
     <h2>${esc(e.title)}</h2>
@@ -4565,7 +4883,8 @@ function route(){ const r = location.hash.slice(1).split('/')[0]; return VIEWS[r
 const TAB_KEY = { officer: ['officerTab', OFFICER_TABS], admin: ['adminTab', ADMIN_TABS] };
 function syncTabHash(r){
   const tk = TAB_KEY[r]; if (!tk || /access_token|error_description/.test(location.hash)) return;
-  const [key, tabs] = tk, sub = location.hash.slice(1).split('/')[1];
+  const [key, tabs] = tk, sub = location.hash.slice(1).split('/')[1], third = location.hash.slice(1).split('/')[2];
+  if (r === 'officer' && sub === 'scheduling' && third && location.hash !== ui._hash) ui.schedOpen = third;   // a link to one request
   // The address changed (refresh, back button, pasted link): it decides the tab.
   if (location.hash !== ui._hash && sub && tabs.some(([k]) => k === sub)) ui[key] = sub;
   const want = '#' + r + '/' + ui[key];
@@ -4589,6 +4908,7 @@ function syncCaseBox(){
   const mo = document.getElementById('ev-mo-wrap'), qa = document.getElementById('ev-qa-wrap');
   if (mo) mo.hidden = c.value === 'officer_meeting'; if (qa) qa.hidden = c.value !== 'guest_speaker';
   const go = document.getElementById('ev-go-wrap'); if (go) go.hidden = c.value === 'officer_meeting' || c.value === 'case_competition';
+  if (c.dataset.was !== c.value){ c.dataset.was = c.value; rqRedraw(); }
 }
 ['input', 'change', 'click', 'keyup'].forEach(t => document.addEventListener(t, ev => { if (ev.target && ev.target.id === 'ev-cat') syncCaseBox(); }, true));
 document.addEventListener('keydown', e => {
@@ -4805,7 +5125,19 @@ document.addEventListener('click', async ev => {
     case 'otab': ui.officerTab = t.dataset.tab; history.pushState(null, '', ui._hash = '#officer/' + ui.officerTab); render(); break;
     case 'atab': ui.adminTab = t.dataset.tab; history.pushState(null, '', ui._hash = '#admin/' + ui.adminTab); render(); break;
     case 'edit-event': closeModal(); ui.officerTab = 'events'; ui.editEvent = id; if (route() !== 'officer') location.hash = 'officer'; else render(); window.scrollTo(0,0); break;
-    case 'cancel-edit': ui.editEvent = null; render(); break;
+    case 'cancel-edit': ui.editEvent = null; ui.rq = null; render(); break;
+    case 'rq-day': { const d = rqState().d, k = t.dataset.k; d[k] = d[k].includes(id) ? d[k].filter(x => x !== id) : [...d[k], id];
+      if (k === 'dates' && d.dates.length){ const de = document.getElementById('ev-date'); if (de) de.value = [...d.dates].sort()[0]; } rqRedraw(); break; }
+    case 'rq-mon': { ui.rqMonth = ui.rqMonth || {}; const k = t.dataset.k, d = rqState().d, cur = ui.rqMonth[k] || ([...d[k]].sort()[0] || todayIso()).slice(0, 7);
+      const [y, m] = cur.split('-').map(Number), n = new Date(y, m - 1 + (+id), 1); ui.rqMonth[k] = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0'); rqRedraw(); break; }
+    case 'rq-file-clear': { const rq = rqState(); delete rq.files[id]; rq.d[id] = null; rqRedraw(); break; }
+    case 'rq-open': ui.schedOpen = id || null; render(); window.scrollTo(0, 0); break;
+    case 'rq-open-file': { const w = window.open('', '_blank'); const { data, error } = await sb.storage.from('event-files').createSignedUrl(id, 300);
+      if (error){ if (w) w.close(); toast(errMsg(error)); } else if (w) w.location = data.signedUrl; else location.href = data.signedUrl; break; }
+    case 'rq-status': { const s = t.dataset.s, e = evById(id) || {};
+      await act(async () => { const r = await sb.rpc('scheduler_update', { p_event: id, p_status: s, p_note: '' }); if (r.error) throw r.error;
+        if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
+        await logChange((s === 'submitted' ? 'Submitted to UVU: “' : 'Marked approved by UVU: “') + e.title + '”'); }, s === 'submitted' ? 'Marked submitted to UVU. The officer will be notified.' : 'Marked approved. Finalize the details and publish it.'); break; }
     case 'tpl-open': { const cat = (evById(ui.planEv) || {}).cat || 'guest_speaker'; ui.tplDraft = { cat, rows: planTemplate(cat).map(r => [...r]) }; render(); window.scrollTo(0, 0); break; }
     case 'tpl-close': ui.tplDraft = null; render(); break;
     case 'tpl-add': readTplDraft(); ui.tplDraft.rows.push(['', -7]); render(); { const ins = document.querySelectorAll('[data-tpl$=":title"]'); ins[ins.length - 1]?.focus(); } break;
@@ -4894,6 +5226,10 @@ document.addEventListener('click', async ev => {
     case 'publish-event': case 'unpublish-event': {
       const e = evById(id), pub = t.dataset.act === 'publish-event';
       if (pub && !(e.desc || '').trim()){ ui.editEvent = id; render(); window.scrollTo(0, 0); toast('Add a description first. It’s required to publish an event.'); break; }
+      if (pub && needsSched(e.cat)){
+        if (!((rqOf(id) || {}).status === 'approved' && isScheduler())){ toast('Only an event scheduler can publish this, once UVU approves it.'); break; }
+        await act(async () => { must(await sb.from('events').update({ draft: false }).eq('id', id)); await logChange('Published “' + e.title + '”'); }, 'Published to the calendar'); break;
+      }
       await doOrPropose('event', pub ? 'publish' : 'unpublish', id, {}, (pub ? 'Publish “' : 'Move back to drafts: “') + e.title + '”',
         pub ? 'Published to the calendar' : 'Moved back to drafts. Members can’t see it now.'); break; }
     case 'del-event': { const e = evById(id); if (ui.editEvent === id) ui.editEvent = null;
@@ -5497,6 +5833,13 @@ async function handleSubmit(f, v, err){
     await act(async () => { must(await sb.from('attendance').insert({ event_id: id, email: who })); await logChange('Marked ' + userName(who) + ' present at “' + evById(id).title + '”'); }, userName(who) + ' marked present');
   }
 
+  if (f.id === 'f-rq-back'){
+    const note = v('rq-back-note'), id = f.dataset.id; if (!note) return err('rq-back-err', 'Write what needs to be fixed.');
+    return act(async () => { const r = await sb.rpc('scheduler_update', { p_event: id, p_status: 'returned', p_note: note }); if (r.error) throw r.error;
+      if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
+      await logChange('Sent back the scheduling request for “' + (evById(id) || {}).title + '”'); }, 'Sent back. The officer will be notified.');
+  }
+
   if (f.id === 'f-event'){
     const e = { title: v('ev-title'), cat: v('ev-cat'), date: v('ev-date'), start_time: v('ev-start'), end_time: v('ev-end'), loc: v('ev-loc'), cap: Math.max(0, parseInt(v('ev-cap')) || 0), descr: v('ev-desc') };
     if (!e.title || !e.date || !e.start_time || !e.end_time || !e.loc) return err('ev-err', 'Fill in the title, date, times, and location.');
@@ -5515,9 +5858,32 @@ async function handleSubmit(f, v, err){
     if (code && !/^[A-Z0-9]{3,8}$/.test(code)) return err('ev-err', 'Check-in codes use 3–8 letters or numbers.');
     const editing = ui.editEvent, wasDraft = editing && (evById(editing) || {}).draft;
     // draft = save as a draft, publish = put on the calendar, save = keep a published event published
-    const mode = (f._submitter && f._submitter.dataset.mode) || (wasDraft ? 'draft' : 'publish');
+    const sched = needsSched(e.cat) && (!editing || wasDraft);
+    const mode = (f._submitter && f._submitter.dataset.mode) || (wasDraft || sched ? 'draft' : 'publish');
+    // Events that need scheduling: save as a draft with the scheduling request (sent if they chose Send to scheduler).
+    if (sched && mode !== 'publish'){
+      const rq = rqState();
+      if (mode === 'send'){
+        const probs = rqProblems(rq.d, e.cat); if (!e.descr) probs.unshift('Add a description for the website.');
+        if (probs.length) return err('ev-err', 'Before sending it to the scheduler: ' + probs.join(' '));
+      }
+      e.draft = true;
+      const locked = rqLocked(editing);
+      await act(async () => {
+        let evId = editing;
+        if (editing) must(await sb.from('events').update(e).eq('id', editing));
+        else evId = must(await sb.from('events').insert(e).select('id').single()).id;
+        if (code) must(await sb.from('checkin_codes').upsert({ event_id: evId, code }));
+        if (!locked) await rqSave(evId, mode === 'send');
+        await logChange((mode === 'send' ? 'Sent to the scheduler: “' : editing ? 'Edited draft “' : 'Saved draft “') + e.title + '”');
+        ui.editEvent = null; ui.rq = null;
+        if (mode === 'send'){ ui.officerTab = 'scheduling'; ui.schedOpen = evId; }
+      }, mode === 'send' ? 'Sent to the scheduler. You’ll be notified when they act on it.' : 'Saved as a draft. Only officers can see it.');
+      return;
+    }
+    if (sched && !((rqOf(editing) || {}).status === 'approved' && isScheduler())) return err('ev-err', 'Only an event scheduler can publish this, once UVU approves it.');
     if (mode !== 'draft' && !e.descr) return err('ev-err', 'Add a description before ' + (canPublish() ? 'publishing.' : 'submitting it for approval.') + ' Drafts can be saved without one.');
-    if (!canPublish() && mode !== 'draft'){
+    if (!(sched ? isScheduler() : canPublish()) && mode !== 'draft'){
       // Not a publisher: edits to a published event go to the approval inbox. New events and drafts are saved as drafts, then sent for approval to publish.
       if (editing && !wasDraft){
         if (await doOrPropose('event', 'edit', editing, { row: e, code }, 'Edit event “' + e.title + '”', 'Event updated')) { ui.editEvent = null; render(); }
@@ -5766,7 +6132,7 @@ async function handleSubmit(f, v, err){
 
   if (f.id === 'f-officer'){
     const email = v('of-email').toLowerCase(), level = v('of-level'), contact = v('of-contact'), linkedin = v('of-linkedin');
-    const first = v('of-first'), last = v('of-last'), mode = v('of-setup'), canPub = !!(document.getElementById('of-publish') || {}).checked;
+    const first = v('of-first'), last = v('of-last'), mode = v('of-setup'), canPub = !!(document.getElementById('of-publish') || {}).checked, isSched = !!(document.getElementById('of-sched') || {}).checked;
     let pw = (mode === 'password' || mode === 'manual') ? v('of-pw') : '';
     if ((mode === 'password' || mode === 'manual') && !pw){ pw = tempPw(); document.getElementById('of-pw').value = pw; }
     const hours = v('of-hours'), bio = v('of-bio'), tier = v('of-tier'), branch = v('of-branch'), title = (document.getElementById('of-ctitle') || {}).value?.trim() || buildTitle(tier, branch);   // blank = the automatic title
@@ -5777,6 +6143,7 @@ async function handleSubmit(f, v, err){
     if (linkedin && !/^https?:\/\//i.test(linkedin)) return err('of-err', 'LinkedIn link must start with https://');
 
     if (level === 'member'){
+      await saveSchedFlag(email, false);
       must(await sb.from('access_list').delete().eq('email', email));
       await sb.from('officer_profiles').delete().eq('email', email);
       await logChange('Changed ' + email + ' back to a member');
@@ -5794,6 +6161,7 @@ async function handleSubmit(f, v, err){
       }
       if (!['president', 'officer'].includes(tier)) await sb.from('officer_profiles').update({ tier }).eq('email', email);
       await sb.from('officer_profiles').update({ can_publish: canPub }).eq('email', email);
+      await saveSchedFlag(email, isSched);
       ui.editOfficer = null; await load(); render();
       if (mode === 'manual') showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3>Share this temporary password</h3></div>
         <p>${esc(first)} can sign in with <strong>${esc(email)}</strong> and this temporary password, then choose their own:</p>
@@ -5806,6 +6174,7 @@ async function handleSubmit(f, v, err){
     must(await sb.from('access_list').upsert({ email, role: level }));
     must(await sb.from('officer_profiles').upsert({ email, name: first + ' ' + last, title, tier, branch, contact, hours, linkedin, bio }));
     await sb.from('officer_profiles').update({ can_publish: canPub }).eq('email', email);   // ignored until 27-approvals.sql is run
+    await saveSchedFlag(email, isSched);
     if (db.users.some(u => u.email === email)) await sb.from('members').update({ first, last }).eq('email', email);
     await logChange(before === level ? 'Edited officer profile for ' + email : 'Gave ' + email + ' ' + level + ' access');
     ui.editOfficer = null; await load(); render(); toast('Saved ' + email + ' as ' + level);
