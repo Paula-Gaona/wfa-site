@@ -5881,7 +5881,11 @@ async function handleSubmit(f, v, err){
       const rq = rqState();
       if (mode === 'send'){
         const probs = rqProblems(rq.d, e.cat); if (!e.descr) probs.unshift('Add the event description (it also goes on UVU’s form).');
-        if (probs.length) return err('ev-err', 'Before sending it to the scheduler: ' + probs.join(' '));
+        if (probs.length){
+          const box = document.getElementById('ev-err');
+          box.innerHTML = `<div class="rq-warn" style="color:inherit;font-weight:400"><strong>Almost there. Before it can go to the scheduler:</strong><ul style="margin:6px 0 0;padding-left:1.2rem">${probs.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
+          box.scrollIntoView({ block: 'center', behavior: 'smooth' }); toast(probs.length === 1 ? '1 thing is missing' : probs.length + ' things are missing'); return;
+        }
       }
       e.draft = true;
       const locked = rqLocked(editing);
