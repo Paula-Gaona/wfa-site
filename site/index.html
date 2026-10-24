@@ -4876,7 +4876,7 @@ function eventOfficerExtras(e){
     <span class="hint">Guests who join with the same email get their RSVP moved to their account.</span></div>`;
   if (e.qaEnabled){
     const sorted = qs.slice().sort((a, b) => (b.starred - a.starred) || String(a.created_at).localeCompare(String(b.created_at)));
-    h += `<div class="panel stack" style="gap:8px;padding:12px 14px"><div class="row" style="justify-content:space-between;align-items:center"><strong>Questions for the speaker (${qs.length})</strong>
+    h += `<div class="panel stack" style="gap:8px;padding:12px 14px"><div class="row" style="justify-content:space-between;align-items:center"><strong>Questions for the ${(e.speakers || []).length > 1 ? 'guests' : 'speaker'} (${qs.length})</strong>
         ${qs.length ? `<button class="btn ghost small" data-act="copy-text" data-text="${esc(sorted.map((q, i) => (i + 1) + '. ' + q.question + ((q.speakers || []).length ? ' (for ' + q.speakers.join(', ') + ')' : '') + (q.starred ? ' ★' : '')).join('\n'))}">Copy all</button>` : ''}</div>
       ${sorted.map(q => `<div class="row" style="gap:8px;align-items:start;justify-content:space-between"><div><div>${esc(q.question)}</div><div class="hint">${esc(q.name || 'Someone')} · ${fmtStamp(q.created_at)}${(q.speakers || []).length ? ' · For ' + esc(q.speakers.join(', ')) : (e.speakers || []).length > 1 ? ' · For all of them' : ''}</div></div>
         <span class="row" style="gap:6px"><button class="btn ghost small" data-act="qa-star" data-id="${q.id}" aria-pressed="${q.starred}" title="Star to ask">${q.starred ? '★ Starred' : '☆ Star'}</button>${delBtn('qd-' + q.id, 'Delete', 'qa-del', q.id)}</span></div>`).join('') || '<div class="empty">No questions yet.</div>'}
