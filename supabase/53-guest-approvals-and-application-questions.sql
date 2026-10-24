@@ -7,8 +7,8 @@
 --        first. After 36 business hours, other vice presidents can approve too. It only moves on automatically
 --        (after 48 business hours) when a president sent it. Sending it back returns it to whoever edits it: the
 --        branch leadership if there was a branch review, otherwise the sender.
---      * a scheduler submits it to UVU and marks it approved. The approval window is the semester of the guest's
---        likely date (Spring Jan 1-Apr 30, Summer May 1-Jul 31, Fall Aug 1-Dec 31); the scheduler can narrow it.
+--      * a scheduler submits it to UVU and marks it approved, checking each semester UVU approved (Spring Jan 1-Apr 30,
+--        Summer May 1-Jul 31, Fall Aug 1-Dec 31) and narrowing the dates within each if UVU gave shorter windows.
 --    Approved guests can be picked on an event's scheduling request. Nothing here goes on the calendar.
 -- 2. Events: when presidents send back an officer's event in their review, it goes to the branch leadership to edit
 --    (not the officer). A president's comment is marked "just context" or "more changes"; with "more changes", making
@@ -74,7 +74,7 @@ begin
     update event_requests set note = left(trim(p_note), 4000), returned_from = 'branch' where event_id = p_event;
     perform rq_move(p_event, 'returned', me, trim(p_note)); return 'ok';
   end if;
-  update event_requests set branch_by = me where event_id = p_event;
+  update event_requests set branch_by = me, returned_from = null where event_id = p_event;
   select e.cat into cat from events e where e.id = p_event;
   if trim(coalesce(p_note, '')) <> '' and big_event(cat) then
     update event_requests set history = history || jsonb_build_array(jsonb_build_object('at', now(), 'by', me, 'status', 'branch_ok', 'note', trim(p_note)))
@@ -199,6 +199,7 @@ create table if not exists public.guest_requests (
   created_at timestamptz not null default now()
 );
 alter table public.guest_requests add column if not exists branch_by text;
+alter table public.guest_requests add column if not exists windows jsonb not null default '[]';   -- [{s, e}], one per approved semester
 alter table public.guest_requests enable row level security;
 drop policy if exists "officers see guest requests" on public.guest_requests;
 create policy "officers see guest requests" on public.guest_requests for select using (public.is_officer());
@@ -320,25 +321,37 @@ language sql stable as $$
   select coalesce((select min(x)::date from jsonb_array_elements_text(coalesce(g.form #> '{req,dates}', '[]')) x), current_date);
 $$;
 
--- Schedulers: submitted to UVU, approved by UVU, sent back, window narrowed, or removed. The approval window is
--- always inside the semester of the guest's likely date; leaving it blank uses the whole semester.
-create or replace function public.guest_scheduler_update(p_id uuid, p_status text, p_note text default '', p_start date default null, p_end date default null) returns text
+-- Schedulers: submitted to UVU, approved by UVU, sent back, windows changed, or removed. p_windows lists the
+-- approved semesters as [{s, e}]; each must sit inside one semester. Leaving it out uses the likely date's semester.
+drop function if exists public.guest_scheduler_update(uuid, text, text, date, date);
+create or replace function public.guest_scheduler_update(p_id uuid, p_status text, p_note text default '', p_windows jsonb default null) returns text
 language plpgsql security definer set search_path = public as $$
-declare me text := public.jwt_email(); g guest_requests; sem record;
+declare me text := public.jwt_email(); g guest_requests; sem record; w jsonb; ws jsonb := '[]'; s date; e date;
 begin
   if not public.is_scheduler() then return 'err:notscheduler'; end if;
   select * into g from guest_requests where id = p_id;
   if g.id is null then return 'err:missing'; end if;
-  select * into sem from semester_bounds(gq_likely(g));
-  p_start := greatest(coalesce(p_start, sem.s), sem.s);
-  p_end := least(coalesce(p_end, sem.e), sem.e);
-  if p_end < p_start then return 'err:window'; end if;
+  if p_status in ('approved', 'window') then
+    if p_windows is null or jsonb_array_length(p_windows) = 0 then
+      select * into sem from semester_bounds(gq_likely(g));
+      ws := jsonb_build_array(jsonb_build_object('s', sem.s, 'e', sem.e));
+    else
+      for w in select x from jsonb_array_elements(p_windows) x loop
+        s := (w->>'s')::date; e := (w->>'e')::date;
+        select * into sem from semester_bounds(s);
+        if e < s or e > sem.e then return 'err:window'; end if;
+        ws := ws || jsonb_build_array(jsonb_build_object('s', s, 'e', e));
+      end loop;
+    end if;
+  end if;
   if p_status = 'submitted' and g.status = 'sent' then perform gq_move(p_id, 'submitted', me);
   elsif p_status = 'approved' and g.status = 'submitted' then
-    update guest_requests set window_start = p_start, window_end = p_end where id = p_id;
+    update guest_requests set windows = ws, window_start = (select min((x->>'s')::date) from jsonb_array_elements(ws) x),
+      window_end = (select max((x->>'e')::date) from jsonb_array_elements(ws) x) where id = p_id;
     perform gq_move(p_id, 'approved', me);
   elsif p_status = 'window' and g.status = 'approved' then
-    update guest_requests set window_start = p_start, window_end = p_end where id = p_id;
+    update guest_requests set windows = ws, window_start = (select min((x->>'s')::date) from jsonb_array_elements(ws) x),
+      window_end = (select max((x->>'e')::date) from jsonb_array_elements(ws) x) where id = p_id;
   elsif p_status = 'removed' and g.status = 'approved' then perform gq_move(p_id, 'removed', me, coalesce(p_note, ''));
   elsif p_status = 'returned' and g.status in ('sent', 'submitted') then
     if trim(coalesce(p_note, '')) = '' then return 'err:note'; end if;
@@ -347,7 +360,7 @@ begin
   else return 'err:state'; end if;
   return 'ok';
 end $$;
-grant execute on function public.guest_scheduler_update(uuid, text, text, date, date) to authenticated;
+grant execute on function public.guest_scheduler_update(uuid, text, text, jsonb) to authenticated;
 
 -- The 48-business-hour timer covers guest reviews too, but only ones a president sent (the automatic-emails job calls this).
 create or replace function public.request_timeouts() returns int

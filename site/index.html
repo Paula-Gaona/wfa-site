@@ -241,6 +241,7 @@ main{padding-block:36px 64px}
 .desc-preview{border:1px dashed var(--line);border-radius:var(--radius);padding:10px 12px;background:var(--surface,transparent)}
 .speaker-card{border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}
 .rsvp-times{border-left:4px solid var(--gold,#B8923A);padding:8px 12px;background:var(--tint,transparent);border-radius:2px}
+.sem-row{border-top:1px solid var(--line);padding-top:8px;display:flex;flex-direction:column;gap:6px}
 .role-list{margin:0;padding-left:1.2rem;display:flex;flex-direction:column;gap:6px}
 .seg-tabs{display:flex;flex-wrap:wrap;gap:6px}
 .policy-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:12px}
@@ -739,7 +740,7 @@ async function load(){
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
-    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
+    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -3198,7 +3199,8 @@ function officerProfileSection(){
 // back with notes; once UVU approves, the scheduler finalizes the details and publishes it (see 52-event-scheduling.sql).
 const needsSched = cat => cat !== 'officer_meeting';
 function isScheduler(){ return isStaff() && (db.schedulers || []).includes(session); }
-const RQ_STATUS = { draft: ['Not sent yet', ''], branch: ['Waiting for the branch president', 'warn'], review: ['Presidents’ review', 'warn'], sent: ['With the scheduler', 'warn'],
+const rqFixing = r => !!r && r.status === 'branch' && r.returned_from === 'review';   // presidents sent it back to the branch leadership
+const RQ_STATUS = { draft: ['Not sent yet', ''], branch: ['Waiting for the branch president', 'warn'], fixing: ['Changes requested by the presidents', 'warn'], review: ['Presidents’ review', 'warn'], sent: ['With the scheduler', 'warn'],
   returned: ['Sent back: needs changes', 'warn'], submitted: ['Submitted to UVU', 'ok'], approved: ['Approved by UVU: being finalized', 'ok'], signoff: ['Presidents’ sign-off', 'warn'],
   published: ['Published', 'ok'], vote: ['Approved', 'ok'], objection: ['Objected', 'warn'], branch_ok: ['Approved by branch leadership', 'ok'] };
 // Bigger events get every president's review before they go to UVU.
@@ -3249,7 +3251,7 @@ const rqDeadline = r => fmtMtStamp(businessAdd(Date.parse(r.status_at), 48));
 // A scheduler whose own event goes straight to the scheduler step handles it themselves.
 const rqSendLabel = cat => needsBranchReview(session) ? 'Send to your branch president or VP' : BIG_CATS.includes(cat) ? 'Send to the presidents' : isScheduler() ? 'Continue to scheduling' : 'Send to the scheduler';
 const rqOf = id => (db.requests || {})[id] || null;
-const rqTag = id => { const r = rqOf(id); if (!r) return ''; const [l, c] = RQ_STATUS[r.status] || ['', '']; return ` <span class="tag ${c}">${l}</span>`; };
+const rqTag = id => { const r = rqOf(id); if (!r) return ''; const [l, c] = RQ_STATUS[rqFixing(r) ? 'fixing' : r.status] || ['', '']; return ` <span class="tag ${c}">${l}</span>`; };
 const RQ_LOCATIONS = ['Auditorium', 'Ballroom', 'Event room', 'Classroom', 'Conference room', 'Bloomberg Lab', 'Computer lab', 'Table location (booth or hallway table)', 'Outdoor space (plaza or lawn)', 'Gym or fieldhouse', 'External location (off campus)'];
 const isExternal = loc => /^External/.test(loc || '');
 // UVU's building directory (Orem campus map). Keller first (the Woodbury default), then Any, then the rest.
@@ -3405,8 +3407,8 @@ function rqPanel(e, cat, opts = {}){
     const notice = rqShortNotice(r.form, cat);
     return `<div class="panel stack rq-panel" style="gap:12px">${head}
       <p class="hint" style="margin:0">${{ branch: 'Waiting for your branch president or vice president. They can edit it before approving it, or send it back to you.', review: `Every president is reviewing it before it goes to UVU. If nobody requests changes, it moves on ${rqDeadline(r)}.`,
-        sent: 'A scheduler has this request. You can still change the website details above, but the request is locked unless it’s sent back.', submitted: 'The scheduler submitted this to UVU. You’ll be notified when it’s approved.',
-        approved: 'UVU approved this event. A scheduler is setting the final details, then the presidents sign off.', signoff: rqSignoffText(r), published: 'Published.' }[st] || ''}</p>
+        fixing: 'The presidents asked for changes, and your branch leadership is making them. You’ll be notified as it moves along.', sent: 'A scheduler has this request. You can still change the website details above, but the request is locked unless it’s sent back.', submitted: 'The scheduler submitted this to UVU. You’ll be notified when it’s approved.',
+        approved: 'UVU approved this event. A scheduler is setting the final details, then the presidents sign off.', signoff: rqSignoffText(r), published: 'Published.' }[rqFixing(r) ? 'fixing' : st] || ''}</p>
       ${notice ? `<div class="rq-warn">${notice}</div>` : ''}${rqLegacy(r) ? `<p class="hint" style="margin:0">${LEGACY_NOTE}</p>` : rqSummary(e, r)}</div>`;
   }
   const d = rqState().d, start = d.start || '18:00', capNow = (document.getElementById('ev-cap') || {}).value ?? ((e && e.cap) || 0);
@@ -3452,7 +3454,7 @@ function rqPanel(e, cat, opts = {}){
       ${rqAddr('sp', d.sp, 'Organization street address')}</div>` : ''}
     ${rqYN('food', 'Will the event have food, snacks, or beverages?', d)}${help('food')}
     ${rqYN('tablecloths', 'Will the event need tablecloths?', d)}${help('tablecloths')}
-    ${d.tablecloths === 'yes' ? `<label>What color tablecloths?<input data-rq="clothColor" list="rq-colors" placeholder="e.g. Black" value="${esc(d.clothColor || '')}">${help('clothColor')}</label><datalist id="rq-colors">${['Black', 'White', 'Green (UVU)', 'Gold', 'Navy', 'Gray'].map(c => `<option value="${c}">`).join('')}</datalist>` : ''}
+    ${d.tablecloths === 'yes' ? `<label>What color tablecloths?<select data-rq="clothColor"><option value="">Choose one…</option>${['Green', 'White', 'Black'].map(c => `<option ${d.clothColor === c ? 'selected' : ''}>${c}</option>`).join('')}</select>${help('clothColor')}</label>` : ''}
     ${est ? '' : rqYN('speaker', 'Will there be any external guests?', d, 'Guest speakers, judges, recruiters, panelists, or anyone else from outside UVU.')}
     ${!est && d.speaker === 'yes' ? `<div class="panel stack" style="gap:10px;padding:12px">
       <label style="max-width:14rem">How many external guests?<select data-rq="speakerCount" data-rr="1">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => `<option ${n === i ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
@@ -3726,7 +3728,13 @@ function rqDetail(e, r){
       ${who.map(p => { const yes = (r.votes || {})[p], no = (r.objections || {})[p]; return `<div>${yes ? '✓' : no ? '✗' : '…'} ${esc(userName(p))} <span class="hint">${yes ? 'approved' : no ? 'objected' : 'hasn’t responded'}</span></div>`; }).join('')}
       <span class="hint">${small ? `Any one of them can approve it${rqPresSched(r) ? '' : rqEscalated(r) ? ' (vice presidents were added after 36 business hours)' : '; vice presidents are added if nobody responds within 36 business hours'}. ` : ''}${rqAuto(r) ? `If nobody requests changes, it ${st === 'review' ? 'goes to the scheduler' : 'publishes'} automatically ${rqDeadline(r)}.` : `It isn’t published until someone approves it. Waiting since ${fmtMtStamp(Date.parse(r.status_at))}.`}</span></div>` : '';
   let actions = '';
-  if (st === 'branch' && branchReviewers(r.branch).includes(session))
+  if (rqFixing(r) && branchReviewers(r.branch).includes(session))
+    actions = `<div class="rq-warn"><strong>The presidents asked for changes.</strong> Make them on the event (the suggestions sit beside the form, with “Implement all changes”), or say why not, then approve it again.${r.note ? `<div style="white-space:pre-wrap;margin-top:4px">${esc(r.note)}</div>` : ''}</div>
+      ${sugOpen(r, 'review').map(s => `<div class="panel stack" style="gap:4px;padding:10px 14px"><strong>${esc(userName(s.by))}</strong>${(s.changes || []).map(c => `<div>${esc(c.label)}: ${esc(sugShow(sugType(c.target, c.field), c.from))} → <strong>${esc(sugShow(sugType(c.target, c.field), c.to))}</strong>${c.why ? ` <span class="hint">(${esc(c.why)})</span>` : ''}</div>`).join('')}${s.note ? `<div style="white-space:pre-wrap">${esc(s.note)}</div>` : ''}</div>`).join('')}
+      <div class="row"><button class="btn" data-act="edit-event" data-id="${e.id}">Make the changes</button></div>`;
+  else if (rqFixing(r))
+    actions = `<div class="rq-warn">The presidents asked for changes, and the branch leadership is making them.</div>`;
+  else if (st === 'branch' && branchReviewers(r.branch).includes(session))
     actions = `<div class="row" style="gap:8px"><button class="btn" data-act="rq-branch-ok" data-id="${e.id}">Approve as is</button><button class="btn ghost" data-act="edit-event" data-id="${e.id}">Edit it, then approve</button></div>
       <span class="hint">You can make changes yourself instead of sending it back. The officer sees what you changed in the history.</span>${back('branch', 'Send it back with notes', 'The officer is notified and can fix it and send it again.')}`;
   else if (rqCanVote(r))
@@ -3903,7 +3911,7 @@ function rsvpBox(e){
   if (fin && !e.rsvpOpens && !e.guestDelay && !e.guestOpens){ when = want.rsvpWhen || 'publish'; at = want.rsvpAt || ''; later = !!want.guestLater; mode = want.guestMode || '7'; gat = want.guestAt || ''; }
   if (!RQ_GUEST.some(x => x[0] === mode)) mode = '7';
   return `<div id="ev-go-wrap" class="ev-final stack" style="gap:10px" ${cat === 'officer_meeting' || cat === 'case_competition' || evHideFinal(e, cat) ? 'hidden' : ''}>
-    ${fin ? `<span class="hint"><strong>Requested: RSVPs open ${esc(rqRsvpText(want).toLowerCase())}; guests ${esc(rqGuestText(want).toLowerCase())}.</strong></span>` : ''}
+    ${fin ? `<span class="hint"><strong>Requested: members ${esc(rqRsvpText(want).replace(/^On /, 'on ').replace(/^As soon/, 'as soon'))}; guests ${esc(rqGuestText(want).replace(/^On /, 'on ').replace(/^Same time/, 'same time'))}.</strong></span>` : ''}
     <label>When do RSVPs open?<select id="ev-rsvp-when"><option value="publish" ${when === 'publish' ? 'selected' : ''}>As soon as it’s published</option><option value="date" ${when === 'date' ? 'selected' : ''}>On a specific date and time</option></select></label>
     <label id="ev-rsvp-at-wrap" ${when === 'date' ? '' : 'hidden'}>Date and time RSVPs open <span class="hint">Pick both the day and the time (Mountain Time)</span><input id="ev-rsvp-at" type="datetime-local" value="${esc(at)}"></label>
     <div id="ev-guest-wrap" class="stack" style="gap:10px" ${e?.membersOnly ? 'hidden' : ''}>
@@ -3923,7 +3931,7 @@ function evButtons(e, cat){
   if (e && !e.draft) return `<button class="btn" type="submit" data-mode="save">Save changes</button>${cancel}`;
   if (!needsSched(cat)) return `<button class="btn" type="submit" data-mode="publish">${canPublish() ? 'Publish to calendar' : 'Submit for approval'}</button><button class="btn ghost" type="submit" data-mode="draft">${e ? 'Save draft' : 'Save as draft'}</button>${cancel}`;
   const st = (rqOf(e && e.id) || {}).status || 'draft';
-  if (rqReviewing(e && e.id)) return `<button class="btn" type="submit" data-mode="branchok">Approve and send it on</button><button class="btn ghost" type="submit" data-mode="draft">Save changes</button>${cancel}`;
+  if (rqReviewing(e && e.id)) return `<button class="btn" type="submit" data-mode="branchok">${rqFixing(rqOf(e.id)) ? 'Send it back to the presidents' : 'Approve and send it on'}</button><button class="btn ghost" type="submit" data-mode="draft">Save changes</button>${cancel}`;
   return `${st === 'approved' && isScheduler() ? '<button class="btn" type="submit" data-mode="signoff">Send to the presidents for sign-off</button>' : ''}${['draft', 'returned'].includes(st) ? `<button class="btn" type="submit" data-mode="send">${st === 'returned' ? 'Send it again' : rqSendLabel(cat)}</button>` : ''}<button class="btn ghost" type="submit" data-mode="draft">${e ? 'Save draft' : 'Save as draft'}</button>${cancel}`;
 }
 const RQ_ERR = { 'err:notscheduler': 'Only event schedulers can do that.', 'err:notyours': 'Only the officer who made it can change it.', 'err:window': 'The window has to be inside the semester.', 'err:notpresident': 'Only presidents can do that.', 'err:notreviewer': 'Only the branch president can do that.', 'err:state': 'This request changed since you opened it. Refresh and try again.', 'err:note': 'Write what needs to be fixed.', 'err:missing': 'That request doesn’t exist anymore.' };
@@ -4020,9 +4028,22 @@ const gqTag = g => { const [l, c] = GQ_STATUS[g.status] || ['', '']; return ` <s
 function semesterBounds(isoDay){ const [y, m] = isoDay.split('-').map(Number); return m <= 4 ? [`${y}-01-01`, `${y}-04-30`] : m <= 7 ? [`${y}-05-01`, `${y}-07-31`] : [`${y}-08-01`, `${y}-12-31`]; }
 const semesterName = isoDay => { const m = +isoDay.slice(5, 7); return (m <= 4 ? 'Spring ' : m <= 7 ? 'Summer ' : 'Fall ') + isoDay.slice(0, 4); };
 const gqLikely = g => [...(((g.form || {}).req || {}).dates || [])].sort()[0] || (g.form || {}).estFrom || todayIso();
-const gqWindow = g => { const [s, e] = semesterBounds(gqLikely(g)); return [g.window_start || s, g.window_end || e]; };
+// The semesters a guest is approved for, each with its own dates (inside that semester).
+const gqWindows = g => { if (Array.isArray(g.windows) && g.windows.length) return g.windows.map(w => [w.s, w.e]);
+  const [s, e] = semesterBounds(gqLikely(g)); return [[g.window_start || s, g.window_end || e]]; };
+const gqWindow = g => { const w = gqWindows(g); return [w.map(x => x[0]).sort()[0], w.map(x => x[1]).sort().pop()]; };
+const gqWindowsText = g => gqWindows(g).map(([s, e]) => `${semesterName(s)} (${fmtShortDay(s)} – ${fmtShortDay(e)})`).join('; ');
+// Semesters to offer: the ones the guest's dates fall in, plus the next few from now.
+function semesterChoices(g){
+  const set = new Set(), d = (((g.form || {}).req || {}).dates || []);
+  d.forEach(x => set.add(semesterBounds(x)[0]));
+  let cur = semesterBounds(todayIso())[0];
+  for (let i = 0; i < 4; i++){ set.add(cur); const [, e] = semesterBounds(cur); cur = shiftDay(e, 1); }
+  gqWindows(g).forEach(([s]) => set.add(semesterBounds(s)[0]));
+  return [...set].sort().map(s => semesterBounds(s));
+}
 // Guests that can still be picked: approved, not removed, and their window isn't over.
-const approvedGuests = () => (db.guestReqs || []).filter(g => g.status === 'approved' && gqWindow(g)[1] >= todayIso());
+const approvedGuests = () => (db.guestReqs || []).filter(g => g.status === 'approved' && gqWindows(g).some(([, e]) => e >= todayIso()));
 const gqName = g => { const f = g.form || {}; return [f.name, [f.title, f.company].filter(Boolean).join(', ')].filter(Boolean).join(' · '); };
 // Who can approve it in the presidents' step (matches gq_approvers in the database).
 function gqApprovers(g){
@@ -4091,9 +4112,11 @@ function gqDetail(g){
   const f = { ...gqDefaults(), ...(g.form || {}) }, st = g.status, likely = gqLikely(g), [ss, se] = semesterBounds(likely), [ws, we] = gqWindow(g);
   const back = (kind, label, hint) => `<form class="stack" id="f-gq-back" data-id="${g.id}" data-kind="${kind}" style="gap:8px"><label>${label} <span class="hint">${hint}</span><textarea id="gq-back-note" rows="3"></textarea></label>
     <div class="row"><button class="btn ghost" type="submit">${label}</button></div><div class="err" id="gq-back-err"></div></form>`;
-  const windowForm = (title, btn, s) => `<form class="stack panel" id="f-gq-window" data-id="${g.id}" data-s="${s}" style="gap:8px;padding:12px 14px"><strong>${title}</strong>
-    <span class="hint">Approval covers ${semesterName(likely)} (${fmtShortDay(ss)} – ${fmtShortDay(se)}). Narrow it if UVU gave a shorter window.</span>
-    <div class="grid2"><label>From<input type="date" id="gq-ws" min="${ss}" max="${se}" value="${esc(ws)}"></label><label>To<input type="date" id="gq-we" min="${ss}" max="${se}" value="${esc(we)}"></label></div>
+  const have = Object.fromEntries((st === 'approved' ? gqWindows(g) : [semesterBounds(likely)]).map(([s, e]) => [semesterBounds(s)[0], [s, e]]));
+  const windowForm = (title, btn, s) => `<form class="stack panel" id="f-gq-window" data-id="${g.id}" data-s="${s}" style="gap:10px;padding:12px 14px"><strong>${title}</strong>
+    <span class="hint">Check every semester UVU approved them for. Each one starts as the whole semester; narrow the dates if UVU gave a shorter window.</span>
+    ${semesterChoices(g).map(([a, b]) => { const on = have[a], [x, y] = on || [a, b]; return `<div class="sem-row"><label class="check"><input type="checkbox" class="gq-sem" value="${a}" ${on ? 'checked' : ''}> ${semesterName(a)} <span class="hint">${fmtShortDay(a)} – ${fmtShortDay(b)}</span></label>
+      <div class="grid2"><label>From<input type="date" class="gq-from" data-sem="${a}" min="${a}" max="${b}" value="${esc(x)}"></label><label>To<input type="date" class="gq-to" data-sem="${a}" min="${a}" max="${b}" value="${esc(y)}"></label></div></div>`; }).join('')}
     <div class="row"><button class="btn" type="submit">${btn}</button></div><div class="err" id="gq-w-err"></div></form>`;
   const presSent = presidentsList().includes(g.sent_by);
   let actions = '';
@@ -4112,7 +4135,7 @@ function gqDetail(g){
   const guestRows = [['Name', f.name], ['Job title', f.title], ['Company', f.company], ['Topic or role', f.topic], ['Bio', f.bio], ['Email', f.email], ['Phone', f.phone]];
   return `<div class="stack" style="gap:16px;max-width:56rem"><div><button type="button" class="btn ghost small" data-act="gq-close">← Back</button></div>
     <div><div class="eyebrow">External guest</div><h2 style="margin:4px 0">${esc(f.name || 'Guest')}</h2>${gqTag(g)}${g.sent_by ? ` <span class="hint">From ${esc(userName(g.sent_by))}</span>` : ''}</div>
-    ${st === 'approved' ? `<div class="notice">Approved for ${fmtShortDay(ws)} – ${fmtShortDay(we)}. Officers can pick this guest on an event’s scheduling request.</div>` : ''}
+    ${st === 'approved' ? `<div class="notice">Approved for ${esc(gqWindowsText(g))}. Officers can pick this guest on an event’s scheduling request.</div>` : ''}
     ${st === 'review' ? `<span class="hint">Needs one approval from: ${esc(gqApprovers(g).map(userName).join(', ') || 'nobody yet')}${presSent ? `. If nobody sends it back, it moves on automatically ${fmtMtStamp(businessAdd(Date.parse(g.status_at), 48))}.` : '. Vice presidents can approve too after 36 business hours. It won’t move on until someone approves it.'}</span>` : ''}
     ${st === 'returned' ? `<div class="rq-warn"><strong>Sent back:</strong><div style="white-space:pre-wrap">${esc(g.note)}</div></div>` : ''}
     ${actions}
@@ -4142,7 +4165,7 @@ function startBody(){
     ${mine.length ? `<div class="section-head"><h3>Your guest requests</h3><span class="muted">${mine.length}</span></div><div>${mine.map(g => g.status === 'draft'
       ? `<div class="list-row"><div><div class="ev-title">Guest: ${esc((g.form || {}).name || 'Unnamed')}${gqTag(g)}</div></div><button class="btn small" data-act="gq-edit" data-id="${g.id}">Finish it</button></div>` : gqRow(g)).join('')}</div>` : ''}
     <div class="section-head"><h3>Approved guests</h3><span class="muted">${ag.length}</span></div>
-    <div>${ag.map(g => { const [ws, we] = gqWindow(g); return `<div class="list-row"><div><div class="ev-title">${esc((g.form || {}).name || 'Guest')}</div><div class="ev-sub">${esc([(g.form || {}).title, (g.form || {}).company].filter(Boolean).join(', '))} · Approved ${fmtDay(ws)} – ${fmtDay(we)}</div></div><button class="btn ghost small" data-act="rq-open" data-id="g:${g.id}">Details</button></div>`; }).join('') || '<div class="empty">No approved guests yet.</div>'}</div>
+    <div>${ag.map(g => { const [ws, we] = gqWindow(g); return `<div class="list-row"><div><div class="ev-title">${esc((g.form || {}).name || 'Guest')}</div><div class="ev-sub">${esc([(g.form || {}).title, (g.form || {}).company].filter(Boolean).join(', '))} · Approved for ${esc(gqWindowsText(g))}</div></div><button class="btn ghost small" data-act="rq-open" data-id="g:${g.id}">Details</button></div>`; }).join('') || '<div class="empty">No approved guests yet.</div>'}</div>
     <div class="section-head"><h3>Planning checklists</h3></div>
     ${planBody()}</div>`;
 }
@@ -4755,7 +4778,9 @@ function guestRsvpDone(id){ try { return JSON.parse(localStorage.getItem('wfa-gr
 // When RSVPs open, while they aren't open yet for members or for guests.
 function rsvpTimesNote(e){
   if (e.draft || isCase(e) || hasStarted(e) || e.cat === 'officer_meeting') return '';
-  const now = Date.now(), m = e.rsvpOpens ? Date.parse(e.rsvpOpens) : 0, g = e.guestOpens ? Date.parse(e.guestOpens) : m;
+  const now = Date.now(), m = e.rsvpOpens ? Date.parse(e.rsvpOpens) : 0;
+  const base = m || (e.publishedAt ? Date.parse(e.publishedAt) : now);
+  const g = e.guestDelay ? mtMs(shiftDay(mtDateIso(base), e.guestDelay), mtClock(base)) : e.guestOpens ? Date.parse(e.guestOpens) : m;   // calendar days, like the database
   if (!(m > now) && !(g > now && !e.membersOnly)) return '';
   const when = t => t > now ? fmtMtStamp(t) : 'Open now';
   return `<div class="rsvp-times"><strong>When RSVPs open</strong><dl class="facts" style="margin:4px 0 0"><dt>Members</dt><dd>${when(m)}</dd>${e.membersOnly ? '<dt>Guests</dt><dd>Members only</dd>' : `<dt>Guests</dt><dd>${when(Math.max(g, m))}</dd>`}</dl></div>`;
@@ -5921,7 +5946,11 @@ document.addEventListener('click', async ev => {
         if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
         await logChange((branch ? 'Approved (branch): “' : 'Approved (president): “') + e.title + '”'); }, 'Approved'); break; }
     case 'rq-use': case 'rq-use-all': { const d = rqState().d, src = rqHelperSource(d); if (!src) break;
-      const keys = t.dataset.act === 'rq-use' ? [id] : ['dates', 'altDates', 'start', 'end', 'setup', 'after', 'campus', 'locs', 'locCount', 'locType', 'building', 'room', 'uvuName', 'evType', 'estMax', 'food', 'tablecloths', 'clothColor', 'av', 'avNeeds', 'tech', 'techTime', 'techStay', 'layout', 'chairs', 'tables', 'other'];
+      const keys = t.dataset.act === 'rq-use' ? [id] : ['dates', 'altDates', 'start', 'end', 'setup', 'after', 'campus', 'locs', 'locCount', 'locType', 'building', 'room', 'uvuName', 'evType', 'estMax', 'sponsor', 'sp', 'food', 'tablecloths', 'clothColor', 'av', 'avNeeds', 'tech', 'techTime', 'techStay', 'layout', 'chairs', 'tables', 'layoutImg', 'flyer', 'other'];
+      if (t.dataset.act === 'rq-use-all'){ const gf = src.g.form || {}, g2 = id2 => document.getElementById(id2);
+        if (gf.evTitle && g2('ev-title')) g2('ev-title').value = gf.evTitle;
+        if (gf.evDesc && g2('ev-desc')){ g2('ev-desc').value = gf.evDesc; g2('ev-desc').dispatchEvent(new Event('input', { bubbles: true })); }
+        if (+src.req.estMax > 0 && g2('ev-cap')) g2('ev-cap').value = src.req.estMax; }
       keys.forEach(k => { const v = src.req[k]; if (v != null && v !== '' && !(Array.isArray(v) && !v.length)) d[k] = JSON.parse(JSON.stringify(v)); });
       if (d.dates && d.dates.length){ const de = document.getElementById('ev-date'); if (de) de.value = [...d.dates].sort()[0]; }
       rqRedraw(); toast(t.dataset.act === 'rq-use' ? 'Filled in from the guest approval' : 'Filled in everything from the guest approval'); break; }
@@ -6658,9 +6687,12 @@ async function handleSubmit(f, v, err){
       if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data); await logChange('Sent back an external guest request'); }, 'Sent back. The officer will be notified.');
   }
   if (f.id === 'f-gq-window'){
-    const id = f.dataset.id, s2 = f.dataset.s, ws = v('gq-ws'), we = v('gq-we');
-    if (!ws || !we || we < ws) return err('gq-w-err', 'Pick a start and end date, with the end on or after the start.');
-    return act(async () => { const r = await sb.rpc('guest_scheduler_update', { p_id: id, p_status: s2, p_note: '', p_start: ws, p_end: we }); if (r.error) throw r.error;
+    const id = f.dataset.id, s2 = f.dataset.s;
+    const windows = [...f.querySelectorAll('.gq-sem:checked')].map(c => ({ s: f.querySelector(`.gq-from[data-sem="${c.value}"]`).value, e: f.querySelector(`.gq-to[data-sem="${c.value}"]`).value, sem: c.value }));
+    if (!windows.length) return err('gq-w-err', 'Check at least one semester.');
+    const bad = windows.find(w => !w.s || !w.e || w.e < w.s || semesterBounds(w.s)[0] !== w.sem || semesterBounds(w.e)[0] !== w.sem);
+    if (bad) return err('gq-w-err', `Check the dates for ${semesterName(bad.sem)}: both inside the semester, with the end on or after the start.`);
+    return act(async () => { const r = await sb.rpc('guest_scheduler_update', { p_id: id, p_status: s2, p_note: '', p_windows: windows.map(({ s, e }) => ({ s, e })) }); if (r.error) throw r.error;
       if (String(r.data).startsWith('err:')) throw new Error(r.data === 'err:window' ? 'The window has to be inside the semester.' : RQ_ERR[r.data] || r.data);
       await logChange((s2 === 'approved' ? 'Marked external guest approved: ' : 'Changed the approval window for ') + ((gqOf(id) || {}).form || {}).name); }, s2 === 'approved' ? 'Marked approved by UVU' : 'Window saved');
   }
