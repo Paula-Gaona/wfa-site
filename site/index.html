@@ -1028,6 +1028,22 @@ function tabsHtml(tabs, cur, act){
 }
 
 /* ---------- Public views ---------- */
+// For visitors (and search engines): what the club is and how to join, so the home page is never just empty lists.
+function homeIntro(){
+  return `<section class="home-cols">
+    <div class="stack" style="gap:10px"><div class="section-head"><h2>About the WFA</h2></div>
+      <p>The Wolverine Finance Association is Utah Valley University’s student finance club and your bridge to a career in finance. We connect UVU students of any major with the industry through guest speakers and panels, career fairs, firm visits, and networking with professionals and alumni, and we help members land internships and full-time roles in investment banking, private equity, asset management, and corporate finance.</p>
+      <p class="muted">Members also build the skills firms look for through workshops in financial modeling, valuation, and the Bloomberg Terminal, plus case and stock pitch competitions.</p></div>
+    <div class="stack" style="gap:10px"><div class="section-head"><h2>How to join</h2></div>
+      <p>Membership is free and open to every UVU student.</p>
+      <ol class="role-list" style="gap:8px">
+        <li><strong>Create your account</strong> on this site with your UVU ID: <a href="#signup">Become a member</a>.</li>
+        <li><strong>RSVP to events</strong> from the <a href="#calendar">calendar</a>.</li>
+        <li><strong>Check in at events</strong> with the code on screen to earn leaderboard points.</li>
+      </ol>
+      <div><a class="btn" href="#signup">Join the WFA</a></div></div>
+  </section>`;
+}
 function viewHome(){
   // The next event that hasn't started (today's in-progress event is already in the banner above).
   const next = upcoming().find(e => !hasStarted(e)) || upcoming()[0];
@@ -1057,6 +1073,7 @@ function viewHome(){
         <div><button class="btn on-dark" data-act="open-event" data-id="${next.id}">Details & RSVP</button></div>
       </aside>`; })() : ''}
     </section>
+    ${can('member') ? '' : homeIntro()}
     <div class="home-cols">
       <section class="stack">
         <div class="section-head"><h2>Announcements</h2>${can('officer')?'<a href="#officer" data-tab="announcements">Write one</a>':''}</div>
