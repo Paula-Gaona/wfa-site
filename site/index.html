@@ -3389,6 +3389,16 @@ function rqHelperSource(d){
 }
 const RQ_HELP_FMT = { dates: v => (v || []).slice().sort().map(fmtDay).join(', '), start: fmtTime, end: fmtTime, campus: v => RQ_CAMPUS[v] || v, layout: v => (RQ_LAYOUTS.find(x => x[0] === v) || ['', v])[1],
   food: v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : v, tablecloths: v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : v, av: v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : v };
+// The same helper for the event's website fields, which sit outside the request form.
+const EV_HELP = { title: ['ev-title', g => (g.form || {}).evTitle], desc: ['ev-desc', g => (g.form || {}).evDesc], cap: ['ev-cap', g => ((g.form || {}).req || {}).estMax] };
+function evHelp(k){
+  if (ui.guestForm || !ui.rq) return '';
+  const src = rqHelperSource(ui.rq.d); if (!src) return '';
+  const [id, get] = EV_HELP[k], v = String(get(src.g) || ''), el = document.getElementById(id); if (!v) return '';
+  if (el && el.value.trim() === v.trim()) return `<span class="helper same">✓ Matches the guest approval</span>`;
+  return `<span class="helper">Guest approval said: <strong>${esc(v.length > 140 ? v.slice(0, 140) + '…' : v)}</strong> <button type="button" class="btn ghost small" data-act="ev-use" data-id="${k}">Use</button></span>`;
+}
+function evHelpRefresh(){ Object.keys(EV_HELP).forEach(k => { const box = document.getElementById('ev-help-' + k); if (box) box.innerHTML = evHelp(k); }); }
 function gh(d, k){
   const src = rqHelperSource(d); if (!src) return '';
   const v = src.req[k]; if (v == null || v === '' || (Array.isArray(v) && !v.length)) return '';
@@ -3947,16 +3957,20 @@ function rqRedraw(){
   const e = ui.editEvent ? evById(ui.editEvent) : null, cat = (document.getElementById('ev-cat') || {}).value;
   const y = window.scrollY; box.innerHTML = rqPanel(e, cat); window.scrollTo(0, y);
   const b = document.getElementById('ev-btns'); if (b) b.innerHTML = evButtons(e, cat);
+  evHelpRefresh();
 }
 ['input', 'change'].forEach(type => document.addEventListener(type, ev => {
   const t = ev.target; if (!t || !t.dataset) return;
+  if (['ev-title', 'ev-desc', 'ev-cap'].includes(t.id)) evHelpRefresh();
   if (t.id === 'ev-desc' || t.dataset.gq === 'evDesc'){ const pv = document.getElementById(t.id === 'ev-desc' ? 'ev-desc-preview' : 'gq-desc-preview'); if (pv){ pv.hidden = !t.value.trim(); pv.querySelector('p').textContent = t.value; } }
   if (t.dataset.gq && ui.gq){ ui.gq.d[t.dataset.gq] = t.value; if (t.dataset.check) rqShowCheck(t, false); if (type === 'change' && t.dataset.gq === 'estFrom') render(); return; }
   if (t.dataset.aq !== undefined && ui.appQ){ const [i, f] = t.dataset.aq.split(':'), q = ui.appQ[+i]; if (!q) return;
     q[f] = f === 'required' ? t.checked : f === 'options' ? t.value.split('\n').map(x => x.trim()).filter(Boolean) : t.value; if (f === 'type' && type === 'change') render(); return; }
   if (t.dataset.guestpick !== undefined && ui.rq){ if (type !== 'change') return;
     const i = +t.dataset.guestpick, g = gqOf(t.value), d = ui.rq.d; d.speakers = d.speakers || [];
-    if (g){ const f = g.form || {}; d.speakers[i] = { name: f.name || '', title: f.title || '', company: f.company || '', topic: f.topic || '', bio: f.bio || '', email: f.email || '', phone: f.phone || '', guestId: g.id }; }
+    if (g){ const f = g.form || {}; d.speakers[i] = { name: f.name || '', title: f.title || '', company: f.company || '', topic: f.topic || '', bio: f.bio || '', email: f.email || '', phone: f.phone || '', guestId: g.id };
+      const fill = (id, v) => { const el = document.getElementById(id); if (el && v && (!el.value.trim() || el.value === '0')){ el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); } };
+      fill('ev-title', f.evTitle); fill('ev-desc', f.evDesc); fill('ev-cap', (f.req || {}).estMax); }
     else if (d.speakers[i]) delete d.speakers[i].guestId;
     rqRedraw(); return; }
   if (t.dataset.sugreply){ ui.sugReplies = ui.sugReplies || {}; ui.sugReplies[t.dataset.sugreply] = t.value; return; }
@@ -4227,7 +4241,7 @@ function viewOfficer(){
     body = `<div class="split">
       <form class="panel stack" id="f-event" novalidate>
         <h3>${e ? (e.draft ? 'Edit draft' : 'Edit event') : 'Create an event'}${e && e.draft ? ' <span class="tag">Draft</span>' : ''}</h3>
-        <label>Title<input id="ev-title" required value="${esc(e?.title)}" placeholder="e.g. DCF Valuation Workshop"></label>
+        <label>Title<input id="ev-title" required value="${esc(e?.title)}" placeholder="e.g. DCF Valuation Workshop"><span id="ev-help-title"></span></label>
         <div class="grid2">
           <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${e?.cat===k?'selected':''}>${l} · ${PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select></label>
           <label class="ev-final" ${evHideFinal(e, e?.cat || Object.keys(CATS)[0]) ? 'hidden' : ''}>Date${rqFinalizing(e?.id) ? ' <span class="hint">Final date approved by UVU</span>' : ''}<input id="ev-date" type="date" required value="${esc(e?.date || dayOffset(7))}"></label>
@@ -4253,7 +4267,7 @@ function viewOfficer(){
         </div>
         <label class="ev-final" ${evHideFinal(e, e?.cat || Object.keys(CATS)[0]) ? 'hidden' : ''}>Location<input id="ev-loc" required value="${esc(rqFinalizing(e?.id) && e?.loc === 'TBD' ? '' : e?.loc)}" placeholder="Building and room">
           <span class="hint">Need a room? <a href="https://www.uvu.edu/woodbury/current-students.html" target="_blank" rel="noopener">Reserve one through Woodbury ↗</a></span></label>
-        <label>Seat limit<input id="ev-cap" type="number" min="0" value="${esc(e?.cap || 0)}"><span class="hint">0 means no limit. RSVPs close when the limit is reached. Guest RSVPs count too.</span></label>
+        <label>Seat limit<input id="ev-cap" type="number" min="0" value="${esc(e?.cap || 0)}"><span id="ev-help-cap"></span><span class="hint">0 means no limit. RSVPs close when the limit is reached. Guest RSVPs count too.</span></label>
         ${rsvpBox(e)}
         <label class="check" id="ev-mo-wrap" ${e?.cat === 'officer_meeting' ? 'hidden' : ''}><input type="checkbox" id="ev-members-only" ${e?.membersOnly ? 'checked' : ''}> Members only <span class="hint">Everyone can see it, but only members can RSVP and check in (a reason to join).</span></label>
         ${!e || e.draft ? (isScheduler() ? `<label class="check"><input type="checkbox" id="ev-soon" ${e?.comingSoon ? 'checked' : ''}> Coming-soon page <span class="hint">While this is a draft, anyone who opens its link sees only the title and the coming-soon description below (no date or other details) instead of “event not found.” Copy the link or QR code from the Drafts list after saving.</span></label>
@@ -4264,8 +4278,8 @@ function viewOfficer(){
           <span class="row" style="gap:8px;flex-wrap:nowrap"><input id="ev-code" maxlength="8" autocomplete="off" value="${esc(e?.code || '')}" placeholder="e.g. BULL" style="font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;flex:1;min-width:0"><button type="button" class="btn ghost small" data-act="ev-gen-code">Generate</button></span>
           <span class="hint">Members type this at the event to check in. It only works on the event’s date. Leave blank to make one on the day.</span></label>
         ${rqFinalizing(e?.id) ? '<div class="rq-warn"><strong>UVU approved this event.</strong> Set the final date, times, location, and RSVP timing, then send it to the presidents for sign-off. It publishes once they all approve, or after 2 business days.</div>' + (rqOf(e.id).signoff_note ? `<div class="rq-warn"><strong>A president requested changes:</strong><div style="white-space:pre-wrap">${esc(rqOf(e.id).signoff_note)}</div></div>` : '') : ''}
-        <label>Description <span class="hint">(required; for events that need scheduling, it also goes on UVU’s form)</span><textarea id="ev-desc" placeholder="What members will do or learn, who it’s for, and anything to bring">${esc(e?.desc)}</textarea></label>${descPreview('ev-desc-preview', e?.desc)}
-        <div id="rq-box">${rqPanel(e, e?.cat || Object.keys(CATS)[0])}</div>
+        <label>Description <span class="hint">(required; for events that need scheduling, it also goes on UVU’s form)</span><textarea id="ev-desc" placeholder="What members will do or learn, who it’s for, and anything to bring">${esc(e?.desc)}</textarea></label><span id="ev-help-desc"></span>${descPreview('ev-desc-preview', e?.desc)}
+        <div id="rq-box">${rqPanel(e, e?.cat || Object.keys(CATS)[0])}</div>${(setTimeout(evHelpRefresh), '')}
         <div class="err" id="ev-err"></div>
         <div class="row" id="ev-btns">${evButtons(e, e?.cat || Object.keys(CATS)[0])}</div>
         <span class="hint">Drafts are only visible to officers. Members see an event once it’s published.</span>
@@ -5945,6 +5959,8 @@ document.addEventListener('click', async ev => {
       await act(async () => { const r = await sb.rpc(branch ? 'branch_review' : 'president_vote', { p_event: id, p_ok: true, p_note: '' }); if (r.error) throw r.error;
         if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
         await logChange((branch ? 'Approved (branch): “' : 'Approved (president): “') + e.title + '”'); }, 'Approved'); break; }
+    case 'ev-use': { const src = ui.rq && rqHelperSource(ui.rq.d); if (!src) break; const [elId, get] = EV_HELP[id], el = document.getElementById(elId);
+      if (el){ el.value = get(src.g) || ''; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); } evHelpRefresh(); break; }
     case 'rq-use': case 'rq-use-all': { const d = rqState().d, src = rqHelperSource(d); if (!src) break;
       const keys = t.dataset.act === 'rq-use' ? [id] : ['dates', 'altDates', 'start', 'end', 'setup', 'after', 'campus', 'locs', 'locCount', 'locType', 'building', 'room', 'uvuName', 'evType', 'estMax', 'sponsor', 'sp', 'food', 'tablecloths', 'clothColor', 'av', 'avNeeds', 'tech', 'techTime', 'techStay', 'layout', 'chairs', 'tables', 'layoutImg', 'flyer', 'other'];
       if (t.dataset.act === 'rq-use-all'){ const gf = src.g.form || {}, g2 = id2 => document.getElementById(id2);
