@@ -677,7 +677,8 @@ async function load(){
     pstats: sb.rpc('public_stats'),
     lbHistory: signed && sb.rpc('leaderboard_history'),
     awards: myRole === 'admin' && sb.from('point_awards').select('*').is('rule_id', null).order('created_at', { ascending: false }).limit(200),
-    pointRules: myRole === 'admin' && sb.from('point_rules').select('*').order('created_at', { ascending: false }),
+    pointRules: sb.from('point_rules').select('*').order('created_at', { ascending: false }),
+    myRuleAwards: signed && sb.from('point_awards').select('rule_id').eq('email', session || '').not('rule_id', 'is', null),
     ruleAwards: myRole === 'admin' && sb.from('point_awards').select('rule_id').not('rule_id', 'is', null),
     pending: off && sb.from('pending_changes').select('*').order('created_at', { ascending: false }).limit(200),
     questions: off && sb.from('questions').select('*').order('created_at', { ascending: false }),
@@ -719,7 +720,7 @@ async function load(){
   const R = {};
   keys.forEach((k, i) => { if (res[i].error) console.warn(k, res[i].error.message); R[k] = res[i].data; });
 
-  db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0), about: R.settings?.about || {}, lbSince: R.settings?.lb_since || null, autoEmail: R.settings?.auto_email || null, pushKey: R.settings?.push_public_key || '' };
+  db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0), about: R.settings?.about || {}, lbSince: R.settings?.lb_since || null, autoEmail: R.settings?.auto_email || null, pushKey: R.settings?.push_public_key || '', lbPrize: R.settings?.lb_prize ?? null };
   db.autoLog = Array.isArray(R.autoLog) ? R.autoLog : [];
   db.schedulers = (R.schedulers || []).map(x => x.email);
   db.requests = Object.fromEntries((R.requests || []).map(r => [r.event_id, r]));
@@ -727,6 +728,7 @@ async function load(){
   db.lbHistory = Array.isArray(R.lbHistory) ? R.lbHistory : [];
   db.awards = R.awards || [];
   db.pointRules = Array.isArray(R.pointRules) ? R.pointRules : [];
+  db.myRules = new Set((Array.isArray(R.myRuleAwards) ? R.myRuleAwards : []).map(a => a.rule_id));
   db.ruleCounts = {}; (Array.isArray(R.ruleAwards) ? R.ruleAwards : []).forEach(a => db.ruleCounts[a.rule_id] = (db.ruleCounts[a.rule_id] || 0) + 1);
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
   (R.profiles || []).forEach(p => {
@@ -1040,6 +1042,7 @@ function homeIntro(join){
       <p class="muted">Members also build the skills firms look for through workshops in financial modeling, valuation, and the Bloomberg Terminal, plus case and stock pitch competitions.</p>${join ? '' : '</div>'}</div>
     ${join ? `<div class="stack" style="gap:10px"><div class="section-head"><h2>How to join</h2></div>
       <p>Membership is free and open to every UVU student.</p>
+      ${(() => { const r = activeRules().find(x => x.kind === 'join'); return r ? `<div class="notice" style="margin:0"><span><strong>Join by ${fmtMtStamp(Date.parse(r.deadline))}</strong> and get <strong>${r.points} bonus leaderboard points</strong>.</span></div>` : ''; })()}
       <ol class="role-list" style="gap:8px">
         <li><strong>Create your account</strong> on this site with your UVU ID: <a href="#signup">Become a member</a>.</li>
         <li><strong>RSVP to events</strong> from the <a href="#calendar">calendar</a>.</li>
@@ -1530,12 +1533,37 @@ function viewArchive(){
   </div>`;
 }
 
+// This season's prize, at the top of the Leaderboard page. Admins edit it right there (settings.lb_prize).
+function lbPrizeBox(){
+  const text = db.settings.lbPrize;
+  if (ui.prizeEdit && can('admin')) return `<form class="panel stack" id="f-prize" style="gap:8px;border-left:4px solid var(--gold,#B8923A);border-radius:0">
+      <label>This season’s prize <span class="hint">Shown at the top of the Leaderboard. Leave it blank to hide the box.</span><textarea id="prize-text" rows="3" maxlength="600">${esc(text || '')}</textarea></label>
+      <div class="row" style="gap:8px"><button class="btn small" type="submit">Save</button><button class="btn ghost small" type="button" data-act="prize-cancel">Cancel</button></div><div class="err" id="prize-err"></div></form>`;
+  if (!text) return can('admin') && text !== null ? '<div><button class="btn ghost small" data-act="prize-edit">Add a prize announcement</button></div>' : '';
+  return `<section class="panel stack" style="gap:6px;border-left:4px solid var(--gold,#B8923A);border-radius:0">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><div class="eyebrow">This season’s prize</div>${can('admin') ? '<button class="btn ghost small" data-act="prize-edit">Edit</button>' : ''}</div>
+      <p style="margin:0;font-size:1.05rem;white-space:pre-wrap">${esc(text)}</p></section>`;
+}
+// Active bonus point rules (see pointRulesSection), shown to members on the Leaderboard.
+function activeRules(){ return (db.pointRules || []).filter(r => Date.parse(r.deadline) >= Date.now()).sort((a, b) => Date.parse(a.deadline) - Date.parse(b.deadline)); }
+function ruleText(r){
+  const e = evById(r.event_id), ev = e ? `<a href="#event/${e.id}">${esc(e.title)}</a>` : 'an event';
+  return { join: 'Join the WFA', rsvp: `RSVP to ${ev}${r.revoke_noshow ? ' (and check in)' : ''}`, checkin: `Check in at ${ev}`, survey: `Fill out the survey for ${ev}` }[r.kind];
+}
+function bonusRulesBox(){
+  const list = activeRules(); if (!list.length) return '';
+  return `<section class="panel stack" style="gap:8px"><div><h3 style="margin:0">Ways to earn bonus points</h3><span class="hint">Extra points on top of check-ins, for a limited time.</span></div>
+    ${list.map(r => `<div class="row" style="gap:10px;align-items:baseline;flex-wrap:nowrap"><strong style="min-width:3.2rem;color:var(--brand-text)">${r.points > 0 ? '+' : ''}${r.points}</strong>
+      <span>${ruleText(r)} <span class="hint">by ${fmtMtStamp(Date.parse(r.deadline))}</span>${(db.myRules || new Set()).has(r.id) ? ' <span class="tag ok">✓ You earned this</span>' : ''}</span></div>`).join('')}</section>`;
+}
 function viewLeaderboard(){
   if (!can('member')) return gate('member');
   const lb = leaderboard();
   return `<div class="view">
     <section class="page-head"><div class="eyebrow">${esc(db.settings.semester)} · members only</div><h1 class="page">Leaderboard</h1>
       <p class="muted">Points come from checking in at events with the code shown on screen, plus ${SURVEY_POINTS} for each event survey you fill out and any points admins award (for volunteering, for example). RSVPs alone don't count. Officers and admins aren't ranked. Want to stay off the board by name? Choose “Anonymous” in <a href="#account">My account</a>.</p></section>
+    ${lbPrizeBox()}
+    ${bonusRulesBox()}
     <div class="tiles">${Object.entries(PTS).filter(([,v]) => v).map(([k,v]) => `<div class="tile"><span class="v">${v}</span><span class="l">${catName(k)}</span></div>`).join('')}</div>
     ${db.settings.lbSince ? `<p class="hint" style="margin:0">This season started ${fmtDay(iso(new Date(db.settings.lbSince)))}. Past seasons are below.</p>` : ''}
     <div class="table-wrap"><table><thead><tr><th class="num">Rank</th><th>Member</th><th>Major</th><th class="num">Events</th><th class="num">Points</th></tr></thead><tbody>
@@ -6233,6 +6261,8 @@ document.addEventListener('click', async ev => {
       else document.querySelectorAll('.aw-pick').forEach(c => ui.awPick.add(c.value));
       render(); break; }
     case 'ta-del': await act(async () => { must(await sb.from('test_accounts').delete().eq('email', id)); await logChange('Removed test account ' + id); }, 'Test account removed'); break;
+    case 'prize-edit': ui.prizeEdit = true; render(); break;
+    case 'prize-cancel': ui.prizeEdit = false; render(); break;
     case 'pr-del': { const r = (db.pointRules || []).find(x => x.id === id);
       await act(async () => { must(await sb.from('point_rules').delete().eq('id', id)); await logChange('Deleted the point rule “' + (r ? r.reason : '') + '” and its points'); }, 'Rule deleted and its points removed'); break; }
     case 'aw-del': { const a = db.awards.find(x => x.id === id);
@@ -7093,6 +7123,13 @@ async function handleSubmit(f, v, err){
     await load(); render(); toast('Test ' + role + ' added. Now sign up with that email.');
   }
 
+  if (f.id === 'f-prize'){
+    const text = document.getElementById('prize-text').value.trim();
+    const r = await sb.from('settings').update({ lb_prize: text }).eq('id', 1);
+    if (r.error) return err('prize-err', /lb_prize/.test(r.error.message || '') ? 'This isn’t set up yet. Run 57-leaderboard-prize-and-public-rules.sql in Supabase.' : errMsg(r.error));
+    await logChange(text ? 'Updated the leaderboard prize' : 'Removed the leaderboard prize');
+    ui.prizeEdit = false; await load(); render(); toast(text ? 'Prize saved' : 'Prize box hidden'); return;
+  }
   if (f.id === 'f-point-rule'){
     readRuleDraft(); const d = ui.prDraft, pts = parseInt(d.points, 10);
     if (d.kind !== 'join' && !d.event) return err('pr-err', 'Choose the event.');
