@@ -2659,6 +2659,25 @@ function insertBar(){
 }
 // Outlook mail merge: an Excel list of the recipients (Email, FirstName, LastName) plus the message on the clipboard,
 // with {first} shown as «FirstName» so it's easy to swap for the merge field.
+// Q&A questions as an Excel file: every question (starred first), plus a sheet for each guest with the questions for them.
+async function qaExport(id){
+  const e = evById(id); if (!e) return;
+  const qs = (db.evQuestions || []).filter(q => q.event_id === id).sort((a, b) => (b.starred - a.starred) || String(a.created_at).localeCompare(String(b.created_at)));
+  if (!qs.length) return toast('No questions yet.');
+  try {
+    const ExcelJS = await loadExcelJS(), wb = new ExcelJS.Workbook(), several = (e.speakers || []).length > 1;
+    const sheet = (name, list, withFor) => { const ws = wb.addWorksheet(name.replace(/[\\\/?*\[\]:]/g, '').slice(0, 31) || 'Questions');
+      ws.columns = [{ header: '#', key: 'n', width: 5 }, { header: 'Starred', key: 'star', width: 9 }, { header: 'Question', key: 'q', width: 70 },
+        ...(withFor ? [{ header: 'For', key: 'for', width: 26 }] : []), { header: 'Asked by', key: 'by', width: 22 }, { header: 'Asked', key: 'at', width: 20 }];
+      ws.getRow(1).font = { bold: true }; ws.getColumn('q').alignment = { wrapText: true, vertical: 'top' };
+      list.forEach((q, i) => ws.addRow({ n: i + 1, star: q.starred ? '★' : '', q: q.question, for: (q.speakers || []).length ? q.speakers.join(', ') : 'All of them', by: q.name || 'Someone', at: fmtStamp(q.created_at) })); };
+    sheet('All questions', qs, several);
+    if (several) e.speakers.forEach(sp => sheet(sp.name, qs.filter(q => !(q.speakers || []).length || q.speakers.includes(sp.name)), false));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    a.download = (e.title + ' - questions').replace(/[\\\/:*?"<>|]+/g, '') + '.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+  } catch(err){ toast(errMsg(err)); }
+}
 async function mailMergeExport(){
   const to = audienceEmails(ui.mail.aud); if (!to.length) return;
   try {
@@ -4877,7 +4896,7 @@ function eventOfficerExtras(e){
   if (e.qaEnabled){
     const sorted = qs.slice().sort((a, b) => (b.starred - a.starred) || String(a.created_at).localeCompare(String(b.created_at)));
     h += `<div class="panel stack" style="gap:8px;padding:12px 14px"><div class="row" style="justify-content:space-between;align-items:center"><strong>Questions for the ${(e.speakers || []).length > 1 ? 'guests' : 'speaker'} (${qs.length})</strong>
-        ${qs.length ? `<button class="btn ghost small" data-act="copy-text" data-text="${esc(sorted.map((q, i) => (i + 1) + '. ' + q.question + ((q.speakers || []).length ? ' (for ' + q.speakers.join(', ') + ')' : '') + (q.starred ? ' ★' : '')).join('\n'))}">Copy all</button>` : ''}</div>
+        ${qs.length ? `<button class="btn ghost small" data-act="copy-text" data-text="${esc(sorted.map((q, i) => (i + 1) + '. ' + q.question + ((q.speakers || []).length ? ' (for ' + q.speakers.join(', ') + ')' : '') + (q.starred ? ' ★' : '')).join('\n'))}">Copy all</button><button class="btn ghost small" data-act="qa-download" data-id="${e.id}">Download (Excel)</button>` : ''}</div>
       ${sorted.map(q => `<div class="row" style="gap:8px;align-items:start;justify-content:space-between"><div><div>${esc(q.question)}</div><div class="hint">${esc(q.name || 'Someone')} · ${fmtStamp(q.created_at)}${(q.speakers || []).length ? ' · For ' + esc(q.speakers.join(', ')) : (e.speakers || []).length > 1 ? ' · For all of them' : ''}</div></div>
         <span class="row" style="gap:6px"><button class="btn ghost small" data-act="qa-star" data-id="${q.id}" aria-pressed="${q.starred}" title="Star to ask">${q.starred ? '★ Starred' : '☆ Star'}</button>${delBtn('qd-' + q.id, 'Delete', 'qa-del', q.id)}</span></div>`).join('') || '<div class="empty">No questions yet.</div>'}
       <span class="hint">Star the ones to ask. “Copy all” puts starred questions first, ready to send to the speaker.</span></div>`;
@@ -5924,6 +5943,7 @@ document.addEventListener('click', async ev => {
       toast(r === 'granted' ? (ui.pushOnDevice ? 'Notifications are on for this device' : 'Notifications are on while the site is open') : r === 'denied' ? 'Notifications are blocked. Allow them for this site in your browser settings.' : r === 'unsupported' ? 'This browser doesn’t support notifications' : 'Notifications weren’t turned on');
       if (r === 'granted') notifySettings(); break; }
     case 'push-off': await disablePush(); toast('Notifications are off on this device'); notifySettings(); break;
+    case 'qa-download': await qaExport(id); break;
     case 'qa-star': { const q = db.evQuestions.find(x => x.id === id);
       if (await act(async () => must(await sb.from('event_questions').update({ starred: !q.starred }).eq('id', id)), q.starred ? 'Unstarred' : 'Starred')) refreshEvent(q.event_id); break; }
     case 'qa-del': { const q = db.evQuestions.find(x => x.id === id);
