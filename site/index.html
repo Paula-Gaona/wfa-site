@@ -622,7 +622,7 @@ function buildTitle(tier, branch){
   if (tier === 'honorary') return 'Honorary Officer';
   return b ? b + ' Officer' : 'Officer';
 }
-const OFFICER_TABS = [['stats','Statistics'],['approvals','Approvals'],['questions','Questions'],['events','Events'],['scheduling','Scheduling'],['process','How scheduling works'],['plan','Get started with an event'],['checkin','Check-in & attendance'],['surveys','Event surveys'],['qr','QR codes'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
+const OFFICER_TABS = [['stats','Statistics'],['approvals','Approvals'],['questions','Questions'],['events','Events'],['scheduling','Scheduling'],['process','How scheduling works'],['plan','Get started with an event'],['directory','Officer directory'],['checkin','Check-in & attendance'],['surveys','Event surveys'],['qr','QR codes'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
 const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['points','Award points'],['seasons','Leaderboard seasons'],['auto','Automatic emails'],['test','Test accounts'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
@@ -1135,10 +1135,10 @@ function studyLine(p){
   const text = [majors, minor].filter(Boolean).join(' · ');
   return text ? `<div class="ev-sub">${esc(text)}</div>` : '';
 }
-function officerCard(email){
+function officerCard(email, tags = ''){
   const p = db.profiles[email] || {}, n = userName(email), contact = p.contact || email;
   return `<article class="officer">
-    <div class="officer-top">${p.photo ? `<img class="avatar" src="${esc(p.photo)}" alt="${esc(n)}">` : `<div class="avatar">${esc(initials(n))}</div>`}<div style="min-width:0"><div class="title">${esc(p.title || (roleOf(email)==='admin'?'Admin':'Officer'))}</div><h3>${esc(n)}</h3>${studyLine(p)}</div></div>
+    <div class="officer-top">${p.photo ? `<img class="avatar" src="${esc(p.photo)}" alt="${esc(n)}">` : `<div class="avatar">${esc(initials(n))}</div>`}<div style="min-width:0"><div class="title">${esc(p.title || (roleOf(email)==='admin'?'Admin':'Officer'))}</div><h3>${esc(n)}</h3>${studyLine(p)}${tags ? `<div class="row" style="gap:6px;margin-top:6px">${tags}</div>` : ''}</div></div>
     ${p.bio ? `<p class="muted">${esc(p.bio)}</p>` : ''}
     <div class="contact">
       <div class="line"><span>${esc(contact)}</span><button class="btn ghost small" data-act="copy" data-text="${esc(contact)}" data-label="email">Copy</button></div>
@@ -1154,16 +1154,20 @@ function photoPreview(p){
     ? `<img class="avatar" src="${esc(src)}" alt="Profile picture"><button type="button" class="btn ghost small" data-act="pf-photo-rm">Remove picture</button>`
     : `<div class="avatar">${esc(initials(p.name || userName(session)))}</div><span class="hint">No picture yet.</span>`;
 }
-function officerSections(staff){
+// dir: the officer-only directory, which also lists honorary officers and tags schedulers.
+function officerSections(staff, dir = false){
+  const honorary = staff.filter(e => (db.profiles[e] || {}).tier === 'honorary');
   staff = staff.filter(e => (db.profiles[e] || {}).tier !== 'honorary');
-  if (!staff.length) return '<div class="empty">No officers listed yet.</div>';
+  if (!staff.length && !(dir && honorary.length)) return '<div class="empty">No officers listed yet.</div>';
   const P = e => db.profiles[e] || {};
   const pres = staff.filter(e => P(e).tier === 'president');
   const advisors = staff.filter(e => P(e).tier === 'advisor');
   const vps = staff.filter(e => P(e).tier === 'vice_president');
   const rest = staff.filter(e => !['president', 'vice_president', 'advisor'].includes(P(e).tier));
   const groups = [['Presidents', pres], [vps.length > 1 ? 'Vice Presidents' : 'Vice President', vps], [advisors.length > 1 ? 'Faculty advisors' : 'Faculty advisor', advisors], ...Object.entries(BRANCHES).map(([k,l]) => [l, rest.filter(e => P(e).branch === k)]), ['Officers', rest.filter(e => !BRANCHES[P(e).branch])]];
-  return groups.filter(([,l]) => l.length).map(([label, l]) => `<section class="stack"><div class="section-head"><h2>${esc(label)}</h2><span class="muted">${l.length}</span></div><div class="officers">${l.map(officerCard).join('')}</div></section>`).join('');
+  if (dir) groups.push(['Honorary officers', honorary]);
+  const tags = e => dir ? [(db.schedulers || []).includes(e) ? '<span class="tag soon">Scheduler</span>' : '', P(e).tier === 'honorary' ? '<span class="tag">Honorary</span>' : ''].join('') : '';
+  return groups.filter(([,l]) => l.length).map(([label, l]) => `<section class="stack"><div class="section-head"><h2>${esc(label)}</h2><span class="muted">${l.length}</span></div><div class="officers">${l.map(e => officerCard(e, tags(e))).join('')}</div></section>`).join('');
 }
 function viewOfficers(){
   const staff = staffEmails();
@@ -3735,7 +3739,7 @@ function processBody(){
       ${role('Officers', 'Anyone planning an event', ['Create the event and fill out its scheduling request: website details, dates, location, layout, guests, A/V, and RSVP timing they’d like.', 'Submit external guests for approval ahead of time, with rough estimates of the event.', 'Send it to their branch president or VP, and fix it if it’s sent back to them.', 'Wait to promote anything until it’s published (a scheduler can put up a coming-soon page).', 'Open any published or coming-soon event’s page from Events → View page, and RSVP to published events right away.'])}
       ${role('Branch presidents and vice presidents', 'For their branch’s officers', ['Review their officers’ events and guest requests: approve them, edit and approve them, or send them back with notes.', 'Make the changes presidents ask for on their officers’ events, accepting or declining each suggestion with a reason.', 'Vice presidents can also approve a guest request or a workshop/social sign-off after 36 business hours, when the scheduler or sender isn’t a president.'])}
       ${role('Presidents', 'Checks before and after UVU', [`Review every ${BIG} before it goes to UVU (all presidents).`, 'Approve guest requests (one president).', 'Sign off on the final details before anything is published: every president for big events, one president (not the scheduler) for workshops and socials.', 'Request changes by editing fields directly, with a reason for each, and mark comments as just context or more changes.'])}
-      ${role('Event schedulers', 'Chosen by admins; only officers see who they are', ['Submit events and guests through UVU’s form, and mark them submitted, then approved.', 'Set approved guests’ approval windows (the semester, or shorter if UVU says so).', 'Finalize approved events: the date, times, location, and RSVP timing, then send them for sign-off.', 'Turn on coming-soon pages, and send things back when UVU has a problem.'])}
+      ${role('Event schedulers', 'Chosen by admins; tagged in the <a href="#officer/directory">Officer directory</a>', ['Submit events and guests through UVU’s form, and mark them submitted, then approved.', 'Set approved guests’ approval windows (the semester, or shorter if UVU says so).', 'Finalize approved events: the date, times, location, and RSVP timing, then send them for sign-off.', 'Turn on coming-soon pages, and send things back when UVU has a problem.'])}
       ${role('Admins', 'Site settings', ['Choose who the event schedulers are.', 'Set officers’ positions and branches, which decide who reviews what.', 'Edit the officer application questions and the planning checklists.'])}
     </div>`;
 
@@ -4281,6 +4285,7 @@ function viewOfficer(){
 
   else if (T === 'scheduling'){ body = schedulingBody(); }
   else if (T === 'process'){ body = processBody(); }
+  else if (T === 'directory'){ body = `<p class="hint" style="margin:0 0 4px">Every officer, including honorary officers (who aren’t on the public <a href="#officers">Officers page</a>). Only officers can see this page and who the event schedulers are.</p>${officerSections(staffEmails(), true)}`; }
 
   else if (T === 'surveys'){ body = surveysBody(); }
   else if (T === 'qr'){ body = qrToolBody(); setTimeout(drawQrTool); }
