@@ -13,7 +13,8 @@
 // Each member chooses email and/or notification per kind in Notification settings (members.notify). By default,
 // someone who gets a kind as a notification on a device doesn't also get the email for it.
 // Each person gets their own email that greets them by first name (sent 100 at a time with Resend's batch API).
-// Notifications go through the push function (supabase/push.ts).
+// Notifications are sent from here directly with web-push (the same VAPID secrets the push function uses); anyone a
+// notification doesn't reach gets the email instead.
 // Supabase runs this every 10 minutes (see 39-automatic-emails.sql). Each event/kind is recorded in auto_email_log
 // before sending, so it never goes out twice, and calling it extra times only sends what is already due.
 // Skips members who turned off club emails (for emails), test accounts, test events, drafts, and officer meetings.
@@ -24,6 +25,7 @@
 // Keep this file plain ASCII: pasting curly quotes into the editor can garble them.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import webpush from 'npm:web-push@3.6.7';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const escHtml = (s: string) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
@@ -80,19 +82,33 @@ async function resendBatch(emails: Record<string, unknown>[]) {
   });
   return { ok: r.ok, detail: r.ok ? '' : await r.text() };
 }
-// Phone/computer notifications, through the push function (only it holds the push keys).
-async function sendPush(to: string[], title: string, body: string, url: string, tag: string) {
-  if (!to.length) return 0;
-  try {
-    const r = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/push`, {
-      method: 'POST',
-      // apikey: the site's public key (Supabase requires one on function calls). The service role key proves it's us.
-      headers: { Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, apikey: 'sb_publishable_G9Ct3sh1zfK2peRadj-nzg_SSLCr2Sn', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to, title, body, url, tag }),
-    });
-    const j = await r.json().catch(() => ({}));
-    return Number(j.sent || 0);
-  } catch { return 0; }
+// Phone/computer notifications, sent straight to each signed-up device. Returns who it reached, so anyone it didn't
+// reach can get an email instead. Devices that have expired or been turned off are removed.
+let vapidReady: boolean | null = null;
+function vapid() {
+  if (vapidReady === null) {
+    const pub = Deno.env.get('VAPID_PUBLIC_KEY'), priv = Deno.env.get('VAPID_PRIVATE_KEY');
+    vapidReady = !!(pub && priv);
+    if (vapidReady) webpush.setVapidDetails((Deno.env.get('SITE_URL') || 'https://wolverinefinanceassociation.org').replace(/\/+$/, ''), pub!, priv!);
+  }
+  return vapidReady;
+}
+// deno-lint-ignore no-explicit-any
+async function sendPush(db: any, to: string[], title: string, body: string, url: string, tag: string) {
+  const reached = new Set<string>();
+  if (!to.length || !vapid()) return reached;
+  const { data: subs } = await db.from('push_subscriptions').select('endpoint, email, p256dh, auth').in('email', to);
+  const payload = JSON.stringify({ title, body, url, tag });
+  await Promise.all((subs || []).map(async (s: { endpoint: string; email: string; p256dh: string; auth: string }) => {
+    try {
+      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 86400 });
+      reached.add(s.email);
+    } catch (err) {
+      const code = (err as { statusCode?: number }).statusCode;
+      if (code === 404 || code === 410) await db.from('push_subscriptions').delete().eq('endpoint', s.endpoint);
+    }
+  }));
+  return reached;
 }
 
 Deno.serve(async () => {
@@ -155,8 +171,10 @@ Deno.serve(async () => {
     let schedNotes = 0;
     const tell = async (to: string[], subject: string, body: string, label: string, url: string, tag: string) => {
       to = [...new Set(to)].filter((e) => e && !testSet.has(e));
-      const viaPush = to.filter((e) => pushOn && hasDevice.has(e)), viaEmail = to.filter((e) => !viaPush.includes(e));
-      let n = await sendPush(viaPush, subject, body, url, tag);
+      // A notification where they have a device signed up; an email for everyone it didn't reach.
+      const reached = await sendPush(db, to.filter((e) => pushOn && hasDevice.has(e)), subject, body, url, tag);
+      const viaEmail = to.filter((e) => !reached.has(e));
+      let n = reached.size;
       if (viaEmail.length) {
         const footer = `You're getting this because you're an officer on the Wolverine Finance Association site.`;
         const r = await resendBatch(viaEmail.map((e) => ({ to: [e], subject,
@@ -427,9 +445,9 @@ ${lastNote}`
       const claim = await db.from('auto_email_log').insert({ event_id: j.ev.id, kind: j.kind, recipients: j.emailTo.length, emails: 0, status: 'sending' }).select('id').single();
       if (claim.error) continue;   // already claimed by another run
       const id = claim.data.id;
-      const pushed = await sendPush(j.pushTo, j.push.title, j.push.body, j.push.url, `${j.kind}-${j.ev.id}`);
+      const pushed = (await sendPush(db, j.pushTo, j.push.title, j.push.body, j.push.url, `${j.kind}-${j.ev.id}`)).size;
       if (!j.emailTo.length) {
-        await db.from('auto_email_log').update({ status: pushed ? 'sent' : 'skipped', detail: pushed ? `Notified ${pushed} device${pushed === 1 ? '' : 's'}; no emails needed` : 'Nobody to send to' }).eq('id', id);
+        await db.from('auto_email_log').update({ status: pushed ? 'sent' : 'skipped', detail: pushed ? `Notified ${pushed} ${pushed === 1 ? 'person' : 'people'}; no emails needed` : 'Nobody to send to' }).eq('id', id);
         continue;
       }
       if (used + j.emailTo.length > cap) { await db.from('auto_email_log').update({ status: 'skipped', detail: `Daily limit of ${cap} automatic emails reached` }).eq('id', id); continue; }
@@ -441,7 +459,7 @@ ${lastNote}`
         await new Promise((res) => setTimeout(res, 600));   // stay under Resend's rate limit
       }
       used += ok + fail;
-      const note = [pushed ? `also notified ${pushed} device${pushed === 1 ? '' : 's'}` : '', fail ? `${fail} of ${ok + fail} people didn't get it: ${last}` : ''].filter(Boolean).join('; ');
+      const note = [pushed ? `also notified ${pushed} ${pushed === 1 ? 'person' : 'people'}` : '', fail ? `${fail} of ${ok + fail} people didn't get it: ${last}` : ''].filter(Boolean).join('; ');
       await db.from('auto_email_log').update({ status: ok ? 'sent' : 'failed', emails: ok + fail, detail: note.slice(0, 500) }).eq('id', id);
       await db.from('change_log').insert({ who: 'automatic emails', text: `Sent "${j.subject}" to ${j.emailTo.length} ${j.emailTo.length === 1 ? 'person' : 'people'}${fail ? ' (some failed)' : ''}` });
       results.push(j.kind);
