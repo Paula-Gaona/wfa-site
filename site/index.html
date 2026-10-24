@@ -7188,9 +7188,12 @@ sb.auth.onAuthStateChange(event => { if (event === 'PASSWORD_RECOVERY'){ ui.reco
   if (/type=recovery/.test(initialHash)) ui.recovery = true;
   const m = initialHash.match(/error_description=([^&]+)/);
   const retryBtn = ' <button class="btn ghost small" type="button" onclick="location.reload()">Try again</button>';
-  const slow = setTimeout(() => { const b = document.getElementById('boot-msg'); if (b && !loaded) b.innerHTML = 'This is taking longer than usual. Our database provider may be having trouble; it usually clears up in a minute.' + retryBtn; }, 12000);
+  // A slow or failed load only changes the small status line under the club description, so the page never looks
+  // empty or like an error page (search engines treat that as a missing page).
+  const bootMsg = html => { const b = document.getElementById('boot-msg'); if (b) b.innerHTML = html; };
+  const slow = setTimeout(() => { if (!loaded) bootMsg('Still loading events and announcements. This can take a moment.' + retryBtn); }, 12000);
   try { await load(); }
-  catch(e){ clearTimeout(slow); document.getElementById('app').innerHTML = `<div class="empty">Couldn’t load club data. ${esc(errMsg(e))}${retryBtn}</div>`; return; }
+  catch(e){ clearTimeout(slow); console.error(e); bootMsg('Events and announcements didn’t load just now.' + retryBtn); return; }
   clearTimeout(slow);
   if (/access_token|error_description/.test(initialHash)) history.replaceState(null, '', location.pathname + '#home');
   loaded = true; render();
