@@ -7,6 +7,7 @@
 //     and haven't checked in (notification only)
 //   * a survey request 30 minutes after an event ends, to people who checked in and haven't answered the survey
 //   * event scheduling and external guest approval steps: whoever a request is waiting on, and the officer who sent it
+//   * new questions and partner inquiries: the presidents and the Communications branch (see 54-question-notifications.sql)
 //   * a summary email when chat messages sit unread for over an hour (see 42-chats.sql; works even when the
 //     event emails are off)
 // Each member chooses email and/or notification per kind in Notification settings (members.notify). By default,
@@ -288,6 +289,27 @@ ${lastNote}`
         if (!to.length || !subject) continue;
         if (!fresh && !(again && nowMs - ms(g.nudged_at) >= again)) continue;
         if (await tell(to, subject, body, 'Open it', link, `guest-${g.id}`)) await db.from('guest_requests').update({ nudged_at: new Date().toISOString() }).eq('id', g.id);
+      }
+    }
+
+    // New questions (Contact page) and partner inquiries (Partner with us): tell the presidents and the Communications
+    // branch once each (see 54-question-notifications.sql). Works even when the event emails are off.
+    const { data: newQs } = await db.from('questions').select('id, kind, name, email, company, job_title, topic, ways').eq('status', 'new').is('notified_at', null).limit(50);
+    if (newQs?.length) {
+      const { data: offs } = await db.from('officer_profiles').select('email, tier, branch');
+      const { data: acc } = await db.from('access_list').select('email');
+      const isOfficer = new Set((acc || []).map((a) => a.email));
+      const to = (offs || []).filter((o) => isOfficer.has(o.email) && (o.tier === 'president' || o.branch === 'communications')).map((o) => o.email);
+      const link = `${site}/#officer/questions`;
+      for (const q of newQs) {
+        const who = q.name || q.email || 'Someone';
+        const partner = q.kind === 'partner';
+        const subject = partner ? `New partner inquiry: ${q.company || who}` : `New question from ${who}`;
+        const body = partner
+          ? `${who}${q.job_title ? ', ' + q.job_title : ''}${q.company ? ' at ' + q.company : ''} reached out through Partner with us.${(q.ways || []).length ? '\nInterested in: ' + q.ways.join(', ') : ''}\n\nReply from Officer tools -> Questions.`
+          : `${who} asked a question${q.topic ? ' about ' + q.topic.toLowerCase() : ''} on the Contact page.\n\nReply from Officer tools -> Questions.`;
+        if (await tell(to, subject, body, 'Open Questions', link, `question-${q.id}`))
+          await db.from('questions').update({ notified_at: new Date().toISOString() }).eq('id', q.id);
       }
     }
 
