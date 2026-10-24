@@ -4039,6 +4039,7 @@ function rqRedraw(){
   if (k === 'campus'){ if (t.value === 'off') d.locType = 'External location (off campus)'; else if (isExternal(d.locType)) d.locType = ''; }
   if (t.dataset.check) rqShowCheck(t, false);
   if (t.dataset.zipfor){ const z = document.querySelector(`[data-rq="${t.dataset.zipfor}"]`); if (z && z.value) rqShowCheck(z, true); }
+  if (k === 'locType' && t.value === 'Bloomberg Lab'){ d.building = 'Keller Building (KB)'; d.room = 'KB 129'; }   // the only Bloomberg Lab on campus
   if (k === 'speakerCount') d.speakers = (d.speakers || []).slice(0, +t.value);
   if (type === 'change' && t.dataset.rr) rqRedraw();
 }, true));
