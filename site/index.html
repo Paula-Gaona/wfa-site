@@ -3407,6 +3407,26 @@ function gh(d, k){
   return `<span class="helper">Guest approval said: <strong>${esc((RQ_HELP_FMT[k] || String)(v))}</strong> <button type="button" class="btn ghost small" data-act="rq-use" data-id="${k}">Use</button></span>`;
 }
 
+// External guests: on the event form right under Type (always open for guest speakers, case competitions, and
+// career fairs; a checkbox for everything else). Part of the scheduling request.
+function rqGuestsBox(e, cat){
+  if (!needsSched(cat) || rqLocked(e && e.id)) return '';
+  const d = rqState().d, src = rqHelperSource(d);
+  if (GUEST_CATS.includes(cat)) d.speaker = 'yes';
+  const n = Math.max(1, Math.min(10, +d.speakerCount || (d.speakers || []).length || 1));
+  return `<div class="panel stack rq-guests" style="gap:10px;padding:12px">
+      ${GUEST_CATS.includes(cat) ? '<div><strong>External guests</strong><div class="hint">Speakers, judges, recruiters, panelists, or anyone else from outside UVU.</div></div>'
+        : `<label class="check"><input type="checkbox" data-rq="speaker" data-yesno="1" data-rr="1" ${d.speaker === 'yes' ? 'checked' : ''}> This event will have an external guest <span class="hint">A speaker, judge, recruiter, panelist, or anyone else from outside UVU.</span></label>`}
+      ${d.speaker === 'yes' ? `${src ? `<span class="hint">Their guest approval’s estimates show next to each question below. <button type="button" class="btn ghost small" data-act="rq-use-all">Use all of them</button></span>` : approvedGuests().length ? '<span class="hint">Pick an approved guest to fill in their details and see their approval’s estimates next to each question.</span>' : ''}
+      <label style="max-width:14rem">How many external guests?<select data-rq="speakerCount" data-rr="1">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => `<option ${n === i ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
+      ${Array.from({ length: n }, (_, i) => { const s = (d.speakers || [])[i] || {}; return `<div class="stack" style="gap:8px;border-top:1px solid var(--line);padding-top:10px"><strong>Guest ${i + 1}</strong>
+        ${approvedGuests().length || s.guestId ? `<label>Approved guest <span class="hint">Picked guests already have UVU’s approval, so the event needs 3 weeks’ notice instead of 10.</span><select data-guestpick="${i}"><option value="">Other (not pre-approved)</option>${approvedGuests().map(g => `<option value="${g.id}" ${s.guestId === g.id ? 'selected' : ''}>${esc(gqName(g))}</option>`).join('')}</select></label>` : ''}
+        <label>Name<input data-rq="speakers.${i}.name" value="${esc(s.name || '')}"></label>
+        <div class="grid2"><label>Job title<input data-rq="speakers.${i}.title" value="${esc(s.title || s.job || '')}"></label><label>Company<input data-rq="speakers.${i}.company" value="${esc(s.company || '')}"></label></div>
+        <label>Speaking topic or role <span class="hint">Like “Building a fintech company” or “Judge”</span><input data-rq="speakers.${i}.topic" value="${esc(s.topic || '')}"></label><label>Bio<textarea rows="3" data-rq="speakers.${i}.bio">${esc(s.bio || '')}</textarea></label>
+        <div class="grid2">${rqField(`speakers.${i}.email`, 'Email <span class="hint">Optional</span>', s.email, 'email', 'type="email" autocomplete="off"')}${rqField(`speakers.${i}.phone`, 'Phone <span class="hint">Optional</span>', s.phone, 'phone', 'type="tel" placeholder="(801) 555-0123"')}</div>
+        <label class="check"><input type="checkbox" data-rq="speakers.${i}.show" ${s.show === false ? '' : 'checked'}> Show this guest on the event page <span class="hint">Name, job title, company, and bio. Contact info is never shown.</span></label></div>`; }).join('')}` : ''}</div>`;
+}
 // The form itself (inside the event editor). Locked while it's moving through approval. With est: the rough
 // estimates on an external guest request (same questions, no guests or RSVP timing).
 function rqPanel(e, cat, opts = {}){
@@ -3434,18 +3454,6 @@ function rqPanel(e, cat, opts = {}){
     <datalist id="rq-cities">${UT_CITIES.map(c => `<option value="${c}">`).join('')}</datalist>
     <p class="hint" style="margin:0">${est ? 'Rough guesses are fine for all of these. The event’s own scheduling request will have the real details later.' : 'UVU has to approve club events before they’re advertised. Fill this out and send it for approval; a scheduler submits it to UVU. Nothing here is shown on the website.'}</p>
     ${!est && st === 'returned' ? `<div class="rq-warn"><strong>This was sent back.</strong> What to fix:<div style="white-space:pre-wrap;margin-top:4px">${esc(r.note)}</div></div>` : ''}
-    ${est ? '' : `<div class="panel stack rq-guests" style="gap:10px;padding:12px">
-      ${GUEST_CATS.includes(cat) ? '<div><strong>External guests</strong><div class="hint">Speakers, judges, recruiters, panelists, or anyone else from outside UVU.</div></div>'
-        : `<label class="check"><input type="checkbox" data-rq="speaker" data-yesno="1" data-rr="1" ${d.speaker === 'yes' ? 'checked' : ''}> This event will have an external guest <span class="hint">A speaker, judge, recruiter, panelist, or anyone else from outside UVU.</span></label>`}
-      ${d.speaker === 'yes' ? `${src ? `<span class="hint">Their guest approval’s estimates show next to each question below. <button type="button" class="btn ghost small" data-act="rq-use-all">Use all of them</button></span>` : approvedGuests().length ? '<span class="hint">Pick an approved guest to fill in their details and see their approval’s estimates next to each question.</span>' : ''}
-      <label style="max-width:14rem">How many external guests?<select data-rq="speakerCount" data-rr="1">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => `<option ${n === i ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
-      ${Array.from({ length: n }, (_, i) => { const s = (d.speakers || [])[i] || {}; return `<div class="stack" style="gap:8px;border-top:1px solid var(--line);padding-top:10px"><strong>Guest ${i + 1}</strong>
-        ${approvedGuests().length || s.guestId ? `<label>Approved guest <span class="hint">Picked guests already have UVU’s approval, so the event needs 3 weeks’ notice instead of 10.</span><select data-guestpick="${i}"><option value="">Other (not pre-approved)</option>${approvedGuests().map(g => `<option value="${g.id}" ${s.guestId === g.id ? 'selected' : ''}>${esc(gqName(g))}</option>`).join('')}</select></label>` : ''}
-        <label>Name<input data-rq="speakers.${i}.name" value="${esc(s.name || '')}"></label>
-        <div class="grid2"><label>Job title<input data-rq="speakers.${i}.title" value="${esc(s.title || s.job || '')}"></label><label>Company<input data-rq="speakers.${i}.company" value="${esc(s.company || '')}"></label></div>
-        <label>Speaking topic or role <span class="hint">Like “Building a fintech company” or “Judge”</span><input data-rq="speakers.${i}.topic" value="${esc(s.topic || '')}"></label><label>Bio<textarea rows="3" data-rq="speakers.${i}.bio">${esc(s.bio || '')}</textarea></label>
-        <div class="grid2">${rqField(`speakers.${i}.email`, 'Email <span class="hint">Optional</span>', s.email, 'email', 'type="email" autocomplete="off"')}${rqField(`speakers.${i}.phone`, 'Phone <span class="hint">Optional</span>', s.phone, 'phone', 'type="tel" placeholder="(801) 555-0123"')}</div>
-        <label class="check"><input type="checkbox" data-rq="speakers.${i}.show" ${s.show === false ? '' : 'checked'}> Show this guest on the event page <span class="hint">Name, job title, company, and bio. Contact info is never shown.</span></label></div>`; }).join('')}` : ''}</div>`}
     <label>Will this event be on campus, off campus, or hybrid?<select data-rq="campus" data-rr="1">${Object.entries(RQ_CAMPUS).map(([k, l]) => `<option value="${k}" ${d.campus === k ? 'selected' : ''}>${l}</option>`).join('')}</select>${help('campus')}</label>
     ${offSite(d) ? `<div class="panel stack" style="gap:10px;padding:12px">
       <label style="max-width:16rem">${d.campus === 'hybrid' ? 'How many off-campus locations?' : 'How many locations?'}<select data-rq="locCount" data-rr="1">${[1, 2, 3, 4, 5].map(i => `<option ${nLoc === i ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
@@ -3955,7 +3963,9 @@ function rqRedraw(){
   const box = document.getElementById('rq-box'); if (!box) return;
   if (document.getElementById('f-guest-req')){ const y = window.scrollY; box.innerHTML = rqPanel(null, 'guest_speaker', { est: true }); window.scrollTo(0, y); return; }
   const e = ui.editEvent ? evById(ui.editEvent) : null, cat = (document.getElementById('ev-cat') || {}).value;
-  const y = window.scrollY; box.innerHTML = rqPanel(e, cat); window.scrollTo(0, y);
+  const y = window.scrollY; box.innerHTML = rqPanel(e, cat);
+  const gb = document.getElementById('rq-guests-box'); if (gb) gb.innerHTML = rqGuestsBox(e, cat);
+  window.scrollTo(0, y);
   const b = document.getElementById('ev-btns'); if (b) b.innerHTML = evButtons(e, cat);
   evHelpRefresh();
 }
@@ -4241,9 +4251,10 @@ function viewOfficer(){
     body = `<div class="split">
       <form class="panel stack" id="f-event" novalidate>
         <h3>${e ? (e.draft ? 'Edit draft' : 'Edit event') : 'Create an event'}${e && e.draft ? ' <span class="tag">Draft</span>' : ''}</h3>
+        <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${e?.cat===k?'selected':''}>${l} · ${PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select></label>
+        <div id="rq-guests-box">${rqGuestsBox(e, e?.cat || Object.keys(CATS)[0])}</div>
         <label>Title<input id="ev-title" required value="${esc(e?.title)}" placeholder="e.g. DCF Valuation Workshop"><span id="ev-help-title"></span></label>
         <div class="grid2">
-          <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${e?.cat===k?'selected':''}>${l} · ${PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select></label>
           <label class="ev-final" ${evHideFinal(e, e?.cat || Object.keys(CATS)[0]) ? 'hidden' : ''}>Date${rqFinalizing(e?.id) ? ' <span class="hint">Final date approved by UVU</span>' : ''}<input id="ev-date" type="date" required value="${esc(e?.date || dayOffset(7))}"></label>
         </div>
         <div class="panel stack" id="ev-branches" ${e?.cat === 'officer_meeting' ? '' : 'hidden'} style="gap:10px;padding:14px">
