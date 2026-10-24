@@ -3585,7 +3585,7 @@ function rqRows(e, r, est = false){
     ...(d.campus === 'off' ? [] : [['Location type' + (d.campus === 'hybrid' ? ' (on-campus part)' : ''), d.locType], ['Ideal building', d.building], ['Specific room', d.room || 'No preference']]),
     ['Event description', e.desc], ['Maximum attendees', e.cap ? String(e.cap) : `No RSVP limit; expecting up to ${d.estMax || '?'}`], ['Type of event', d.evType],
     ['External sponsor', d.sponsor === 'yes' ? `${sp.org || ''}\nContact: ${sp.name || ''}\n${sp.email || ''} · ${sp.phone || ''}\n${addrLine(sp)}` : yn(d.sponsor)],
-    ['Food, snacks, or beverages', yn(d.food)], ['Tablecloths', d.tablecloths === 'yes' ? 'Yes, ' + (d.clothColor || 'color not given') : yn(d.tablecloths)], ['External guests', d.speaker === 'yes' ? speakers : yn(d.speaker)],
+    ['Food, snacks, or beverages', yn(d.food)], ['Tablecloths', d.tablecloths === 'yes' ? 'Yes, ' + (d.clothColor || 'color not given') : yn(d.tablecloths)], ['External guests', d.speaker === 'yes' ? speakers : 'None'],
     ['Additional A/V equipment', d.av === 'yes' ? 'Yes: ' + d.avNeeds : yn(d.av)],
     ['AVSE technician before the event', d.tech === 'yes' ? `Yes, at ${fmtTime(hhmmAdd(d.start, -(+d.techTime || 0)))} (${d.techTime} min before)` : yn(d.tech)],
     ...(d.tech === 'yes' ? [['AVSE technician for the whole event', yn(d.techStay)]] : []),
