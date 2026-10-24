@@ -676,7 +676,9 @@ async function load(){
     archive: signed && t('archive'),
     pstats: sb.rpc('public_stats'),
     lbHistory: signed && sb.rpc('leaderboard_history'),
-    awards: myRole === 'admin' && sb.from('point_awards').select('*').order('created_at', { ascending: false }).limit(200),
+    awards: myRole === 'admin' && sb.from('point_awards').select('*').is('rule_id', null).order('created_at', { ascending: false }).limit(200),
+    pointRules: myRole === 'admin' && sb.from('point_rules').select('*').order('created_at', { ascending: false }),
+    ruleAwards: myRole === 'admin' && sb.from('point_awards').select('rule_id').not('rule_id', 'is', null),
     pending: off && sb.from('pending_changes').select('*').order('created_at', { ascending: false }).limit(200),
     questions: off && sb.from('questions').select('*').order('created_at', { ascending: false }),
     members: signed && t('members'),
@@ -724,6 +726,8 @@ async function load(){
   db.guestReqs = Array.isArray(R.guestReqs) ? R.guestReqs : [];
   db.lbHistory = Array.isArray(R.lbHistory) ? R.lbHistory : [];
   db.awards = R.awards || [];
+  db.pointRules = Array.isArray(R.pointRules) ? R.pointRules : [];
+  db.ruleCounts = {}; (Array.isArray(R.ruleAwards) ? R.ruleAwards : []).forEach(a => db.ruleCounts[a.rule_id] = (db.ruleCounts[a.rule_id] || 0) + 1);
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
   (R.profiles || []).forEach(p => {
     const auto = buildTitle(p.tier, p.branch), custom = p.title && p.title !== auto ? p.title : '';   // older profiles saved the automatic title
@@ -1555,6 +1559,40 @@ function lbHistorySection(){
   </section>`;
 }
 // Admin → Leaderboard seasons: past seasons (with delete) and, folded away, the reset. The reset takes three clicks on purpose.
+// Automatic point rules (see 56-point-rules.sql): points for everyone who joins, RSVPs, checks in, or fills out a survey
+// by a deadline. The database applies them now and every 10 minutes; RSVP rules can take points back from no-shows.
+const RULE_KINDS = { join: 'Joining the club', rsvp: 'RSVPing to an event', checkin: 'Checking in at an event', survey: 'Filling out an event’s survey' };
+function pointRulesSection(){
+  const d = ui.prDraft || (ui.prDraft = { kind: 'join', event: '', deadline: '', points: 10, reason: '', noshow: true });
+  const evs = sortedEvents().filter(e => e.cat !== 'officer_meeting');
+  const needsEv = d.kind !== 'join', rules = db.pointRules || [];
+  const ruleLine = r => { const e = evById(r.event_id), done = Date.parse(r.deadline) < Date.now();
+    return `<div class="list-row"><div><div class="ev-title">${r.points > 0 ? '+' : ''}${r.points} for ${esc(RULE_KINDS[r.kind].toLowerCase())}${e ? ': ' + esc(e.title) : ''}</div>
+      <div class="ev-sub">By ${fmtMtStamp(Date.parse(r.deadline))} · “${esc(r.reason)}” · ${db.ruleCounts[r.id] || 0} ${(db.ruleCounts[r.id] || 0) === 1 ? 'person has' : 'people have'} it${r.revoke_noshow ? ' · no-shows lose it' : ''} · ${done ? '<span class="tag">Deadline passed</span>' : '<span class="tag ok">Active</span>'}</div></div>
+      ${delBtn('pr-' + r.id, 'Delete and remove its points', 'pr-del', r.id)}</div>`; };
+  return `<form class="panel stack" id="f-point-rule" style="gap:12px" novalidate>
+      <div><h3 style="margin:0">Automatic point rules</h3><span class="hint">Give points to everyone who does something by a deadline. People who already qualify get the points right away; anyone who qualifies later gets them within about 10 minutes. Officers and test accounts are skipped.</span></div>
+      <div class="grid2">
+        <label>Give points for<select id="pr-kind">${Object.entries(RULE_KINDS).map(([k, l]) => `<option value="${k}" ${d.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        ${needsEv ? `<label>Event<select id="pr-event"><option value="">Choose an event…</option>${evs.map(e => `<option value="${e.id}" ${d.event === e.id ? 'selected' : ''}>${fmtDay(e.date)} · ${esc(e.title)}</option>`).join('')}</select></label>` : '<span></span>'}
+      </div>
+      <div class="grid2">
+        <label>Deadline <span class="hint">Mountain Time. Counts through that minute.</span><input id="pr-deadline" type="datetime-local" value="${esc(d.deadline)}"></label>
+        <label>Points<input id="pr-points" type="number" min="-1000" max="1000" step="1" value="${esc(d.points)}"></label>
+      </div>
+      <label>Reason <span class="hint">Members see this with their points.</span><input id="pr-reason" maxlength="200" value="${esc(d.reason)}" placeholder="${d.kind === 'join' ? 'e.g. Joined by October 31' : 'e.g. RSVP’d early'}"></label>
+      ${d.kind === 'rsvp' ? `<label class="check"><input type="checkbox" id="pr-noshow" ${d.noshow ? 'checked' : ''}> Take the points back from people who RSVP’d but didn’t check in (once the event ends)</label>` : ''}
+      <div class="err" id="pr-err"></div>
+      <div><button class="btn" type="submit">Add rule</button></div>
+    </form>
+    ${rules.length ? `<section class="stack" style="gap:6px"><div class="section-head"><h3>Rules</h3><span class="muted">${rules.length}</span></div>${rules.map(ruleLine).join('')}</section>` : ''}`;
+}
+// Keeps what's typed in the rule form when it redraws (choosing what earns points shows or hides the event).
+function readRuleDraft(){
+  const d = ui.prDraft, g = id => document.getElementById(id); if (!d || !g('pr-kind')) return;
+  d.kind = g('pr-kind').value; d.event = g('pr-event') ? g('pr-event').value : d.event; d.deadline = g('pr-deadline').value;
+  d.points = g('pr-points').value; d.reason = g('pr-reason').value; if (g('pr-noshow')) d.noshow = g('pr-noshow').checked;
+}
 // Admin → Award points: pick one or more members, give (or take away) points with a reason.
 // Awards count toward the current leaderboard season. Officers aren't ranked, so only members are listed.
 function adminPointsBody(){
@@ -1562,6 +1600,7 @@ function adminPointsBody(){
   const members = db.users.filter(u => roleOf(u.email) === 'member').sort((a, b) => (a.last + a.first).localeCompare(b.last + b.first));
   const shown = members.filter(u => !q || (u.first + ' ' + u.last + ' ' + u.email + ' ' + (u.major || '')).toLowerCase().includes(q));
   return `<div class="stack" style="gap:24px">
+    ${pointRulesSection()}
     <form class="panel stack" id="f-award" style="gap:12px" novalidate>
       <h3 style="margin:0">Award points</h3>
       <div class="grid2">
@@ -6194,6 +6233,8 @@ document.addEventListener('click', async ev => {
       else document.querySelectorAll('.aw-pick').forEach(c => ui.awPick.add(c.value));
       render(); break; }
     case 'ta-del': await act(async () => { must(await sb.from('test_accounts').delete().eq('email', id)); await logChange('Removed test account ' + id); }, 'Test account removed'); break;
+    case 'pr-del': { const r = (db.pointRules || []).find(x => x.id === id);
+      await act(async () => { must(await sb.from('point_rules').delete().eq('id', id)); await logChange('Deleted the point rule “' + (r ? r.reason : '') + '” and its points'); }, 'Rule deleted and its points removed'); break; }
     case 'aw-del': { const a = db.awards.find(x => x.id === id);
       await act(async () => { must(await sb.from('point_awards').delete().eq('id', id)); await logChange(`Undid ${a.points} points for ${userName(a.email)} (${a.reason})`); }, 'Award undone'); break; }
     case 'lb-season-del': await act(async () => { must(await sb.rpc('delete_leaderboard_season', { season: id })); await logChange('Deleted a past leaderboard season'); }, 'Season deleted'); ui.lbSeason = null; render(); break;
@@ -6468,6 +6509,7 @@ document.addEventListener('change', async e => {
   if (id === 'stats-ev'){ ui.statsEv = e.target.value; render(); }
   if (id === 'plan-ev'){ ui.planEv = e.target.value; render(); }
   if (id === 'lb-season'){ ui.lbSeason = e.target.value; render(); }
+  if (id === 'pr-kind'){ readRuleDraft(); render(); }
   if (e.target.classList && e.target.classList.contains('aw-pick')){
     ui.awPick = ui.awPick || new Set();
     if (e.target.checked) ui.awPick.add(e.target.value); else ui.awPick.delete(e.target.value);
@@ -7051,6 +7093,20 @@ async function handleSubmit(f, v, err){
     await load(); render(); toast('Test ' + role + ' added. Now sign up with that email.');
   }
 
+  if (f.id === 'f-point-rule'){
+    readRuleDraft(); const d = ui.prDraft, pts = parseInt(d.points, 10);
+    if (d.kind !== 'join' && !d.event) return err('pr-err', 'Choose the event.');
+    if (!d.deadline) return err('pr-err', 'Pick the deadline.');
+    if (!pts || Math.abs(pts) > 1000) return err('pr-err', 'Enter a number of points between -1000 and 1000 (not 0).');
+    if (!d.reason.trim()) return err('pr-err', 'Add a reason members will see, like “Joined by October 31.”');
+    const r = await sb.from('point_rules').insert({ kind: d.kind, event_id: d.kind === 'join' ? null : d.event, deadline: mtFromInput(d.deadline), points: pts, reason: d.reason.trim(), revoke_noshow: d.kind === 'rsvp' && !!d.noshow });
+    if (r.error) return err('pr-err', /point_rules/.test(r.error.message || '') ? 'Point rules aren’t set up yet. Run 56-point-rules.sql in Supabase.' : errMsg(r.error));
+    const ap = await sb.rpc('apply_point_rules');
+    await logChange('Added the point rule “' + d.reason.trim() + '”');
+    ui.prDraft = null; await load(); render();
+    toast(ap.error ? 'Rule added. Points go out within 10 minutes.' : `Rule added. ${ap.data || 0} ${ap.data === 1 ? 'person' : 'people'} got the points.`);
+    return;
+  }
   if (f.id === 'f-award'){
     const pts = parseInt(v('aw-pts'), 10), reason = v('aw-reason'), who = [...(ui.awPick || [])];
     if (!who.length) return err('aw-err', 'Select at least one member.');

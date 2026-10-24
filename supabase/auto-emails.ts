@@ -8,6 +8,7 @@
 //   * a survey request 30 minutes after an event ends, to people who checked in and haven't answered the survey
 //   * event scheduling and external guest approval steps: whoever a request is waiting on, and the officer who sent it
 //   * new questions and partner inquiries: the presidents and the Communications branch (see 54-question-notifications.sql)
+//   * (not an email) applies the automatic leaderboard point rules each run (see 56-point-rules.sql)
 //   * a summary email when chat messages sit unread for over an hour (see 42-chats.sql; works even when the
 //     event emails are off)
 // Each member chooses email and/or notification per kind in Notification settings (members.notify). By default,
@@ -186,6 +187,7 @@ Deno.serve(async () => {
       return n > 0 || !to.length;
     };
     await db.rpc('request_timeouts');   // presidents' reviews that waited 48 hours move on
+    await db.rpc('apply_point_rules');  // automatic point rules: new qualifiers get points, no-shows lose them (56-point-rules.sql)
     const { data: reqs } = await db.from('event_requests').select('event_id, status, status_by, note, signoff_note, sent_by, sent_at, status_at, nudged_at, branch, votes, history').in('status', ['branch', 'review', 'sent', 'returned', 'submitted', 'approved', 'signoff', 'published']);
     if (reqs?.length) {
       const { data: evs } = await db.from('events').select('id, title, cat, date').in('id', reqs.map((r) => r.event_id));
