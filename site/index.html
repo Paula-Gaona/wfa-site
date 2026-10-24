@@ -1042,7 +1042,6 @@ function homeIntro(join){
       <p class="muted">Members also build the skills firms look for through workshops in financial modeling, valuation, and the Bloomberg Terminal, plus case and stock pitch competitions.</p>${join ? '' : '</div>'}</div>
     ${join ? `<div class="stack" style="gap:10px"><div class="section-head"><h2>How to join</h2></div>
       <p>Membership is free and open to every UVU student.</p>
-      ${(() => { const r = activeRules().find(x => x.kind === 'join'); return r ? `<div class="notice" style="margin:0"><span><strong>Join by ${fmtMtStamp(Date.parse(r.deadline))}</strong> and get <strong>${r.points} bonus leaderboard points</strong>.</span></div>` : ''; })()}
       <ol class="role-list" style="gap:8px">
         <li><strong>Create your account</strong> on this site with your UVU ID: <a href="#signup">Become a member</a>.</li>
         <li><strong>RSVP to events</strong> from the <a href="#calendar">calendar</a>.</li>
@@ -1050,6 +1049,14 @@ function homeIntro(join){
       </ol>
       <div><a class="btn" href="#signup">Join the WFA</a></div></div>` : ''}
   </section>`;
+}
+// For visitors, while a joining bonus rule is active: a banner at the top of the home page with the bonus and the prize.
+function joinBonusBanner(){
+  if (can('member')) return '';
+  const r = activeRules().find(x => x.kind === 'join'); if (!r) return '';
+  return `<div class="today-bar" style="border-color:var(--gold,#B8923A)"><div class="stack" style="gap:2px"><span class="live">Join by ${fmtMtStamp(Date.parse(r.deadline))}</span>
+    <strong>Get ${r.points} bonus leaderboard points.</strong>${db.settings.lbPrize ? `<span class="muted" style="font-size:.92rem">${esc(db.settings.lbPrize)}</span>` : ''}</div>
+    <a class="btn small" href="#signup">Join the WFA</a></div>`;
 }
 function viewHome(){
   // The next event that hasn't started (today's in-progress event is already in the banner above).
@@ -1059,6 +1066,7 @@ function viewHome(){
     ${todayBar()}
     ${pendingSurveys().length ? `<div class="notice row" style="justify-content:space-between;align-items:center;gap:10px"><span>You have ${pendingSurveys().length} event survey${pendingSurveys().length === 1 ? '' : 's'} to fill out (+${SURVEY_POINTS} points each).</span><a class="btn small" href="#account">Take the survey${pendingSurveys().length === 1 ? '' : 's'}</a></div>` : ''}
     ${appsBanner()}
+    ${joinBonusBanner()}
     <section class="hero">
       <div class="hero-copy">
         <div class="hero-title">
