@@ -5456,6 +5456,7 @@ async function showPopup(title, body, chatId, tag){
 }
 // Clicking a pop-up shown by the app helper brings this window forward and opens the chat.
 if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => {
+  if (e.data && e.data.pushed){ const p = e.data.pushed; if (!/#messages/.test(p.url || '')) liveNotice(p.title, p.body, p.url ? 'Open' : '', p.url); liveRefresh(true); return; }
   if (e.data && e.data.openUrl){ try { location.hash = new URL(e.data.openUrl).hash.slice(1); } catch(x){} return; }
   if (!e.data || e.data.openChat === undefined) return;
   location.hash = 'messages' + (e.data.openChat ? '/' + e.data.openChat : '');
@@ -5772,6 +5773,7 @@ function syncTabHash(r){
   ui._hash = want;
 }
 function render(){
+  ui.dirtyForm = false;
   if (!loaded) return;
   let r = route();
   if (session && (needsPassword() || needsProfile())) r = 'setup';   // finish the account before anything else
@@ -5840,6 +5842,52 @@ function addPasswordToggles(){
     wrap.insertAdjacentHTML('beforeend', '<button type="button" class="pw-toggle" data-act="toggle-pw" aria-pressed="false" aria-label="Show password">Show</button>');
   });
 }
+/* ---------- Keeping the page current without a refresh ---------- */
+// Club data reloads when you come back to the tab and once a minute while it's open. While you're typing in a form
+// (or a pop-up is open), only the menu dots and counts update, so nothing you're writing is lost.
+let liveBusy = false, lastLive = Date.now();
+document.addEventListener('input', e => { if (e.target.closest && e.target.closest('#app form')) ui.dirtyForm = true; }, true);
+async function liveRefresh(force){
+  if (!loaded || liveBusy || document.visibilityState !== 'visible') return;
+  if (!force && Date.now() - lastLive < 15000) return;
+  liveBusy = true; lastLive = Date.now();
+  try {
+    await load();
+    const a = document.activeElement, typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest('#app');
+    if (ui.dirtyForm || typing || route() === 'messages' || !document.getElementById('modal').hidden){ renderChrome(route()); updateTabBadge(); }
+    else { const y = window.scrollY; render(); window.scrollTo(0, y); }
+  } catch(e){} finally { liveBusy = false; }
+  checkVersion();
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') liveRefresh(); });
+window.addEventListener('focus', () => liveRefresh());
+setInterval(() => liveRefresh(), 60000);
+// A small message at the bottom of the screen: a notification that arrived while the site was open, or a new version.
+function liveNotice(title, body, label, url, sticky){
+  let el = document.getElementById('livebar');
+  if (!el){ el = document.createElement('div'); el.id = 'livebar'; el.setAttribute('role', 'status');
+    el.style.cssText = 'position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:65;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-left:4px solid var(--gold,#B8923A);border-radius:var(--radius);box-shadow:0 10px 28px rgba(0,0,0,.2);padding:12px 14px;display:flex;gap:12px;align-items:center;max-width:calc(100% - 32px);width:28rem';
+    document.body.appendChild(el); }
+  el.innerHTML = `<div style="flex:1;min-width:0"><strong>${esc(title || '')}</strong>${body ? `<div class="hint" style="white-space:pre-wrap;max-height:4.5em;overflow:hidden">${esc(body)}</div>` : ''}</div>`
+    + (label ? `<button class="btn small" id="livebar-go">${esc(label)}</button>` : '') + '<button class="modal-x" id="livebar-x" aria-label="Dismiss">×</button>';
+  el.hidden = false;
+  el.querySelector('#livebar-x').onclick = () => { el.hidden = true; };
+  const go = el.querySelector('#livebar-go');
+  if (go) go.onclick = () => { el.hidden = true; if (url === 'reload') location.reload(); else { try { location.hash = new URL(url, location.origin).hash.slice(1); } catch(x){} } };
+  clearTimeout(liveNotice.h); if (!sticky) liveNotice.h = setTimeout(() => { el.hidden = true; }, 12000);
+}
+// After a deploy, offer the new version instead of leaving the old one open.
+let siteTag = null;
+async function checkVersion(){
+  if (ui.updateShown) return;
+  try {
+    const t = (await fetch('/', { method: 'HEAD', cache: 'no-store' })).headers.get('etag'); if (!t) return;
+    if (siteTag === null) siteTag = t;
+    else if (t !== siteTag){ ui.updateShown = true; liveNotice('The site was updated', 'Refresh to get the latest version.', 'Refresh', 'reload', true); }
+  } catch(e){}
+}
+setTimeout(checkVersion, 5000);
+
 window.addEventListener('hashchange', () => {
   if (/access_token|error_description/.test(location.hash)) return;
   ui.armed = null; ui.lbStep = 0; closeModal(); render(); window.scrollTo(0,0);

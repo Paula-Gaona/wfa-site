@@ -28,14 +28,16 @@ self.addEventListener('fetch', (e) => {
 });
 
 // Push notifications (from supabase/push.ts) arrive here, even when the site and app are closed.
-// If a WFA window is in use, the site shows the message itself (and plays the chime), so no pop-up is needed.
+// If a WFA window is in use, it gets the message instead of a pop-up: chats already show it with a chime, and
+// everything else shows as a message at the bottom of the page (and the page refreshes its data).
 self.addEventListener('push', (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (err) { d = { body: e.data ? e.data.text() : '' }; }
   e.waitUntil((async () => {
     const wins = (await self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
       .filter((w) => new URL(w.url).origin === self.location.origin);
-    if (wins.some((w) => w.focused)) return;
+    const focused = wins.filter((w) => w.focused);
+    if (focused.length) { focused.forEach((w) => w.postMessage({ pushed: { title: d.title || '', body: d.body || '', url: d.url || '' } })); return; }
     try { if (self.navigator.setAppBadge) await self.navigator.setAppBadge(); } catch (err) { /* badges not supported */ }
     const url = d.url || '/';
     const chat = (url.split('#messages/')[1] || '');
