@@ -5480,7 +5480,7 @@ function updateTabBadge(){
 const NOTIFY_KINDS = [
   ['messages', 'Messages', true, true, 'Email: one summary if messages sit unread for an hour'],
   ['events', 'Event reminders', true, true, '1 week before, 1 day before, and the day of (as admins set them)'],
-  ['checkin', 'Check-in is open', true, false, '15 minutes before events you RSVP’d to'],
+  ['checkin', 'Check-in is open', true, false, '15 minutes before events you RSVP’d to, and again when it starts if you haven’t checked in'],
   ['surveys', 'Survey requests', true, true, 'After events you checked in to'],
   ['announcements', 'New announcements', true, false, '']];
 function urlB64(b){ const pad = '='.repeat((4 - b.length % 4) % 4), raw = atob((b + pad).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from([...raw].map(c => c.charCodeAt(0))); }

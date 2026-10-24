@@ -3,7 +3,8 @@
 //   * event reminders 1 week before, 1 day before, and the day of (9 AM, 2 hours before, or 1 hour before), to
 //     everyone or to people who RSVP'd; for case competitions, only accepted teams (unless an admin turns that off)
 //     Guests who RSVP'd without an account and asked for reminders get that event's reminders by email.
-//   * "check-in is open" notifications 15 minutes before an event, to people who RSVP'd (notification only)
+//   * "check-in is open" notifications 15 minutes before an event, and again at the start, to people who RSVP'd
+//     and haven't checked in (notification only)
 //   * a survey request 30 minutes after an event ends, to people who checked in and haven't answered the survey
 //   * event scheduling and external guest approval steps: whoever a request is waiting on, and the officer who sent it
 //   * a summary email when chat messages sit unread for over an hour (see 42-chats.sql; works even when the
@@ -371,6 +372,15 @@ ${lastNote}`
           jobs.push({ ev, kind: 'checkin_open', subject: '', emailTo: [], pushTo: base.filter((e) => getsPush(e, 'checkin')),
             html: () => '', text: () => '', push: { title: `Check-in is open: ${ev.title}`, body: 'Tap to check in with the code on screen.', url: link } });
         }
+      }
+      // A second nudge when the event starts, to people signed up who still haven't checked in. Only after the
+      // 15-minute one went out on an earlier run, so nobody gets both at once.
+      if (pushOn && already.has(ev.id + '|checkin_open') && !already.has(ev.id + '|checkin_start') && now >= start && now < end) {
+        const { data: att } = await db.from('attendance').select('email').eq('event_id', ev.id);
+        const here = new Set((att || []).map((x) => x.email));
+        const base = real(await signedUp(ev)).filter((e) => !here.has(e));
+        jobs.push({ ev, kind: 'checkin_start', subject: '', emailTo: [], pushTo: base.filter((e) => getsPush(e, 'checkin')),
+          html: () => '', text: () => '', push: { title: `Starting now: ${ev.title}`, body: 'You haven\'t checked in yet. Tap to check in with the code on screen.', url: link } });
       }
 
       if (cfg.survey && !already.has(ev.id + '|survey')) {
