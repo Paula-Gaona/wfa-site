@@ -3399,7 +3399,20 @@ function evHelp(k){
   if (el && el.value.trim() === v.trim()) return `<span class="helper same">✓ Matches the guest approval</span>`;
   return `<span class="helper">Guest approval said: <strong>${esc(v.length > 140 ? v.slice(0, 140) + '…' : v)}</strong> <button type="button" class="btn ghost small" data-act="ev-use" data-id="${k}">Use</button></span>`;
 }
-function evHelpRefresh(){ Object.keys(EV_HELP).forEach(k => { const box = document.getElementById('ev-help-' + k); if (box) box.innerHTML = evHelp(k); }); }
+function evHelpRefresh(){ Object.keys(EV_HELP).forEach(k => { const box = document.getElementById('ev-help-' + k); if (box) box.innerHTML = evHelp(k); }); evSeatCheck(); }
+// The layout's seats against the seat limit (shown under the seat limit, so it's seen when the limit changes later).
+function evSeatInfo(){
+  if (ui.guestForm) return null;
+  const d = ui.rq && ui.rq.key === (ui.editEvent || 'new') && !rqLocked(ui.editEvent) ? ui.rq.d : (rqOf(ui.editEvent) || {}).form;
+  if (!d) return null;
+  const seats = rqSeats(d), cap = +((document.getElementById('ev-cap') || {}).value || 0) || +d.estMax || 0;
+  return seats && cap && seats < cap ? { seats, cap } : null;
+}
+function evSeatCheck(){
+  const box = document.getElementById('ev-seat-warn'); if (!box) return;
+  const x = evSeatInfo(), keep = (document.getElementById('ev-seat-ok') || {}).checked;
+  box.innerHTML = x ? `<div class="rq-warn">Available seats (${x.seats}) is less than the maximum attendance (${x.cap}).<label class="check" style="margin-top:6px"><input type="checkbox" id="ev-seat-ok" ${keep ? 'checked' : ''}> Ignore: not every guest needs a seat</label></div>` : '';
+}
 function gh(d, k){
   const src = rqHelperSource(d); if (!src) return '';
   const v = src.req[k]; if (v == null || v === '' || (Array.isArray(v) && !v.length)) return '';
@@ -3830,7 +3843,7 @@ function sugForm(e, r){
       <span class="hint">Change anything below right in the field, and say why. If every change you suggest gets made, it counts as your approval when it comes back.${r.status === 'signoff' ? ' The date, room, and times are already approved by UVU, so only these can change.' : ''}</span>
       ${sugDefs(e, r.status).map(([t, f, l, type]) => `<div class="sug-row"><span class="sug-label">${esc(l)}</span>${sugInput(t, f, type, sugCur(e, r, t, f))}<input class="sug-why" data-why="${t}:${f}" placeholder="Why? (needed if you change this)"></div>`).join('')}
       <label>Other comments <span class="hint">Optional if you changed something above</span><textarea id="sug-note" rows="2"></textarea></label>
-      <fieldset class="rq-q"><legend>If you wrote a comment, what is it? <span class="hint">Needed with a comment</span></legend><div class="stack" style="gap:6px">
+      <fieldset class="rq-q" id="sug-kind-box" hidden><legend>What is your comment?</legend><div class="stack" style="gap:6px">
         <label class="check"><input type="radio" name="sug-kind" value="context"> Just context: making my field changes is enough</label>
         <label class="check"><input type="radio" name="sug-kind" value="more"> It describes more changes: I need to look at it again</label></div></fieldset>
       <div class="row"><button class="btn ghost" type="submit">Request these changes</button></div><div class="err" id="sug-err"></div></form></details>`;
@@ -3870,7 +3883,7 @@ function sugApply(c){
   const g = id => document.getElementById(id) || {};
   if (c.field === 'title') g('ev-title').value = c.to;
   if (c.field === 'descr') g('ev-desc').value = c.to;
-  if (c.field === 'cap'){ g('ev-cap').value = c.to; g('rq-cap').value = c.to; }
+  if (c.field === 'cap'){ g('ev-cap').value = c.to; g('rq-cap').value = c.to; evSeatCheck(); }
   if (c.field === 'members_only') g('ev-members-only').checked = c.to === 'true';
   if (c.field === 'qa_enabled') g('ev-qa').checked = c.to === 'true';
   if (c.field === 'rsvp_opens'){ g('ev-rsvp-when').value = c.to ? 'date' : 'publish'; g('ev-rsvp-at').value = mtLocalInput(c.to || null); }
@@ -3904,7 +3917,9 @@ function sugChecklist(e, r, s){
   const snap = s.snapshot || {}, before = snap.ev || {}, now = { title: e.title, desc: e.desc, cap: e.cap, membersOnly: e.membersOnly, qaEnabled: e.qaEnabled, rsvpOpens: e.rsvpOpens, guestDelay: e.guestDelay, date: e.date, start: e.start, end: e.end, loc: e.loc };
   const evLabels = { title: ['title', 'Title'], desc: ['descr', 'Description'], cap: ['cap', 'Seat limit'], membersOnly: ['members_only', 'Members only'], qaEnabled: ['qa_enabled', 'Q&A'], rsvpOpens: ['rsvp_opens', 'RSVP opening time'], guestDelay: ['guest_rsvp_delay', 'Guest RSVP timing'], date: ['', 'Date'], start: ['', 'Start time'], end: ['', 'End time'], loc: ['', 'Location'] };
   const other = [];
-  if (snap.ev) Object.entries(evLabels).forEach(([k, [f, l]]) => { if (!asked.has(f) && JSON.stringify(before[k] ?? null) !== JSON.stringify(now[k] ?? null)) other.push(l); });
+  // Compare like the database does: on/off as true/false, numbers as numbers, blanks as nothing.
+  const norm = (k, v) => ['membersOnly', 'qaEnabled'].includes(k) ? !!v : k === 'cap' ? +v || 0 : k === 'guestDelay' ? (v == null || v === '' ? null : +v) : k === 'rsvpOpens' ? (v ? Date.parse(v) : null) : (v ?? '');
+  if (snap.ev) Object.entries(evLabels).forEach(([k, [f, l]]) => { if (!asked.has(f) && JSON.stringify(norm(k, before[k])) !== JSON.stringify(norm(k, now[k]))) other.push(l); });
   if (snap.form){ const labels = Object.fromEntries(SUG_FORM.map(([k, l]) => [k, l])), a = snap.form, b = r.form || {};
     [...new Set([...Object.keys(a), ...Object.keys(b)])].forEach(k => { if (!asked.has(k) && JSON.stringify(a[k] ?? '') !== JSON.stringify(b[k] ?? '')) other.push(labels[k] || ({ dates: 'Ideal dates', altDates: 'Other dates', campus: 'On/off campus', locs: 'Locations', sp: 'Sponsor', speakers: 'External guests', layout: 'Layout', chairs: 'Chairs', tables: 'Tables', room: 'Specific room' })[k] || k); }); }
   return `<div class="stack" style="gap:4px;margin-top:4px"><span class="hint"><strong>Since this request:</strong></span>
@@ -3971,6 +3986,7 @@ function rqRedraw(){
 }
 ['input', 'change'].forEach(type => document.addEventListener(type, ev => {
   const t = ev.target; if (!t || !t.dataset) return;
+  if (t.id === 'sug-note'){ const kb = document.getElementById('sug-kind-box'); if (kb) kb.hidden = !t.value.trim(); }
   if (['ev-title', 'ev-desc', 'ev-cap'].includes(t.id)) evHelpRefresh();
   if (t.id === 'ev-desc' || t.dataset.gq === 'evDesc'){ const pv = document.getElementById(t.id === 'ev-desc' ? 'ev-desc-preview' : 'gq-desc-preview'); if (pv){ pv.hidden = !t.value.trim(); pv.querySelector('p').textContent = t.value; } }
   if (t.dataset.gq && ui.gq){ ui.gq.d[t.dataset.gq] = t.value; if (t.dataset.check) rqShowCheck(t, false); if (type === 'change' && t.dataset.gq === 'estFrom') render(); return; }
@@ -4278,7 +4294,7 @@ function viewOfficer(){
         </div>
         <label class="ev-final" ${evHideFinal(e, e?.cat || Object.keys(CATS)[0]) ? 'hidden' : ''}>Location<input id="ev-loc" required value="${esc(rqFinalizing(e?.id) && e?.loc === 'TBD' ? '' : e?.loc)}" placeholder="Building and room">
           <span class="hint">Need a room? <a href="https://www.uvu.edu/woodbury/current-students.html" target="_blank" rel="noopener">Reserve one through Woodbury ↗</a></span></label>
-        <label>Seat limit<input id="ev-cap" type="number" min="0" value="${esc(e?.cap || 0)}"><span id="ev-help-cap"></span><span class="hint">0 means no limit. RSVPs close when the limit is reached. Guest RSVPs count too.</span></label>
+        <label>Seat limit<input id="ev-cap" type="number" min="0" value="${esc(e?.cap || 0)}"><span id="ev-help-cap"></span><div id="ev-seat-warn"></div><span class="hint">0 means no limit. RSVPs close when the limit is reached. Guest RSVPs count too.</span></label>
         ${rsvpBox(e)}
         <label class="check" id="ev-mo-wrap" ${e?.cat === 'officer_meeting' ? 'hidden' : ''}><input type="checkbox" id="ev-members-only" ${e?.membersOnly ? 'checked' : ''}> Members only <span class="hint">Everyone can see it, but only members can RSVP and check in (a reason to join).</span></label>
         ${!e || e.draft ? (isScheduler() ? `<label class="check"><input type="checkbox" id="ev-soon" ${e?.comingSoon ? 'checked' : ''}> Coming-soon page <span class="hint">While this is a draft, anyone who opens its link sees only the title and the coming-soon description below (no date or other details) instead of “event not found.” Copy the link or QR code from the Drafts list after saving.</span></label>
@@ -4300,11 +4316,11 @@ function viewOfficer(){
         ${(() => { const drafts = db.events.filter(x => x.draft).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
           return drafts.length ? `<div class="section-head"><h3>Drafts</h3><span class="muted">${drafts.length}</span></div>
           <div>${drafts.map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)} <span class="tag">Draft</span>${needsSched(ev.cat) ? (rqTag(ev.id) || ' <span class="tag">Not sent to scheduler</span>') : ''}${ev.comingSoon ? ' <span class="tag soon">Coming soon</span>' : ''}${pendingFor('event', ev.id).length ? ' <span class="tag warn">Waiting for approval</span>' : ''}</div><div class="ev-sub">${fmtDay(ev.date)} · ${esc(catName(ev.cat))}</div></div>
-            <div class="row" style="gap:6px">${!needsSched(ev.cat) ? `<button class="btn small" data-act="publish-event" data-id="${ev.id}">${canPublish() ? 'Publish' : 'Submit for approval'}</button>` : (rqOf(ev.id) || {}).status === 'approved' && isScheduler() ? `<button class="btn small" data-act="edit-event" data-id="${ev.id}">Finalize</button>` : ''}<button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button><button class="btn ghost small" data-act="copy-link" data-id="${ev.id}">Copy link</button><button class="btn ghost small" data-act="qr" data-id="${ev.id}" data-kind="page">QR code</button>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${ev.id}">${ev.comingSoon ? 'Turn off coming soon' : 'Turn on coming soon'}</button>` : ''}${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('')}
+            <div class="row" style="gap:6px">${!needsSched(ev.cat) ? `<button class="btn small" data-act="publish-event" data-id="${ev.id}">${canPublish() ? 'Publish' : 'Submit for approval'}</button>` : (rqOf(ev.id) || {}).status === 'approved' && isScheduler() ? `<button class="btn small" data-act="edit-event" data-id="${ev.id}">Finalize</button>` : ''}<button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button>${ev.comingSoon ? `<a class="btn ghost small" href="#event/${ev.id}">View page</a>` : ''}<button class="btn ghost small" data-act="copy-link" data-id="${ev.id}">Copy link</button><button class="btn ghost small" data-act="qr" data-id="${ev.id}" data-kind="page">QR code</button>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${ev.id}">${ev.comingSoon ? 'Turn off coming soon' : 'Turn on coming soon'}</button>` : ''}${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('')}
           <span class="hint">A draft’s link and QR code are already final: they start working when it’s published${drafts.some(x => x.comingSoon) ? ' (drafts with a coming-soon page show that until then)' : ''}.</span></div>` : ''; })()}
         <div class="section-head"><h3>Published events</h3><span class="muted">${sortedEvents().length}</span></div>
         <div>${sortedEvents().reverse().map(ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)}</div><div class="ev-sub">${fmtDay(ev.date)} · ${going(ev.id).length} RSVP${isPast(ev)?' · '+attended(ev.id).length+' attended':''}</div></div>
-          <div class="row" style="gap:6px"><button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button>${isPast(ev) ? '' : `<button class="btn ghost small ${ui.armed === 'unpub-' + ev.id ? 'armed' : ''}" data-act="unpublish-event" data-id="${ev.id}" data-key="unpub-${ev.id}">${ui.armed === 'unpub-' + ev.id ? 'Click again to unpublish' : 'Unpublish'}</button>`}${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('') || '<div class="empty">No published events yet.</div>'}</div>
+          <div class="row" style="gap:6px"><button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button><a class="btn ghost small" href="#event/${ev.id}">View page</a>${isPast(ev) ? '' : `<button class="btn ghost small ${ui.armed === 'unpub-' + ev.id ? 'armed' : ''}" data-act="unpublish-event" data-id="${ev.id}" data-key="unpub-${ev.id}">${ui.armed === 'unpub-' + ev.id ? 'Click again to unpublish' : 'Unpublish'}</button>`}${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`).join('') || '<div class="empty">No published events yet.</div>'}</div>
       </section></div>`;
   }
 
@@ -4780,7 +4796,7 @@ function eventInner(id, page){
     ${checkin}
     ${rsvpTimesNote(e)}
     ${!session && !isCase(e) && !hasStarted(e) && !e.draft ? (e.membersOnly ? membersOnlyNote(e, 'RSVP') : guestRsvpBox(e)) : ''}
-    ${e.qaEnabled && !isPast(e) && !e.draft ? qaBox(e) : ''}
+    ${e.qaEnabled && !isPast(e) && !e.draft ? (qaOpen(e) ? qaBox(e) : `<div class="panel"><span class="muted">Questions for the ${(e.speakers || []).length > 1 ? 'guests' : 'speaker'} open when RSVPs do.</span></div>`) : ''}
     <div class="row">${action}${can('officer') ? `<span style="margin-left:auto" class="row"><button class="btn ghost small" data-act="edit-event" data-id="${id}">Edit event</button></span>` : ''}</div>
     ${codeBox}
     ${soonBox}
@@ -4831,6 +4847,12 @@ function guestRsvpBox(e){
       </form></details></div>`;
 }
 // Q&A for guest speakers: submit questions ahead of time. Members see their own; officers see them all.
+// Q&A opens with RSVPs: members when member RSVPs open, guests when guest RSVPs open, officers right away.
+function qaOpen(e){
+  if (can('officer')) return true;
+  const t = session ? e.rsvpOpens : (e.guestOpens || e.rsvpOpens);
+  return !t || Date.now() >= Date.parse(t);
+}
 function qaBox(e){
   if (e.membersOnly && !session) return '';
   const mine = (db.evQuestions || []).filter(q => q.event_id === e.id && q.email === session);
@@ -6653,7 +6675,7 @@ async function handleSubmit(f, v, err){
     if (f.querySelector('.qa-sp') && !picked.length) return err('qa-err', 'Pick who your question is for.');
     const r = await sb.rpc('ask_question', { p_event: id, p_question: text, p_name: name, p_speakers: speakers });
     if (r.error) return err('qa-err', /ask_question/.test(r.error.message || '') ? 'Q&A isn’t set up yet.' : errMsg(r.error));
-    const msg = { missing: 'Questions aren’t open for this event.', closed: 'This event has ended.', empty: 'Write a question first.', long: 'Keep it under 600 characters.',
+    const msg = { notyet: 'Questions open when RSVPs do.', missing: 'Questions aren’t open for this event.', closed: 'This event has ended.', empty: 'Write a question first.', long: 'Keep it under 600 characters.',
       name: 'Enter your name.', many: 'That’s a lot of questions! Try again in a bit.' }[r.data];
     if (msg) return err('qa-err', msg);
     toast('Question sent. Thanks!'); await load(); refreshEvent(id); return;
@@ -6728,7 +6750,7 @@ async function handleSubmit(f, v, err){
     const id = f.dataset.id, e = evById(id), r = rqOf(id), note = v('sug-note'), { changes, missing } = readSuggestions(e, r);
     if (missing.length) return err('sug-err', 'Say why for: ' + missing.join(', ') + '.');
     if (!changes.length && !note) return err('sug-err', 'Change a field above or write a comment.');
-    const kind = (f.querySelector('[name="sug-kind"]:checked') || {}).value || '';
+    const kind = note ? (f.querySelector('[name="sug-kind"]:checked') || {}).value || '' : 'context';
     if (note && !kind) return err('sug-err', 'Say whether your comment is just context or describes more changes.');
     const snapshot = { ev: { title: e.title, desc: e.desc, cap: e.cap, membersOnly: e.membersOnly, qaEnabled: e.qaEnabled, rsvpOpens: e.rsvpOpens, guestDelay: e.guestDelay, date: e.date, start: e.start, end: e.end, loc: e.loc }, form: r.form };
     return act(async () => { const x = await sb.rpc('president_vote', { p_event: id, p_ok: false, p_note: note, p_changes: changes, p_note_kind: kind || 'context', p_snapshot: snapshot }); if (x.error) throw x.error;
@@ -6782,6 +6804,8 @@ async function handleSubmit(f, v, err){
     const mode = (f._submitter && f._submitter.dataset.mode) || (wasDraft || sched ? 'draft' : 'publish');
     // Events that need scheduling: save as a draft with the scheduling request (sent if they chose Send to scheduler).
     // The scheduler sends the finalized event to the presidents (it publishes once they sign off).
+    if (sched && ['send', 'branchok', 'signoff'].includes(mode)){ const x = evSeatInfo(), ok = (document.getElementById('ev-seat-ok') || {}).checked || (rqState().d || {}).seatOk;
+      if (x && !ok){ evSeatCheck(); document.getElementById('ev-seat-warn').scrollIntoView({ block: 'center', behavior: 'smooth' }); return err('ev-err', `Available seats (${x.seats}) is less than the maximum attendance (${x.cap}). Add seats, or check “Ignore” under the seat limit.`); } }
     if (sched && mode === 'signoff'){
       if (!rqFinalizing(editing)) return err('ev-err', 'Only an event scheduler can do this, once UVU approves it.');
       if (!e.descr) return err('ev-err', 'Add a description first.');

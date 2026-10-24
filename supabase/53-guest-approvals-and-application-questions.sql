@@ -14,7 +14,8 @@
 --    (not the officer). A president's comment is marked "just context" or "more changes"; with "more changes", making
 --    their field edits doesn't count as their approval. Each request for changes keeps a snapshot, so presidents can
 --    see what was changed since. Events can show their external guests (name, title, company, bio) on the event page,
---    and Q&A questions can be addressed to specific guests. Officers can RSVP as soon as an event is published.
+--    and Q&A questions can be addressed to specific guests (questions open when RSVPs do). Officers can RSVP as soon as
+--    an event is published. A president is only counted as approving after their changes if nothing else was changed.
 -- 3. Admins can edit the officer application's questions. Answers are saved with the question text they answered.
 -- Run once in Supabase -> SQL Editor, after 52. Safe to run again.
 
@@ -35,6 +36,8 @@ begin
   select * into e from events where id = p_event;
   if e.id is null or not e.qa_enabled or e.draft or e.test <> public.is_test() or (e.members_only and auth.uid() is null) then return 'missing'; end if;
   if now() >= (e.date + e.end_time) at time zone 'America/Denver' then return 'closed'; end if;
+  -- Questions open with RSVPs: members when member RSVPs open, guests when guest RSVPs open, officers anytime.
+  if not public.is_officer() and ((me is not null and e.rsvp_opens > now()) or (me is null and coalesce(e.guest_rsvp_opens, e.rsvp_opens) > now())) then return 'notyet'; end if;
   if trim(coalesce(p_question, '')) = '' then return 'empty'; end if;
   if char_length(p_question) > 600 then return 'long'; end if;
   if me is not null then select trim(m.first || ' ' || m.last) into nm from members m where m.email = me; end if;
@@ -86,7 +89,29 @@ begin
 end $$;
 grant execute on function public.branch_review(uuid, boolean, text) to authenticated;
 
--- A president whose comment says "more changes" isn't counted as approving just because their field edits were made.
+-- Was anything changed that the president didn't ask for (compared with the snapshot taken when they asked)?
+create or replace function public.rq_asked(s jsonb, f text) returns boolean
+language sql immutable as $$ select exists (select 1 from jsonb_array_elements(coalesce(s->'changes', '[]')) c where c->>'field' = f); $$;
+create or replace function public.rq_other_changes(ev events, form jsonb, s jsonb) returns boolean
+language sql stable as $$
+  select s->'snapshot' is not null and (
+    exists (select 1 from jsonb_object_keys(coalesce(s#>'{snapshot,form}', '{}') || coalesce(form, '{}')) k
+            where not rq_asked(s, k) and (s#>'{snapshot,form}'->k) is distinct from (form->k))
+    or (s#>'{snapshot,ev}' is not null and (
+         (not rq_asked(s, 'title') and coalesce(s#>>'{snapshot,ev,title}', '') <> coalesce(ev.title, ''))
+      or (not rq_asked(s, 'descr') and coalesce(s#>>'{snapshot,ev,desc}', '') <> coalesce(ev.descr, ''))
+      or (not rq_asked(s, 'cap') and coalesce((s#>>'{snapshot,ev,cap}')::int, 0) <> coalesce(ev.cap, 0))
+      or (not rq_asked(s, 'members_only') and coalesce((s#>>'{snapshot,ev,membersOnly}')::boolean, false) <> coalesce(ev.members_only, false))
+      or (not rq_asked(s, 'qa_enabled') and coalesce((s#>>'{snapshot,ev,qaEnabled}')::boolean, false) <> coalesce(ev.qa_enabled, false))
+      or (not rq_asked(s, 'rsvp_opens') and nullif(s#>>'{snapshot,ev,rsvpOpens}', '')::timestamptz is distinct from ev.rsvp_opens)
+      or (not rq_asked(s, 'guest_rsvp_delay') and nullif(s#>>'{snapshot,ev,guestDelay}', '')::int is distinct from ev.guest_rsvp_delay)
+      or coalesce(s#>>'{snapshot,ev,date}', '') <> coalesce(ev.date::text, '')
+      or coalesce(s#>>'{snapshot,ev,start}', '') <> left(coalesce(ev.start_time::text, ''), 5)
+      or coalesce(s#>>'{snapshot,ev,end}', '') <> left(coalesce(ev.end_time::text, ''), 5)
+      or coalesce(s#>>'{snapshot,ev,loc}', '') <> coalesce(ev.loc, ''))));
+$$;
+-- A president is counted as approving when every change they asked for was made, their comment was just context,
+-- and nothing else was changed; otherwise they look at it again.
 create or replace function public.rq_start_round(p_event uuid, p_status text, p_by text) returns void
 language plpgsql security definer set search_path = public as $$
 declare r event_requests; ev events; s jsonb; out jsonb := '[]'; v jsonb := '{}';
@@ -102,7 +127,8 @@ begin
   for s in select x from jsonb_array_elements(r.suggestions) x loop
     if s->>'step' = p_status and s->>'state' = 'open' then
       if jsonb_array_length(coalesce(s->'changes', '[]')) > 0 and coalesce(s->>'note_kind', '') <> 'more'
-         and not exists (select 1 from jsonb_array_elements(s->'changes') c where not rq_change_met(ev, r.form, c)) then
+         and not exists (select 1 from jsonb_array_elements(s->'changes') c where not rq_change_met(ev, r.form, c))
+         and not rq_other_changes(ev, r.form, s) then
         v := v || jsonb_build_object(s->>'by', now()); s := s || '{"state": "met"}';
       else s := s || '{"state": "answered"}'; end if;
     end if;
