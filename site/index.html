@@ -1074,6 +1074,11 @@ function viewHome(){
       </aside>`; })() : ''}
     </section>
     ${homeIntro(!can('member'))}
+    <section class="panel row" style="justify-content:space-between;align-items:center;gap:16px;border-left:4px solid var(--gold,#B8923A);border-radius:0">
+      <div class="stack" style="gap:6px;max-width:70ch;min-width:0"><h3 style="margin:0">Partner with us</h3>
+        <p class="muted" style="margin:0">Work in finance? Speak to students, host an office visit, judge a case competition, recruit from our resume book, or sponsor an event. Whether you have an hour or a recruiting season, there’s a way to get involved.</p></div>
+      <a class="btn ghost" href="#partners">Get involved</a>
+    </section>
     <div class="home-cols">
       <section class="stack">
         <div class="section-head"><h2>Announcements</h2>${can('officer')?'<a href="#officer" data-tab="announcements">Write one</a>':''}</div>
