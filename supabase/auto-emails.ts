@@ -251,7 +251,7 @@ ${lastNote}`
     }
 
     // External guest approvals (see 53-guest-approvals-and-application-questions.sql): the same idea, lighter steps.
-    const { data: gqs } = await db.from('guest_requests').select('id, status, status_by, note, sent_by, status_at, nudged_at, branch, form').in('status', ['branch', 'review', 'sent', 'returned', 'submitted', 'approved']);
+    const { data: gqs } = await db.from('guest_requests').select('id, status, status_by, note, sent_by, status_at, nudged_at, branch, form, history').in('status', ['branch', 'review', 'sent', 'returned', 'submitted', 'approved']);
     if (gqs?.length) {
       const { data: sch } = await db.from('event_schedulers').select('email');
       const schedulers = (sch || []).map((s) => s.email);
@@ -259,14 +259,27 @@ ${lastNote}`
       const { data: acc } = await db.from('access_list').select('email');
       const isOfficer = new Set((acc || []).map((a) => a.email));
       const presidents = (offs || []).filter((o) => o.tier === 'president' && isOfficer.has(o.email)).map((o) => o.email);
+      const vps = (offs || []).filter((o) => o.tier === 'vice_president' && isOfficer.has(o.email)).map((o) => o.email);
       const branchLeads = (b: string | null) => { const p = (offs || []).filter((o) => b && o.branch === b && ['president', 'vice_president'].includes(o.tier) && isOfficer.has(o.email)).map((o) => o.email); return p.length ? p : presidents; };
       const nowMs = Date.now(), ms = (t: string | null) => (t ? new Date(t).getTime() : 0);
       for (const g of gqs) {
         const name = (g.form || {}).name || 'an external guest', link = `${site}/#officer/scheduling/g:${g.id}`;
         const fresh = ms(g.nudged_at) < ms(g.status_at);
         let to: string[] = [], subject = '', body = '', again = 0;
-        if (g.status === 'branch') { to = branchLeads(g.branch); again = 2 * DAY; subject = `Review an external guest: ${name}`; body = `${firstName.get(g.sent_by) || 'An officer'} wants to get ${name} approved by UVU as an external guest. Approve it or send it back with notes.`; }
-        else if (g.status === 'review') { to = presidents.filter((e) => e !== g.sent_by); again = DAY; subject = `External guest for approval: ${name}`; const d = businessAdd(ms(g.status_at), 48); body = `${name} needs one president's approval before going to UVU. If nobody sends it back, it moves on automatically on ${fmtDay(d)} at ${fmtTime(d)}.`; }
+        if (g.status === 'branch') {
+          to = branchLeads(g.branch); again = 2 * DAY; subject = `Review an external guest: ${name}`;
+          const lastNote = ((g.history || [])[(g.history || []).length - 1] || {}).note || '';
+          body = /^Back to branch leadership/.test(lastNote) ? `A president sent the guest request for ${name} back to the branch leadership:\n${lastNote}\n\nEdit it, then approve it again.`
+            : `${firstName.get(g.sent_by) || 'An officer'} wants to get ${name} approved by UVU as an external guest. Approve it, edit and approve it, or send it back with notes.`;
+        } else if (g.status === 'review') {
+          // One approval from a president (not the sender or whoever sent it here); VPs too after 36 business hours,
+          // unless a president sent it. It only moves on by itself when a president sent it.
+          const presSent = presidents.includes(g.sent_by), late = !presSent && nowMs >= businessAdd(ms(g.status_at), 36);
+          to = [...presidents, ...(late ? vps : [])].filter((e) => e !== g.sent_by && e !== g.status_by); again = DAY;
+          subject = `External guest for approval: ${name}`; const d = businessAdd(ms(g.status_at), 48);
+          body = `${name} needs one approval before going to UVU. ` + (presSent ? `If nobody sends it back, it moves on automatically on ${fmtDay(d)} at ${fmtTime(d)}.` : `It won't move on until someone approves it.`);
+          if (late && ms(g.nudged_at) < businessAdd(ms(g.status_at), 36)) again = 1;   // tell the VPs as soon as they're added
+        }
         else if (g.status === 'sent') { to = schedulers; again = 2 * DAY; subject = `External guest to submit: ${name}`; body = `${name} is ready to submit to UVU for approval as an external guest.`; }
         else if (g.status === 'returned') { to = [g.sent_by]; subject = `Changes needed: ${name}`; body = `Your external guest request for ${name} was sent back. What to fix:\n${g.note || '(no note)'}`; }
         else if (g.status === 'submitted') { to = [g.sent_by]; subject = `Submitted to UVU: ${name}`; body = `The scheduler submitted ${name} to UVU for approval.`; }
