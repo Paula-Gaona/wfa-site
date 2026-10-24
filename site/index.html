@@ -887,6 +887,8 @@ function leaderboard(){
   return db.leader.map(x => ({ u:{ first:x.first, last:x.last, major:x.major, email:x.email }, pts:x.points, n:x.events, anon:!!x.anon }))
     .sort((a,b) => b.pts - a.pts || b.n - a.n || (a.u.last || '').localeCompare(b.u.last || ''));
 }
+// Standard competition ranking: people with the same points share a rank, and the next rank skips ahead (1, 1, 1, 4).
+function tiedRank(list, i, pts){ return list.findIndex(x => pts(x) === pts(list[i])) + 1; }
 function duesOf(email){ return (db.dues[email] || { status:'unpaid' }).status; }
 function toast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 3200); }
 function datebox(s){ const d = parseDay(s); return `<div class="datebox"><span class="m">${MON[d.getMonth()]}</span><span class="d">${d.getDate()}</span></div>`; }
@@ -1507,7 +1509,7 @@ function viewLeaderboard(){
     <div class="tiles">${Object.entries(PTS).filter(([,v]) => v).map(([k,v]) => `<div class="tile"><span class="v">${v}</span><span class="l">${catName(k)}</span></div>`).join('')}</div>
     ${db.settings.lbSince ? `<p class="hint" style="margin:0">This season started ${fmtDay(iso(new Date(db.settings.lbSince)))}. Past seasons are below.</p>` : ''}
     <div class="table-wrap"><table><thead><tr><th class="num">Rank</th><th>Member</th><th>Major</th><th class="num">Events</th><th class="num">Points</th></tr></thead><tbody>
-      ${lb.map((x,i) => `<tr class="${x.u.email===session?'me':''}"><td class="num"><span class="rank">${i+1}</span></td><td>${x.anon && x.u.email !== session && !can('officer') ? 'Anonymous Member' : esc(x.u.first) + ' ' + esc(x.u.last)}${x.u.email===session ? ' (you' + (x.anon ? ', shown to others as Anonymous Member' : '') + ')' : x.anon && can('officer') ? ' <span class="tag">Anonymous to members</span>' : ''}</td><td>${x.anon && x.u.email !== session && !can('officer') ? '' : esc(x.u.major)}</td><td class="num">${x.n}</td><td class="num">${x.pts}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No members yet.</td></tr>'}
+      ${lb.map((x,i) => `<tr class="${x.u.email===session?'me':''}"><td class="num"><span class="rank">${tiedRank(lb, i, y => y.pts)}</span></td><td>${x.anon && x.u.email !== session && !can('officer') ? 'Anonymous Member' : esc(x.u.first) + ' ' + esc(x.u.last)}${x.u.email===session ? ' (you' + (x.anon ? ', shown to others as Anonymous Member' : '') + ')' : x.anon && can('officer') ? ' <span class="tag">Anonymous to members</span>' : ''}</td><td>${x.anon && x.u.email !== session && !can('officer') ? '' : esc(x.u.major)}</td><td class="num">${x.n}</td><td class="num">${x.pts}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No members yet.</td></tr>'}
     </tbody></table></div>
     ${lbHistorySection()}
   </div>`;
@@ -1522,7 +1524,7 @@ function lbHistorySection(){
     <label style="max-width:24rem">Season<select id="lb-season">${seasons.map(x => `<option value="${x.id}" ${x.id === s.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
     <p class="hint" style="margin:0">${span} · ${s.standings.length} member${s.standings.length === 1 ? '' : 's'} earned points</p>
     <div class="table-wrap"><table><thead><tr><th class="num">Rank</th><th>Member</th><th>Major</th><th class="num">Events</th><th class="num">Points</th></tr></thead><tbody>
-      ${s.standings.map((r, i) => `<tr class="${r.me ? 'me' : ''}"><td class="num"><span class="rank">${i + 1}</span></td><td>${esc(r.first)} ${esc(r.last)}${r.me ? ' (you)' : ''}</td><td>${esc(r.major)}</td><td class="num">${r.events}</td><td class="num">${r.points}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No one earned points that season.</td></tr>'}
+      ${s.standings.map((r, i) => `<tr class="${r.me ? 'me' : ''}"><td class="num"><span class="rank">${tiedRank(s.standings, i, y => y.points)}</span></td><td>${esc(r.first)} ${esc(r.last)}${r.me ? ' (you)' : ''}</td><td>${esc(r.major)}</td><td class="num">${r.events}</td><td class="num">${r.points}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No one earned points that season.</td></tr>'}
     </tbody></table></div>
   </section>`;
 }
@@ -1693,7 +1695,7 @@ function viewAccount(){
   const u = me(); if (!u) return gate('member');
   const mine = sortedEvents().filter(e => going(e.id).includes(u.email) || attended(e.id).includes(u.email));
   const up = mine.filter(e => !isPast(e)), past = mine.filter(isPast).reverse();
-  const lb = leaderboard(), rank = lb.findIndex(x => x.u.email === u.email) + 1;
+  const lb = leaderboard(), myIdx = lb.findIndex(x => x.u.email === u.email), rank = myIdx < 0 ? 0 : tiedRank(lb, myIdx, y => y.pts);
   const d = duesOf(u.email);
   return `<div class="view">
     <section class="row" style="justify-content:space-between;align-items:end">
