@@ -1247,16 +1247,17 @@ const RESUME_BOOK_WAY = 'Receiving our resume book';
 const FIRM_WAYS = [RESUME_BOOK_WAY, 'Career fairs and recruiting events', 'Info session or recruiting night', 'Sharing internships and full-time jobs',
   'Office visit or excursion', 'Firm-led workshop or training', 'Sponsoring a case competition', 'Event sponsorship (food, venue, materials)',
   'Funding for competitions, travel, software, or treks', 'Something else (tell us below)'];
+// Each card's "I'm interested" button checks the matching box on the form: [professional choice, firm choice].
 const PARTNER_WAYS = [
-  ['Resume book', 'Get resumes from members who opted in, sorted by finance function, so you only see candidates for your area. Check “Receiving our resume book” below.'],
-  ['Guest speaker or panel', 'Share your career path and what your work actually looks like.'],
-  ['Workshop or technical training', 'Teach a hands-on session: modeling, valuation, Excel, Bloomberg, or interview prep.'],
-  ['Office visit or excursion', 'Host members at your office for a tour, a panel, and time with your team.'],
-  ['Career fairs and recruiting events', 'Meet members at UVU career fairs, info sessions, or a recruiting night we host for you.'],
-  ['Share internships and jobs', 'Send openings and we’ll get them to members whose interests match.'],
-  ['Coffee chats and mentoring', 'Give a student 20 minutes of advice, or mentor someone through recruiting season.'],
-  ['Case competition sponsor or judge', 'Write a case, judge finalists, or sponsor prizes.'],
-  ['Sponsorship', 'Help cover event costs, software, travel to competitions, or treks.']
+  ['Resume book', 'Get resumes from members who opted in, sorted by finance function, so you only see candidates for your area.', [null, RESUME_BOOK_WAY]],
+  ['Guest speaker or panel', 'Share your career path and what your work actually looks like.', ['Guest speaker or panel', null]],
+  ['Workshop or technical training', 'Teach a hands-on session: modeling, valuation, Excel, Bloomberg, or interview prep.', ['Workshop or technical training', 'Firm-led workshop or training']],
+  ['Office visit or excursion', 'Host members at your office for a tour, a panel, and time with your team.', [null, 'Office visit or excursion']],
+  ['Career fairs and recruiting events', 'Meet members at UVU career fairs, info sessions, or a recruiting night we host for you.', [null, 'Career fairs and recruiting events']],
+  ['Share internships and jobs', 'Send openings and we’ll get them to members whose interests match.', ['Referring students or sharing openings at my firm', 'Sharing internships and full-time jobs']],
+  ['Coffee chats and mentoring', 'Give a student 20 minutes of advice, or mentor someone through recruiting season.', ['Coffee chats and informational interviews', null]],
+  ['Case competition sponsor or judge', 'Write a case, judge finalists, or sponsor prizes.', ['Judging a case or stock pitch competition', 'Sponsoring a case competition']],
+  ['Sponsorship', 'Help cover event costs, software, travel to competitions, or treks.', [null, 'Event sponsorship (food, venue, materials)']]
 ];
 function viewPartners(){
   const s = db.pstats, tile = (v, l) => `<div class="tile"><span class="v">${v}</span><span class="l">${l}</span></div>`;
@@ -1278,16 +1279,18 @@ function viewPartners(){
       <div class="eyebrow">Partner with us</div>
       <h1 class="page">Meet UVU’s future finance professionals</h1>
       <p style="font-size:1.15rem">The Wolverine Finance Association connects firms and professionals with Utah Valley University students preparing for careers in investment banking, private equity, corporate finance, wealth management, and more. Whether you have an hour or a recruiting season, there’s a way to get involved.</p>
+      <div class="row" style="gap:10px"><button class="btn" data-act="p-jump">Get in touch</button><span class="hint">Takes about 2 minutes. An officer replies within a few days.</span></div>
     </section>
     ${stats}
     <section class="stack" style="gap:16px">
       <div class="section-head"><h2>Ways to work with us</h2></div>
-      <div class="careers">${PARTNER_WAYS.map(([t, d]) => `<article class="panel stack" style="gap:6px"><h3>${esc(t)}</h3><p class="muted" style="margin:0">${esc(d)}</p></article>`).join('')}</div>
+      <span class="hint">Pick what interests you, and we’ll fill it in on the form below.</span>
+      <div class="careers">${PARTNER_WAYS.map(([t, d], i) => `<article class="panel stack" style="gap:6px"><h3>${esc(t)}</h3><p class="muted" style="margin:0">${esc(d)}</p><div><button class="btn ghost small" data-act="p-way" data-id="${i}">I’m interested →</button></div></article>`).join('')}</div>
     </section>
-    <section class="split">
+    <section class="split" id="partner-form">
       <div class="stack"><h2>Get in touch</h2><p>Tell us a little about yourself and what you have in mind. An officer will email you back, usually within a few days.</p>
         <p class="hint">Students with questions about the club can use the <a href="#contact">Contact page</a>.</p></div>
-      <form class="panel stack" id="f-partner" novalidate>
+      <form class="panel stack" id="f-partner" novalidate style="border-top:4px solid var(--gold,#B8923A)">
         <fieldset class="stack" style="gap:6px"><legend>I’m reaching out as</legend>
           <div class="row" style="gap:18px">
             <label class="check"><input type="radio" name="p-type" value="professional" checked> An industry professional</label>
@@ -6270,6 +6273,18 @@ document.addEventListener('click', async ev => {
       render(); break; }
     case 'ta-del': await act(async () => { must(await sb.from('test_accounts').delete().eq('email', id)); await logChange('Removed test account ' + id); }, 'Test account removed'); break;
     case 'prize-edit': ui.prizeEdit = true; render(); break;
+    case 'p-jump': case 'p-way': {   // Partner page: jump to the form (and check the card's choice)
+      const form = document.getElementById('f-partner'); if (!form) break;
+      if (a === 'p-way'){
+        const [pro, firm] = PARTNER_WAYS[+id][2], cur = (form.querySelector('input[name="p-type"]:checked') || {}).value;
+        const type = cur === 'firm' ? (firm ? 'firm' : 'professional') : (pro ? 'professional' : 'firm');
+        if (type !== cur){ const r = form.querySelector(`input[name="p-type"][value="${type}"]`); r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true })); }
+        const box = [...form.querySelectorAll(`[data-ways="${type}"] .p-way`)].find(c => c.value === (type === 'firm' ? firm : pro));
+        if (box) box.checked = true;
+      }
+      form.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      const name = document.getElementById('p-name'); if (name && !name.value) setTimeout(() => name.focus({ preventScroll: true }), 400);
+      break; }
     case 'prize-cancel': ui.prizeEdit = false; render(); break;
     case 'pr-del': { const r = (db.pointRules || []).find(x => x.id === id);
       await act(async () => { must(await sb.from('point_rules').delete().eq('id', id)); await logChange('Deleted the point rule “' + (r ? r.reason : '') + '” and its points'); }, 'Rule deleted and its points removed'); break; }
