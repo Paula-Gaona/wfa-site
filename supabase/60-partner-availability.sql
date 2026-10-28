@@ -1,4 +1,4 @@
--- WFA update: the Partner with us form asks when works best (months, days, and times of day, all optional).
+-- WFA update: the Partner with us form asks when works best (months, and weekday times on a click-and-drag grid; optional).
 -- Officers see it on the inquiry in Officer tools -> Questions. Run once in Supabase -> SQL Editor. Safe to run again.
 
 alter table public.questions add column if not exists availability jsonb;

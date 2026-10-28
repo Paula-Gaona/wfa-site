@@ -1280,17 +1280,26 @@ const PARTNER_WAYS = [
   ['Case competition sponsor or judge', 'Write a case, judge finalists, or sponsor prizes.', ['Judging a case or stock pitch competition', 'Sponsoring a case competition']],
   ['Sponsorship', 'Help cover event costs, software, travel to competitions, or treks.', [null, 'Event sponsorship (food, venue, materials)']]
 ];
-// "When works best" on the Partner form: the next 9 months, weekdays, and rough times of day (all optional).
-const P_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const P_TIMES = ['Morning (8–11 AM)', 'Midday (11 AM–1 PM)', 'Afternoon (1–5 PM)', 'Evening (5–8 PM)'];
+// "When works best" on the Partner form (optional): the next 9 months, and a weekday grid from 8 AM to 8 PM in
+// half hours that they click or drag across (same painting as the members' Availability page).
+const P_STEP = 30, P_MINS = Array.from({ length: 24 }, (_, i) => 8 * 60 + i * P_STEP);
 function pMonths(){
   const d = new Date(), out = [];
   for (let i = 0; i < 9; i++){ const m = new Date(d.getFullYear(), d.getMonth() + i, 1); out.push(m.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })); }
   return out;
 }
+// "Mon 9:00 AM–12:00 PM, 2:00 PM–3:30 PM; Wed ..." from slot keys like "mon-540".
+function slotRanges(keys){
+  const set = new Set(keys || []);
+  return DAYS.map(([k, l]) => {
+    const mins = P_MINS.filter(m => set.has(k + '-' + m)), out = [];
+    mins.forEach(m => { const r = out[out.length - 1]; if (r && r[1] === m) r[1] = m + P_STEP; else out.push([m, m + P_STEP]); });
+    return out.length ? l + ' ' + out.map(([a, b]) => fmtMin(a) + '–' + fmtMin(b)).join(', ') : '';
+  }).filter(Boolean).join('; ');
+}
 function availabilityText(a){
   if (!a) return '';
-  return [['Months', a.months], ['Days', a.days], ['Times', a.times]].filter(([, x]) => (x || []).length).map(([l, x]) => `${l}: ${x.join(', ')}`).join(' · ');
+  return [(a.months || []).length ? 'Months: ' + a.months.join(', ') : '', (a.slots || []).length ? 'Times: ' + slotRanges(a.slots) : ''].filter(Boolean).join(' · ');
 }
 function viewPartners(){
   const s = db.pstats, tile = (v, l) => `<div class="tile"><span class="v">${v}</span><span class="l">${l}</span></div>`;
@@ -1346,9 +1355,13 @@ function viewPartners(){
         <fieldset class="stack" style="gap:6px"><legend>I’m interested in <span class="hint">(check any)</span></legend>
           ${[['professional', PRO_WAYS, false], ['firm', FIRM_WAYS, true]].map(([k, list, hide]) => `<div class="checks" data-ways="${k}" ${hide ? 'hidden' : ''}>${list.map(t => `<label class="check"><input type="checkbox" class="p-way" value="${esc(t)}"> ${esc(t)}</label>`).join('')}</div>`).join('')}
         </fieldset>
-        <fieldset class="stack" style="gap:8px"><legend>When works best? <span class="hint">(optional, check any; leave blank if you’re flexible)</span></legend>
-          ${[['Months', pMonths(), 'p-when-m'], ['Days', P_DAYS, 'p-when-d'], ['Times', P_TIMES, 'p-when-t']].map(([l, list, c]) => `<div class="stack" style="gap:2px"><span class="hint" style="font-weight:700">${l}</span>
-            <div class="row" style="gap:2px 14px">${list.map(t => `<label class="check"><input type="checkbox" class="${c}" value="${esc(t)}"> ${esc(t)}</label>`).join('')}</div></div>`).join('')}
+        <fieldset class="stack" style="gap:8px"><legend>When works best? <span class="hint">(optional; leave blank if you’re flexible)</span></legend>
+          <div class="stack" style="gap:2px"><span class="hint" style="font-weight:700">Months</span>
+            <div class="row" style="gap:2px 14px">${pMonths().map(t => `<label class="check"><input type="checkbox" class="p-when-m" value="${esc(t)}"> ${esc(t)}</label>`).join('')}</div></div>
+          <div class="stack" style="gap:4px"><span class="hint" style="font-weight:700">Days and times that usually work</span>
+            <span class="hint">Click a time, or press and drag to fill a stretch. Start on a green block to clear it.</span>
+            <div data-pgrid>${slotGrid((k, m, l) => { const key = k + '-' + m, on = (ui.pWhen || new Set()).has(key);
+              return `<button type="button" class="slot ${on ? 'on' : ''}" data-slot="${key}" aria-pressed="${on}" aria-label="${l} ${fmtMin(m)}" data-tip="${l} ${fmtMin(m)}–${fmtMin(m + P_STEP)}"></button>`; }, DAYS.slice(0, 5), P_MINS)}</div></div>
         </fieldset>
         <label>Message<textarea id="p-msg" required maxlength="5000" style="min-height:120px" placeholder="Dates you have in mind, roles you’re hiring for, or anything else."></textarea></label>
         <label class="hp" aria-hidden="true">Leave this blank<input id="p-hp" tabindex="-1" autocomplete="off"></label>
@@ -2637,22 +2650,24 @@ function availDraft(){ if (!ui.availDraft) ui.availDraft = new Set(db.avail[sess
 
 // Click-and-drag painting: starting on an empty slot marks free, starting on a filled one clears.
 // Everything in the rectangle from the starting slot to the pointer gets painted, so fast drags don't skip rows.
-let availPaint = null, availStart = null;
-function paintSlot(el, on){ const d = availDraft(), key = el.dataset.slot; on ? d.add(key) : d.delete(key); el.classList.toggle('on', on); el.setAttribute('aria-pressed', on); }
+let availPaint = null, availStart = null, availGrid = null;
+// The Partner form's grid (data-pgrid) paints into its own set; everything else is the member's weekly availability.
+function slotSet(el){ if (el.closest('[data-pgrid]')){ ui.dirtyForm = true; return ui.pWhen || (ui.pWhen = new Set()); } return availDraft(); }
+function paintSlot(el, on){ const d = slotSet(el), key = el.dataset.slot; on ? d.add(key) : d.delete(key); el.classList.toggle('on', on); el.setAttribute('aria-pressed', on); }
 function slotPos(key){ const [k, m] = key.split('-'); return { d: DAYS.findIndex(x => x[0] === k), m: +m }; }
 document.addEventListener('pointerdown', e => {
   const el = e.target.closest('[data-slot]'); if (!el || e.button > 0) return;
-  e.preventDefault(); availPaint = !availDraft().has(el.dataset.slot); availStart = slotPos(el.dataset.slot); paintSlot(el, availPaint);
+  e.preventDefault(); availPaint = !slotSet(el).has(el.dataset.slot); availStart = slotPos(el.dataset.slot); availGrid = el.closest('table'); paintSlot(el, availPaint);
 });
 document.addEventListener('pointermove', e => {
   if (availPaint === null) return;
   const hit = document.elementFromPoint(e.clientX, e.clientY), el = hit && hit.closest('[data-slot]');
-  if (!el) return;
+  if (!el || el.closest('table') !== availGrid) return;
   const p = slotPos(el.dataset.slot);
   for (let d = Math.min(p.d, availStart.d); d <= Math.max(p.d, availStart.d); d++)
     for (let m = Math.min(p.m, availStart.m); m <= Math.max(p.m, availStart.m); m += STEP) {
-      const c = document.querySelector(`[data-slot="${DAYS[d][0]}-${m}"]`);
-      if (c && availDraft().has(c.dataset.slot) !== availPaint) paintSlot(c, availPaint);
+      const c = availGrid.querySelector(`[data-slot="${DAYS[d][0]}-${m}"]`);
+      if (c && slotSet(c).has(c.dataset.slot) !== availPaint) paintSlot(c, availPaint);
     }
 });
 document.addEventListener('pointerup', () => { availPaint = null; });
@@ -2668,9 +2683,9 @@ document.addEventListener('pointermove', e => {
 window.addEventListener('scroll', () => { const tip = document.getElementById('slottip'); if (tip) tip.hidden = true; }, { passive: true });
 document.addEventListener('pointercancel', () => { availPaint = null; });
 
-function slotGrid(cellHtml){
-  return `<div class="table-wrap"><table class="avail q"><thead><tr><th></th>${DAYS.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead><tbody>
-    ${SLOT_MINS.map(m => `<tr class="${m % 60 === 0 ? 'hr' : ''}"><th scope="row">${m % 60 === 0 ? fmtMin(m) : ''}</th>${DAYS.map(([k, l]) => `<td>${cellHtml(k, m, l)}</td>`).join('')}</tr>`).join('')}
+function slotGrid(cellHtml, days = DAYS, mins = SLOT_MINS){
+  return `<div class="table-wrap"><table class="avail q"><thead><tr><th></th>${days.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead><tbody>
+    ${mins.map(m => `<tr class="${m % 60 === 0 ? 'hr' : ''}"><th scope="row">${m % 60 === 0 ? fmtMin(m) : ''}</th>${days.map(([k, l]) => `<td>${cellHtml(k, m, l)}</td>`).join('')}</tr>`).join('')}
   </tbody></table></div>`;
 }
 function viewAvailability(){
@@ -6058,7 +6073,7 @@ document.addEventListener('click', async ev => {
   document.querySelectorAll('details.ms[open]').forEach(d => { if (!d.contains(ev.target)) d.open = false; });
   if (!ev.target.closest('[data-act="nav-menu"]')) closeNavMenu();
   const slotEl = ev.target.closest('[data-slot]');
-  if (slotEl){ if (ev.detail === 0) paintSlot(slotEl, !availDraft().has(slotEl.dataset.slot)); return; }
+  if (slotEl){ if (ev.detail === 0) paintSlot(slotEl, !slotSet(slotEl).has(slotEl.dataset.slot)); return; }
   const link = ev.target.closest('a[data-tab]');
   if (link) { if (link.getAttribute('href') === '#admin') ui.adminTab = link.dataset.tab; else ui.officerTab = link.dataset.tab; if (route() === link.getAttribute('href').slice(1)) render(); }
   const t = ev.target.closest('[data-act]');
@@ -6780,8 +6795,8 @@ async function handleSubmit(f, v, err){
     const funcs = firm ? [...document.querySelectorAll('.p-func:checked')].map(c => c.value) : [];
     if (funcs.length) q.functions = funcs;
     const picked = c => [...document.querySelectorAll('.' + c + ':checked')].map(x => x.value);
-    const when = { months: picked('p-when-m'), days: picked('p-when-d'), times: picked('p-when-t') };
-    if (when.months.length || when.days.length || when.times.length) q.availability = when;
+    const when = { months: picked('p-when-m'), slots: [...(ui.pWhen || [])] };
+    if (when.months.length || when.slots.length) q.availability = when;
     if (!q.name) return err('p-err', 'Add your name.');
     if (firm && !q.company) return err('p-err', 'Add the name of your firm or organization.');
     if (!EMAIL_RE.test(q.email)) return err('p-err', 'Enter a valid email address so we can reply.');
@@ -6791,7 +6806,7 @@ async function handleSubmit(f, v, err){
       const { availability, ...rest } = q; q.message += '\n\nWhen works best: ' + availabilityText(availability); r = await sb.from('questions').insert({ ...rest, message: q.message });
     }
     if (r.error) return err('p-err', /kind|company|ways|job_title|questions/.test(r.error.message || '') ? 'This form isn’t set up yet. Please try again later.' : errMsg(r.error));
-    ui.pSent = q.email; render(); window.scrollTo(0, 0);
+    ui.pSent = q.email; ui.pWhen = null; render(); window.scrollTo(0, 0);
     return;
   }
 
