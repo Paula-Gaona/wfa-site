@@ -1280,6 +1280,18 @@ const PARTNER_WAYS = [
   ['Case competition sponsor or judge', 'Write a case, judge finalists, or sponsor prizes.', ['Judging a case or stock pitch competition', 'Sponsoring a case competition']],
   ['Sponsorship', 'Help cover event costs, software, travel to competitions, or treks.', [null, 'Event sponsorship (food, venue, materials)']]
 ];
+// "When works best" on the Partner form: the next 9 months, weekdays, and rough times of day (all optional).
+const P_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const P_TIMES = ['Morning (8–11 AM)', 'Midday (11 AM–1 PM)', 'Afternoon (1–5 PM)', 'Evening (5–8 PM)'];
+function pMonths(){
+  const d = new Date(), out = [];
+  for (let i = 0; i < 9; i++){ const m = new Date(d.getFullYear(), d.getMonth() + i, 1); out.push(m.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })); }
+  return out;
+}
+function availabilityText(a){
+  if (!a) return '';
+  return [['Months', a.months], ['Days', a.days], ['Times', a.times]].filter(([, x]) => (x || []).length).map(([l, x]) => `${l}: ${x.join(', ')}`).join(' · ');
+}
 function viewPartners(){
   const s = db.pstats, tile = (v, l) => `<div class="tile"><span class="v">${v}</span><span class="l">${l}</span></div>`;
   const ans = s ? s.answered : 0;
@@ -1334,6 +1346,10 @@ function viewPartners(){
         <fieldset class="stack" style="gap:6px"><legend>I’m interested in <span class="hint">(check any)</span></legend>
           ${[['professional', PRO_WAYS, false], ['firm', FIRM_WAYS, true]].map(([k, list, hide]) => `<div class="checks" data-ways="${k}" ${hide ? 'hidden' : ''}>${list.map(t => `<label class="check"><input type="checkbox" class="p-way" value="${esc(t)}"> ${esc(t)}</label>`).join('')}</div>`).join('')}
         </fieldset>
+        <fieldset class="stack" style="gap:8px"><legend>When works best? <span class="hint">(optional, check any; leave blank if you’re flexible)</span></legend>
+          ${[['Months', pMonths(), 'p-when-m'], ['Days', P_DAYS, 'p-when-d'], ['Times', P_TIMES, 'p-when-t']].map(([l, list, c]) => `<div class="stack" style="gap:2px"><span class="hint" style="font-weight:700">${l}</span>
+            <div class="row" style="gap:2px 14px">${list.map(t => `<label class="check"><input type="checkbox" class="${c}" value="${esc(t)}"> ${esc(t)}</label>`).join('')}</div></div>`).join('')}
+        </fieldset>
         <label>Message<textarea id="p-msg" required maxlength="5000" style="min-height:120px" placeholder="Dates you have in mind, roles you’re hiring for, or anything else."></textarea></label>
         <label class="hp" aria-hidden="true">Leave this blank<input id="p-hp" tabindex="-1" autocomplete="off"></label>
         <div class="err" id="p-err"></div>
@@ -1367,6 +1383,7 @@ function questionsBody(){
         ${((q.functions || []).length ? q.functions : ['']).map(f => `<button class="btn ghost small" data-act="rb-for" data-type="${esc(f)}">Open resume book${f ? ': ' + esc(f) : ''}</button>`).join('')}</div>`
         : (q.functions || []).length ? `<div class="row" style="gap:6px">${q.functions.map(f => `<button class="btn ghost small" data-act="rb-for" data-type="${esc(f)}">Resume book: ${esc(f)}</button>`).join('')}</div>` : ''}
       ${(q.ways || []).length ? `<div class="hint"><strong>Interested in:</strong> ${esc(q.ways.join(', '))}</div>` : ''}
+      ${availabilityText(q.availability) ? `<div class="hint"><strong>When works best:</strong> ${esc(availabilityText(q.availability))}</div>` : ''}
       <p style="white-space:pre-wrap;margin:0">${esc(q.message)}</p>
       <div class="row" style="gap:6px">
         <a class="btn small" href="${esc(questionReplyUrl(q))}" target="_blank" rel="noopener">Reply in Outlook</a>${chatWithBtn(q.email)}
@@ -6762,11 +6779,17 @@ async function handleSubmit(f, v, err){
       ways: [...document.querySelectorAll(`[data-ways="${firm ? 'firm' : 'professional'}"] .p-way:checked`)].map(c => c.value), message: v('p-msg') };
     const funcs = firm ? [...document.querySelectorAll('.p-func:checked')].map(c => c.value) : [];
     if (funcs.length) q.functions = funcs;
+    const picked = c => [...document.querySelectorAll('.' + c + ':checked')].map(x => x.value);
+    const when = { months: picked('p-when-m'), days: picked('p-when-d'), times: picked('p-when-t') };
+    if (when.months.length || when.days.length || when.times.length) q.availability = when;
     if (!q.name) return err('p-err', 'Add your name.');
     if (firm && !q.company) return err('p-err', 'Add the name of your firm or organization.');
     if (!EMAIL_RE.test(q.email)) return err('p-err', 'Enter a valid email address so we can reply.');
     if (!q.message) return err('p-err', 'Add a short message.');
-    const r = await sb.from('questions').insert(q);
+    let r = await sb.from('questions').insert(q);
+    if (r.error && q.availability && /availability/.test(r.error.message || '')){   // database not updated yet: send without the times
+      const { availability, ...rest } = q; q.message += '\n\nWhen works best: ' + availabilityText(availability); r = await sb.from('questions').insert({ ...rest, message: q.message });
+    }
     if (r.error) return err('p-err', /kind|company|ways|job_title|questions/.test(r.error.message || '') ? 'This form isn’t set up yet. Please try again later.' : errMsg(r.error));
     ui.pSent = q.email; render(); window.scrollTo(0, 0);
     return;
