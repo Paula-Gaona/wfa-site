@@ -108,6 +108,11 @@ p{margin:0}
 .navmenu{position:fixed;z-index:40;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 10px 28px rgba(0,0,0,.2);padding:6px;min-width:220px;display:flex;flex-direction:column}
 .navmenu a{color:var(--ink);text-decoration:none;padding:9px 12px;border-radius:4px;font-weight:600}
 .navmenu a:hover,.navmenu a:focus-visible{background:var(--tint);outline:none}
+.navmenu.grouped{display:grid;grid-template-columns:repeat(2,minmax(210px,1fr));gap:4px 10px;max-height:calc(100vh - 90px);overflow:auto}
+@media (max-width:560px){.navmenu.grouped{grid-template-columns:1fr}}
+.nm-group{display:flex;flex-direction:column}
+.nm-head{font-family:var(--mono);font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);padding:10px 12px 4px}
+.tabs .tab-sep{flex:none;width:1px;align-self:stretch;margin:8px 6px;background:var(--line)}
 .seg-toggle{display:inline-flex;border:2px solid rgba(255,255,255,.55);border-radius:var(--radius);overflow:hidden}
 .seg-toggle button{font:inherit;font-size:.85rem;font-weight:700;background:transparent;color:#fff;border:0;padding:4px 11px;cursor:pointer}
 .seg-toggle button[aria-pressed="true"]{background:#fff;color:#1a4026}
@@ -628,7 +633,16 @@ function buildTitle(tier, branch){
   if (tier === 'honorary') return 'Honorary Officer';
   return b ? b + ' Officer' : 'Officer';
 }
-const OFFICER_TABS = [['stats','Statistics'],['approvals','Approvals'],['questions','Questions'],['events','Events'],['scheduling','Scheduling'],['process','How scheduling works'],['plan','Get started with an event'],['directory','Officer directory'],['checkin','Check-in & attendance'],['surveys','Event surveys'],['qr','QR codes'],['announcements','Announcements'],['recaps','Recaps'],['archive','Archive'],['tasks','Tasks'],['email','Email builder'],['availability','Availability'],...(DUES_ENABLED ? [['dues','Dues']] : []),['members','Members'],['resumes','Resume book']];
+// Officer tools, in groups (the menu shows the headings; the tab row puts a divider between groups).
+const OFFICER_GROUPS = [
+  ['To do', [['approvals','Approvals'],['questions','Questions'],['tasks','Tasks']]],
+  ['Planning events', [['events','Events'],['scheduling','Scheduling'],['plan','Get started with an event'],['process','How scheduling works'],['availability','Availability']]],
+  ['At the event', [['checkin','Check-in & attendance'],['qr','QR codes'],['surveys','Event surveys']]],
+  ['Communications', [['announcements','Announcements'],['email','Email builder'],['recaps','Recaps'],['archive','Archive']]],
+  ['People & data', [['members','Members'],['directory','Officer directory'],['resumes','Resume book'],...(DUES_ENABLED ? [['dues','Dues']] : []),['stats','Statistics']]]
+];
+const OFFICER_TABS = OFFICER_GROUPS.flatMap(([, tabs]) => tabs);
+const tabGroup = k => OFFICER_GROUPS.findIndex(([, tabs]) => tabs.some(([t]) => t === k));
 const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['points','Award points'],['seasons','Leaderboard seasons'],['auto','Automatic emails'],['test','Test accounts'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
@@ -1036,7 +1050,8 @@ function tabCounts(which){
 function countTotal(which){ return Object.values(tabCounts(which)).reduce((a, b) => a + b, 0); }
 const dot = n => n ? `<span class="dot" aria-label="${n} new">${n > 99 ? '99+' : n}</span>` : '';
 function tabsHtml(tabs, cur, act){
-  return `<div class="tabs" role="tablist">${tabs.map(([k,l,b]) => `<button role="tab" aria-selected="${cur===k}" data-act="${act}" data-tab="${k}">${l}${dot(b)}</button>`).join('')}</div>`;
+  return `<div class="tabs" role="tablist">${tabs.map(([k,l,b], i) => (act === 'otab' && i && tabGroup(k) !== tabGroup(tabs[i - 1][0]) ? '<span class="tab-sep" aria-hidden="true"></span>' : '')
+    + `<button role="tab" aria-selected="${cur===k}" data-act="${act}" data-tab="${k}">${l}${dot(b)}</button>`).join('')}</div>`;
 }
 
 /* ---------- Public views ---------- */
@@ -6051,11 +6066,14 @@ document.addEventListener('click', async ev => {
       if (!m.hidden && m.dataset.for === which){ closeNavMenu(); break; }
       closeNavMenu();
       const counts = tabCounts(which);
-      m.innerHTML = (which === 'admin' ? ADMIN_TABS : OFFICER_TABS).map(([k,l]) => `<a role="menuitem" href="#${which}" data-tab="${k}"><span>${l}</span>${dot(counts[k])}</a>`).join('');
+      const item = ([k,l]) => `<a role="menuitem" href="#${which}" data-tab="${k}"><span>${l}</span>${dot(counts[k])}</a>`;
+      m.innerHTML = which === 'admin' ? ADMIN_TABS.map(item).join('')
+        : OFFICER_GROUPS.map(([h, tabs]) => `<div class="nm-group" role="group" aria-label="${h}"><div class="nm-head">${h}</div>${tabs.map(item).join('')}</div>`).join('');
+      m.classList.toggle('grouped', which !== 'admin');
       const r = t.getBoundingClientRect();
       m.style.top = (r.bottom + 4) + 'px';
-      m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 236)) + 'px';
       m.dataset.for = which; m.hidden = false; t.setAttribute('aria-expanded', 'true');
+      m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - m.offsetWidth - 8)) + 'px';
       m.querySelector('a').focus();
       break; }
     case 'open-event': openEvent(id); break;
