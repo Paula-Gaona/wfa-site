@@ -6,7 +6,8 @@
 //   * "check-in is open" notifications 15 minutes before an event, and again at the start, to people who RSVP'd
 //     and haven't checked in (notification only)
 //   * a survey request 30 minutes after an event ends, to people who checked in and haven't answered the survey
-//   * event scheduling and external guest approval steps: whoever a request is waiting on, and the officer who sent it
+//   * event scheduling steps (branch review, confirming with UVU, finalizing, sign-off): whoever a request is waiting on,
+//     and the officer who sent it
 //   * new questions and partner inquiries: the presidents and the Communications branch (see 54-question-notifications.sql)
 //   * (not an email) applies the automatic leaderboard point rules each run (see 56-point-rules.sql)
 //   * a summary email when chat messages sit unread for over an hour (see 42-chats.sql; works even when the
@@ -241,19 +242,16 @@ ${lastNote}`
         } else if (r.status === 'sent') {
           to = schedulers; again = 2 * DAY;
           const days = Math.floor((nowMs - ms(r.status_at)) / DAY);
-          subject = fresh ? `New event to schedule: ${t}` : `Still waiting to be scheduled: ${t}`;
-          body = fresh ? `"${t}" is ready for UVU. Submit it, or send it back with notes.` : `"${t}" has been waiting ${days} days. Submit it to UVU, or send it back with notes.`;
+          subject = fresh ? `Confirm with UVU: ${t}` : `Still waiting to be confirmed with UVU: ${t}`;
+          body = fresh ? `"${t}" is ready to confirm with UVU. Mark it confirmed once UVU agrees, or send it back with notes.` : `"${t}" has been waiting ${days} days. Confirm it with UVU, or send it back with notes.`;
         } else if (r.status === 'approved') {
           to = schedulers; again = 2 * DAY;
           subject = r.signoff_note ? `Changes requested: ${t}` : `Finalize and send for sign-off: ${t}`;
           body = r.signoff_note ? `A president asked for changes to "${t}":\n${r.signoff_note}\n\nMake them, then send it to the presidents again.`
-            : `UVU approved "${t}". Set the final date, times, location, and RSVP timing, then send it to the presidents for sign-off.`;
+            : `UVU confirmed "${t}". Set the final date, times, location, and RSVP timing, then send it to the presidents for sign-off.`;
         } else if (r.status === 'returned') {
           to = [r.sent_by || '']; subject = `Changes needed: ${t}`;
           body = `"${t}" was sent back. What to fix:\n${r.note || '(no note)'}\n\nMake the changes, then send it again.`;
-        } else if (r.status === 'submitted') {
-          to = [r.sent_by || '']; subject = `Submitted to UVU: ${t}`;
-          body = `The scheduler submitted "${t}" to UVU for approval.`;
         } else if (r.status === 'published') {
           if (nowMs - ms(r.status_at) > 3 * DAY) continue;
           to = [r.sent_by || '']; subject = `Published: ${t}`;
@@ -272,61 +270,33 @@ ${lastNote}`
       }
     }
 
-    // External guest approvals (see 53-guest-approvals-and-application-questions.sql): the same idea, lighter steps.
-    const { data: gqs } = await db.from('guest_requests').select('id, status, status_by, note, sent_by, status_at, nudged_at, branch, form, history').in('status', ['branch', 'review', 'sent', 'returned', 'submitted', 'approved']);
-    if (gqs?.length) {
-      const { data: sch } = await db.from('event_schedulers').select('email');
-      const schedulers = (sch || []).map((s) => s.email);
-      const { data: offs } = await db.from('officer_profiles').select('email, tier, branch');
-      const { data: acc } = await db.from('access_list').select('email');
-      const isOfficer = new Set((acc || []).map((a) => a.email));
-      const presidents = (offs || []).filter((o) => o.tier === 'president' && isOfficer.has(o.email)).map((o) => o.email);
-      const vps = (offs || []).filter((o) => o.tier === 'vice_president' && isOfficer.has(o.email)).map((o) => o.email);
-      const branchLeads = (b: string | null) => { const p = (offs || []).filter((o) => b && o.branch === b && ['president', 'vice_president'].includes(o.tier) && isOfficer.has(o.email)).map((o) => o.email); return p.length ? p : presidents; };
-      const nowMs = Date.now(), ms = (t: string | null) => (t ? new Date(t).getTime() : 0);
-      for (const g of gqs) {
-        const name = (g.form || {}).name || 'an external guest', link = `${site}/#officer/scheduling/g:${g.id}`;
-        const fresh = ms(g.nudged_at) < ms(g.status_at);
-        let to: string[] = [], subject = '', body = '', again = 0;
-        if (g.status === 'branch') {
-          to = branchLeads(g.branch); again = 2 * DAY; subject = `Review an external guest: ${name}`;
-          const lastNote = ((g.history || [])[(g.history || []).length - 1] || {}).note || '';
-          body = /^Back to branch leadership/.test(lastNote) ? `A president sent the guest request for ${name} back to the branch leadership:\n${lastNote}\n\nEdit it, then approve it again.`
-            : `${firstName.get(g.sent_by) || 'An officer'} wants to get ${name} approved by UVU as an external guest. Approve it, edit and approve it, or send it back with notes.`;
-        } else if (g.status === 'review') {
-          // One approval from a president (not the sender or whoever sent it here); VPs too after 36 business hours,
-          // unless a president sent it. It only moves on by itself when a president sent it.
-          const presSent = presidents.includes(g.sent_by), late = !presSent && nowMs >= businessAdd(ms(g.status_at), 36);
-          to = [...presidents, ...(late ? vps : [])].filter((e) => e !== g.sent_by && e !== g.status_by); again = DAY;
-          subject = `External guest for approval: ${name}`; const d = businessAdd(ms(g.status_at), 48);
-          body = `${name} needs one approval before going to UVU. ` + (presSent ? `If nobody sends it back, it moves on automatically on ${fmtDay(d)} at ${fmtTime(d)}.` : `It won't move on until someone approves it.`);
-          if (late && ms(g.nudged_at) < businessAdd(ms(g.status_at), 36)) again = 1;   // tell the VPs as soon as they're added
-        }
-        else if (g.status === 'sent') { to = schedulers; again = 2 * DAY; subject = `External guest to submit: ${name}`; body = `${name} is ready to submit to UVU for approval as an external guest.`; }
-        else if (g.status === 'returned') { to = [g.sent_by]; subject = `Changes needed: ${name}`; body = `Your external guest request for ${name} was sent back. What to fix:\n${g.note || '(no note)'}`; }
-        else if (g.status === 'submitted') { to = [g.sent_by]; subject = `Submitted to UVU: ${name}`; body = `The scheduler submitted ${name} to UVU for approval.`; }
-        else if (g.status === 'approved') { if (nowMs - ms(g.status_at) > 3 * DAY) continue; to = [g.sent_by]; subject = `Approved by UVU: ${name}`; body = `${name} is approved as an external guest. Pick them on an event's scheduling request; that event needs only 3 weeks' notice.`; }
-        if (!to.length || !subject) continue;
-        if (!fresh && !(again && nowMs - ms(g.nudged_at) >= again)) continue;
-        if (await tell(to, subject, body, 'Open it', link, `guest-${g.id}`)) await db.from('guest_requests').update({ nudged_at: new Date().toISOString() }).eq('id', g.id);
-      }
-    }
-
     // New questions (Contact page) and partner inquiries (Partner with us): tell the presidents and the Communications
     // branch once each (see 54-question-notifications.sql). Works even when the event emails are off.
-    const { data: newQs } = await db.from('questions').select('id, kind, name, email, company, job_title, topic, ways').eq('status', 'new').is('notified_at', null).limit(50);
+    const { data: newQs } = await db.from('questions').select('id, kind, name, email, company, job_title, topic, ways, availability').eq('status', 'new').is('notified_at', null).limit(50);
     if (newQs?.length) {
       const { data: offs } = await db.from('officer_profiles').select('email, tier, branch');
       const { data: acc } = await db.from('access_list').select('email');
       const isOfficer = new Set((acc || []).map((a) => a.email));
       const to = (offs || []).filter((o) => isOfficer.has(o.email) && (o.tier === 'president' || o.branch === 'communications')).map((o) => o.email);
       const link = `${site}/#officer/questions`;
+      // "When works best" from the Partner form: months, and half-hour weekday slots like "mon-540" (9:00 AM).
+      const clock = (m: number) => { const h = Math.floor(m / 60), mm = m % 60; return `${h % 12 || 12}:${String(mm).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
+      const whenText = (a: { months?: string[]; slots?: string[] } | null) => {
+        if (!a) return '';
+        const days = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri']].map(([k, l]) => {
+          const mins = (a.slots || []).filter((x) => x.startsWith(k + '-')).map((x) => +x.split('-')[1]).sort((x, y) => x - y);
+          const out: number[][] = [];
+          mins.forEach((m) => { const r = out[out.length - 1]; if (r && r[1] === m) r[1] = m + 30; else out.push([m, m + 30]); });
+          return out.length ? `${l} ${out.map(([x, y]) => clock(x) + '-' + clock(y)).join(', ')}` : '';
+        }).filter(Boolean).join('; ');
+        return [(a.months || []).length ? '\nMonths: ' + a.months!.join(', ') : '', days ? '\nTimes: ' + days : ''].join('');
+      };
       for (const q of newQs) {
         const who = q.name || q.email || 'Someone';
         const partner = q.kind === 'partner';
         const subject = partner ? `New partner inquiry: ${q.company || who}` : `New question from ${who}`;
         const body = partner
-          ? `${who}${q.job_title ? ', ' + q.job_title : ''}${q.company ? ' at ' + q.company : ''} reached out through Partner with us.${(q.ways || []).length ? '\nInterested in: ' + q.ways.join(', ') : ''}\n\nReply from Officer tools -> Questions.`
+          ? `${who}${q.job_title ? ', ' + q.job_title : ''}${q.company ? ' at ' + q.company : ''} reached out through Partner with us.${(q.ways || []).length ? '\nInterested in: ' + q.ways.join(', ') : ''}${whenText(q.availability)}\n\nReply from Officer tools -> Questions.`
           : `${who} asked a question${q.topic ? ' about ' + q.topic.toLowerCase() : ''} on the Contact page.\n\nReply from Officer tools -> Questions.`;
         if (await tell(to, subject, body, 'Open Questions', link, `question-${q.id}`))
           await db.from('questions').update({ notified_at: new Date().toISOString() }).eq('id', q.id);

@@ -744,7 +744,7 @@ async function load(){
   db.autoLog = Array.isArray(R.autoLog) ? R.autoLog : [];
   db.schedulers = (R.schedulers || []).map(x => x.email);
   db.requests = Object.fromEntries((R.requests || []).map(r => [r.event_id, r]));
-  db.guestReqs = Array.isArray(R.guestReqs) ? R.guestReqs : [];
+  db.guestReqs = [];   // external guest approvals were retired (61-department-scheduling.sql); the guest form is a download now
   db.lbHistory = Array.isArray(R.lbHistory) ? R.lbHistory : [];
   db.awards = R.awards || [];
   db.pointRules = Array.isArray(R.pointRules) ? R.pointRules : [];
@@ -2999,49 +2999,49 @@ function thumbsHtml(){
 /* ---------- Event planning (Officer tools): a logistics checklist per event, drafts included ---------- */
 // Standard checklist for each event type: [task, days relative to the event (negative = before, 0 = day of)].
 // Admins can replace these from Event planning > Edit standard checklists; edits are saved in app_settings.plan_templates.
-// Every event except officer meetings goes through the event scheduler and UVU before it's published or advertised:
-// send the request at least 3 weeks out (10 weeks with a guest speaker), and market it only once UVU approves.
+// Every event except officer meetings is confirmed with UVU and signed off before it's published or advertised:
+// plan 3 months ahead for case competitions, 2 months for career fairs, 6 weeks for guest speakers, 3 weeks otherwise.
 const PLAN_DEFAULTS = {
   guest_speaker: [
-    ['Confirm the speaker and a few possible dates', -77], ['Get the speaker’s job title, talk topic, and bio', -72],
-    ['Fill out the scheduling request and send it to the scheduler', -70], ['Scheduler submits the request to UVU', -68],
-    ['Coordinate with the faculty advisor', -56], ['UVU approves; the scheduler finalizes the details and publishes the event', -21],
-    ['Get the speaker’s headshot', -21], ['Make a flyer and post it on social media (only after UVU approval)', -14],
+    ['Confirm the speaker and a few possible dates', -49], ['Get the speaker’s details with the external guest form', -45],
+    ['Fill out the scheduling request and send it on', -42], ['Scheduler confirms it with UVU', -38],
+    ['Coordinate with the faculty advisor', -35], ['Scheduler finalizes the details; the presidents sign off and it’s published', -28],
+    ['Get the speaker’s headshot', -21], ['Make a flyer and post it on social media (only once it’s published)', -14],
     ['Email members about the event', -7], ['Order food or refreshments', -7], ['Prepare the introduction and audience questions', -3],
     ['Confirm parking, AV, and arrival time with the speaker', -2], ['Set the check-in code', -1], ['Send a reminder email', -1],
     ['Send a thank-you to the speaker', 1], ['Post a recap with photos', 2]],
   workshop: [
-    ['Confirm the presenter, topic, and a few possible dates', -28], ['Fill out the scheduling request and send it to the scheduler', -21],
-    ['Scheduler submits the request to UVU', -19], ['UVU approves; the scheduler finalizes the details and publishes the event', -14],
-    ['Make a flyer and post it on social media (only after UVU approval)', -10], ['Prepare slides, templates, and practice files', -7], ['Email members about the event', -7],
+    ['Confirm the presenter, topic, and a few possible dates', -28], ['Fill out the scheduling request and send it on', -21],
+    ['Scheduler confirms it with UVU', -18], ['Scheduler finalizes the details; the presidents sign off and it’s published', -14],
+    ['Make a flyer and post it on social media (only once it’s published)', -10], ['Prepare slides, templates, and practice files', -7], ['Email members about the event', -7],
     ['Order snacks', -5], ['Test the software and lab access', -3], ['Set the check-in code', -1], ['Send a reminder email', -1],
     ['Upload the materials to the archive', 2], ['Post a recap with photos', 2]],
   case_competition: [
-    ['Set the format, team size, and a few possible dates', -63], ['Fill out the scheduling request and send it to the scheduler', -56],
-    ['Scheduler submits the request to UVU', -54], ['Coordinate with the faculty advisor and department', -42], ['Recruit judges', -42],
-    ['Write or source the case', -35], ['Secure sponsors and prizes', -35],
-    ['UVU approves; the scheduler finalizes the details, publishes the event, and opens team registration', -28],
-    ['Promote it (flyers, social media, class announcements; only after UVU approval)', -21],
+    ['Set the format, team size, and a few possible dates', -98], ['Fill out the scheduling request and send it on', -91],
+    ['Scheduler confirms it with UVU', -84], ['Coordinate with the faculty advisor and department', -77], ['Recruit judges', -63],
+    ['Write or source the case', -49], ['Secure sponsors and prizes', -49],
+    ['Scheduler finalizes the details; the presidents sign off, it’s published, and team registration opens', -42],
+    ['Promote it (flyers, social media, class announcements; only once it’s published)', -35],
     ['Close team registration', -10], ['Release the case to teams', -7], ['Finalize the schedule and judging rubric', -7],
     ['Order food for teams and judges', -7], ['Confirm logistics with judges', -3], ['Set the check-in code', -1],
     ['Announce winners and award prizes', 1], ['Thank judges and sponsors', 2], ['Post a recap with photos', 3]],
   career_fair: [
-    ['Coordinate with the UVU Career Center and pick a few possible dates', -49], ['Fill out the scheduling request and send it to the scheduler', -42],
-    ['Scheduler submits the request to UVU', -40], ['Confirm which firms are attending', -35], ['Coordinate with the faculty advisor', -28],
-    ['UVU approves; the scheduler finalizes the details and publishes the event', -21], ['Collect each firm’s info and open roles', -21],
-    ['Hold a resume review session for members', -14], ['Make a flyer and post it on social media (only after UVU approval)', -10], ['Email members about the event', -7],
+    ['Coordinate with the UVU Career Center and pick a few possible dates', -70], ['Fill out the scheduling request and send it on', -61],
+    ['Scheduler confirms it with UVU', -56], ['Confirm which firms are attending', -42], ['Coordinate with the faculty advisor', -35],
+    ['Scheduler finalizes the details; the presidents sign off and it’s published', -28], ['Collect each firm’s info and open roles', -21],
+    ['Hold a resume review session for members', -14], ['Make a flyer and post it on social media (only once it’s published)', -10], ['Email members about the event', -7],
     ['Print the firm list and name tags', -3], ['Set the check-in code', -1], ['Send a reminder email', -1], ['Set up tables and signage', 0],
     ['Send thank-yous to the firms', 1], ['Send firms the resume book for their area', 3], ['Post a recap with photos', 3]],
   excursion: [
-    ['Confirm the host firm and a few possible dates', -49], ['Fill out the scheduling request and send it to the scheduler', -42],
-    ['Scheduler submits the request to UVU', -40], ['Coordinate with the faculty advisor and get UVU travel approval', -35],
-    ['Arrange transportation', -28], ['UVU approves; the scheduler finalizes the details, publishes the event, and opens sign-ups', -21],
+    ['Confirm the host firm and a few possible dates', -35], ['Fill out the scheduling request and send it on', -28],
+    ['Scheduler confirms it with UVU', -25], ['Coordinate with the faculty advisor and get UVU travel approval', -24],
+    ['Arrange transportation', -21], ['Scheduler finalizes the details; the presidents sign off, it’s published, and sign-ups open', -18],
     ['Collect waivers and travel forms', -10], ['Share the itinerary and dress code', -5], ['Confirm the headcount with the host', -3], ['Send a reminder email', -1],
     ['Set the check-in code', -1], ['Send a thank-you to the host', 1], ['Post a recap with photos', 2]],
   social: [
-    ['Pick the activity and a few possible dates', -28], ['Fill out the scheduling request and send it to the scheduler', -21],
-    ['Scheduler submits the request to UVU', -19], ['UVU approves; the scheduler finalizes the details and publishes the event', -14],
-    ['Plan activities', -10], ['Make a flyer and post it on social media (only after UVU approval)', -10],
+    ['Pick the activity and a few possible dates', -28], ['Fill out the scheduling request and send it on', -21],
+    ['Scheduler confirms it with UVU', -18], ['Scheduler finalizes the details; the presidents sign off and it’s published', -14],
+    ['Plan activities', -10], ['Make a flyer and post it on social media (only once it’s published)', -10],
     ['Email members about the event', -7], ['Order food', -5], ['Buy supplies and decorations', -3], ['Set the check-in code', -1],
     ['Send a reminder email', -1], ['Post a recap with photos', 2]],
   officer_meeting: [
@@ -3379,15 +3379,17 @@ function officerProfileSection(){
     </div>`;
 }
 
-/* ---------- Event scheduling: UVU approves club events before they're marketed ---------- */
+/* ---------- Event scheduling: confirmed with UVU and signed off before it's marketed ---------- */
 // Every event except officer meetings needs a scheduling request. The officer making the event fills out the form
-// below (part of the event editor) and sends it to the event schedulers. A scheduler submits it to UVU, or sends it
-// back with notes; once UVU approves, the scheduler finalizes the details and publishes it (see 52-event-scheduling.sql).
+// below (part of the event editor) and sends it on: to their branch leadership first if they're a regular officer,
+// then to the event schedulers, who confirm it with UVU (the WFA is a department organization, so this step is
+// lighter and the sender can still edit the request). The scheduler finalizes the details and the presidents sign
+// off before it's published (see 52-event-scheduling.sql and 61-department-scheduling.sql).
 const needsSched = cat => cat !== 'officer_meeting';
 function isScheduler(){ return isStaff() && (db.schedulers || []).includes(session); }
 const rqFixing = r => !!r && r.status === 'branch' && r.returned_from === 'review';   // presidents sent it back to the branch leadership
-const RQ_STATUS = { draft: ['Not sent yet', ''], branch: ['Waiting for the branch president', 'warn'], fixing: ['Changes requested by the presidents', 'warn'], review: ['Presidents’ review', 'warn'], sent: ['With the scheduler', 'warn'],
-  returned: ['Sent back: needs changes', 'warn'], submitted: ['Submitted to UVU', 'ok'], approved: ['Approved by UVU: being finalized', 'ok'], signoff: ['Presidents’ sign-off', 'warn'],
+const RQ_STATUS = { draft: ['Not sent yet', ''], branch: ['Waiting for the branch president', 'warn'], fixing: ['Changes requested by the presidents', 'warn'], review: ['Presidents’ review', 'warn'], sent: ['Confirming with UVU', 'warn'],
+  returned: ['Sent back: needs changes', 'warn'], submitted: ['Confirming with UVU', 'warn'], approved: ['Confirmed by UVU: being finalized', 'ok'], signoff: ['Presidents’ sign-off', 'warn'],
   published: ['Published', 'ok'], vote: ['Approved', 'ok'], objection: ['Objected', 'warn'], branch_ok: ['Approved by branch leadership', 'ok'] };
 // Bigger events get every president's review before they go to UVU.
 const BIG_CATS = ['case_competition', 'excursion', 'guest_speaker', 'career_fair'];
@@ -3412,7 +3414,7 @@ function rqWaitingOnMe(r){
   const st = r.status;
   if (st === 'branch') return branchReviewers(r.branch).includes(session);
   if (st === 'review' || st === 'signoff') return rqCanVote(r);
-  if (st === 'sent' || st === 'approved') return isScheduler();
+  if (st === 'sent' || st === 'submitted' || st === 'approved') return isScheduler();
   if (st === 'returned') return r.sent_by === session;
   return false;
 }
@@ -3435,7 +3437,7 @@ function businessAdd(ms, hours){
 }
 const rqDeadline = r => fmtMtStamp(businessAdd(Date.parse(r.status_at), 48));
 // A scheduler whose own event goes straight to the scheduler step handles it themselves.
-const rqSendLabel = cat => needsBranchReview(session) ? 'Send to your branch president or VP' : BIG_CATS.includes(cat) ? 'Send to the presidents' : isScheduler() ? 'Continue to scheduling' : 'Send to the scheduler';
+const rqSendLabel = cat => needsBranchReview(session) ? 'Send to your branch president or VP' : isScheduler() ? 'Continue to confirm it with UVU' : 'Send to the scheduler';
 const rqOf = id => (db.requests || {})[id] || null;
 const rqTag = id => { const r = rqOf(id); if (!r) return ''; const [l, c] = RQ_STATUS[rqFixing(r) ? 'fixing' : r.status] || ['', '']; return ` <span class="tag ${c}">${l}</span>`; };
 const RQ_LOCATIONS = ['Auditorium', 'Ballroom', 'Event room', 'Classroom', 'Conference room', 'Bloomberg Lab', 'Computer lab', 'Table location (booth or hallway table)', 'Outdoor space (plaza or lawn)', 'Gym or fieldhouse', 'External location (off campus)'];
@@ -3476,22 +3478,25 @@ const rqGuestText = d => !d.guestLater ? 'Same time as members' : d.guestMode ==
 const mtFromInputMs = v => Date.parse(mtFromInput(v));
 const rqLegacy = r => !!(r && r.form && r.form.legacy);
 const LEGACY_NOTE = 'This event’s form was sent to the clubs office before scheduling requests were on the site, so there are no request details here.';
-const rqLocked = id => { const st = (rqOf(id) || {}).status; return !!st && !['draft', 'returned'].includes(st) && !rqReviewing(id); };
+// While a scheduler confirms it with UVU, the officer who sent it (or a scheduler) can still change the request.
+const rqUvuEditable = id => { const r = rqOf(id); return !!r && ['sent', 'submitted'].includes(r.status) && (r.sent_by === session || isScheduler()); };
+const rqLocked = id => { const st = (rqOf(id) || {}).status; return !!st && !['draft', 'returned'].includes(st) && !rqReviewing(id) && !rqUvuEditable(id); };
 const hhmmAdd = (t, mins) => { const [h, m] = (t || '00:00').split(':').map(Number), x = ((h * 60 + m + mins) % 1440 + 1440) % 1440; return String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0'); };
 const fmtShortDay = iso => parseDay(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 const noLayout = d => d.campus === 'off' || d.locType === 'Auditorium';
 const hasSpeaker = (d, cat) => d.speaker === 'yes' || (!d.speaker && GUEST_CATS.includes(cat));
-// Short notice: under 3 weeks away, or under 10 weeks with external guests (speakers, judges, recruiters).
-// Every external guest on the request was picked from the approved guests (so 3 weeks' notice is enough).
-function rqGuestsApproved(d){
-  if (d.speaker !== 'yes') return false;
-  const ok = new Set(approvedGuests().map(g => g.id)), list = (d.speakers || []).slice(0, +d.speakerCount || 1);
-  return list.length > 0 && list.every(s => s && s.guestId && ok.has(s.guestId));
+// How far ahead to plan each kind of event. Anything sooner gets a short-notice warning.
+const LEAD_TIMES = { case_competition: [{ months: 3 }, '3 months'], career_fair: [{ months: 2 }, '2 months'], guest_speaker: [{ days: 42 }, '6 weeks'], workshop: [{ days: 21 }, '3 weeks'] };
+const LEAD_DEFAULT = [{ days: 21 }, '3 weeks'];
+const leadFor = cat => LEAD_TIMES[cat] || LEAD_DEFAULT;
+function leadCutoff(cat){
+  const [t] = leadFor(cat), d = parseDay(todayIso());
+  if (t.months) d.setMonth(d.getMonth() + t.months); else d.setDate(d.getDate() + t.days);
+  return d;
 }
 function rqShortNotice(d, cat){
   const first = [...(d.dates || [])].sort()[0]; if (!first) return '';
-  const days = (parseDay(first) - parseDay(todayIso())) / 864e5;
-  return days < (hasSpeaker(d, cat) && !rqGuestsApproved(d) ? 70 : 21) ? 'This is short notice, event may not be scheduled in time.' : '';
+  return parseDay(first) < leadCutoff(cat) ? `This is short notice: plan ${CATS[cat] ? catName(cat).toLowerCase() + 's' : 'events'} at least ${leadFor(cat)[1]} ahead so there’s time to confirm it with UVU and promote it.` : '';
 }
 // AVSE technician arrival: every 30 minutes from 30 minutes before the start up to the setup time.
 const rqTechOpts = (d, start) => { const out = []; for (let m = 30; m <= (+d.setup || 0); m += 30) out.push([String(m), `${fmtTime(hhmmAdd(start, -m))} (${m} min before)`]); return out; };
@@ -3636,8 +3641,8 @@ function rqPanel(e, cat, opts = {}){
     const notice = rqShortNotice(r.form, cat);
     return `<div class="panel stack rq-panel" style="gap:12px">${head}
       <p class="hint" style="margin:0">${{ branch: 'Waiting for your branch president or vice president. They can edit it before approving it, or send it back to you.', review: `Every president is reviewing it before it goes to UVU. If nobody requests changes, it moves on ${rqDeadline(r)}.`,
-        fixing: 'The presidents asked for changes, and your branch leadership is making them. You’ll be notified as it moves along.', sent: 'A scheduler has this request. You can still change the website details above, but the request is locked unless it’s sent back.', submitted: 'The scheduler submitted this to UVU. You’ll be notified when it’s approved.',
-        approved: 'UVU approved this event. A scheduler is setting the final details, then the presidents sign off.', signoff: rqSignoffText(r), published: 'Published.' }[rqFixing(r) ? 'fixing' : st] || ''}</p>
+        fixing: 'The presidents asked for changes, and your branch leadership is making them. You’ll be notified as it moves along.', sent: 'A scheduler is confirming this with UVU.', submitted: 'A scheduler is confirming this with UVU.',
+        approved: 'UVU confirmed this event. A scheduler is setting the final details, then the presidents sign off.', signoff: rqSignoffText(r), published: 'Published.' }[rqFixing(r) ? 'fixing' : st] || ''}</p>
       ${notice ? `<div class="rq-warn">${notice}</div>` : ''}${rqLegacy(r) ? `<p class="hint" style="margin:0">${LEGACY_NOTE}</p>` : rqSummary(e, r)}</div>`;
   }
   const d = rqState().d, start = d.start || '18:00', capNow = (document.getElementById('ev-cap') || {}).value ?? ((e && e.cap) || 0);
@@ -3650,7 +3655,7 @@ function rqPanel(e, cat, opts = {}){
   const help = est ? () => '' : k => gh(d, k), src = est ? null : rqHelperSource(d);
   return `<div class="panel stack rq-panel" style="gap:16px">${head}
     <datalist id="rq-cities">${UT_CITIES.map(c => `<option value="${c}">`).join('')}</datalist>
-    <p class="hint" style="margin:0">${est ? 'Rough guesses are fine for all of these. The event’s own scheduling request will have the real details later.' : 'UVU has to approve club events before they’re advertised. Fill this out and send it for approval; a scheduler submits it to UVU. Nothing here is shown on the website.'}</p>
+    <p class="hint" style="margin:0">${est ? 'Rough guesses are fine for all of these. The event’s own scheduling request will have the real details later.' : rqUvuEditable(e && e.id) ? 'A scheduler is confirming this with UVU. You can still change it here; save, and the scheduler sees the update.' : 'Events are confirmed with UVU before they’re advertised. Fill this out and send it on; a scheduler confirms it with UVU. Nothing here is shown on the website.'}</p>
     ${!est && st === 'returned' ? `<div class="rq-warn"><strong>This was sent back.</strong> What to fix:<div style="white-space:pre-wrap;margin-top:4px">${esc(r.note)}</div></div>` : ''}
     <label>Will this event be on campus, off campus, or hybrid?<select data-rq="campus" data-rr="1">${Object.entries(RQ_CAMPUS).map(([k, l]) => `<option value="${k}" ${d.campus === k ? 'selected' : ''}>${l}</option>`).join('')}</select>${help('campus')}</label>
     ${offSite(d) ? `<div class="panel stack" style="gap:10px;padding:12px">
@@ -3809,7 +3814,6 @@ function rqSummary(e, r, est = false){
 }
 // Officer tools → Scheduling: the schedulers' queue, and everyone's own requests.
 function schedulingBody(){
-  if (ui.schedOpen && ui.schedOpen.startsWith('g:') && gqOf(ui.schedOpen.slice(2))) return gqDetail(gqOf(ui.schedOpen.slice(2)));
   const open = ui.schedOpen && evById(ui.schedOpen) && rqOf(ui.schedOpen);
   if (open) return rqDetail(evById(ui.schedOpen), rqOf(ui.schedOpen));
   const firstDay = e => [...((rqOf(e.id).form || {}).dates || [])].sort()[0] || e.date;
@@ -3823,11 +3827,10 @@ function schedulingBody(){
   const yours = list.filter(e => rqOf(e.id).sent_by === session && !waiting.includes(e));
   const leader = isPresident() || isScheduler() || myRole === 'admin';
   const others = leader ? list.filter(e => !waiting.includes(e) && !yours.includes(e)) : [];
-  const gList = (db.guestReqs || []).filter(g => !['draft', 'approved', 'removed'].includes(g.status));
-  const gWait = gList.filter(gqWaitingOnMe), gYours = gList.filter(g => g.sent_by === session && !gWait.includes(g)), gOthers = leader ? gList.filter(g => !gWait.includes(g) && !gYours.includes(g)) : [];
+  const gWait = [], gYours = [], gOthers = [];
   const names = (db.schedulers || []).map(userName).join(', ');
   return `<div class="stack" style="gap:18px">
-    <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span class="hint">Every event except officer meetings is approved here before it’s published.</span><button type="button" class="btn ghost small" data-act="proc-tab" data-id="all">How scheduling works</button></div>
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span class="hint">Every event except officer meetings is confirmed with UVU and signed off here before it’s published.</span><button type="button" class="btn ghost small" data-act="proc-tab" data-id="all">How scheduling works</button></div>
     ${group('Waiting on you', waiting, 'Nothing needs you right now.', gWait)}
     ${group('Your requests', yours, 'Requests you send show up here.', gYours)}
     ${others.length || gOthers.length ? group('Everything else in progress', others, '', gOthers) : ''}
@@ -3836,96 +3839,84 @@ function schedulingBody(){
 // Officer tools → How scheduling works: what UVU requires, the club's own checks and balances, who does what,
 // external guests, and the whole process.
 function processBody(){
-  const tab = ui.procTab || 'uvu';
+  const tab = ['uvu', 'club', 'roles', 'all'].includes(ui.procTab) ? ui.procTab : 'uvu';
   const step = (n, title, body, kind = '') => `<div class="flow-step ${kind}">${n ? `<span class="flow-n">${n}</span>` : ''}<div><strong>${title}</strong><div class="flow-body">${body}</div></div></div>`;
   const arrow = () => '<div class="flow-arrow" aria-hidden="true"><span></span></div>';
   const ask = (q, yes, no, yesTag = 'Yes', noTag = 'No') => `<div class="flow-ask"><div class="flow-q">${q}</div><div class="flow-branches"><div class="flow-branch"><span class="flow-tag">${yesTag}</span>${yes}</div><div class="flow-branch"><span class="flow-tag">${noTag}</span>${no}</div></div></div>`;
   const skip = t => `<div class="flow-skip">${t}</div>`;
   const card = (title, body) => `<div class="panel stack" style="gap:6px;padding:14px"><strong>${title}</strong><span>${body}</span></div>`;
   const role = (title, who, items) => `<section class="panel stack" style="gap:8px;padding:16px"><div><h3 style="margin:0">${title}</h3><span class="hint">${who}</span></div><ul class="role-list">${items.map(i => `<li>${i}</li>`).join('')}</ul></section>`;
-  const uvuForm = '<a href="https://www.uvu.edu/clubs/forms/scheduling-request.html" target="_blank" rel="noopener">UVU’s scheduling request form ↗</a>';
   const BIG = 'case competition, excursion, guest speaker, or career fair';
-  const tabs = [['uvu', 'What UVU requires'], ['club', 'Our checks and balances'], ['roles', 'Who does what'], ['guests', 'External guests'], ['all', 'The full process']];
+  const tabs = [['uvu', 'Planning ahead'], ['club', 'Reviews and sign-off'], ['roles', 'Who does what'], ['all', 'The full process']];
+  const lead = Object.entries(LEAD_TIMES).map(([k, [, l]]) => [catName(k), l]).concat([['Anything else', LEAD_DEFAULT[1]]]);
   let body = '';
 
   if (tab === 'uvu') body = `
-    <p style="margin:0">UVU has to approve every club event before the club advertises it. That covers flyers, social media posts, emails, and putting it on this website’s calendar. Our event schedulers handle the request for the club, so officers fill out the form on this site instead.</p>
-    <section class="panel stack flow" style="gap:0;padding:18px" aria-label="UVU approval">
-      ${step('1', 'Plan the event', 'Pick a few possible dates and gather the details below.')}
-      ${arrow()}${step('2', 'A scheduler submits it to UVU', `Through ${uvuForm}, using the answers from the site’s scheduling request.`)}
-      ${arrow()}${step('3', 'UVU reviews it', 'UVU confirms a date, room, and setup, or asks for changes.', 'start')}
-      ${arrow()}${step('', 'Approved: it can be advertised', 'Only now can it be published on the calendar and promoted.', 'end')}
+    <p style="margin:0">The WFA is a department organization, so scheduling with UVU is more flexible than it used to be: details are easier to change along the way. Plan early anyway. It leaves time to confirm the room and setup with UVU, line up guests, and promote the event.</p>
+    <h3 style="margin:0">How far ahead to plan</h3>
+    <div class="policy-grid">${lead.map(([k, l]) => card(k, `At least <b>${l}</b> before the event.`)).join('')}</div>
+    <span class="hint">The scheduling request warns you when the event date is sooner than this.</span>
+    <section class="panel stack flow" style="gap:0;padding:18px" aria-label="Confirming with UVU">
+      ${step('1', 'Plan the event', 'Fill out the event and its scheduling request on this site.')}
+      ${arrow()}${step('2', 'A scheduler confirms it with UVU', 'They check the date, room, and setup with UVU and mark it confirmed. You can still change the request while they do.', 'start')}
+      ${arrow()}${step('', 'Signed off: it can be advertised', 'After the presidents sign off, it’s published on the calendar and can be promoted.', 'end')}
     </section>
-    <h3 style="margin:0">What UVU asks for</h3>
+    <h3 style="margin:0">What the scheduling request asks for</h3>
     <div class="policy-grid">
       ${card('When', 'Ideal dates (and other days that would work), start and end times, setup time before (at least 15 minutes), and time needed after.')}
       ${card('Where', 'On campus, off campus, or hybrid; the kind of space and preferred building, and a specific room if you have one in mind; addresses for off-campus locations.')}
       ${card('What', 'An event name for UVU (40 characters max, separate from the website title), a description, the maximum attendance, and the type: General Club, Service/Civic Engagement, or Fundraising.')}
       ${card('Who', 'External sponsors (contact, organization, address) and external guests (name, job title, company, topic, bio, contact info).')}
       ${card('Setup', 'Food or drinks, tablecloths (and color), extra A/V beyond the usual two mics and projector, an AVSE technician before or during the event (AVSE charges by the hour to stay), and the room layout with how many chairs or tables.')}
-      ${card('Extras', 'A flyer or image for it, and anything else the clubs office should know.')}
+      ${card('Extras', 'A flyer or image for it, and anything else the scheduler should know.')}
     </div>
     <h3 style="margin:0">Room layouts</h3>
     <div class="rq-layouts">${RQ_LAYOUTS.filter(x => x[2]).map(([, l, img]) => `<div class="rq-layout" style="cursor:default"><img src="layouts/${img}" alt="" loading="lazy"><span>${l}</span></div>`).join('')}
       <div class="rq-layout" style="cursor:default"><span class="rq-layout-blank">Meet the Firms</span><span>UVU Meet the Firms setup</span></div><div class="rq-layout" style="cursor:default"><span class="rq-layout-blank">＋ Upload</span><span>Custom (upload a picture)</span></div></div>
     <span class="hint">Round tables seat 10 or 8 each. The form adds up the seats and warns if there are fewer than the seat limit (or the expected attendance when there’s no limit), including when the limit changes later. To go ahead anyway, check “Ignore: not every guest needs a seat.”</span>
-    <div class="rq-warn"><strong>Give UVU time.</strong> Send requests at least <b>3 weeks</b> before the event, or <b>10 weeks</b> if there are external guests who aren’t already approved. The form warns anything shorter: “This is short notice, event may not be scheduled in time.”</div>`;
+    <div class="policy-grid">
+      ${card('External guests', 'Collect a speaker’s, judge’s, or panelist’s details with the external guest form (a Word document in Get started with an event), then add them to the event’s scheduling request.')}
+      ${card('Downloads', 'Any scheduling request can be downloaded as a Word document from its page in Scheduling, to share with the department or a guest.')}
+    </div>`;
 
   if (tab === 'club') body = `
-    <p style="margin:0">On top of UVU’s approval, the club adds its own reviews, so no one person decides alone what goes out under the WFA name. UVU’s step is shown in gold.</p>
+    <p style="margin:0">The club adds its own checks, so no one person decides alone what goes out under the WFA name. Confirming with UVU is shown in gold.</p>
     <section class="panel stack flow" style="gap:0;padding:18px" aria-label="Club reviews">
       ${ask('Did a regular officer make it?', step('A', 'Branch review', 'The branch president or vice president approves it, edits it and approves it, or sends it back.'), skip('Presidents, VPs, the faculty advisor, and admins skip this.'))}
-      ${arrow()}${ask(`Is it a ${BIG}?`, step('B', 'Presidents’ review', 'Every president approves before it goes to UVU. Changes they ask for on an officer’s event go to the branch leadership to make.'), skip('Workshops and socials skip this.'))}
-      ${arrow()}${step('', 'UVU approval', 'Handled by a scheduler (see “What UVU requires”).', 'start')}
-      ${arrow()}${ask(`Is it a ${BIG}?`, step('C', 'Every president signs off', 'On the final date, location, and RSVP timing the scheduler set.'), step('C', 'One president signs off', 'A president other than the scheduler (or a VP after 36 business hours, if the scheduler isn’t a president).'))}
+      ${arrow()}${step('', 'A scheduler confirms it with UVU', 'Then sets the final date, times, location, and RSVP timing.', 'start')}
+      ${arrow()}${ask(`Is it a ${BIG}?`, step('B', 'Every president signs off', 'On the final details the scheduler set.'), step('B', 'One president signs off', 'A president other than the scheduler (or a VP after 36 business hours, if the scheduler isn’t a president).'))}
       ${arrow()}${step('', 'Published', '', 'end')}
     </section>
     <div class="policy-grid">
-      ${card('Sent back', 'Anyone reviewing can send it back with notes. When it’s fixed and sent again, it returns to the step that sent it back, not the beginning.')}
-      ${card('Suggested changes', 'Presidents can edit the fields themselves when they request changes, with a reason for each. Whoever fixes it sees the suggestions beside the form and can accept them one at a time or <b>implement all</b>. Any not made need a reason, which the president sees.')}
-      ${card('Comments', 'A president’s comment is marked <b>just context</b> or <b>describes more changes</b>. If every suggested field change is made, the comment was just context, and nothing else was changed, that counts as their approval. Otherwise they look at it again.')}
-      ${card('What changed', 'When it comes back, each president sees a checklist: ✓ or ✗ for every change they asked for (with the reason if it wasn’t made), plus anything else that was changed. <b>Any change beyond what a president asked for goes back to them for approval</b>, even if all their requested changes were made.')}
-      ${card('Automatic approval', 'The presidents’ review (B) moves on after <b>2 business days</b> with no objection. Sign-off (C) only publishes on its own when the scheduler is a president; otherwise someone has to approve it.')}
-      ${card('Majority rules', 'When every president has to approve and a step has gone <b>5 business days</b> or reached its <b>third round</b> of changes, it passes once a majority approve. Objections only send it back if most presidents object. Everyone is notified.')}
-      ${card('Business days only', 'Every timer skips weekends (Mountain Time). Something sent Friday at 3 PM moves on Tuesday at 3 PM, not Sunday. University holidays still count, so allow extra time around breaks.')}
+      ${card('Sent back', 'A branch reviewer or scheduler can send it back with notes. When it’s fixed and sent again, it returns to the step that sent it back, not the beginning.')}
+      ${card('Changes along the way', 'While a scheduler is confirming it with UVU, the officer who sent it can still change the request. The scheduler always sees the latest version.')}
+      ${card('Suggested changes', 'At sign-off, presidents can edit the fields themselves when they request changes, with a reason for each. The scheduler sees the suggestions beside the form and can accept them one at a time or <b>implement all</b>. Any not made need a reason, which the president sees.')}
+      ${card('Automatic sign-off', 'Sign-off only publishes on its own, after <b>2 business days</b> with no objection, when the scheduler is a president. Otherwise someone has to approve it.')}
+      ${card('Majority rules', 'When every president has to sign off and it has gone <b>5 business days</b> or reached its <b>third round</b> of changes, it passes once a majority approve. Objections only send it back if most presidents object.')}
+      ${card('Business days only', 'Every timer skips weekends (Mountain Time). University holidays still count, so allow extra time around breaks.')}
       ${card('Nothing goes out early', 'No flyers, posts, or emails until the event is published. Before then, a scheduler can turn on a coming-soon page that shows only the title and a short teaser.')}
-      ${card('RSVPs and Q&A', 'RSVPs open when the event is published or at a set date and time, and guests (non-members) can open later than members. The event page shows when each opens. <b>Officers can RSVP as soon as it’s posted.</b> Q&A opens when RSVPs do; questions can be for all the guests or specific ones, and officers can star them, copy them, or <b>download them as Excel</b> (a sheet per guest) from the event page.')}
-      ${card('Notifications', 'Whoever a step is waiting on is notified right away, by pop-up if they have notifications on, otherwise by email. Reminders follow: daily for presidents’ steps, every 2 days for branch reviews and schedulers.')}
+      ${card('RSVPs and Q&A', 'RSVPs open when the event is published or at a set date and time, and guests (non-members) can open later than members. <b>Officers can RSVP as soon as it’s posted.</b> When it fills up, people can join the waitlist. Q&A opens when RSVPs do.')}
+      ${card('Notifications', 'Whoever a step is waiting on is notified right away, by pop-up if they have notifications on, otherwise by email, with reminders until it moves on.')}
     </div>`;
 
   if (tab === 'roles') body = `
     <p style="margin:0">Each step belongs to someone. If something is waiting on you, it shows under “Waiting on you” in Officer tools → Scheduling, and you’re notified.</p>
     <div class="policy-grid">
-      ${role('Officers', 'Anyone planning an event', ['Create the event and fill out its scheduling request: website details, dates, location, layout, guests, A/V, and RSVP timing they’d like.', 'Submit external guests for approval ahead of time, with rough estimates of the event.', 'Send it to their branch president or VP, and fix it if it’s sent back to them.', 'Wait to promote anything until it’s published (a scheduler can put up a coming-soon page).', 'Open any published or coming-soon event’s page from Events → View page, and RSVP to published events right away.'])}
-      ${role('Branch presidents and vice presidents', 'For their branch’s officers', ['Review their officers’ events and guest requests: approve them, edit and approve them, or send them back with notes.', 'Make the changes presidents ask for on their officers’ events, accepting or declining each suggestion with a reason.', 'Vice presidents can also approve a guest request or a workshop/social sign-off after 36 business hours, when the scheduler or sender isn’t a president.'])}
-      ${role('Presidents', 'Checks before and after UVU', [`Review every ${BIG} before it goes to UVU (all presidents).`, 'Approve guest requests (one president).', 'Sign off on the final details before anything is published: every president for big events, one president (not the scheduler) for workshops and socials.', 'Request changes by editing fields directly, with a reason for each, and mark comments as just context or more changes.'])}
-      ${role('Event schedulers', 'Chosen by admins; tagged in the <a href="#officer/directory">Officer directory</a>', ['Submit events and guests through UVU’s form, and mark them submitted, then approved.', 'Set approved guests’ approval windows (the semester, or shorter if UVU says so).', 'Finalize approved events: the date, times, location, and RSVP timing, then send them for sign-off.', 'Turn on coming-soon pages, and send things back when UVU has a problem.'])}
+      ${role('Officers', 'Anyone planning an event', ['Create the event and fill out its scheduling request: website details, dates, location, layout, guests, A/V, and the RSVP timing they’d like.', 'Plan ahead: 3 months for case competitions, 2 months for career fairs, 6 weeks for guest speakers, 3 weeks for workshops and everything else.', 'Send it on, change it if needed while it’s being confirmed with UVU, and fix it if it’s sent back.', 'Wait to promote anything until it’s published (a scheduler can put up a coming-soon page).'])}
+      ${role('Branch presidents and vice presidents', 'For their branch’s officers', ['Review their officers’ events: approve them, edit and approve them, or send them back with notes.', 'Vice presidents can also approve a workshop or social sign-off after 36 business hours, when the scheduler isn’t a president.'])}
+      ${role('Event schedulers', 'Chosen by admins; tagged in the <a href="#officer/directory">Officer directory</a>', ['Confirm events with UVU and mark them confirmed, or send them back with notes.', 'Finalize confirmed events: the date, times, location, and RSVP timing, then send them for sign-off.', 'Turn on coming-soon pages.'])}
+      ${role('Presidents', 'The final check', ['Sign off on the final details before anything is published: every president for big events, one president (not the scheduler) for workshops and socials.', 'Request changes by editing fields directly, with a reason for each.'])}
       ${role('Admins', 'Site settings', ['Choose who the event schedulers are.', 'Set officers’ positions and branches, which decide who reviews what.', 'Edit the officer application questions and the planning checklists.'])}
-    </div>`;
-
-  if (tab === 'guests') body = `
-    <p style="margin:0">If you have a speaker, judge, or other outside guest in mind but no set date, get them approved by UVU first. Give a rough estimate of the whole event; nothing goes on the calendar. Once they’re approved, an event with them needs only <b>3 weeks’</b> notice instead of 10, though the event still goes through its own approval.</p>
-    <section class="panel stack flow" style="gap:0;padding:18px" aria-label="Guest approval">
-      ${step('', 'Submit the guest', 'Officer tools → Get started with an event → Submit a guest. Their details plus a working title, rough description, and the same questions as an event request, as estimates.', 'start')}
-      ${arrow()}${ask('Did a regular officer submit it?', step('1', 'Branch review', 'The branch president or VP approves it, edits and approves it, or sends it back. <b>If a president approves it here, it goes straight to the schedulers.</b>'), skip('Presidents and VPs skip this.'))}
-      ${arrow()}${step('2', 'One president approves it', 'Any president other than the sender (and other than the VP who approved it). Vice presidents can approve too after 36 business hours. It only moves on by itself, after 2 business days, when a president submitted it. Sent back? It goes to the branch leadership if there was a branch review.')}
-      ${arrow()}${step('3', 'A scheduler submits it to UVU', 'Then marks it approved, checking each semester UVU approved them for (it starts with the semester of the likely date) and narrowing the dates within each if UVU gave shorter windows.')}
-      ${arrow()}${step('', 'Approved guest', 'Shows in the approved guests list. When planning the event, pick them in the guest box right under Type: their details fill in, an empty title, description, and seat limit fill in from their approval, and their estimates show beside each question.', 'end')}
-    </section>
-    <div class="policy-grid">
-      ${card('Semesters', 'Spring: Jan 1–Apr 30. Summer: May 1–Jul 31. Fall: Aug 1–Dec 31. A guest can be approved for more than one semester, each with its own dates. They drop off the list once their last window ends.')}
-      ${card('On the event page', 'Guests on a published event show their name, job title, company, and bio (each can be hidden). Their contact info is never shown. With more than one guest, Q&A questions can be for all of them or specific ones.')}
     </div>`;
 
   if (tab === 'all') body = `
     <p style="margin:0">Everything together, from the first draft to the calendar. Every event except officer meetings follows these steps.</p>
     <section class="panel stack flow" style="gap:0;padding:18px" aria-label="Approval steps">
-      ${step('', 'An officer creates the event', 'Fills in the website details and the scheduling request. If the guest is already approved, they pick them at the top.', 'start')}
+      ${step('', 'An officer creates the event', 'Fills in the website details and the scheduling request, ideally 3 weeks to 3 months ahead depending on the event.', 'start')}
       ${arrow()}${ask('Did a regular officer make it?', step('1', 'Branch review', 'The branch’s president or vice president <b>approves it</b>, <b>edits it and approves it</b>, or <b>sends it back</b>. If the branch has neither, any president can review it.'), skip('Presidents, vice presidents, the faculty advisor, and admins skip this step.'))}
-      ${arrow()}${ask(`Is it a ${BIG}?`, step('2', 'Presidents’ review (before UVU)', 'Every president approves it or requests changes. Changes on an officer’s event go to the branch leadership to make. It moves on when all approve, or <b>automatically after 2 business days</b> with no objection.'), skip('Workshops and socials skip this step.'))}
-      ${arrow()}${step('3', 'Scheduler submits it to UVU', `A scheduler enters it in ${uvuForm}, marks it <b>submitted</b>, then <b>approved</b> when UVU approves. If there’s a problem, they send it back with notes.`)}
-      ${arrow()}${step('4', 'Scheduler finalizes it', 'Sets the final date, times, location, and when RSVPs open (for members and for guests), starting from what the officer asked for.')}
-      ${arrow()}${ask(`Is it a ${BIG}?`, step('5', 'Every president signs off', 'Publishes when all approve. If the scheduler is a president, it also publishes <b>after 2 business days</b> with no objection.'), step('5', 'One president signs off', 'One approval from a president <b>other than the scheduler</b>. If the scheduler isn’t a president, vice presidents can approve too <b>after 36 business hours</b>.'))}
+      ${arrow()}${step('2', 'Scheduler confirms it with UVU', 'Marks it <b>confirmed</b> once UVU agrees on the date, room, and setup, or sends it back with notes. The officer can still change the request during this step.')}
+      ${arrow()}${step('3', 'Scheduler finalizes it', 'Sets the final date, times, location, and when RSVPs open (for members and for guests), starting from what the officer asked for.')}
+      ${arrow()}${ask(`Is it a ${BIG}?`, step('4', 'Every president signs off', 'Publishes when all approve. If the scheduler is a president, it also publishes <b>after 2 business days</b> with no objection.'), step('4', 'One president signs off', 'One approval from a president <b>other than the scheduler</b>. If the scheduler isn’t a president, vice presidents can approve too <b>after 36 business hours</b>.'))}
       ${arrow()}${step('', 'Published', 'It’s on the calendar and can be promoted. The officer who sent it is notified.', 'end')}
     </section>`;
 
@@ -3956,10 +3947,11 @@ function rqDetail(e, r){
       <span class="hint">You can make changes yourself instead of sending it back. The officer sees what you changed in the history.</span>${back('branch', 'Send it back with notes', 'The officer is notified and can fix it and send it again.')}`;
   else if (rqCanVote(r))
     actions = `<div class="row"><button class="btn" data-act="rq-vote" data-id="${e.id}">Approve</button></div>${sugForm(e, r)}`;
-  else if (isScheduler() && st === 'sent')
-    actions = `<div class="row" style="gap:8px"><a class="btn ghost" href="https://www.uvu.edu/clubs/forms/scheduling-request.html" target="_blank" rel="noopener">Open UVU’s form ↗</a><button class="btn" data-act="rq-status" data-id="${e.id}" data-s="submitted">Mark submitted to UVU</button></div>${back('sched', 'Send it back with notes', 'The officer is notified and can fix it and send it again.')}`;
-  else if (isScheduler() && st === 'submitted')
-    actions = `<div class="row"><button class="btn" data-act="rq-status" data-id="${e.id}" data-s="approved">Mark approved by UVU</button></div>${back('sched', 'Send it back with notes', 'For a problem with UVU’s approval. The officer is notified.')}`;
+  else if (isScheduler() && (st === 'sent' || st === 'submitted'))
+    actions = `<div class="row" style="gap:8px"><button class="btn" data-act="rq-status" data-id="${e.id}" data-s="approved">Mark confirmed by UVU</button><button class="btn ghost" data-act="edit-event" data-id="${e.id}">Edit the request</button></div>
+      <span class="hint">Confirm the date, room, and setup with UVU. The officer can still change the request while you do; you’ll see their latest version here.</span>${back('sched', 'Send it back with notes', 'If something has to change first. The officer is notified and can fix it and send it again.')}`;
+  else if (rqUvuEditable(e.id))
+    actions = `<div class="row"><button class="btn ghost" data-act="edit-event" data-id="${e.id}">Change the request</button></div><span class="hint">A scheduler is confirming this with UVU. You can still make changes.</span>`;
   else if (isScheduler() && st === 'approved')
     actions = `${r.signoff_note ? `<div class="rq-warn"><strong>A president requested changes:</strong><div style="white-space:pre-wrap">${esc(r.signoff_note)}</div></div>` : ''}
       <div class="row"><button class="btn" data-act="edit-event" data-id="${e.id}">Finalize and send to the presidents</button></div>`;
@@ -3972,7 +3964,7 @@ function rqDetail(e, r){
     ${st === 'returned' ? `<div class="rq-warn"><strong>Sent back:</strong><div style="white-space:pre-wrap">${esc(r.note)}</div></div>` : ''}
     ${round}${actions}
     ${st === 'signoff' || st === 'approved' ? `<section class="panel stack" style="gap:10px"><h3 style="margin:0">On the website</h3>${evFinalSummary(e)}</section>` : ''}
-    <section class="panel stack" style="gap:10px"><h3 style="margin:0">Request details</h3>${rqSummary(e, r)}</section>
+    <section class="panel stack" style="gap:10px"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">Request details</h3>${rqLegacy(r) ? '' : `<button type="button" class="btn ghost small" data-act="rq-doc" data-id="${e.id}">Download as a Word document</button>`}</div>${rqSummary(e, r)}</section>
     ${sugHistory(r, e)}
     ${hist ? `<section class="stack" style="gap:6px"><h3 style="margin:0">History</h3><ul class="rq-hist">${hist}</ul></section>` : ''}</div>`;
 }
@@ -4151,7 +4143,7 @@ function evButtons(e, cat){
   if (!needsSched(cat)) return `<button class="btn" type="submit" data-mode="publish">${canPublish() ? 'Publish to calendar' : 'Submit for approval'}</button><button class="btn ghost" type="submit" data-mode="draft">${e ? 'Save draft' : 'Save as draft'}</button>${cancel}`;
   const st = (rqOf(e && e.id) || {}).status || 'draft';
   if (rqReviewing(e && e.id)) return `<button class="btn" type="submit" data-mode="branchok">${rqFixing(rqOf(e.id)) ? 'Send it back to the presidents' : 'Approve and send it on'}</button><button class="btn ghost" type="submit" data-mode="draft">Save changes</button>${cancel}`;
-  return `${st === 'approved' && isScheduler() ? '<button class="btn" type="submit" data-mode="signoff">Send to the presidents for sign-off</button>' : ''}${['draft', 'returned'].includes(st) ? `<button class="btn" type="submit" data-mode="send">${st === 'returned' ? 'Send it again' : rqSendLabel(cat)}</button>` : ''}<button class="btn ghost" type="submit" data-mode="draft">${e ? 'Save draft' : 'Save as draft'}</button>${cancel}`;
+  return `${st === 'approved' && isScheduler() ? '<button class="btn" type="submit" data-mode="signoff">Send to the presidents for sign-off</button>' : ''}${['draft', 'returned'].includes(st) ? `<button class="btn" type="submit" data-mode="send">${st === 'returned' ? 'Send it again' : rqSendLabel(cat)}</button>` : ''}<button class="btn ghost" type="submit" data-mode="draft">${rqUvuEditable(e && e.id) ? 'Save changes' : e ? 'Save draft' : 'Save as draft'}</button>${cancel}`;
 }
 const RQ_ERR = { 'err:notscheduler': 'Only event schedulers can do that.', 'err:notyours': 'Only the officer who made it can change it.', 'err:window': 'The window has to be inside the semester.', 'err:notpresident': 'Only presidents can do that.', 'err:notreviewer': 'Only the branch president can do that.', 'err:state': 'This request changed since you opened it. Refresh and try again.', 'err:note': 'Write what needs to be fixed.', 'err:missing': 'That request doesn’t exist anymore.' };
 // Typing in the scheduling form keeps ui.rq up to date; some answers redraw the form (they show or hide questions).
@@ -4380,21 +4372,28 @@ const gqRow = g => { const f = g.form || {};
 
 // Officer tools → Get started with an event: where to begin, approved guests, and the planning checklists.
 function startBody(){
-  if (ui.guestForm) return guestFormBody();
-  const ag = approvedGuests(), mine = (db.guestReqs || []).filter(g => g.sent_by === session && !['approved', 'removed'].includes(g.status));
   const card = (title, text, btn) => `<div class="panel stack" style="gap:8px;padding:16px"><strong style="font-size:1.05rem">${title}</strong><span class="muted">${text}</span><div style="margin-top:auto">${btn}</div></div>`;
   return `<div class="stack" style="gap:18px">
     <div class="start-grid">
-      ${card('Plan an event', 'Create the event, fill out its scheduling request, and send it for approval. Nothing is published or promoted until it’s approved.', '<button class="btn" data-act="start-event">Start an event</button>')}
-      ${card('Get an external guest approved', 'Have a speaker, judge, or other outside guest in mind but no set date? Get them approved by UVU first, with estimates. Events with approved guests need only 3 weeks’ notice.', '<button class="btn ghost" data-act="gq-new">Submit a guest</button>')}
-      ${card('How scheduling works', 'What UVU requires, the club’s reviews, and how long each step takes.', '<button class="btn ghost" data-act="proc-tab" data-id="uvu">Read it</button>')}
+      ${card('Plan an event', 'Create the event, fill out its scheduling request, and send it on. Nothing is published or promoted until it’s confirmed with UVU and signed off.', '<button class="btn" data-act="start-event">Start an event</button>')}
+      ${card('External guest form', 'A Word document to collect a speaker’s, judge’s, or panelist’s details (job title, topic, bio, contact info) before you plan the event.', '<button class="btn ghost" data-act="guest-doc">Download it</button>')}
+      ${card('How scheduling works', 'How far ahead to plan, the reviews, and who does what.', '<button class="btn ghost" data-act="proc-tab" data-id="uvu">Read it</button>')}
     </div>
-    ${mine.length ? `<div class="section-head"><h3>Your guest requests</h3><span class="muted">${mine.length}</span></div><div>${mine.map(g => g.status === 'draft'
-      ? `<div class="list-row"><div><div class="ev-title">Guest: ${esc((g.form || {}).name || 'Unnamed')}${gqTag(g)}</div></div><button class="btn small" data-act="gq-edit" data-id="${g.id}">Finish it</button></div>` : gqRow(g)).join('')}</div>` : ''}
-    <div class="section-head"><h3>Approved guests</h3><span class="muted">${ag.length}</span></div>
-    <div>${ag.map(g => { const [ws, we] = gqWindow(g); return `<div class="list-row"><div><div class="ev-title">${esc((g.form || {}).name || 'Guest')}</div><div class="ev-sub">${esc([(g.form || {}).title, (g.form || {}).company].filter(Boolean).join(', '))} · Approved for ${esc(gqWindowsText(g))}</div></div><button class="btn ghost small" data-act="rq-open" data-id="g:${g.id}">Details</button></div>`; }).join('') || '<div class="empty">No approved guests yet.</div>'}</div>
     <div class="section-head"><h3>Planning checklists</h3></div>
     ${planBody()}</div>`;
+}
+// The external guest form (a blank Word document), and any scheduling request as a filled-in one.
+const GUEST_DOC_ROWS = ['Name', 'Job title', 'Company', 'Speaking topic or role', 'Bio', 'Email', 'Phone', 'Show on the event page? (name, job title, company, bio)', 'Working event title', 'Event description', 'Likely dates', 'Expected attendance', 'Anything else'];
+function wordDoc(file, title, sub, rows){
+  const blank = rows.every(r => !r[1]), cell = v => esc(v).replace(/\n/g, '<br>');
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>${esc(title)}</title>
+    <style>body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#14231a}h1{font-size:18pt;color:#123622;margin:0 0 2pt}p.sub{color:#5e6b60;margin:0 0 12pt}
+    table{border-collapse:collapse;width:100%}td{border:1px solid #b9c2ba;padding:6pt 8pt;vertical-align:top}td.l{width:32%;font-weight:bold;background:#eef2ee}${blank ? 'td.v{height:28pt}' : ''}</style></head>
+    <body><h1>${esc(title)}</h1><p class="sub">${esc(sub)}</p><table>${rows.map(([l, v]) => `<tr><td class="l">${esc(l)}</td><td class="v">${cell(v)}</td></tr>`).join('')}</table></body></html>`;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + html], { type: 'application/msword' }));
+  a.download = file.replace(/[\\/:*?"<>|]+/g, '') + '.doc';
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 
 // Officer application questions: admins can edit them in Admin → Applications. Every application also asks for year,
@@ -6256,7 +6255,9 @@ document.addEventListener('click', async ev => {
     case 'rq-status': { const s = t.dataset.s, e = evById(id) || {};
       await act(async () => { const r = await sb.rpc('scheduler_update', { p_event: id, p_status: s, p_note: '' }); if (r.error) throw r.error;
         if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
-        await logChange((s === 'submitted' ? 'Submitted to UVU: “' : 'Marked approved by UVU: “') + e.title + '”'); }, s === 'submitted' ? 'Marked submitted to UVU. The officer will be notified.' : 'Marked approved. Finalize the details and publish it.'); break; }
+        await logChange('Confirmed with UVU: “' + e.title + '”'); }, 'Marked confirmed by UVU. Finalize the details, then send it to the presidents for sign-off.'); break; }
+    case 'rq-doc': { const e = evById(id), r = rqOf(id); if (e && r) wordDoc(e.title + ' - scheduling request', e.title, 'Scheduling request · ' + catName(e.cat), rqRows(e, r).map(([l, v]) => [l, v || ''])); break; }
+    case 'guest-doc': wordDoc('External guest form', 'External guest form', 'Wolverine Finance Association · fill this out for each speaker, judge, panelist, or other outside guest', GUEST_DOC_ROWS.map(l => [l, ''])); break;
     case 'tpl-open': { const cat = (evById(ui.planEv) || {}).cat || 'guest_speaker'; ui.tplDraft = { cat, rows: planTemplate(cat).map(r => [...r]) }; render(); window.scrollTo(0, 0); break; }
     case 'tpl-close': ui.tplDraft = null; render(); break;
     case 'tpl-add': readTplDraft(); ui.tplDraft.rows.push(['', -7]); render(); { const ins = document.querySelectorAll('[data-tpl$=":title"]'); ins[ins.length - 1]?.focus(); } break;
@@ -7109,7 +7110,7 @@ async function handleSubmit(f, v, err){
         await logChange((mode === 'send' ? 'Sent for approval: “' : mode === 'branchok' ? 'Approved (branch): “' : editing ? 'Edited draft “' : 'Saved draft “') + e.title + '”');
         ui.editEvent = null; ui.rq = null;
         if (mode === 'send' || mode === 'branchok'){ ui.officerTab = 'scheduling'; ui.schedOpen = evId; }
-      }, mode === 'send' ? (isScheduler() && !needsBranchReview(session) && !BIG_CATS.includes(e.cat) ? 'Ready for UVU. Submit it, then mark it submitted.' : 'Sent. You’ll be notified as it moves along.') : mode === 'branchok' ? 'Approved and sent on.' : 'Saved as a draft. Only officers can see it.');
+      }, mode === 'send' ? (isScheduler() && !needsBranchReview(session) && !BIG_CATS.includes(e.cat) ? 'Ready to confirm with UVU. Mark it confirmed once UVU says yes.' : 'Sent. You’ll be notified as it moves along.') : mode === 'branchok' ? 'Approved and sent on.' : 'Saved as a draft. Only officers can see it.');
       return;
     }
     if (sched) return err('ev-err', 'This event publishes after UVU approves it and the presidents sign off. Use Scheduling.');
