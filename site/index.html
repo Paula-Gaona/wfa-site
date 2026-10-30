@@ -639,7 +639,7 @@ const OFFICER_GROUPS = [
   ['Planning events', [['events','Events'],['scheduling','Scheduling'],['plan','Get started with an event'],['process','How scheduling works'],['availability','Availability']]],
   ['At the event', [['checkin','Check-in & attendance'],['qr','QR codes'],['surveys','Event surveys']]],
   ['Communications', [['announcements','Announcements'],['email','Email builder'],['forms','Survey builder'],['recaps','Recaps'],['archive','Archive']]],
-  ['People & data', [['members','Members'],['directory','Officer directory'],['resumes','Resume book'],...(DUES_ENABLED ? [['dues','Dues']] : []),['stats','Statistics']]]
+  ['People & data', [['members','Members'],['directory','Officer directory'],['resumes','Resume book'],...(DUES_ENABLED ? [['dues','Dues']] : []),['stats','Statistics'],['results','Survey results']]]
 ];
 const OFFICER_TABS = OFFICER_GROUPS.flatMap(([, tabs]) => tabs);
 const tabGroup = k => OFFICER_GROUPS.findIndex(([, tabs]) => tabs.some(([t]) => t === k));
@@ -1733,6 +1733,16 @@ function readSurveyAnswers(f, sv){
 }
 
 // Officer tools → Survey builder.
+// Officer tools → Survey results: every survey's results in one place (the builder links here too).
+function surveyResultsListBody(){
+  if (ui.svResults && svById(ui.svResults)) return svResultsBody(svById(ui.svResults));
+  const list = (db.surveys || []).filter(sv => sv.status !== 'draft'), n = id => (db.svCounts || {})[id] || 0;
+  return `<div class="stack" style="gap:16px">
+    <span class="muted">Results from surveys made in the Survey builder. Ratings from after events are under <a href="#officer/surveys">Event surveys</a>.</span>
+    <div>${list.map(sv => `<div class="list-row"><div><div class="ev-title">${esc(sv.title)} ${svOpen(sv) ? '<span class="tag ok">Open</span>' : '<span class="tag warn">Closed</span>'}</div>
+      <div class="ev-sub">${n(sv.id)} response${n(sv.id) === 1 ? '' : 's'}${sv.closes_at ? ' · closes ' + fmtMtStamp(Date.parse(sv.closes_at)) : ''}</div></div>
+      <button class="btn ${n(sv.id) ? '' : 'ghost '}small" data-act="sv-results" data-id="${sv.id}">View results</button></div>`).join('') || '<div class="empty">No surveys have been opened yet. Make one in Officer tools → Survey builder.</div>'}</div></div>`;
+}
 function surveyBuilderBody(){
   if (ui.svDraft) return svEditor();
   if (ui.svResults && svById(ui.svResults)) return svResultsBody(svById(ui.svResults));
@@ -4682,6 +4692,8 @@ function viewOfficer(){
   else if (T === 'surveys'){ body = surveysBody(); }
 
   else if (T === 'forms'){ body = surveyBuilderBody(); }
+
+  else if (T === 'results'){ body = surveyResultsListBody(); }
   else if (T === 'qr'){ body = qrToolBody(); setTimeout(drawQrTool); }
 
   else if (T === 'events'){
@@ -6463,7 +6475,7 @@ document.addEventListener('click', async ev => {
       ui.svDraft = { id: sv.id, title: sv.title, descr: sv.descr || '', closes: mtLocalInput(sv.closes_at), show_home: sv.show_home, show_leaderboard: sv.show_leaderboard, status: sv.status, emailed_at: sv.emailed_at || null, email: false, questions: JSON.parse(JSON.stringify(sv.questions || [])) };
       render(); window.scrollTo(0, 0); break; }
     case 'sv-cancel': ui.svDraft = null; ui.svResults = null; render(); window.scrollTo(0, 0); break;
-    case 'sv-results': ui.svDraft = null; ui.svResults = id; render(); window.scrollTo(0, 0); break;
+    case 'sv-results': ui.svDraft = null; ui.svResults = id; ui.officerTab = 'results'; if (route() !== 'officer') location.hash = 'officer/results'; else render(); window.scrollTo(0, 0); break;
     case 'sv-csv': { const sv = svById(id); if (sv) svCsv(sv); break; }
     case 'sv-add-q': readSvDraft(); ui.svDraft.questions.push(svNewQ(t.dataset.type)); render(); { const ins = document.querySelectorAll('[data-sq$=":label"]'); ins[ins.length - 1]?.focus(); } break;
     case 'sv-add-opt': { readSvDraft(); const i = +t.dataset.i; ui.svDraft.questions[i].options.push(''); render();
