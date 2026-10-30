@@ -1658,14 +1658,19 @@ function surveyBanners(){
 }
 
 // The survey page (members).
+// "Other" answers are saved as "Other: <what they typed>".
+const SV_OTHER = 'Other: ', svIsOther = x => typeof x === 'string' && x.startsWith(SV_OTHER);
+const svOtherBox = (q, v) => { const cur = (Array.isArray(v) ? v : [v]).find(svIsOther);
+  return `<input class="sv-other" data-q="${q.id}" maxlength="200" placeholder="Type your answer" aria-label="Other answer" value="${esc(cur ? cur.slice(SV_OTHER.length) : '')}" style="max-width:24rem">`; };
 function svInput(q, v){
   const n = `sva-${q.id}`, opts = (q.options || []).filter(o => o.trim());
+  const otherOn = Array.isArray(v) ? v.some(svIsOther) : svIsOther(v);
   const radio = (val, label) => `<label class="check"><input type="radio" name="${n}" value="${esc(val)}" ${String(v) === String(val) ? 'checked' : ''}> ${esc(label)}</label>`;
   if (q.type === 'short') return `<input name="${n}" maxlength="300" value="${esc(v || '')}">`;
   if (q.type === 'long') return `<textarea name="${n}" rows="4" maxlength="4000">${esc(v || '')}</textarea>`;
-  if (q.type === 'single') return `<div class="stack" style="gap:4px">${opts.map(o => radio(o, o)).join('')}</div>`;
-  if (q.type === 'multi') return `<div class="stack" style="gap:4px">${opts.map(o => `<label class="check"><input type="checkbox" name="${n}" value="${esc(o)}" ${(v || []).includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div>`;
-  if (q.type === 'dropdown') return `<select name="${n}"><option value="">Choose one…</option>${opts.map(o => `<option ${v === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+  if (q.type === 'single') return `<div class="stack" style="gap:4px">${opts.map(o => radio(o, o)).join('')}${q.other ? `<label class="check"><input type="radio" name="${n}" value="__other" ${otherOn ? 'checked' : ''}> Other</label>${svOtherBox(q, v)}` : ''}</div>`;
+  if (q.type === 'multi') return `<div class="stack" style="gap:4px">${opts.map(o => `<label class="check"><input type="checkbox" name="${n}" value="${esc(o)}" ${(v || []).includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}${q.other ? `<label class="check"><input type="checkbox" name="${n}" value="__other" ${otherOn ? 'checked' : ''}> Other</label>${svOtherBox(q, v)}` : ''}</div>`;
+  if (q.type === 'dropdown') return `<div class="stack" style="gap:6px"><select name="${n}"><option value="">Choose one…</option>${opts.map(o => `<option ${v === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}${q.other ? `<option value="__other" ${otherOn ? 'selected' : ''}>Other</option>` : ''}</select>${q.other ? svOtherBox(q, v) : ''}</div>`;
   if (q.type === 'rating') return `<div class="row" style="gap:14px">${[1, 2, 3, 4, 5].map(i => radio(i, String(i))).join('')}<span class="hint">1 = lowest, 5 = highest</span></div>`;
   if (q.type === 'yesno') return `<div class="row" style="gap:18px">${radio('Yes', 'Yes')}${radio('No', 'No')}</div>`;
   if (q.type === 'rank'){ const cur = Array.isArray(v) ? v : [];
@@ -1708,13 +1713,16 @@ function readSurveyAnswers(f, sv){
   (sv.questions || []).forEach(q => {
     const box = document.getElementById('svq-' + q.id); if (box && box.hidden) return;   // not shown to their year
     const els = [...f.querySelectorAll(`[name="sva-${q.id}"]`)];
-    if (q.type === 'multi') out[q.id] = els.filter(x => x.checked).map(x => x.value);
+    const otherText = ((f.querySelector(`.sv-other[data-q="${q.id}"]`) || {}).value || '').trim();
+    const other = x => { if (x !== '__other') return x; if (!otherText) out['__otherbad'] = q.id; return otherText ? SV_OTHER + otherText : null; };
+    if (q.type === 'multi') out[q.id] = els.filter(x => x.checked).map(x => other(x.value)).filter(Boolean);
     else if (q.type === 'rank'){   // the choices in ranked order; left blank until every choice has its own number
       const picked = els.filter(x => x.value), nums = picked.map(x => +x.value);
       out[q.id] = picked.length === els.length && new Set(nums).size === nums.length ? picked.sort((a, b) => a.value - b.value).map(x => x.dataset.opt) : '';
       if (picked.length && !out[q.id]) out['__rankbad'] = q.id;
     }
-    else if (['single', 'rating', 'yesno'].includes(q.type)){ const c = els.find(x => x.checked); out[q.id] = c ? (q.type === 'rating' ? +c.value : c.value) : ''; }
+    else if (['single', 'rating', 'yesno'].includes(q.type)){ const c = els.find(x => x.checked); out[q.id] = c ? (q.type === 'rating' ? +c.value : other(c.value) || '') : ''; }
+    else if (q.type === 'dropdown') out[q.id] = els[0] ? other(els[0].value) || '' : '';
     else out[q.id] = els[0] ? els[0].value.trim() : '';
   });
   return out;
@@ -1742,6 +1750,7 @@ function svEditor(){
       <label>Type<select data-sq="${i}:type">${Object.entries(SV_TYPES).map(([k, l]) => `<option value="${k}" ${q.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
     <label>Help text <span class="hint">Optional</span><input data-sq="${i}:hint" maxlength="300" value="${esc(q.hint || '')}"></label>
     ${svHasOptions(q.type) ? `<label>Choices <span class="hint">One per line</span><textarea data-sq="${i}:options" rows="${Math.max(3, (q.options || []).length + 1)}">${esc((q.options || []).join('\n'))}</textarea></label>` : ''}
+    ${['single', 'multi', 'dropdown'].includes(q.type) ? `<label class="check"><input type="checkbox" data-sq="${i}:other" ${q.other ? 'checked' : ''}> Add an “Other” choice where they type their own answer</label>` : ''}
     <div class="row" style="gap:18px;align-items:end"><label style="max-width:9rem">Points <span class="hint">For answering</span><input type="number" min="0" max="100" data-sq="${i}:points" value="${esc(q.points ?? 0)}"></label>
       <label class="check"><input type="checkbox" data-sq="${i}:required" ${q.required ? 'checked' : ''}> Required</label></div>
     <fieldset class="stack" style="gap:4px"><legend>Show to <span class="hint">Leave all unchecked for everyone</span></legend>
@@ -1772,6 +1781,7 @@ function readSvDraft(){
     const [i, k] = el.dataset.sq.split(':'), q = d.questions[+i]; if (!q) return;
     if (k === 'years'){ if (el.checked) q.years.push(el.value); }
     else if (k === 'required') q.required = el.checked;
+    else if (k === 'other') q.other = el.checked;
     else if (k === 'points') q.points = Math.max(0, Math.min(100, parseInt(el.value) || 0));
     else if (k === 'options') q.options = el.value.split('\n').map(x => x.trim()).filter(Boolean);
     else q[k] = el.value;
@@ -1790,8 +1800,9 @@ function svResultsBody(sv){
       return `<ol class="stack" style="gap:4px;margin:0;padding-left:1.3rem">${avg.map(([o, a]) => `<li>${esc(o)} <span class="hint">average place ${a.toFixed(1)}</span></li>`).join('')}</ol><span class="hint">From ${vals.length} ranking${vals.length === 1 ? '' : 's'}.</span>`;
     }
     if (['single', 'multi', 'dropdown', 'yesno'].includes(q.type)){
-      const opts = q.type === 'yesno' ? ['Yes', 'No'] : (q.options || []), flat = vals.flat();
-      return hbars(opts.map(o => [o, flat.filter(x => x === o).length]));
+      const opts = q.type === 'yesno' ? ['Yes', 'No'] : (q.options || []), flat = vals.flat(), others = flat.filter(svIsOther).map(x => x.slice(SV_OTHER.length));
+      return hbars([...opts.map(o => [o, flat.filter(x => x === o).length]), ...(q.other || others.length ? [['Other', others.length]] : [])])
+        + (others.length ? `<div class="stack" style="gap:4px"><span class="hint" style="font-weight:700">What they wrote for Other</span><ul class="stack" style="gap:4px;margin:0;padding-left:1.1rem">${others.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '');
     }
     return `<ul class="stack" style="gap:6px;margin:0;padding-left:1.1rem">${vals.map(x => `<li style="white-space:pre-wrap">${esc(x)}</li>`).join('')}</ul>`;
   };
@@ -7469,7 +7480,7 @@ async function handleSubmit(f, v, err){
     const bad = d.questions.findIndex(q => !q.label.trim()); if (bad >= 0) return err('svb-err', `Question ${bad + 1} needs a question.`);
     const few = d.questions.findIndex(q => svHasOptions(q.type) && (q.options || []).length < 2); if (few >= 0) return err('svb-err', `Question ${few + 1} needs at least two choices.`);
     const row = { title: d.title.trim(), descr: d.descr.trim(), closes_at: mtFromInput(d.closes), show_home: d.show_home, show_leaderboard: d.show_leaderboard,
-      questions: d.questions.map(q => ({ id: q.id, type: q.type, label: q.label.trim(), hint: (q.hint || '').trim(), required: !!q.required, options: svHasOptions(q.type) ? q.options : [], points: +q.points || 0, years: q.years || [] })),
+      questions: d.questions.map(q => ({ id: q.id, type: q.type, label: q.label.trim(), hint: (q.hint || '').trim(), required: !!q.required, options: svHasOptions(q.type) ? q.options : [], other: ['single', 'multi', 'dropdown'].includes(q.type) && !!q.other, points: +q.points || 0, years: q.years || [] })),
       status: mode === 'open' ? 'open' : (d.status === 'closed' ? 'closed' : 'draft') };
     await act(async () => {
       if (d.id) must(await sb.from('surveys').update(row).eq('id', d.id)); else must(await sb.from('surveys').insert(row));
@@ -7485,6 +7496,7 @@ async function handleSubmit(f, v, err){
     const yearSel = document.getElementById('sv-year');
     if (yearSel && !yearSel.value) return err('sv-err', 'Choose your year in school at the top first.');
     const answers = readSurveyAnswers(f, sv);
+    if (answers.__otherbad){ const box = document.getElementById('svq-' + answers.__otherbad); box.style.borderColor = 'var(--danger)'; box.scrollIntoView({ block: 'center', behavior: 'smooth' }); return err('sv-err', 'Type your answer next to “Other” (marked in red), or pick a different choice.'); }
     if (answers.__rankbad){ const box = document.getElementById('svq-' + answers.__rankbad); box.style.borderColor = 'var(--danger)'; box.scrollIntoView({ block: 'center', behavior: 'smooth' }); return err('sv-err', 'Give every choice in the ranking question its own number (marked in red).'); }
     const miss = (sv.questions || []).find(q => q.required && !(document.getElementById('svq-' + q.id) || {}).hidden && !svAnswered(answers[q.id]));
     if (miss){ const box = document.getElementById('svq-' + miss.id); box.style.borderColor = 'var(--danger)'; box.scrollIntoView({ block: 'center', behavior: 'smooth' }); return err('sv-err', 'Answer the required questions (marked in red).'); }
