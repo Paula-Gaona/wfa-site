@@ -3746,7 +3746,10 @@ function rqSeats(d){
   return +d.chairs > 0 ? +d.chairs : null;
 }
 // The most people expected: the seat limit, or the estimate when there's no limit.
-const rqMaxPeople = (d, est) => est ? +d.estMax || 0 : (+((document.getElementById('ev-cap') || {}).value || 0) || +d.estMax || 0);
+// Expected maximum attendance: with a seat limit, every RSVP plus the external guests (speakers, judges, panelists).
+const rqGuestCount = d => d.speaker === 'yes' ? Math.max(1, Math.min(10, +d.speakerCount || (d.speakers || []).length || 1)) : 0;
+const rqWithGuests = (cap, d) => cap ? cap + rqGuestCount(d) : 0;
+const rqMaxPeople = (d, est) => est ? +d.estMax || 0 : (rqWithGuests(+((document.getElementById('ev-cap') || {}).value || 0), d) || +d.estMax || 0);
 // An approved guest's estimates, shown next to the matching fields when that guest is picked on an event.
 function rqHelperSource(d){
   const id = ((d.speakers || []).find(s => s && s.guestId) || {}).guestId, g = id && gqOf(id);
@@ -3769,7 +3772,7 @@ function evSeatInfo(){
   if (ui.guestForm) return null;
   const d = ui.rq && ui.rq.key === (ui.editEvent || 'new') && !rqLocked(ui.editEvent) ? ui.rq.d : (rqOf(ui.editEvent) || {}).form;
   if (!d) return null;
-  const seats = rqSeats(d), cap = +((document.getElementById('ev-cap') || {}).value || 0) || +d.estMax || 0;
+  const seats = rqSeats(d), cap = rqWithGuests(+((document.getElementById('ev-cap') || {}).value || 0), d) || +d.estMax || 0;
   return seats && cap && seats < cap ? { seats, cap } : null;
 }
 function evSeatCheck(){
@@ -3849,7 +3852,8 @@ function rqPanel(e, cat, opts = {}){
     <label>Event name for UVU <span class="hint">Max 40 characters. Can be shorter than the website title.</span><input data-rq="uvuName" maxlength="40" value="${esc(d.uvuName)}">${help('uvuName')}</label>
     ${est ? `<label>Expected attendance<input type="number" min="1" data-rq="estMax" data-rr="1" value="${esc(d.estMax || '')}"></label>`
       : `<p class="hint" style="margin:0"><strong>Event description:</strong> the Description above goes on UVU’s form too.</p>
-    <label>Maximum attendees <span class="hint">Same as the seat limit above (0 = no limit)</span><input type="number" min="0" id="rq-cap" value="${esc(capNow)}"></label>
+    <label>Maximum RSVPs <span class="hint">Same as the seat limit above (0 = no limit)</span><input type="number" min="0" id="rq-cap" value="${esc(capNow)}"></label>
+    ${+capNow ? `<p class="hint" style="margin:0">Expected maximum attendees: <strong>${rqWithGuests(+capNow, d)}</strong>${rqGuestCount(d) ? ` (${+capNow} RSVPs + ${rqGuestCount(d)} external guest${rqGuestCount(d) === 1 ? '' : 's'})` : ''}. This goes on the request.</p>` : ''}
     ${+capNow ? '' : `<label>About how many people do you expect, at most? <span class="hint">Required when there’s no seat limit, so UVU can plan the room.</span><input type="number" min="1" data-rq="estMax" data-rr="1" value="${esc(d.estMax || '')}">${help('estMax')}</label>`}`}
     <label>Type of event<select data-rq="evType">${RQ_TYPES.map(x => `<option ${d.evType === x ? 'selected' : ''}>${x}</option>`).join('')}</select>${help('evType')}</label>
     ${rqYN('sponsor', 'Does this event have an external sponsor?', d)}
@@ -3968,7 +3972,7 @@ function rqRows(e, r, est = false){
     ['Start and end times', `${fmtTime(d.start)} – ${fmtTime(d.end)}`], ['Setup time before', `${d.setup} minutes (from ${fmtTime(hhmmAdd(d.start, -(+d.setup || 0)))})`],
     ['Time needed after', `${d.after || 0} minutes (until ${fmtTime(hhmmAdd(d.end, +d.after || 0))})`],
     ...(d.campus === 'off' ? [] : [['Location type' + (d.campus === 'hybrid' ? ' (on-campus part)' : ''), d.locType], ['Ideal building', d.building], ['Specific room', d.room || 'No preference']]),
-    ['Event description', e.desc], ['Maximum attendees', e.cap ? String(e.cap) : `No RSVP limit; expecting up to ${d.estMax || '?'}`], ['Type of event', d.evType],
+    ['Event description', e.desc], ['Maximum attendees', e.cap ? String(rqWithGuests(e.cap, d)) + (rqGuestCount(d) ? ` (${e.cap} RSVPs + ${rqGuestCount(d)} external guest${rqGuestCount(d) === 1 ? '' : 's'})` : '') : `No RSVP limit; expecting up to ${d.estMax || '?'}`], ['Type of event', d.evType],
     ['External sponsor', d.sponsor === 'yes' ? `${sp.org || ''}\nContact: ${sp.name || ''}\n${sp.email || ''} · ${sp.phone || ''}\n${addrLine(sp)}` : yn(d.sponsor)],
     ['Food, snacks, or beverages', yn(d.food)], ['Tablecloths', d.tablecloths === 'yes' ? 'Yes, ' + (d.clothColor || 'color not given') : yn(d.tablecloths)], ['External guests', d.speaker === 'yes' ? speakers : 'None'],
     ['Additional A/V equipment', d.av === 'yes' ? 'Yes: ' + d.avNeeds : yn(d.av)],
