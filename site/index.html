@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Wolverine Finance Association</title>
-<meta name="description" content="The Wolverine Finance Association is Utah Valley University's student finance club: workshops, guest speakers, case competitions, career fairs, and recruiting help for careers in investment banking, private equity, and corporate finance.">
+<meta name="description" content="The Wolverine Finance Association is Utah Valley University's student finance organization in the Woodbury School of Business: workshops, guest speakers, case competitions, career fairs, and recruiting help for careers in investment banking, private equity, and corporate finance.">
 <!-- Link previews (iMessage, LinkedIn, Slack, GroupMe) -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Wolverine Finance Association">
 <meta property="og:title" content="Wolverine Finance Association | UVU">
-<meta property="og:description" content="Utah Valley University's student finance club: workshops, guest speakers, case competitions, career fairs, and recruiting help for careers in finance.">
+<meta property="og:description" content="Utah Valley University's student finance organization in the Woodbury School of Business: workshops, guest speakers, case competitions, career fairs, and recruiting help for careers in finance.">
 <meta property="og:url" content="https://wolverinefinanceassociation.org/">
 <meta property="og:image" content="https://wolverinefinanceassociation.org/og-image.png">
 <meta name="twitter:card" content="summary">
@@ -561,12 +561,12 @@ h3{font-family:var(--serif);font-weight:700;font-size:1.4rem;letter-spacing:.01e
   <section class="stack" style="max-width:47.5rem;padding-block:32px">
     <div class="eyebrow">Woodbury School of Business · Utah Valley University</div>
     <h1 class="page">Wolverine Finance Association</h1>
-    <p>The Wolverine Finance Association (WFA) is Utah Valley University’s student finance club and your bridge to a career in finance. We connect UVU students of any major with the industry through guest speakers and panels, career fairs, firm visits, and networking with professionals and alumni, and we help members land internships and full-time roles in investment banking, private equity, asset management, and corporate finance. Members also build the skills firms look for through workshops in financial modeling, valuation, and the Bloomberg Terminal, plus case and stock pitch competitions.</p>
+    <p>The Wolverine Finance Association (WFA) is Utah Valley University’s student finance organization in the Woodbury School of Business, and your bridge to a career in finance. We connect UVU students of any major with the industry through guest speakers and panels, career fairs, firm visits, and networking with professionals and alumni, and we help members land internships and full-time roles in investment banking, private equity, asset management, and corporate finance. Members also build the skills firms look for through workshops in financial modeling, valuation, and the Bloomberg Terminal, plus case and stock pitch competitions.</p>
     <p class="muted" id="boot-msg">Loading club events and announcements…</p>
   </section>
 </main>
 <footer><div class="wrap row" style="justify-content:space-between">
-  <span>Wolverine Finance Association · A student club at Utah Valley University</span>
+  <span>Wolverine Finance Association · A department organization of the Woodbury School of Business, Utah Valley University</span>
   <span class="row" style="gap:12px;align-items:center"><span id="foot-install"></span><span id="foot-role"></span></span>
 </div></footer>
 <div class="backdrop" id="modal" hidden></div>
@@ -643,7 +643,7 @@ const OFFICER_GROUPS = [
 ];
 const OFFICER_TABS = OFFICER_GROUPS.flatMap(([, tabs]) => tabs);
 const tabGroup = k => OFFICER_GROUPS.findIndex(([, tabs]) => tabs.some(([t]) => t === k));
-const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member export'],['points','Award points'],['seasons','Leaderboard seasons'],['auto','Automatic emails'],['test','Test accounts'],['log','Change log']];
+const ADMIN_TABS = [['access','Access lists'],['bulk','Add several officers'],['applications','Officer applications'],['export','Member list'],['points','Award points'],['seasons','Leaderboard seasons'],['auto','Automatic emails'],['test','Test accounts'],['log','Change log']];
 const BRANCHES = { communications:'Communications', operations:'Operations', financial_applications:'Financial Applications' };
 // Degree programs and minors from catalog.uvu.edu/programs (October 2026)
 const MAJORS = ["Undeclared","Accounting, A.S.","Accounting, B.S.","American Sign Language Secondary Education, B.A.","Animation and Game Development, B.S.","Anthropology, B.A.","Anthropology, B.S.","Applied Artificial Intelligence, M.S.","Applied Communication, B.A.","Applied Communication, B.S.","Architecture, B.Arch","Art Education, B.S.","Art History, B.A.","Art and Design - Graphic Design Emphasis, A.A.S.","Art and Design - Graphic Design Emphasis, B.F.A.","Art and Design - Illustration Emphasis, A.A.S.","Art and Design - Illustration Emphasis, B.F.A.","Art and Design - Painting/Drawing/Printmaking Emphasis, B.F.A.","Art and Design - Photography Emphasis, A.A.S.","Art and Design - Photography Emphasis, B.F.A.","Art and Design - Sculpture and Ceramics Emphasis, B.F.A.","Art and Design, A.A.","Art and Design, A.S.","Art and Design, B.S.","Associate in Pre-Engineering - Biological and Chemical Engineering Emphasis, A.P.E.","Associate in Pre-Engineering - Civil and Mechanical Engineering Emphasis, A.P.E.","Associate in Pre-Engineering - Computer and Electrical Engineering Emphasis, A.P.E.","Automotive Technology, A.A.S.","Aviation Management, B.S.","Aviation Science, A.A.S.","Aviation Science, A.S.","Bioinformatics, B.S.","Biology Education, B.S.","Biology, A.A.","Biology, A.S.","Biology, B.S.","Biomedical Science, B.S.","Botany, B.S.","Business Management, A.S.","Business Technologies and Education, B.S.","Business and Analysis, B.S.","Cabinetry and Architectural Woodwork, A.A.S.","Chemistry - Biochemistry Emphasis, B.S.","Chemistry - Professional Chemistry Emphasis, B.S.","Chemistry Education, B.S.","Civil Engineering, B.S.","Clinical Mental Health Counseling, M.S.","Commercial Music, B.M.","Computational Data Science, B.S.","Computer Engineering, B.S.","Computer Science Education, B.S.","Computer Science, A.S.","Computer Science, B.S.","Constitutional Government Civics and Law, M.A.","Construction Management, A.A.S.","Construction Management, B.S.","Criminal Justice, A.A.","Criminal Justice, A.S.","Criminal Justice, B.S.","Culinary Arts, A.A.S.","Curriculum and Instruction, M.Ed.","Cybersecurity, A.A.S","Cybersecurity, B.S.","Cybersecurity, M.S.","Dance - Ballet Emphasis, B.F.A.","Dance - Modern Dance Emphasis, B.F.A.","Dance Education, B.S.","Dance, A.S.","Dance, B.S.","Deaf Studies - General Deaf Studies Emphasis, B.A.","Deaf Studies - Interpreting Emphasis, B.A.","Dental Hygiene, A.A.S.","Dental Hygiene, B.S.","Diesel Mechanics Technology, A.A.S.","Digital Audio, A.A.S.","Digital Audio, B.S.","Digital Cinema Production, A.A.S.","Digital Cinema Production, B.S.","Digital Marketing, B.S.","Early Childhood Education, A.S.","Earth Science Education, B.S.","Electrical Engineering, B.S.","Electrical and Computer Engineering, A.A.S.","Elementary Education, B.S.","Emergency Services Administration, B.S.","Emergency Services Operations, A.A.S.","Emergency Services Supervision, B.A.P.","Emergency Services, A.S.","Engineering Design Technology, A.A.S.","Engineering Design Technology, A.S.","Engineering and Technology Management, M.S.","English - Creative Writing Emphasis, B.A.","English - Creative Writing Emphasis, B.S.","English - Literary Studies Emphasis, B.A.","English - Literary Studies Emphasis, B.S.","English - Writing Studies Emphasis, B.A.","English - Writing Studies Emphasis, B.S.","English Education, B.A.","English Education, B.S.","Entertainment Design, A.A.S.","Entertainment Design, B.F.A.","Environmental Science and Management, B.S.","Environmental Studies, B.S.","Event Management, B.S.","Exercise Science, A.S.","Exercise Science, B.S.","Family Science, B.A.","Family Science, B.S.","Finance, B.S.","Finance, M.S.","Financial Planning and Wealth Management, B.S.","Forensic Science - Forensic Investigation Emphasis, B.S.","Forensic Science - Forensic Laboratory Emphasis, B.S.","Forensic Science, A.S.","Geography, B.S.","Geology, B.S.","Health Science, B.S.","Healthcare Administration, B.S.","Healthcare Services, A.A.S.","History and Social Studies Education, B.S.","History, B.A.","Hospitality Management, A.A.S.","Hospitality Management, A.S.","Hospitality Management, B.S.","Human Resource Management, B.S.","Humanities and Social Sciences, A.A.","Humanities and Social Sciences, A.S.","Humanities, B.A.","Humanities, B.S.","Information Systems - Application Development Emphasis, B.S.","Information Systems - Applied Artificial Intelligence Emphasis, B.S.","Information Systems - Data Analytics Emphasis, B.S.","Information Systems - Information Security Management Emphasis, B.S.","Information Systems and Technology, A.A.S.","Information Systems and Technology, A.S.","Information Technology, B.S.","Integrated Studies, B.A.","Integrated Studies, B.S.","International Business, B.S.","Marketing, B.S.","Marriage and Family Therapy, M.A.","Master of Accountancy, M.Acc","Master of Business Administration, M.B.A.","Master of Computer Science, M.C.S.","Master of Education in Applied Behavioral Analysis, M.Ed.","Master of Education in Higher Education Leadership, M.Ed.","Master of Education in K-12 Education Leadership, M.Ed.","Master of Education in School Counseling, M.Ed.","Master of Physician Assistant Studies, M.P.A.S.","Master of Public Administration, M.P.A.","Master of Social Work Advanced Standing, M.S.W.","Master of Social Work, M.S.W.","Mathematics - Actuarial Science Emphasis, B.S.","Mathematics - Applied Mathematics Emphasis, B.S.","Mathematics - Mathematics Emphasis, B.S.","Mathematics Education, B.S.","Mathematics, A.S.","Mechanical Engineering, B.S.","Mechatronics Engineering Technology - Automation and Electrical Technology Emphasis, A.A.S.","Mechatronics Engineering Technology - Mechatronics Emphasis, A.A.S.","Mechatronics Engineering Technology, B.S.","Microbiology, B.S.","Molecular Biosciences and Biotechnology, B.S.","Music Education, B.S.","Music, A.S.","Music, B.A.","Music, B.S.","National Security Studies, B.A.","National Security Studies, B.S.","Nursing, A.S.N.","Nursing, B.S.","Occupational Therapy Assistant, B.S.","Operations and Supply Chain Management, B.S.","Outdoor Recreation Management, A.S.","Outdoor Recreation Management, B.S.","Performance, B.M.","Philosophy, B.A.","Philosophy, B.S.","Physical Education Teacher Education, B.S.","Physical Therapist Assistant, SAAS","Physics Education, B.S.","Physics, B.S.","Political Science - American Government Emphasis, B.A.","Political Science - American Government Emphasis, B.S.","Political Science - Global Politics Emphasis, B.A.","Political Science - Global Politics Emphasis, B.S.","Political Science - Indian Affairs Administration Emphasis, B.A.","Political Science - Indian Affairs Administration Emphasis, B.S.","Political Science - Peace and Justice Studies Emphasis, B.A.","Political Science - Peace and Justice Studies Emphasis, B.S.","Political Science - Public Administration and Public Policy Emphasis, B.A.","Political Science - Public Administration and Public Policy Emphasis, B.S.","Political Science - Public Law and Political Philosophy Emphasis, B.A.","Political Science - Public Law and Political Philosophy Emphasis, B.S.","Pre-Elementary Education, A.S.","Pre-Engineering, A.S.","Professional Advancement, A.S.","Professional Advancement, B.A.P.","Professional Advancement, B.S.","Professional Pilot, B.S.","Professional Sales, B.S.","Psychology, B.A.","Psychology, B.S.","Public Health, A.S.","Public Health, B.S.","Public Relations and Strategic Communication, B.A.","Public Relations and Strategic Communication, B.S.","Respiratory Therapy, A.A.S.","Respiratory Therapy, B.S.","School Health Education, B.S.","Secondary Education, M.A.T.","Social Work, B.S.W.","Sociology, B.A.","Sociology, B.S.","Software Development, B.A.S.","Software Engineering, B.S.","Spanish Education, B.A.","Spanish, B.A.","Special Education - Mild/Moderate/Severe, B.S.","Statistics, B.S.","Strategic Foresight and Business, B.S.","Surveying Technology, A.A.S.","Technology Management, B.S.","Technology, A.A.S.","Theatre Arts - Acting Emphasis, B.F.A.","Theatre Arts - Musical Theatre Emphasis, B.F.A.","Theatre Arts - Theatre Design and Production Emphasis, B.F.A.","Theatre Arts, A.S.","Theatre Education, B.S.","Theatre Studies, A.A.","Theatre Studies, B.A.","Transportation Technologies, B.A.S.","Web Design and Development - Interaction and User Experience Design Emphasis, B.S.","Web Design and Development - Web Application Development Emphasis, B.S.","Web Design and Development, A.A.S.","Wildland Fire Management, A.A.S.","Zoology, B.S."];
@@ -1072,7 +1072,7 @@ function tabsHtml(tabs, cur, act){
 function homeIntro(join){
   return `<section class="${join ? 'home-cols' : 'stack'}">
     <div class="stack" style="gap:10px"><div class="section-head"><h2>About the WFA</h2></div>${join ? '' : '<div class="stack" style="gap:10px;max-width:75ch">'}
-      <p>The Wolverine Finance Association is Utah Valley University’s student finance club and your bridge to a career in finance. We connect UVU students of any major with the industry through guest speakers and panels, career fairs, firm visits, and networking with professionals and alumni, and we help members land internships and full-time roles in investment banking, private equity, asset management, and corporate finance.</p>
+      <p>The Wolverine Finance Association is Utah Valley University’s student finance organization in the Woodbury School of Business, and your bridge to a career in finance. We connect UVU students of any major with the industry through guest speakers and panels, career fairs, firm visits, and networking with professionals and alumni, and we help members land internships and full-time roles in investment banking, private equity, asset management, and corporate finance.</p>
       <p class="muted">Members also build the skills firms look for through workshops in financial modeling, valuation, and the Bloomberg Terminal, plus case and stock pitch competitions.</p>${join ? '' : '</div>'}</div>
     ${join ? `<div class="stack" style="gap:10px"><div class="section-head"><h2>How to join</h2></div>
       <p>Membership is free and open to every UVU student.</p>
@@ -1637,8 +1637,8 @@ function bonusRulesBox(){
 /* ---------- Survey builder (63-survey-builder.sql) ---------- */
 // Officers build surveys in Officer tools → Survey builder. Each question has its own points, earned by answering it.
 // Open surveys show on the home page and the Leaderboard page (each can be turned off), at #survey/<id>.
-const SV_TYPES = { short: 'Short answer', long: 'Paragraph', single: 'Multiple choice (pick one)', multi: 'Checkboxes (pick any)', dropdown: 'Dropdown', rating: 'Rating (1 to 5)', yesno: 'Yes or no' };
-const svHasOptions = t => ['single', 'multi', 'dropdown'].includes(t);
+const SV_TYPES = { short: 'Short answer', long: 'Paragraph', single: 'Multiple choice (pick one)', multi: 'Checkboxes (pick any)', dropdown: 'Dropdown', rating: 'Rating (1 to 5)', yesno: 'Yes or no', rank: 'Ranking (put choices in order)' };
+const svHasOptions = t => ['single', 'multi', 'dropdown', 'rank'].includes(t);
 const svOpen = sv => sv.status === 'open' && !(sv.closes_at && Date.now() >= Date.parse(sv.closes_at));
 const svTotal = sv => (sv.questions || []).reduce((n, q) => n + (+q.points || 0), 0);
 const svMine = id => session ? (db.svResp || []).find(r => r.survey_id === id && r.email === session) : null;
@@ -1664,6 +1664,9 @@ function svInput(q, v){
   if (q.type === 'dropdown') return `<select name="${n}"><option value="">Choose one…</option>${opts.map(o => `<option ${v === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   if (q.type === 'rating') return `<div class="row" style="gap:14px">${[1, 2, 3, 4, 5].map(i => radio(i, String(i))).join('')}<span class="hint">1 = lowest, 5 = highest</span></div>`;
   if (q.type === 'yesno') return `<div class="row" style="gap:18px">${radio('Yes', 'Yes')}${radio('No', 'No')}</div>`;
+  if (q.type === 'rank'){ const cur = Array.isArray(v) ? v : [];
+    return `<div class="stack" style="gap:6px"><span class="hint">Give each choice a different number: 1 is your top pick.</span>${opts.map(o => `<label class="row" style="gap:10px;align-items:center;flex-wrap:nowrap;font-weight:400">
+      <select name="${n}" data-opt="${esc(o)}" style="width:5rem" aria-label="Rank for ${esc(o)}"><option value="">–</option>${opts.map((_, i) => `<option ${cur.indexOf(o) === i ? 'selected' : ''}>${i + 1}</option>`).join('')}</select><span>${esc(o)}</span></label>`).join('')}</div>`; }
   return '';
 }
 function viewSurvey(){
@@ -1689,6 +1692,11 @@ function readSurveyAnswers(f, sv){
   (sv.questions || []).forEach(q => {
     const els = [...f.querySelectorAll(`[name="sva-${q.id}"]`)];
     if (q.type === 'multi') out[q.id] = els.filter(x => x.checked).map(x => x.value);
+    else if (q.type === 'rank'){   // the choices in ranked order; left blank until every choice has its own number
+      const picked = els.filter(x => x.value), nums = picked.map(x => +x.value);
+      out[q.id] = picked.length === els.length && new Set(nums).size === nums.length ? picked.sort((a, b) => a.value - b.value).map(x => x.dataset.opt) : '';
+      if (picked.length && !out[q.id]) out['__rankbad'] = q.id;
+    }
     else if (['single', 'rating', 'yesno'].includes(q.type)){ const c = els.find(x => x.checked); out[q.id] = c ? (q.type === 'rating' ? +c.value : c.value) : ''; }
     else out[q.id] = els[0] ? els[0].value.trim() : '';
   });
@@ -1755,6 +1763,11 @@ function svResultsBody(sv){
     if (!vals.length) return '<div class="empty">No answers yet.</div>';
     if (q.type === 'rating'){ const avg = vals.reduce((a, b) => a + +b, 0) / vals.length;
       return `<div><strong>${avg.toFixed(1)}</strong> average from ${vals.length}</div>${hbars([5, 4, 3, 2, 1].map(i => [String(i), vals.filter(x => +x === i).length]))}`; }
+    if (q.type === 'rank'){   // average place for each choice, best first
+      const avg = (q.options || []).map(o => { const at = vals.map(v => v.indexOf(o)).filter(i => i >= 0); return [o, at.length ? at.reduce((a, b) => a + b + 1, 0) / at.length : null]; })
+        .filter(x => x[1] != null).sort((a, b) => a[1] - b[1]);
+      return `<ol class="stack" style="gap:4px;margin:0;padding-left:1.3rem">${avg.map(([o, a]) => `<li>${esc(o)} <span class="hint">average place ${a.toFixed(1)}</span></li>`).join('')}</ol><span class="hint">From ${vals.length} ranking${vals.length === 1 ? '' : 's'}.</span>`;
+    }
     if (['single', 'multi', 'dropdown', 'yesno'].includes(q.type)){
       const opts = q.type === 'yesno' ? ['Yes', 'No'] : (q.options || []), flat = vals.flat();
       return hbars(opts.map(o => [o, flat.filter(x => x === o).length]));
@@ -4872,7 +4885,7 @@ function viewOfficer(){
     body = `<section class="stack">
       <div class="row"><label style="flex:1;min-width:220px">Search members<input id="mem-search" value="${esc(ui.memberSearch)}" placeholder="Name, email, major, or UVU ID"></label><span class="muted" style="align-self:end;padding-bottom:10px">${db.users.length} accounts</span></div>
       ${memberTable(rows)}
-      ${can('admin') ? '<p class="hint">Removing someone deletes their account, RSVPs, and check-ins. Need a spreadsheet? Admin → Member export.</p>' : ''}
+      ${can('admin') ? '<p class="hint">Removing someone deletes their account, RSVPs, and check-ins. Need a spreadsheet? Admin → Member list.</p>' : ''}
     </section>`;
   }
 
@@ -5047,10 +5060,13 @@ function viewAdmin(){
   else if (T === 'auto'){ body = adminAutoBody(); }
   else if (T === 'bulk'){ body = bulkBody(); }
   else if (T === 'export'){
+    const q = ui.memberSearch.toLowerCase();
+    const rows = db.users.filter(u => !q || (u.first+' '+u.last+' '+u.email+' '+u.major+' '+u.minor+' '+u.uvuid).toLowerCase().includes(q));
     body = `<section class="stack">
-      <div class="row" style="justify-content:space-between"><p class="muted" style="max-width:60ch">Download a CSV that opens in Excel or Google Sheets, or copy the rows and paste them into a sheet.</p>
+      <div class="row" style="justify-content:space-between;align-items:end;gap:10px"><label style="flex:1;min-width:220px">Search members<input id="mem-search" value="${esc(ui.memberSearch)}" placeholder="Name, email, major, or UVU ID"></label>
         <div class="row" style="gap:8px"><button class="btn" data-act="csv">Download CSV</button><button class="btn ghost" data-act="export">Copy ${db.users.length} members</button></div></div>
-      ${memberTable(db.users)}
+      <span class="muted">${q ? `${rows.length} of ${db.users.length} members` : `${db.users.length} members`}. The CSV opens in Excel or Google Sheets, and copied rows paste straight into a sheet.</span>
+      ${memberTable(rows)}
     </section>`;
   }
   else {
@@ -7439,6 +7455,7 @@ async function handleSubmit(f, v, err){
     const sv = svById(f.dataset.id); if (!sv) return;
     document.querySelectorAll('#f-survey fieldset').forEach(x => x.style.borderColor = '');
     const answers = readSurveyAnswers(f, sv);
+    if (answers.__rankbad){ const box = document.getElementById('svq-' + answers.__rankbad); box.style.borderColor = 'var(--danger)'; box.scrollIntoView({ block: 'center', behavior: 'smooth' }); return err('sv-err', 'Give every choice in the ranking question its own number (marked in red).'); }
     const miss = (sv.questions || []).find(q => q.required && !svAnswered(answers[q.id]));
     if (miss){ const box = document.getElementById('svq-' + miss.id); box.style.borderColor = 'var(--danger)'; box.scrollIntoView({ block: 'center', behavior: 'smooth' }); return err('sv-err', 'Answer the required questions (marked in red).'); }
     const r = await sb.rpc('submit_survey', { p_survey: sv.id, p_answers: answers });
