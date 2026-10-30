@@ -1749,7 +1749,10 @@ function svEditor(){
     <div class="grid2"><label>Question<input data-sq="${i}:label" maxlength="300" value="${esc(q.label)}"></label>
       <label>Type<select data-sq="${i}:type">${Object.entries(SV_TYPES).map(([k, l]) => `<option value="${k}" ${q.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
     <label>Help text <span class="hint">Optional</span><input data-sq="${i}:hint" maxlength="300" value="${esc(q.hint || '')}"></label>
-    ${svHasOptions(q.type) ? `<label>Choices <span class="hint">One per line</span><textarea data-sq="${i}:options" rows="${Math.max(3, (q.options || []).length + 1)}">${esc((q.options || []).join('\n'))}</textarea></label>` : ''}
+    ${svHasOptions(q.type) ? `<div class="stack" style="gap:6px"><span class="label-text">Choices</span>
+      ${(q.options || []).map((o, j) => `<div class="row" style="gap:6px;flex-wrap:nowrap"><input data-sq="${i}:opt" data-j="${j}" maxlength="200" value="${esc(o)}" placeholder="Choice ${j + 1}" aria-label="Question ${i + 1}, choice ${j + 1}" style="flex:1">
+        <button type="button" class="btn ghost small" data-act="sv-rm-opt" data-i="${i}" data-j="${j}" aria-label="Remove choice ${j + 1}">×</button></div>`).join('')}
+      <div><button type="button" class="btn ghost small" data-act="sv-add-opt" data-i="${i}">+ Add a choice</button> <span class="hint">Tip: press Enter in a choice to add the next one.</span></div></div>` : ''}
     ${['single', 'multi', 'dropdown'].includes(q.type) ? `<label class="check"><input type="checkbox" data-sq="${i}:other" ${q.other ? 'checked' : ''}> Add an “Other” choice where they type their own answer</label>` : ''}
     <div class="row" style="gap:18px;align-items:end"><label style="max-width:9rem">Points <span class="hint">For answering</span><input type="number" min="0" max="100" data-sq="${i}:points" value="${esc(q.points ?? 0)}"></label>
       <label class="check"><input type="checkbox" data-sq="${i}:required" ${q.required ? 'checked' : ''}> Required</label></div>
@@ -1776,14 +1779,14 @@ function readSvDraft(){
   const v = id => (document.getElementById(id) || {}).value || '';
   d.title = v('sv-title'); d.descr = v('sv-descr'); d.closes = v('sv-closes');
   d.show_home = !!(document.getElementById('sv-home') || {}).checked; d.show_leaderboard = !!(document.getElementById('sv-lb') || {}).checked;
-  d.questions.forEach(q => { q.years = []; });
+  d.questions.forEach(q => { q.years = []; if (f.querySelector(`[data-sq="${d.questions.indexOf(q)}:opt"]`)) q.options = []; });
   f.querySelectorAll('[data-sq]').forEach(el => {
     const [i, k] = el.dataset.sq.split(':'), q = d.questions[+i]; if (!q) return;
     if (k === 'years'){ if (el.checked) q.years.push(el.value); }
     else if (k === 'required') q.required = el.checked;
     else if (k === 'other') q.other = el.checked;
     else if (k === 'points') q.points = Math.max(0, Math.min(100, parseInt(el.value) || 0));
-    else if (k === 'options') q.options = el.value.split('\n').map(x => x.trim()).filter(Boolean);
+    else if (k === 'opt') q.options.push(el.value);   // blanks are kept while editing and dropped on save
     else q[k] = el.value;
   });
 }
@@ -6162,6 +6165,14 @@ function syncCaseBox(){
   if (c.dataset.was !== c.value){ c.dataset.was = c.value; rqRedraw(); }
 }
 ['input', 'change', 'click', 'keyup'].forEach(t => document.addEventListener(t, ev => { if (ev.target && ev.target.id === 'ev-cat') syncCaseBox(); }, true));
+// Survey builder: Enter in a choice adds a new choice right after it.
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || !/:opt$/.test((e.target.dataset || {}).sq || '')) return;
+  e.preventDefault(); readSvDraft();
+  const i = +e.target.dataset.sq.split(':')[0], j = +e.target.dataset.j;
+  ui.svDraft.questions[i].options.splice(j + 1, 0, ''); render();
+  document.querySelector(`[data-sq="${i}:opt"][data-j="${j + 1}"]`)?.focus();
+});
 document.addEventListener('keydown', e => {
   if (e.target && e.target.id === 'chat-text' && e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); e.target.form.requestSubmit(); }
 });
@@ -6435,6 +6446,9 @@ document.addEventListener('click', async ev => {
     case 'sv-results': ui.svDraft = null; ui.svResults = id; render(); window.scrollTo(0, 0); break;
     case 'sv-csv': { const sv = svById(id); if (sv) svCsv(sv); break; }
     case 'sv-add-q': readSvDraft(); ui.svDraft.questions.push(svNewQ(t.dataset.type)); render(); { const ins = document.querySelectorAll('[data-sq$=":label"]'); ins[ins.length - 1]?.focus(); } break;
+    case 'sv-add-opt': { readSvDraft(); const i = +t.dataset.i; ui.svDraft.questions[i].options.push(''); render();
+      const ins = document.querySelectorAll(`[data-sq="${i}:opt"]`); ins[ins.length - 1]?.focus(); break; }
+    case 'sv-rm-opt': readSvDraft(); ui.svDraft.questions[+t.dataset.i].options.splice(+t.dataset.j, 1); render(); break;
     case 'sv-rm-q': readSvDraft(); ui.svDraft.questions.splice(+t.dataset.i, 1); render(); break;
     case 'sv-move-q': { readSvDraft(); const q = ui.svDraft.questions, i = +t.dataset.i, j = i + +t.dataset.d; if (q[j]) [q[i], q[j]] = [q[j], q[i]]; render(); break; }
     case 'sv-status': { const sv = svById(id), st = t.dataset.s;
@@ -7478,6 +7492,7 @@ async function handleSubmit(f, v, err){
     if (!d.title.trim()) return err('svb-err', 'Give the survey a title.');
     if (!d.questions.length) return err('svb-err', 'Add at least one question.');
     const bad = d.questions.findIndex(q => !q.label.trim()); if (bad >= 0) return err('svb-err', `Question ${bad + 1} needs a question.`);
+    d.questions.forEach(q => { q.options = (q.options || []).map(o => o.trim()).filter(Boolean); });
     const few = d.questions.findIndex(q => svHasOptions(q.type) && (q.options || []).length < 2); if (few >= 0) return err('svb-err', `Question ${few + 1} needs at least two choices.`);
     const row = { title: d.title.trim(), descr: d.descr.trim(), closes_at: mtFromInput(d.closes), show_home: d.show_home, show_leaderboard: d.show_leaderboard,
       questions: d.questions.map(q => ({ id: q.id, type: q.type, label: q.label.trim(), hint: (q.hint || '').trim(), required: !!q.required, options: svHasOptions(q.type) ? q.options : [], other: ['single', 'multi', 'dropdown'].includes(q.type) && !!q.other, points: +q.points || 0, years: q.years || [] })),
