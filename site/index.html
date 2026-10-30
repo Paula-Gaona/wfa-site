@@ -1641,11 +1641,14 @@ function bonusRulesBox(){
 const SV_TYPES = { short: 'Short answer', long: 'Paragraph', single: 'Multiple choice (pick one)', multi: 'Checkboxes (pick any)', dropdown: 'Dropdown', rating: 'Rating (1 to 5)', yesno: 'Yes or no', rank: 'Ranking (put choices in order)' };
 const svHasOptions = t => ['single', 'multi', 'dropdown', 'rank'].includes(t);
 const svOpen = sv => sv.status === 'open' && !(sv.closes_at && Date.now() >= Date.parse(sv.closes_at));
-const svTotal = sv => (sv.questions || []).reduce((n, q) => n + (+q.points || 0), 0);
+// A question with a "years" list is only shown to members in those years (65-survey-questions-by-year.sql).
+const svForYear = (q, yr) => !(q.years || []).length || (q.years || []).includes(yr);
+const svTotal = (sv, yr) => (sv.questions || []).filter(q => yr === undefined || svForYear(q, yr)).reduce((n, q) => n + (+q.points || 0), 0);
+const svByYear = sv => (sv.questions || []).some(q => (q.years || []).length);
 const svMine = id => session ? (db.svResp || []).find(r => r.survey_id === id && r.email === session) : null;
 const svById = id => (db.surveys || []).find(x => x.id === id);
 const liveSurveys = where => (db.surveys || []).filter(sv => svOpen(sv) && (!where || sv[where]));
-const svNewQ = (type = 'single') => ({ id: 'q' + Math.random().toString(36).slice(2, 9), type, label: '', hint: '', required: false, options: svHasOptions(type) ? ['', ''] : [], points: 1 });
+const svNewQ = (type = 'single') => ({ id: 'q' + Math.random().toString(36).slice(2, 9), type, label: '', hint: '', required: false, options: svHasOptions(type) ? ['', ''] : [], points: 1, years: [] });
 const svAnswered = v => Array.isArray(v) ? v.length > 0 : v != null && String(v).trim() !== '';
 function surveyBanners(){
   if (!can('member')) return '';
@@ -1674,7 +1677,9 @@ function viewSurvey(){
   const id = location.hash.slice(1).split('/')[1], sv = svById(id);
   if (!sv) return `<div class="view"><div class="empty">This survey isn’t available. <a href="#home">Go home</a></div></div>`;
   if (!can('member')) return gate('member');
-  const mine = svMine(id), ans = (mine || {}).answers || {}, open = svOpen(sv), total = svTotal(sv);
+  const mine = svMine(id), ans = (mine || {}).answers || {}, open = svOpen(sv), yr = (me() || {}).year || '';
+  const askYear = svByYear(sv) && !yr, total = askYear ? svTotal(sv) : svTotal(sv, yr);
+  setTimeout(svApplyYear);   // number the questions shown
   return `<div class="view" style="max-width:46rem">
     <section class="page-head"><div class="eyebrow">Survey${total ? ` · up to ${total} leaderboard points` : ''}</div><h1 class="page">${esc(sv.title)}</h1>
       ${sv.descr ? `<p class="muted" style="white-space:pre-wrap">${esc(sv.descr)}</p>` : ''}
@@ -1682,15 +1687,26 @@ function viewSurvey(){
     ${mine ? `<div class="notice"><strong>Thanks, you answered this survey${mine.points ? ` and earned ${mine.points} point${mine.points === 1 ? '' : 's'}` : ''}.</strong>${open ? ' You can change your answers below until it closes.' : ''}</div>` : ''}
     ${!open ? `<div class="notice">This survey is closed.</div>` : ''}
     <form class="stack" id="f-survey" data-id="${sv.id}" style="gap:18px" novalidate>
-      ${(sv.questions || []).map((q, i) => `<fieldset class="panel stack" style="gap:8px" id="svq-${q.id}" ${open ? '' : 'disabled'}><legend style="font-weight:700">${i + 1}. ${esc(q.label)}${q.required ? ' <span class="hint">(required)</span>' : ''}${+q.points ? ` <span class="tag ok">+${+q.points} pt${+q.points === 1 ? '' : 's'}</span>` : ''}</legend>
+      ${askYear ? `<fieldset class="panel stack" style="gap:8px" ${open ? '' : 'disabled'}><legend style="font-weight:700">What year in school are you?</legend>
+        <span class="hint">Some questions depend on your year. This also saves to your profile.</span>
+        <select id="sv-year"><option value="">Choose one…</option>${YEARS.map(y => `<option>${y}</option>`).join('')}</select></fieldset>` : ''}
+      ${(sv.questions || []).map(q => `<fieldset class="panel stack" style="gap:8px" id="svq-${q.id}" data-years="${esc((q.years || []).join('|'))}" ${open ? '' : 'disabled'} ${askYear ? ((q.years || []).length ? 'hidden' : '') : svForYear(q, yr) ? '' : 'hidden'}><legend style="font-weight:700"><span class="svq-n"></span>${esc(q.label)}${q.required ? ' <span class="hint">(required)</span>' : ''}${+q.points ? ` <span class="tag ok">+${+q.points} pt${+q.points === 1 ? '' : 's'}</span>` : ''}</legend>
         ${q.hint ? `<span class="hint">${esc(q.hint)}</span>` : ''}${svInput(q, ans[q.id])}</fieldset>`).join('')}
       <div class="err" id="sv-err"></div>
       ${open ? `<div class="row"><button class="btn" type="submit">${mine ? 'Update my answers' : 'Submit'}</button></div>` : ''}
     </form></div>`;
 }
+// Shows the questions for the year picked at the top of a survey, and numbers the visible ones.
+function svApplyYear(){
+  const f = document.getElementById('f-survey'); if (!f) return;
+  const sel = document.getElementById('sv-year'), yr = sel ? sel.value : null;
+  if (sel) f.querySelectorAll('fieldset[data-years]').forEach(fs => { const ys = fs.dataset.years ? fs.dataset.years.split('|') : []; fs.hidden = ys.length > 0 && !ys.includes(yr); });
+  let n = 0; f.querySelectorAll('fieldset[data-years]').forEach(fs => { const s = fs.querySelector('.svq-n'); if (s) s.textContent = fs.hidden ? '' : ++n + '. '; });
+}
 function readSurveyAnswers(f, sv){
   const out = {};
   (sv.questions || []).forEach(q => {
+    const box = document.getElementById('svq-' + q.id); if (box && box.hidden) return;   // not shown to their year
     const els = [...f.querySelectorAll(`[name="sva-${q.id}"]`)];
     if (q.type === 'multi') out[q.id] = els.filter(x => x.checked).map(x => x.value);
     else if (q.type === 'rank'){   // the choices in ranked order; left blank until every choice has its own number
@@ -1727,7 +1743,9 @@ function svEditor(){
     <label>Help text <span class="hint">Optional</span><input data-sq="${i}:hint" maxlength="300" value="${esc(q.hint || '')}"></label>
     ${svHasOptions(q.type) ? `<label>Choices <span class="hint">One per line</span><textarea data-sq="${i}:options" rows="${Math.max(3, (q.options || []).length + 1)}">${esc((q.options || []).join('\n'))}</textarea></label>` : ''}
     <div class="row" style="gap:18px;align-items:end"><label style="max-width:9rem">Points <span class="hint">For answering</span><input type="number" min="0" max="100" data-sq="${i}:points" value="${esc(q.points ?? 0)}"></label>
-      <label class="check"><input type="checkbox" data-sq="${i}:required" ${q.required ? 'checked' : ''}> Required</label></div></div>`;
+      <label class="check"><input type="checkbox" data-sq="${i}:required" ${q.required ? 'checked' : ''}> Required</label></div>
+    <fieldset class="stack" style="gap:4px"><legend>Show to <span class="hint">Leave all unchecked for everyone</span></legend>
+      <div class="row" style="gap:4px 14px">${YEARS.map(y => `<label class="check"><input type="checkbox" data-sq="${i}:years" value="${y}" ${(q.years || []).includes(y) ? 'checked' : ''}> ${y}</label>`).join('')}</div></fieldset></div>`;
   return `<form class="stack" id="f-survey-build" style="gap:16px;max-width:48rem" novalidate>
     <div><button type="button" class="btn ghost small" data-act="sv-cancel">← All surveys</button></div>
     <h2 style="margin:0">${d.id ? 'Edit survey' : 'New survey'}</h2>
@@ -1749,9 +1767,11 @@ function readSvDraft(){
   const v = id => (document.getElementById(id) || {}).value || '';
   d.title = v('sv-title'); d.descr = v('sv-descr'); d.closes = v('sv-closes');
   d.show_home = !!(document.getElementById('sv-home') || {}).checked; d.show_leaderboard = !!(document.getElementById('sv-lb') || {}).checked;
+  d.questions.forEach(q => { q.years = []; });
   f.querySelectorAll('[data-sq]').forEach(el => {
     const [i, k] = el.dataset.sq.split(':'), q = d.questions[+i]; if (!q) return;
-    if (k === 'required') q.required = el.checked;
+    if (k === 'years'){ if (el.checked) q.years.push(el.value); }
+    else if (k === 'required') q.required = el.checked;
     else if (k === 'points') q.points = Math.max(0, Math.min(100, parseInt(el.value) || 0));
     else if (k === 'options') q.options = el.value.split('\n').map(x => x.trim()).filter(Boolean);
     else q[k] = el.value;
@@ -1778,13 +1798,14 @@ function svResultsBody(sv){
   return `<div class="stack" style="gap:16px;max-width:52rem">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><button type="button" class="btn ghost small" data-act="sv-cancel">← All surveys</button><button class="btn ghost small" data-act="sv-csv" data-id="${sv.id}" ${rows.length ? '' : 'disabled'}>Download responses (CSV)</button></div>
     <div><h2 style="margin:0">${esc(sv.title)}</h2><span class="hint">${rows.length} response${rows.length === 1 ? '' : 's'} · ${rows.reduce((n, r) => n + (r.points || 0), 0)} points given</span></div>
-    ${(sv.questions || []).map((q, i) => `<section class="panel stack" style="gap:8px"><div><strong>${i + 1}. ${esc(q.label)}</strong> <span class="hint">${SV_TYPES[q.type] || ''}</span></div>${summary(q)}</section>`).join('')}</div>`;
+    ${(sv.questions || []).map((q, i) => `<section class="panel stack" style="gap:8px"><div><strong>${i + 1}. ${esc(q.label)}</strong> <span class="hint">${SV_TYPES[q.type] || ''}${(q.years || []).length ? ' · shown to ' + esc(q.years.join(', ')) : ''}</span></div>${summary(q)}</section>`).join('')}</div>`;
 }
 function svCsv(sv){
   const rows = (db.svResp || []).filter(r => r.survey_id === sv.id), qs = sv.questions || [];
   const cell = x => '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"';
-  const lines = [['Name', 'Email', 'Submitted', 'Points', ...qs.map(q => q.label)],
-    ...rows.map(r => [userName(r.email), r.email, fmtMtStamp(Date.parse(r.updated_at || r.created_at)), r.points, ...qs.map(q => { const v = (r.answers || {})[q.id]; return Array.isArray(v) ? v.join('; ') : v; })])];
+  const yearOf = em => ((db.users || []).find(u => u.email === em) || {}).year || '';
+  const lines = [['Name', 'Email', 'Year', 'Submitted', 'Points', ...qs.map(q => q.label)],
+    ...rows.map(r => [userName(r.email), r.email, yearOf(r.email), fmtMtStamp(Date.parse(r.updated_at || r.created_at)), r.points, ...qs.map(q => { const v = (r.answers || {})[q.id]; return Array.isArray(v) ? v.join('; ') : v; })])];
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + lines.map(l => l.map(cell).join(',')).join('\r\n')], { type: 'text/csv' }));
   a.download = (sv.title.replace(/[^\w]+/g, '-').replace(/^-|-$/g, '') || 'survey') + '-responses.csv';
@@ -6821,6 +6842,7 @@ document.addEventListener('input', e => {
   if (id === 'dc-body'){ const x = db.apps.find(a => a.id === (ui.declineList || [])[0]); if (x) document.getElementById('dc-preview').textContent = fillDecline(e.target.value, x); }
 });
 document.addEventListener('change', async e => {
+  if (e.target.id === 'sv-year'){ svApplyYear(); return; }
   if (e.target.dataset && /:type$/.test(e.target.dataset.sq || '')){ readSvDraft(); const [i] = e.target.dataset.sq.split(':'), q = ui.svDraft.questions[+i];
     if (svHasOptions(q.type) && !(q.options || []).length) q.options = ['', '']; render(); return; }
   const id = e.target.id;
@@ -7447,7 +7469,7 @@ async function handleSubmit(f, v, err){
     const bad = d.questions.findIndex(q => !q.label.trim()); if (bad >= 0) return err('svb-err', `Question ${bad + 1} needs a question.`);
     const few = d.questions.findIndex(q => svHasOptions(q.type) && (q.options || []).length < 2); if (few >= 0) return err('svb-err', `Question ${few + 1} needs at least two choices.`);
     const row = { title: d.title.trim(), descr: d.descr.trim(), closes_at: mtFromInput(d.closes), show_home: d.show_home, show_leaderboard: d.show_leaderboard,
-      questions: d.questions.map(q => ({ id: q.id, type: q.type, label: q.label.trim(), hint: (q.hint || '').trim(), required: !!q.required, options: svHasOptions(q.type) ? q.options : [], points: +q.points || 0 })),
+      questions: d.questions.map(q => ({ id: q.id, type: q.type, label: q.label.trim(), hint: (q.hint || '').trim(), required: !!q.required, options: svHasOptions(q.type) ? q.options : [], points: +q.points || 0, years: q.years || [] })),
       status: mode === 'open' ? 'open' : (d.status === 'closed' ? 'closed' : 'draft') };
     await act(async () => {
       if (d.id) must(await sb.from('surveys').update(row).eq('id', d.id)); else must(await sb.from('surveys').insert(row));
@@ -7460,10 +7482,16 @@ async function handleSubmit(f, v, err){
   if (f.id === 'f-survey'){
     const sv = svById(f.dataset.id); if (!sv) return;
     document.querySelectorAll('#f-survey fieldset').forEach(x => x.style.borderColor = '');
+    const yearSel = document.getElementById('sv-year');
+    if (yearSel && !yearSel.value) return err('sv-err', 'Choose your year in school at the top first.');
     const answers = readSurveyAnswers(f, sv);
     if (answers.__rankbad){ const box = document.getElementById('svq-' + answers.__rankbad); box.style.borderColor = 'var(--danger)'; box.scrollIntoView({ block: 'center', behavior: 'smooth' }); return err('sv-err', 'Give every choice in the ranking question its own number (marked in red).'); }
-    const miss = (sv.questions || []).find(q => q.required && !svAnswered(answers[q.id]));
+    const miss = (sv.questions || []).find(q => q.required && !(document.getElementById('svq-' + q.id) || {}).hidden && !svAnswered(answers[q.id]));
     if (miss){ const box = document.getElementById('svq-' + miss.id); box.style.borderColor = 'var(--danger)'; box.scrollIntoView({ block: 'center', behavior: 'smooth' }); return err('sv-err', 'Answer the required questions (marked in red).'); }
+    if (yearSel){   // the year question saves to their profile (and decides which questions count)
+      const y = await sb.from('members').update({ year: yearSel.value }).eq('id', authUser.id);
+      if (y.error) return err('sv-err', errMsg(y.error));
+    }
     const r = await sb.rpc('submit_survey', { p_survey: sv.id, p_answers: answers });
     if (r.error) return err('sv-err', /submit_survey/.test(r.error.message || '') ? 'Surveys aren’t set up yet.' : errMsg(r.error));
     const code = String(r.data || '');
