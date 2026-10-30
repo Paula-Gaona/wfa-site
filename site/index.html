@@ -580,7 +580,7 @@ h3{font-family:var(--serif);font-weight:700;font-size:1.4rem;letter-spacing:.01e
 const SUPABASE_URL = 'https://razxymbbfsnnnguyaalp.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_G9Ct3sh1zfK2peRadj-nzg_SSLCr2Sn';
 const SAFE_MSG = 'Safe view is on. Switch to Edit view to make changes.';
-const READ_RPCS = ['waitlist_info', 'my_role', 'my_test_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending', 'case_board', 'member_points', 'my_chats', 'chat_names', 'mark_chat_read', 'rule_chats', 'event_coming_soon'];   // database functions that only read
+const READ_RPCS = ['survey_counts', 'waitlist_info', 'my_role', 'my_test_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending', 'case_board', 'member_points', 'my_chats', 'chat_names', 'mark_chat_read', 'rule_chats', 'event_coming_soon'];   // database functions that only read
 function safeFetch(input, init){
   const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
   let safe = false;
@@ -638,7 +638,7 @@ const OFFICER_GROUPS = [
   ['To do', [['approvals','Approvals'],['questions','Questions'],['tasks','Tasks']]],
   ['Planning events', [['events','Events'],['scheduling','Scheduling'],['plan','Get started with an event'],['process','How scheduling works'],['availability','Availability']]],
   ['At the event', [['checkin','Check-in & attendance'],['qr','QR codes'],['surveys','Event surveys']]],
-  ['Communications', [['announcements','Announcements'],['email','Email builder'],['recaps','Recaps'],['archive','Archive']]],
+  ['Communications', [['announcements','Announcements'],['email','Email builder'],['forms','Survey builder'],['recaps','Recaps'],['archive','Archive']]],
   ['People & data', [['members','Members'],['directory','Officer directory'],['resumes','Resume book'],...(DUES_ENABLED ? [['dues','Dues']] : []),['stats','Statistics']]]
 ];
 const OFFICER_TABS = OFFICER_GROUPS.flatMap(([, tabs]) => tabs);
@@ -696,6 +696,9 @@ async function load(){
     archive: signed && t('archive'),
     pstats: sb.rpc('public_stats'),
     wait: sb.rpc('waitlist_info'),
+    surveys: t('surveys'),
+    svResp: signed && t('survey_responses'),
+    svCounts: sb.rpc('survey_counts'),
     lbHistory: signed && sb.rpc('leaderboard_history'),
     awards: myRole === 'admin' && sb.from('point_awards').select('*').is('rule_id', null).order('created_at', { ascending: false }).limit(200),
     pointRules: sb.from('point_rules').select('*').order('created_at', { ascending: false }),
@@ -805,6 +808,9 @@ async function load(){
   }
   db.mres = {}; (R.mres || []).forEach(r => (db.mres[r.member_id] = db.mres[r.member_id] || {})[r.category] = { path: r.path, updated: r.updated_at });
   db.pstats = R.pstats || null;
+  db.surveys = (Array.isArray(R.surveys) ? R.surveys : []).sort((a, b) => b.created_at.localeCompare(a.created_at));   // survey builder (63-survey-builder.sql)
+  db.svResp = Array.isArray(R.svResp) ? R.svResp : [];
+  db.svCounts = Object.fromEntries((Array.isArray(R.svCounts) ? R.svCounts : []).map(x => [x.survey_id, x.responses]));
   db.wait = Object.fromEntries((Array.isArray(R.wait) ? R.wait : []).map(w => [w.event_id, w]));   // waitlists (62-rsvp-waitlist.sql)
   db.pending = R.pending || [];
   db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null, info: R.appset?.branch_info || {}, planTpl: R.appset?.plan_templates || {}, declineTpl: R.appset?.decline_template || {}, questions: R.appset?.questions || null };
@@ -1095,6 +1101,7 @@ function viewHome(){
     ${pendingSurveys().length ? `<div class="notice row" style="justify-content:space-between;align-items:center;gap:10px"><span>You have ${pendingSurveys().length} event survey${pendingSurveys().length === 1 ? '' : 's'} to fill out (+${SURVEY_POINTS} points each).</span><a class="btn small" href="#account">Take the survey${pendingSurveys().length === 1 ? '' : 's'}</a></div>` : ''}
     ${appsBanner()}
     ${joinBonusBanner()}
+    ${surveyBanners()}
     <section class="hero">
       <div class="hero-copy">
         <div class="hero-title">
@@ -1620,11 +1627,156 @@ function ruleText(r){
   return { join: 'Join the WFA', rsvp: `RSVP to ${ev}${r.revoke_noshow ? ' (and check in)' : ''}`, checkin: `Check in at ${ev}`, survey: `Fill out the survey for ${ev}` }[r.kind];
 }
 function bonusRulesBox(){
-  const list = activeRules(); if (!list.length) return '';
+  const list = activeRules(), svs = liveSurveys('show_leaderboard'); if (!list.length && !svs.length) return '';
   return `<section class="panel stack" style="gap:8px"><div><h3 style="margin:0">Ways to earn bonus points</h3><span class="hint">Extra points on top of check-ins, for a limited time.</span></div>
     ${list.map(r => `<div class="row" style="gap:10px;align-items:baseline;flex-wrap:nowrap"><strong style="min-width:3.2rem;color:var(--brand-text)">${r.points > 0 ? '+' : ''}${r.points}</strong>
-      <span>${ruleText(r)} <span class="hint">by ${fmtMtStamp(Date.parse(r.deadline))}</span>${(db.myRules || new Set()).has(r.id) ? ' <span class="tag ok">✓ You earned this</span>' : ''}</span></div>`).join('')}</section>`;
+      <span>${ruleText(r)} <span class="hint">by ${fmtMtStamp(Date.parse(r.deadline))}</span>${(db.myRules || new Set()).has(r.id) ? ' <span class="tag ok">✓ You earned this</span>' : ''}</span></div>`).join('')}
+    ${svs.map(sv => `<div class="row" style="gap:10px;align-items:baseline;flex-wrap:nowrap"><strong style="min-width:3.2rem;color:var(--brand-text)">+${svTotal(sv)}</strong>
+      <span>Answer the survey <a href="#survey/${sv.id}">${esc(sv.title)}</a>${svTotal(sv) ? ' <span class="hint">(points for each question you answer)</span>' : ''}${sv.closes_at ? ` <span class="hint">by ${fmtMtStamp(Date.parse(sv.closes_at))}</span>` : ''}${svMine(sv.id) ? ` <span class="tag ok">✓ You earned ${svMine(sv.id).points}</span>` : ''}</span></div>`).join('')}</section>`;
 }
+/* ---------- Survey builder (63-survey-builder.sql) ---------- */
+// Officers build surveys in Officer tools → Survey builder. Each question has its own points, earned by answering it.
+// Open surveys show on the home page and the Leaderboard page (each can be turned off), at #survey/<id>.
+const SV_TYPES = { short: 'Short answer', long: 'Paragraph', single: 'Multiple choice (pick one)', multi: 'Checkboxes (pick any)', dropdown: 'Dropdown', rating: 'Rating (1 to 5)', yesno: 'Yes or no' };
+const svHasOptions = t => ['single', 'multi', 'dropdown'].includes(t);
+const svOpen = sv => sv.status === 'open' && !(sv.closes_at && Date.now() >= Date.parse(sv.closes_at));
+const svTotal = sv => (sv.questions || []).reduce((n, q) => n + (+q.points || 0), 0);
+const svMine = id => session ? (db.svResp || []).find(r => r.survey_id === id && r.email === session) : null;
+const svById = id => (db.surveys || []).find(x => x.id === id);
+const liveSurveys = where => (db.surveys || []).filter(sv => svOpen(sv) && (!where || sv[where]));
+const svNewQ = (type = 'single') => ({ id: 'q' + Math.random().toString(36).slice(2, 9), type, label: '', hint: '', required: false, options: svHasOptions(type) ? ['', ''] : [], points: 1 });
+const svAnswered = v => Array.isArray(v) ? v.length > 0 : v != null && String(v).trim() !== '';
+function surveyBanners(){
+  if (!can('member')) return '';
+  return liveSurveys('show_home').filter(sv => !svMine(sv.id)).map(sv => `<div class="today-bar" style="border-color:var(--gold,#B8923A)"><div class="stack" style="gap:2px"><span class="live">New survey${sv.closes_at ? ' · closes ' + fmtMtStamp(Date.parse(sv.closes_at)) : ''}</span>
+    <strong>${esc(sv.title)}</strong>${svTotal(sv) ? `<span class="muted" style="font-size:.92rem">Earn up to ${svTotal(sv)} leaderboard points.</span>` : ''}</div>
+    <a class="btn small" href="#survey/${sv.id}">Take the survey</a></div>`).join('');
+}
+
+// The survey page (members).
+function svInput(q, v){
+  const n = `sva-${q.id}`, opts = (q.options || []).filter(o => o.trim());
+  const radio = (val, label) => `<label class="check"><input type="radio" name="${n}" value="${esc(val)}" ${String(v) === String(val) ? 'checked' : ''}> ${esc(label)}</label>`;
+  if (q.type === 'short') return `<input name="${n}" maxlength="300" value="${esc(v || '')}">`;
+  if (q.type === 'long') return `<textarea name="${n}" rows="4" maxlength="4000">${esc(v || '')}</textarea>`;
+  if (q.type === 'single') return `<div class="stack" style="gap:4px">${opts.map(o => radio(o, o)).join('')}</div>`;
+  if (q.type === 'multi') return `<div class="stack" style="gap:4px">${opts.map(o => `<label class="check"><input type="checkbox" name="${n}" value="${esc(o)}" ${(v || []).includes(o) ? 'checked' : ''}> ${esc(o)}</label>`).join('')}</div>`;
+  if (q.type === 'dropdown') return `<select name="${n}"><option value="">Choose one…</option>${opts.map(o => `<option ${v === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+  if (q.type === 'rating') return `<div class="row" style="gap:14px">${[1, 2, 3, 4, 5].map(i => radio(i, String(i))).join('')}<span class="hint">1 = lowest, 5 = highest</span></div>`;
+  if (q.type === 'yesno') return `<div class="row" style="gap:18px">${radio('Yes', 'Yes')}${radio('No', 'No')}</div>`;
+  return '';
+}
+function viewSurvey(){
+  const id = location.hash.slice(1).split('/')[1], sv = svById(id);
+  if (!sv) return `<div class="view"><div class="empty">This survey isn’t available. <a href="#home">Go home</a></div></div>`;
+  if (!can('member')) return gate('member');
+  const mine = svMine(id), ans = (mine || {}).answers || {}, open = svOpen(sv), total = svTotal(sv);
+  return `<div class="view" style="max-width:46rem">
+    <section class="page-head"><div class="eyebrow">Survey${total ? ` · up to ${total} leaderboard points` : ''}</div><h1 class="page">${esc(sv.title)}</h1>
+      ${sv.descr ? `<p class="muted" style="white-space:pre-wrap">${esc(sv.descr)}</p>` : ''}
+      ${sv.closes_at ? `<span class="hint">${open ? 'Closes' : 'Closed'} ${fmtMtStamp(Date.parse(sv.closes_at))}</span>` : ''}</section>
+    ${mine ? `<div class="notice"><strong>Thanks, you answered this survey${mine.points ? ` and earned ${mine.points} point${mine.points === 1 ? '' : 's'}` : ''}.</strong>${open ? ' You can change your answers below until it closes.' : ''}</div>` : ''}
+    ${!open ? `<div class="notice">This survey is closed.</div>` : ''}
+    <form class="stack" id="f-survey" data-id="${sv.id}" style="gap:18px" novalidate>
+      ${(sv.questions || []).map((q, i) => `<fieldset class="panel stack" style="gap:8px" id="svq-${q.id}" ${open ? '' : 'disabled'}><legend style="font-weight:700">${i + 1}. ${esc(q.label)}${q.required ? ' <span class="hint">(required)</span>' : ''}${+q.points ? ` <span class="tag ok">+${+q.points} pt${+q.points === 1 ? '' : 's'}</span>` : ''}</legend>
+        ${q.hint ? `<span class="hint">${esc(q.hint)}</span>` : ''}${svInput(q, ans[q.id])}</fieldset>`).join('')}
+      <div class="err" id="sv-err"></div>
+      ${open ? `<div class="row"><button class="btn" type="submit">${mine ? 'Update my answers' : 'Submit'}</button></div>` : ''}
+    </form></div>`;
+}
+function readSurveyAnswers(f, sv){
+  const out = {};
+  (sv.questions || []).forEach(q => {
+    const els = [...f.querySelectorAll(`[name="sva-${q.id}"]`)];
+    if (q.type === 'multi') out[q.id] = els.filter(x => x.checked).map(x => x.value);
+    else if (['single', 'rating', 'yesno'].includes(q.type)){ const c = els.find(x => x.checked); out[q.id] = c ? (q.type === 'rating' ? +c.value : c.value) : ''; }
+    else out[q.id] = els[0] ? els[0].value.trim() : '';
+  });
+  return out;
+}
+
+// Officer tools → Survey builder.
+function surveyBuilderBody(){
+  if (ui.svDraft) return svEditor();
+  if (ui.svResults && svById(ui.svResults)) return svResultsBody(svById(ui.svResults));
+  const list = db.surveys || [], tag = sv => svOpen(sv) ? '<span class="tag ok">Open</span>' : sv.status === 'draft' ? '<span class="tag">Draft</span>' : '<span class="tag warn">Closed</span>';
+  return `<div class="stack" style="gap:16px">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span class="muted">Make a survey, give each question points, and open it. Members earn a question’s points by answering it; open surveys show on the home page and Leaderboard.</span><button class="btn" data-act="sv-new">New survey</button></div>
+    <div>${list.map(sv => `<div class="list-row"><div><div class="ev-title">${esc(sv.title)} ${tag(sv)}</div>
+      <div class="ev-sub">${(sv.questions || []).length} question${(sv.questions || []).length === 1 ? '' : 's'} · up to ${svTotal(sv)} points · ${(db.svCounts || {})[sv.id] || 0} response${((db.svCounts || {})[sv.id] || 0) === 1 ? '' : 's'}${sv.closes_at ? ' · closes ' + fmtMtStamp(Date.parse(sv.closes_at)) : ''}</div></div>
+      <div class="row" style="gap:6px"><button class="btn ghost small" data-act="sv-results" data-id="${sv.id}">Results</button><button class="btn ghost small" data-act="sv-edit" data-id="${sv.id}">Edit</button>
+        ${sv.status === 'open' ? `<button class="btn ghost small" data-act="sv-status" data-id="${sv.id}" data-s="closed">Close</button>` : `<button class="btn ghost small" data-act="sv-status" data-id="${sv.id}" data-s="open">${sv.status === 'draft' ? 'Open it' : 'Reopen'}</button>`}
+        ${sv.status !== 'draft' ? `<a class="btn ghost small" href="#survey/${sv.id}">View</a>` : ''}${delBtn('sv-' + sv.id, 'Delete', 'sv-del', sv.id)}</div></div>`).join('') || '<div class="empty">No surveys yet.</div>'}</div></div>`;
+}
+function svEditor(){
+  const d = ui.svDraft;
+  const qRow = (q, i) => `<div class="panel stack" style="gap:8px">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><strong>Question ${i + 1}</strong>
+      <div class="row" style="gap:4px"><button type="button" class="btn ghost small" data-act="sv-move-q" data-i="${i}" data-d="-1" ${i ? '' : 'disabled'} aria-label="Move up">↑</button><button type="button" class="btn ghost small" data-act="sv-move-q" data-i="${i}" data-d="1" ${i < d.questions.length - 1 ? '' : 'disabled'} aria-label="Move down">↓</button><button type="button" class="btn ghost small" data-act="sv-rm-q" data-i="${i}">Remove</button></div></div>
+    <div class="grid2"><label>Question<input data-sq="${i}:label" maxlength="300" value="${esc(q.label)}"></label>
+      <label>Type<select data-sq="${i}:type">${Object.entries(SV_TYPES).map(([k, l]) => `<option value="${k}" ${q.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+    <label>Help text <span class="hint">Optional</span><input data-sq="${i}:hint" maxlength="300" value="${esc(q.hint || '')}"></label>
+    ${svHasOptions(q.type) ? `<label>Choices <span class="hint">One per line</span><textarea data-sq="${i}:options" rows="${Math.max(3, (q.options || []).length + 1)}">${esc((q.options || []).join('\n'))}</textarea></label>` : ''}
+    <div class="row" style="gap:18px;align-items:end"><label style="max-width:9rem">Points <span class="hint">For answering</span><input type="number" min="0" max="100" data-sq="${i}:points" value="${esc(q.points ?? 0)}"></label>
+      <label class="check"><input type="checkbox" data-sq="${i}:required" ${q.required ? 'checked' : ''}> Required</label></div></div>`;
+  return `<form class="stack" id="f-survey-build" style="gap:16px;max-width:48rem" novalidate>
+    <div><button type="button" class="btn ghost small" data-act="sv-cancel">← All surveys</button></div>
+    <h2 style="margin:0">${d.id ? 'Edit survey' : 'New survey'}</h2>
+    ${d.id && ((db.svCounts || {})[d.id] || 0) ? `<div class="rq-warn">${(db.svCounts || {})[d.id]} people already answered. Points you change apply to new and updated answers only.</div>` : ''}
+    <label>Title<input id="sv-title" maxlength="120" value="${esc(d.title)}"></label>
+    <label>Description <span class="hint">Optional. Shown at the top of the survey.</span><textarea id="sv-descr" rows="3" maxlength="2000">${esc(d.descr)}</textarea></label>
+    <div class="grid2"><label>Closes <span class="hint">Optional (Mountain Time)</span><input id="sv-closes" type="datetime-local" value="${esc(d.closes)}"></label>
+      <div class="stack" style="gap:6px;justify-content:end"><label class="check"><input type="checkbox" id="sv-home" ${d.show_home ? 'checked' : ''}> Show on the home page</label><label class="check"><input type="checkbox" id="sv-lb" ${d.show_leaderboard ? 'checked' : ''}> Show on the Leaderboard page</label></div></div>
+    <div class="row" style="justify-content:space-between;align-items:baseline"><h3 style="margin:0">Questions</h3><span class="hint">Up to ${d.questions.reduce((n, q) => n + (+q.points || 0), 0)} points in all</span></div>
+    ${d.questions.map(qRow).join('') || '<div class="empty">Add a question to get started.</div>'}
+    <div class="row" style="gap:6px">${Object.entries(SV_TYPES).map(([k, l]) => `<button type="button" class="btn ghost small" data-act="sv-add-q" data-type="${k}">+ ${l}</button>`).join('')}</div>
+    <div class="err" id="svb-err"></div>
+    <div class="row" style="gap:8px"><button class="btn" type="submit" data-mode="open">${d.status === 'open' ? 'Save' : 'Save and open it'}</button>${d.status === 'open' ? '' : '<button class="btn ghost" type="submit" data-mode="draft">Save as a draft</button>'}<button type="button" class="btn ghost" data-act="sv-cancel">Cancel</button></div>
+  </form>`;
+}
+// Pull what's typed in the builder into ui.svDraft (before any redraw).
+function readSvDraft(){
+  const d = ui.svDraft, f = document.getElementById('f-survey-build'); if (!d || !f) return;
+  const v = id => (document.getElementById(id) || {}).value || '';
+  d.title = v('sv-title'); d.descr = v('sv-descr'); d.closes = v('sv-closes');
+  d.show_home = !!(document.getElementById('sv-home') || {}).checked; d.show_leaderboard = !!(document.getElementById('sv-lb') || {}).checked;
+  f.querySelectorAll('[data-sq]').forEach(el => {
+    const [i, k] = el.dataset.sq.split(':'), q = d.questions[+i]; if (!q) return;
+    if (k === 'required') q.required = el.checked;
+    else if (k === 'points') q.points = Math.max(0, Math.min(100, parseInt(el.value) || 0));
+    else if (k === 'options') q.options = el.value.split('\n').map(x => x.trim()).filter(Boolean);
+    else q[k] = el.value;
+  });
+}
+function svResultsBody(sv){
+  const rows = (db.svResp || []).filter(r => r.survey_id === sv.id);
+  const summary = q => {
+    const vals = rows.map(r => (r.answers || {})[q.id]).filter(svAnswered);
+    if (!vals.length) return '<div class="empty">No answers yet.</div>';
+    if (q.type === 'rating'){ const avg = vals.reduce((a, b) => a + +b, 0) / vals.length;
+      return `<div><strong>${avg.toFixed(1)}</strong> average from ${vals.length}</div>${hbars([5, 4, 3, 2, 1].map(i => [String(i), vals.filter(x => +x === i).length]))}`; }
+    if (['single', 'multi', 'dropdown', 'yesno'].includes(q.type)){
+      const opts = q.type === 'yesno' ? ['Yes', 'No'] : (q.options || []), flat = vals.flat();
+      return hbars(opts.map(o => [o, flat.filter(x => x === o).length]));
+    }
+    return `<ul class="stack" style="gap:6px;margin:0;padding-left:1.1rem">${vals.map(x => `<li style="white-space:pre-wrap">${esc(x)}</li>`).join('')}</ul>`;
+  };
+  return `<div class="stack" style="gap:16px;max-width:52rem">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><button type="button" class="btn ghost small" data-act="sv-cancel">← All surveys</button><button class="btn ghost small" data-act="sv-csv" data-id="${sv.id}" ${rows.length ? '' : 'disabled'}>Download responses (CSV)</button></div>
+    <div><h2 style="margin:0">${esc(sv.title)}</h2><span class="hint">${rows.length} response${rows.length === 1 ? '' : 's'} · ${rows.reduce((n, r) => n + (r.points || 0), 0)} points given</span></div>
+    ${(sv.questions || []).map((q, i) => `<section class="panel stack" style="gap:8px"><div><strong>${i + 1}. ${esc(q.label)}</strong> <span class="hint">${SV_TYPES[q.type] || ''}</span></div>${summary(q)}</section>`).join('')}</div>`;
+}
+function svCsv(sv){
+  const rows = (db.svResp || []).filter(r => r.survey_id === sv.id), qs = sv.questions || [];
+  const cell = x => '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"';
+  const lines = [['Name', 'Email', 'Submitted', 'Points', ...qs.map(q => q.label)],
+    ...rows.map(r => [userName(r.email), r.email, fmtMtStamp(Date.parse(r.updated_at || r.created_at)), r.points, ...qs.map(q => { const v = (r.answers || {})[q.id]; return Array.isArray(v) ? v.join('; ') : v; })])];
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + lines.map(l => l.map(cell).join(',')).join('\r\n')], { type: 'text/csv' }));
+  a.download = (sv.title.replace(/[^\w]+/g, '-').replace(/^-|-$/g, '') || 'survey') + '-responses.csv';
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
 function viewLeaderboard(){
   if (!can('member')) return gate('member');
   const lb = leaderboard();
@@ -4454,6 +4606,8 @@ function viewOfficer(){
   else if (T === 'directory'){ body = `<p class="hint" style="margin:0 0 4px">Every officer, including honorary officers (who aren’t on the public <a href="#officers">Officers page</a>). Only officers can see this page and who the event schedulers are.</p>${officerSections(staffEmails(), true)}`; }
 
   else if (T === 'surveys'){ body = surveysBody(); }
+
+  else if (T === 'forms'){ body = surveyBuilderBody(); }
   else if (T === 'qr'){ body = qrToolBody(); setTimeout(drawQrTool); }
 
   else if (T === 'events'){
@@ -5916,7 +6070,7 @@ async function showCode(id, fresh){
 /* ---------- Render ---------- */
 const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources,
   archive:viewArchive, leaderboard:viewLeaderboard, account:viewAccount, apply:viewApply, availability:viewAvailability,
-  contact:viewContact, partners:viewPartners, event:viewEvent, messages:viewMessages, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
+  contact:viewContact, partners:viewPartners, event:viewEvent, survey:viewSurvey, messages:viewMessages, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
 function route(){ const r = location.hash.slice(1).split('/')[0]; return VIEWS[r] ? r : 'home'; }
 // Officer and admin tabs live in the address (#officer/stats, #admin/applications), so a refresh,
 // a bookmark, or the back button lands on the same tab.
@@ -6219,6 +6373,20 @@ document.addEventListener('click', async ev => {
         if (!['ok', 'rsvp', 'going'].includes(res)) throw new Error({ started: 'This event has already started.', missing: 'This event isn’t open for RSVPs.', signin: 'Sign in first.' }[res] || res); });
       if (ok){ toast(res === 'rsvp' ? 'A seat opened up: you’re going!' : res === 'going' ? 'You’re already going.' : 'You’re on the waitlist. If a seat opens, it’s yours automatically.'); refreshEvent(id); }
       break; }
+    case 'sv-new': ui.svResults = null; ui.svDraft = { id: '', title: '', descr: '', closes: '', show_home: true, show_leaderboard: true, status: 'draft', questions: [svNewQ('single')] }; render(); window.scrollTo(0, 0); break;
+    case 'sv-edit': { const sv = svById(id); if (!sv) break; ui.svResults = null;
+      ui.svDraft = { id: sv.id, title: sv.title, descr: sv.descr || '', closes: mtLocalInput(sv.closes_at), show_home: sv.show_home, show_leaderboard: sv.show_leaderboard, status: sv.status, questions: JSON.parse(JSON.stringify(sv.questions || [])) };
+      render(); window.scrollTo(0, 0); break; }
+    case 'sv-cancel': ui.svDraft = null; ui.svResults = null; render(); window.scrollTo(0, 0); break;
+    case 'sv-results': ui.svDraft = null; ui.svResults = id; render(); window.scrollTo(0, 0); break;
+    case 'sv-csv': { const sv = svById(id); if (sv) svCsv(sv); break; }
+    case 'sv-add-q': readSvDraft(); ui.svDraft.questions.push(svNewQ(t.dataset.type)); render(); { const ins = document.querySelectorAll('[data-sq$=":label"]'); ins[ins.length - 1]?.focus(); } break;
+    case 'sv-rm-q': readSvDraft(); ui.svDraft.questions.splice(+t.dataset.i, 1); render(); break;
+    case 'sv-move-q': { readSvDraft(); const q = ui.svDraft.questions, i = +t.dataset.i, j = i + +t.dataset.d; if (q[j]) [q[i], q[j]] = [q[j], q[i]]; render(); break; }
+    case 'sv-status': { const sv = svById(id), st = t.dataset.s;
+      if (st === 'open' && !(sv.questions || []).length){ toast('Add a question first.'); break; }
+      await act(async () => { must(await sb.from('surveys').update({ status: st }).eq('id', id)); await logChange((st === 'open' ? 'Opened survey “' : 'Closed survey “') + sv.title + '”'); }, st === 'open' ? 'Survey opened' : 'Survey closed'); break; }
+    case 'sv-del': { const sv = svById(id); await act(async () => { must(await sb.from('surveys').delete().eq('id', id)); await logChange('Deleted survey “' + (sv || {}).title + '” (and its points)'); }, 'Survey deleted'); break; }
     case 'wl-leave':
       if (await act(async () => must(await sb.from('waitlist').delete().eq('event_id', id).eq('email', session)), 'You left the waitlist')) refreshEvent(id);
       break;
@@ -6631,6 +6799,8 @@ document.addEventListener('input', e => {
   if (id === 'dc-body'){ const x = db.apps.find(a => a.id === (ui.declineList || [])[0]); if (x) document.getElementById('dc-preview').textContent = fillDecline(e.target.value, x); }
 });
 document.addEventListener('change', async e => {
+  if (e.target.dataset && /:type$/.test(e.target.dataset.sq || '')){ readSvDraft(); const [i] = e.target.dataset.sq.split(':'), q = ui.svDraft.questions[+i];
+    if (svHasOptions(q.type) && !(q.options || []).length) q.options = ['', '']; render(); return; }
   const id = e.target.id;
   if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
   if (['ml-aud','ml-ev'].includes(id)){ readMail(); if (id === 'ml-aud' && /^(nosurvey|att|noshow|rsvp|teams|agents):/.test(ui.mail.aud)) ui.mail.ev = ui.mail.aud.split(':')[1]; render(); }
@@ -7246,6 +7416,40 @@ async function handleSubmit(f, v, err){
     if (r.error) return err('ta-err', /test_accounts/.test(r.error.message || '') && /exist|schema/i.test(r.error.message || '') ? 'This isn’t set up yet. Run the 33-test-accounts.sql update in Supabase.' : /duplicate/i.test(r.error.message || '') ? 'That email is already a test account.' : errMsg(r.error));
     await logChange('Added test ' + role + ' ' + email);
     await load(); render(); toast('Test ' + role + ' added. Now sign up with that email.');
+  }
+
+  if (f.id === 'f-survey-build'){
+    readSvDraft(); const d = ui.svDraft, mode = (f._submitter && f._submitter.dataset.mode) || 'open';
+    if (!d.title.trim()) return err('svb-err', 'Give the survey a title.');
+    if (!d.questions.length) return err('svb-err', 'Add at least one question.');
+    const bad = d.questions.findIndex(q => !q.label.trim()); if (bad >= 0) return err('svb-err', `Question ${bad + 1} needs a question.`);
+    const few = d.questions.findIndex(q => svHasOptions(q.type) && (q.options || []).length < 2); if (few >= 0) return err('svb-err', `Question ${few + 1} needs at least two choices.`);
+    const row = { title: d.title.trim(), descr: d.descr.trim(), closes_at: mtFromInput(d.closes), show_home: d.show_home, show_leaderboard: d.show_leaderboard,
+      questions: d.questions.map(q => ({ id: q.id, type: q.type, label: q.label.trim(), hint: (q.hint || '').trim(), required: !!q.required, options: svHasOptions(q.type) ? q.options : [], points: +q.points || 0 })),
+      status: mode === 'open' ? 'open' : (d.status === 'closed' ? 'closed' : 'draft') };
+    await act(async () => {
+      if (d.id) must(await sb.from('surveys').update(row).eq('id', d.id)); else must(await sb.from('surveys').insert(row));
+      await logChange((d.id ? 'Edited survey “' : 'Made survey “') + row.title + '”');
+      ui.svDraft = null;
+    }, row.status === 'open' ? 'Saved. The survey is open.' : 'Saved as a draft.');
+    return;
+  }
+
+  if (f.id === 'f-survey'){
+    const sv = svById(f.dataset.id); if (!sv) return;
+    document.querySelectorAll('#f-survey fieldset').forEach(x => x.style.borderColor = '');
+    const answers = readSurveyAnswers(f, sv);
+    const miss = (sv.questions || []).find(q => q.required && !svAnswered(answers[q.id]));
+    if (miss){ const box = document.getElementById('svq-' + miss.id); box.style.borderColor = 'var(--danger)'; box.scrollIntoView({ block: 'center', behavior: 'smooth' }); return err('sv-err', 'Answer the required questions (marked in red).'); }
+    const r = await sb.rpc('submit_survey', { p_survey: sv.id, p_answers: answers });
+    if (r.error) return err('sv-err', /submit_survey/.test(r.error.message || '') ? 'Surveys aren’t set up yet.' : errMsg(r.error));
+    const code = String(r.data || '');
+    if (code.startsWith('err:required:')){ const box = document.getElementById('svq-' + code.slice(13)); if (box){ box.style.borderColor = 'var(--danger)'; box.scrollIntoView({ block: 'center', behavior: 'smooth' }); } return err('sv-err', 'Answer the required questions (marked in red).'); }
+    if (code.startsWith('err:')) return err('sv-err', { 'err:closed': 'This survey is closed.', 'err:missing': 'This survey isn’t available.', 'err:signin': 'Sign in with your member account first.', 'err:size': 'Your answers are too long.' }[code] || code);
+    const pts = +code.slice(3) || 0;
+    await load(); render(); window.scrollTo(0, 0);
+    toast(pts && !isStaff() ? `Thanks! You earned ${pts} point${pts === 1 ? '' : 's'}.` : 'Thanks! Your answers are saved.');
+    return;
   }
 
   if (f.id === 'f-prize'){
