@@ -5779,8 +5779,18 @@ const QR_STYLES = {
   ongreen:   ['Cream & gold on crest green', '#123622', '#F4EFE1', QR_GOLD],
   white:     ['Green & gold on white', '#ffffff', '#1F4D2E', QR_GOLD],
   dark:      ['White & gold, transparent (for dark backgrounds)', null, '#ffffff', QR_GOLD],
+  cream:     ['Cream & gold, transparent (for dark backgrounds)', null, '#F4EFE1', QR_GOLD],
+  creamseal: ['Cream & gold with the seal, transparent (for dark backgrounds)', null, '#F4EFE1', QR_GOLD, 'seal'],
+  gold:      ['Gold, transparent', null, QR_GOLD, QR_GOLD],
+  goldseal:  ['Gold with the seal, transparent', null, QR_GOLD, QR_GOLD, 'seal'],
+  ongreenseal: ['Cream & gold on crest green, with the seal', '#123622', '#F4EFE1', QR_GOLD, 'seal'],
+  oncream:   ['Green & gold on cream', '#F4EFE1', '#1F4D2E', QR_GOLD],
+  oncreamseal: ['Green & gold on cream, with the seal', '#F4EFE1', '#1F4D2E', QR_GOLD, 'seal'],
+  whiteseal: ['Green & gold on white, with the seal', '#ffffff', '#1F4D2E', QR_GOLD, 'seal'],
   plain:     ['Black on white (most reliable)', '#ffffff', '#000000', '#000000']
 };
+// Light dots with no background only show up on a dark preview.
+const qrNeedsDark = style => { const [, bg, ink] = QR_STYLES[style] || []; return !bg && ['#ffffff', '#F4EFE1'].includes(ink); };
 let qrSeal = null;
 function loadQrSeal(){ return qrSeal || (qrSeal = new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => { qrSeal = null; rej(new Error('The seal image didn’t load.')); }; i.src = '/crest-seal.png'; })); }
 const QR_SIZES = { 600: 'Small (600 px)', 1200: 'Medium (1200 px)', 2400: 'Print (2400 px)' };
@@ -5827,10 +5837,14 @@ async function qrPng(text, style, px){
 }
 function qrFileName(name){ return (String(name).replace(/[^\w]+/g, '-').replace(/^-|-$/g, '') || 'wfa') + '-qr.png'; }
 function qrStylePicker(cur, act, extra){
-  return `<div class="row" style="gap:6px" role="group" aria-label="QR style">${Object.entries(QR_STYLES).map(([k, [l]]) => `<button type="button" class="btn ${k === cur ? '' : 'ghost '}small" data-act="${act}" data-style="${k}" ${extra || ''} aria-pressed="${k === cur}">${l}</button>`).join('')}</div>`;
+  const btns = list => list.map(([k, [l]]) => `<button type="button" class="btn ${k === cur ? '' : 'ghost '}small" data-act="${act}" data-style="${k}" ${extra || ''} aria-pressed="${k === cur}">${l.replace(/, transparent| \(for dark backgrounds\)/g, '')}</button>`).join('');
+  const all = Object.entries(QR_STYLES), clear = all.filter(([, x]) => !x[1]), solid = all.filter(([, x]) => x[1]);
+  return `<div class="stack" style="gap:8px" role="group" aria-label="QR style">
+    <div class="stack" style="gap:4px"><span class="hint" style="font-weight:700">Transparent background</span><div class="row" style="gap:6px">${btns(clear)}</div></div>
+    <div class="stack" style="gap:4px"><span class="hint" style="font-weight:700">With a background</span><div class="row" style="gap:6px">${btns(solid)}</div></div></div>`;
 }
 function qrPreview(png, style, name){
-  return `<div class="qr-stage ${style === 'dark' ? 'dark' : ''}"><img src="${png}" alt="QR code" style="width:min(300px,100%);display:block;margin:0 auto"></div>`;
+  return `<div class="qr-stage ${qrNeedsDark(style) ? 'dark' : ''}"><img src="${png}" alt="QR code" style="width:min(300px,100%);display:block;margin:0 auto"></div>`;
 }
 async function showQr(id, kind, style){
   const e = evById(id); if (!e) return;
