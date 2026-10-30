@@ -580,7 +580,7 @@ h3{font-family:var(--serif);font-weight:700;font-size:1.4rem;letter-spacing:.01e
 const SUPABASE_URL = 'https://razxymbbfsnnnguyaalp.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_G9Ct3sh1zfK2peRadj-nzg_SSLCr2Sn';
 const SAFE_MSG = 'Safe view is on. Switch to Edit view to make changes.';
-const READ_RPCS = ['my_role', 'my_test_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending', 'case_board', 'member_points', 'my_chats', 'chat_names', 'mark_chat_read', 'rule_chats', 'event_coming_soon'];   // database functions that only read
+const READ_RPCS = ['waitlist_info', 'my_role', 'my_test_role', 'event_stats', 'leaderboard', 'leaderboard_history', 'public_stats', 'survey_results', 'survey_pending', 'case_board', 'member_points', 'my_chats', 'chat_names', 'mark_chat_read', 'rule_chats', 'event_coming_soon'];   // database functions that only read
 function safeFetch(input, init){
   const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
   let safe = false;
@@ -695,6 +695,7 @@ async function load(){
     recaps: t('recaps'),
     archive: signed && t('archive'),
     pstats: sb.rpc('public_stats'),
+    wait: sb.rpc('waitlist_info'),
     lbHistory: signed && sb.rpc('leaderboard_history'),
     awards: myRole === 'admin' && sb.from('point_awards').select('*').is('rule_id', null).order('created_at', { ascending: false }).limit(200),
     pointRules: sb.from('point_rules').select('*').order('created_at', { ascending: false }),
@@ -804,6 +805,7 @@ async function load(){
   }
   db.mres = {}; (R.mres || []).forEach(r => (db.mres[r.member_id] = db.mres[r.member_id] || {})[r.category] = { path: r.path, updated: r.updated_at });
   db.pstats = R.pstats || null;
+  db.wait = Object.fromEntries((Array.isArray(R.wait) ? R.wait : []).map(w => [w.event_id, w]));   // waitlists (62-rsvp-waitlist.sql)
   db.pending = R.pending || [];
   db.app = { open: !!R.appset?.open, branches: R.appset?.branches || [], deadline: R.appset?.deadline || '', opened_at: R.appset?.opened_at || null, info: R.appset?.branch_info || {}, planTpl: R.appset?.plan_templates || {}, declineTpl: R.appset?.decline_template || {}, questions: R.appset?.questions || null };
   db.apps = (R.apps || []).map(a => ({ ...a, date: iso(new Date(a.created_at)) }));
@@ -1029,6 +1031,11 @@ function todayBar(){
 function gate(need){
   if (!session) return `<div class="view"><div class="lock"><span>This page is for members. Sign in or join to see it.</span><div class="row"><a class="btn small ghost" href="#signup">Join</a><a class="btn small" href="#signin">Sign in</a></div></div></div>`;
   return `<div class="view"><div class="lock"><span>This page is for ${need}s. Your account is on the ${role()} list.</span><a class="btn small" href="#home">Go home</a></div></div>`;
+}
+// A button that needs a second click to go through (canceling an RSVP, leaving a waitlist).
+function armBtn(key, label, armedLabel, act, id){
+  const armed = ui.armed === key;
+  return `<button class="btn ${armed ? 'danger armed' : 'ghost'} small" data-act="${act}" data-id="${esc(id)}" data-key="${esc(key)}">${armed ? armedLabel : label}</button>`;
 }
 function delBtn(key, label, act, id){
   const armed = ui.armed === key;
@@ -4932,18 +4939,19 @@ window.addEventListener('scroll', closeNavMenu, { passive: true });
 function eventLink(id, code){ return location.origin + '/#event/' + id + (code ? '/' + encodeURIComponent(code) : ''); }
 function eventInner(id, page){
   const e = evById(id); if (!e) return '';
-  const n = rsvpCount(id), mine = session && going(id).includes(session), full = e.cap && n >= e.cap;
+  const n = rsvpCount(id), mine = session && going(id).includes(session), full = e.cap && n >= e.cap, wl = (db.wait || {})[id] || {};
   const here = session && attended(id).includes(session);
   let action;
   if (isPast(e)) action = `<span class="muted">This event has ended.${here ? ' You attended.' : mine ? ' You RSVP’d.' : ''}</span>`;
   else if (hasStarted(e)) action = `<span class="muted">${here ? 'You’re checked in.' : mine ? 'You RSVP’d. Check in with the code above.' : 'RSVPs closed when the event started. Here without an RSVP? Check in with the code above.'}</span>`;
   else if (isCase(e)) action = '';   // case competitions use team registration (caseSection) instead of RSVPs
   else if (!session) action = '';   // visitors: guestRsvpBox (or the members-only note) below
-  else if (mine) action = `<span class="going">You’re going.</span><button class="btn ghost small" data-act="unrsvp" data-id="${id}">Cancel RSVP</button>`;
+  else if (mine) action = `<span class="going">You’re going.</span>${wl.promoted ? '<span class="hint">You got a seat from the waitlist.</span>' : ''}${armBtn('unrsvp-' + id, 'Cancel RSVP', 'Click again to cancel your RSVP', 'unrsvp', id)}`;
+  else if (wl.my_place) action = `<span class="going" style="background:var(--tint);color:var(--ink)">You’re #${wl.my_place} on the waitlist.</span><span class="hint">If a seat opens, it’s yours automatically and we’ll let you know.</span>${armBtn('wl-leave-' + id, 'Leave the waitlist', 'Click again to leave the waitlist', 'wl-leave', id)}`;
   else if (e.draft) action = `<button class="btn" type="button" disabled>RSVP</button><span class="hint">RSVPs open when the event is published.</span>`;
   else if (e.rsvpOpens && Date.now() < Date.parse(e.rsvpOpens) && !can('officer')) action = `<button class="btn" type="button" disabled>RSVP</button><span class="hint">RSVPs open ${fmtMtStamp(Date.parse(e.rsvpOpens))}.</span>`;
   else if (e.rsvpOpens && Date.now() < Date.parse(e.rsvpOpens) && !full) action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button><span class="hint">Officers can RSVP before RSVPs open for everyone.</span>`;
-  else if (full) action = `<span class="muted">All ${e.cap} seats are taken.</span>`;
+  else if (full || wl.waiting) action = `<span class="muted">All ${e.cap} seats are taken.</span><button class="btn" data-act="wl-join" data-id="${id}">Join the waitlist</button>${wl.waiting ? `<span class="hint">${wl.waiting} ${wl.waiting === 1 ? 'person is' : 'people are'} waiting.</span>` : ''}`;
   else action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button>`;
   let checkin = '';
   if (isToday(e) && !e.draft){
@@ -6079,7 +6087,7 @@ document.addEventListener('click', async ev => {
   if (!t) return;
   const a = t.dataset.act, id = t.dataset.id;
   if (t.dataset.close) closeModal();
-  if (t.dataset.key && ui.armed !== t.dataset.key){ readMail(); ui.armed = t.dataset.key; render(); return; }
+  if (t.dataset.key && ui.armed !== t.dataset.key){ readMail(); ui.armed = t.dataset.key; render(); if (/^(unrsvp|wl-leave)-/.test(t.dataset.key) && route() !== 'event') openEvent(id); return; }
   ui.armed = null;
   switch (a){
     case 'who-menu': { const u = me(), r = role();
@@ -6189,6 +6197,16 @@ document.addEventListener('click', async ev => {
       break;
     case 'unrsvp':
       if (await act(async () => must(await sb.from('rsvps').delete().eq('event_id', id).eq('email', session)), 'RSVP canceled')) refreshEvent(id);
+      break;
+    case 'wl-join': {
+      if (!session){ setPendingRsvp(id); closeModal(); location.hash = 'signin'; break; }
+      let res = '';
+      const ok = await act(async () => { const r = await sb.rpc('join_waitlist', { p_event: id }); if (r.error) throw new Error(/join_waitlist/.test(r.error.message || '') ? 'Waitlists aren’t set up yet. An admin needs to run 62-rsvp-waitlist.sql.' : r.error.message); res = r.data;
+        if (!['ok', 'rsvp', 'going'].includes(res)) throw new Error({ started: 'This event has already started.', missing: 'This event isn’t open for RSVPs.', signin: 'Sign in first.' }[res] || res); });
+      if (ok){ toast(res === 'rsvp' ? 'A seat opened up: you’re going!' : res === 'going' ? 'You’re already going.' : 'You’re on the waitlist. If a seat opens, it’s yours automatically.'); refreshEvent(id); }
+      break; }
+    case 'wl-leave':
+      if (await act(async () => must(await sb.from('waitlist').delete().eq('event_id', id).eq('email', session)), 'You left the waitlist')) refreshEvent(id);
       break;
     case 'photo': { const r = db.recaps.find(x => x.id === id); showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3>${esc(r.title)}</h3></div><img src="${esc(r.photos[+t.dataset.i])}" alt="" style="width:100%;border-radius:3px"></div>`, null, 'wide'); break; }
     case 'arch-type': ui.archType = t.dataset.type; render(); break;

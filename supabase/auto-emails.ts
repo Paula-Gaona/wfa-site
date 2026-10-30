@@ -9,6 +9,7 @@
 //   * event scheduling steps (branch review, confirming with UVU, finalizing, sign-off): whoever a request is waiting on,
 //     and the officer who sent it
 //   * new questions and partner inquiries: the presidents and the Communications branch (see 54-question-notifications.sql)
+//   * waitlists: anyone who just got a seat off an event's waitlist (see 62-rsvp-waitlist.sql)
 //   * (not an email) applies the automatic leaderboard point rules each run (see 56-point-rules.sql)
 //   * a summary email when chat messages sit unread for over an hour (see 42-chats.sql; works even when the
 //     event emails are off)
@@ -300,6 +301,25 @@ ${lastNote}`
           : `${who} asked a question${q.topic ? ' about ' + q.topic.toLowerCase() : ''} on the Contact page.\n\nReply from Officer tools -> Questions.`;
         if (await tell(to, subject, body, 'Open Questions', link, `question-${q.id}`))
           await db.from('questions').update({ notified_at: new Date().toISOString() }).eq('id', q.id);
+      }
+    }
+
+    // Waitlists (see 62-rsvp-waitlist.sql): tell people who just got a seat. Works even when the event emails are off.
+    const { data: promoted } = await db.from('waitlist').select('event_id, email').not('promoted_at', 'is', null).is('notified_at', null).limit(200);
+    if (promoted?.length) {
+      const { data: wevs } = await db.from('events').select('id, title, date, start_time, loc').in('id', [...new Set(promoted.map((w) => w.event_id))]);
+      const evOf = new Map((wevs || []).map((e) => [e.id, e]));
+      const footer = `You're getting this because you joined the waitlist for this event on the Wolverine Finance Association site.`;
+      for (const w of promoted) {
+        const ev = evOf.get(w.event_id);
+        if (ev && !testSet.has(w.email)) {
+          const start = mtMs(ev.date, ev.start_time), link = `${site}/#event/${ev.id}`;
+          const subject = `You're in: ${ev.title}`;
+          const body = `A seat opened up for ${ev.title}, so you're off the waitlist and RSVP'd. It's ${fmtDay(start)} at ${fmtTime(start)}${ev.loc ? ', ' + ev.loc : ''}. Can't make it anymore? Cancel your RSVP on the event page so the next person gets the seat.`;
+          const reached = await sendPush(db, pushOn && hasDevice.has(w.email) ? [w.email] : [], subject, `${fmtDay(start)}, ${fmtTime(start)}`, link, `waitlist-${ev.id}`);
+          if (!reached.size) await resendBatch([{ to: [w.email], subject, html: htmlEmail(`<p style="margin:0 0 12px">${escHtml(hi(w.email))}</p><p style="margin:0 0 12px">${escHtml(body)}</p>`, { label: 'View the event', url: link }, footer), text: `${hi(w.email)}\n\n${body}\n\nView the event: ${link}` }]);
+        }
+        await db.from('waitlist').update({ notified_at: new Date().toISOString() }).eq('event_id', w.event_id).eq('email', w.email);
       }
     }
 
