@@ -10,6 +10,7 @@
 //     and the officer who sent it
 //   * new questions and partner inquiries: the presidents and the Communications branch (see 54-question-notifications.sql)
 //   * waitlists: anyone who just got a seat off an event's waitlist (see 62-rsvp-waitlist.sql)
+//   * a start-of-semester reminder to update your profile, in January, May, and August (see 67-profile-reminders.sql)
 //   * (not an email) applies the automatic leaderboard point rules each run (see 56-point-rules.sql)
 //   * a summary email when chat messages sit unread for over an hour (see 42-chats.sql; works even when the
 //     event emails are off)
@@ -320,6 +321,35 @@ ${lastNote}`
           if (!reached.size) await resendBatch([{ to: [w.email], subject, html: htmlEmail(`<p style="margin:0 0 12px">${escHtml(hi(w.email))}</p><p style="margin:0 0 12px">${escHtml(body)}</p>`, { label: 'View the event', url: link }, footer), text: `${hi(w.email)}\n\n${body}\n\nView the event: ${link}` }]);
         }
         await db.from('waitlist').update({ notified_at: new Date().toISOString() }).eq('event_id', w.event_id).eq('email', w.email);
+      }
+    }
+
+    // Start-of-semester profile check (see 67-profile-reminders.sql): January, May, and August, on the 8th at 10 AM
+    // Mountain Time (or the first run after). Claimed in profile_reminders first so it only goes out once.
+    if (cfg?.profile_reminders !== false) {
+      const p = mtParts(Date.now());
+      if ([1, 5, 8].includes(p.month) && (p.day > 8 || (p.day === 8 && p.hour >= 10))) {
+        const period = `${p.year}-${String(p.month).padStart(2, '0')}`;
+        const claim = await db.from('profile_reminders').insert({ period }).select('period').single();
+        if (!claim.error) {
+          const season = p.month === 1 ? 'spring' : p.month === 5 ? 'summer' : 'fall';
+          const link = `${site}/#account`, subject = `New semester: update your WFA profile`;
+          const body = `A new ${season} semester is starting! Take a minute to make sure your WFA profile is up to date, so we can match you with the right events, firms, and opportunities:\n\n- Your year in school\n- Your majors and minor\n- The finance careers you're interested in\n- Your resume, and whether to include it in the resume book we share with recruiters`;
+          const to = real((members || []).map((m) => m.email));
+          const reached = await sendPush(db, to.filter((e) => pushOn && hasDevice.has(e)), subject, 'Check your year, majors, career interests, and resume.', link, `profile-${period}`);
+          const viaEmail = to.filter((e) => !reached.has(e) && (byEmail.get(e) || {}).email_opt_in !== false);
+          const footer = `You're getting this because you're a Wolverine Finance Association member. To stop these emails, turn off club emails in My account: <a href="${link}" style="color:#1f4d2e">${link}</a>`;
+          let sent = reached.size;
+          for (let i = 0; i < viaEmail.length; i += 100) {
+            const chunk = viaEmail.slice(i, i + 100);
+            const r = await resendBatch(chunk.map((e) => ({ to: [e], subject,
+              html: htmlEmail(`<p style="margin:0 0 12px">${escHtml(hi(e))}</p><p style="margin:0 0 12px;white-space:pre-wrap">${escHtml(body)}</p>`, { label: 'Update my profile', url: link }, footer),
+              text: `${hi(e)}\n\n${body}\n\nUpdate my profile: ${link}` })));
+            if (r.ok) sent += chunk.length;
+            await new Promise((res) => setTimeout(res, 600));
+          }
+          await db.from('profile_reminders').update({ sent }).eq('period', period);
+        }
       }
     }
 

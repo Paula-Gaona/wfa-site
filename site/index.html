@@ -2031,7 +2031,8 @@ function adminAutoBody(){
               : `<span class="hint">${db.settings.pushKey ? 'Making new keys turns off notifications on every device until each person turns them back on.' : ''}</span><div><button type="button" class="btn ghost small" data-act="vapid-gen">Generate keys</button></div>`}
           </div></details></div>
       <div class="stack" style="gap:6px"><strong>Messages</strong>
-        <label class="check"><input type="checkbox" id="au-chat" ${c.chat_alerts !== false ? 'checked' : ''}> Email people when their messages sit unread for an hour (one summary; works even when the emails above are off)</label></div>
+        <label class="check"><input type="checkbox" id="au-chat" ${c.chat_alerts !== false ? 'checked' : ''}> Email people when their messages sit unread for an hour (one summary; works even when the emails above are off)</label>
+        <label class="check"><input type="checkbox" id="au-profile" ${c.profile_reminders !== false ? 'checked' : ''}> Remind members to update their profile each semester (Jan 8, May 8, and Aug 8 at 10 AM: year, majors, career interests, and resume; works even when the emails above are off)</label></div>
       <label style="max-width:24rem">Daily limit for automatic emails<input id="au-cap" type="number" min="1" max="5000" value="${esc(Math.max(c.daily_cap ?? 500, 500))}">
         <span class="hint">A safety net so a mistake can’t send a flood of email. Each person gets their own email that greets them by first name, so a reminder to 100 people uses 100. The club’s email plan (Resend Pro) allows 50,000 emails a month.</span></label>
       <span class="hint">Each email greets the person by first name (“Hi Sam,”). Never sent to members who turned off club emails, test accounts, test events, drafts, or officer meetings. Each email goes out once.</span>
@@ -7487,7 +7488,7 @@ async function handleSubmit(f, v, err){
     const cap = parseInt(v('au-cap')) || 500;
     if (cap < 1 || cap > 5000) return err('au-err', 'Set a daily limit from 1 to 5,000.');
     const cfg = { enabled: document.getElementById('au-enabled').checked, survey: document.getElementById('au-survey').checked, daily_cap: cap,
-      case_teams_only: v('au-case') !== 'same', chat_alerts: document.getElementById('au-chat').checked, push: document.getElementById('au-push').checked,
+      case_teams_only: v('au-case') !== 'same', chat_alerts: document.getElementById('au-chat').checked, profile_reminders: document.getElementById('au-profile').checked, push: document.getElementById('au-push').checked,
       reminders: AUTO_REMINDERS.map(([k]) => ({ key: k, on: f.querySelector(`.au-on[data-k="${k}"]`).checked, to: f.querySelector(`.au-to[data-k="${k}"]`).value,
         ...(k === 'same' ? { at: f.querySelector('.au-at').value } : {}) })) };
     const r = await sb.from('settings').update({ auto_email: cfg }).eq('id', 1);
