@@ -1632,7 +1632,7 @@ function bonusRulesBox(){
   return `<section class="panel stack" style="gap:8px"><div><h3 style="margin:0">Ways to earn bonus points</h3><span class="hint">Extra points on top of check-ins, for a limited time.</span></div>
     ${list.map(r => `<div class="row" style="gap:10px;align-items:baseline;flex-wrap:nowrap"><strong style="min-width:3.2rem;color:var(--brand-text)">${r.points > 0 ? '+' : ''}${r.points}</strong>
       <span>${ruleText(r)} <span class="hint">by ${fmtMtStamp(Date.parse(r.deadline))}</span>${(db.myRules || new Set()).has(r.id) ? ' <span class="tag ok">✓ You earned this</span>' : ''}</span></div>`).join('')}
-    ${svs.map(sv => `<div class="row" style="gap:10px;align-items:baseline;flex-wrap:nowrap"><strong style="min-width:3.2rem;color:var(--brand-text)">+${svTotal(sv)}</strong>
+    ${svs.map(sv => `<div class="row" style="gap:10px;align-items:baseline;flex-wrap:nowrap"><strong style="min-width:3.2rem;color:var(--brand-text)">+${svMyMax(sv)}</strong>
       <span>Answer the survey <a href="#survey/${sv.id}">${esc(sv.title)}</a>${svTotal(sv) ? ' <span class="hint">(points for each question you answer)</span>' : ''}${sv.closes_at ? ` <span class="hint">by ${fmtMtStamp(Date.parse(sv.closes_at))}</span>` : ''}${svMine(sv.id) ? ` <span class="tag ok">✓ You earned ${svMine(sv.id).points}</span>` : ''}</span></div>`).join('')}</section>`;
 }
 /* ---------- Survey builder (63-survey-builder.sql) ---------- */
@@ -1645,6 +1645,10 @@ const svOpen = sv => sv.status === 'open' && !(sv.closes_at && Date.now() >= Dat
 const svForYear = (q, yr) => !(q.years || []).length || (q.years || []).includes(yr);
 const svTotal = (sv, yr) => (sv.questions || []).filter(q => yr === undefined || svForYear(q, yr)).reduce((n, q) => n + (+q.points || 0), 0);
 const svByYear = sv => (sv.questions || []).some(q => (q.years || []).length);
+// The most one person can earn: with year-specific questions, the best total for any single year.
+const svMax = sv => svByYear(sv) ? Math.max(...YEARS.map(y => svTotal(sv, y))) : svTotal(sv);
+// What this member can earn (their year, or the most anyone can if they haven't set one).
+const svMyMax = sv => { const yr = (me() || {}).year; return svByYear(sv) && yr ? svTotal(sv, yr) : svMax(sv); };
 const svMine = id => session ? (db.svResp || []).find(r => r.survey_id === id && r.email === session) : null;
 const svById = id => (db.surveys || []).find(x => x.id === id);
 const liveSurveys = where => (db.surveys || []).filter(sv => svOpen(sv) && (!where || sv[where]));
@@ -1653,7 +1657,7 @@ const svAnswered = v => Array.isArray(v) ? v.length > 0 : v != null && String(v)
 function surveyBanners(){
   if (!can('member')) return '';
   return liveSurveys('show_home').filter(sv => !svMine(sv.id)).map(sv => `<div class="today-bar" style="border-color:var(--gold,#B8923A)"><div class="stack" style="gap:2px"><span class="live">New survey${sv.closes_at ? ' · closes ' + fmtMtStamp(Date.parse(sv.closes_at)) : ''}</span>
-    <strong>${esc(sv.title)}</strong>${svTotal(sv) ? `<span class="muted" style="font-size:.92rem">Earn up to ${svTotal(sv)} leaderboard points.</span>` : ''}</div>
+    <strong>${esc(sv.title)}</strong>${svTotal(sv) ? `<span class="muted" style="font-size:.92rem">Earn up to ${svMyMax(sv)} leaderboard points.</span>` : ''}</div>
     <a class="btn small" href="#survey/${sv.id}">Take the survey</a></div>`).join('');
 }
 
@@ -1683,7 +1687,7 @@ function viewSurvey(){
   if (!sv) return `<div class="view"><div class="empty">This survey isn’t available. <a href="#home">Go home</a></div></div>`;
   if (!can('member')) return gate('member');
   const mine = svMine(id), ans = (mine || {}).answers || {}, open = svOpen(sv), yr = (me() || {}).year || '';
-  const askYear = svByYear(sv) && !yr, total = askYear ? svTotal(sv) : svTotal(sv, yr);
+  const askYear = svByYear(sv) && !yr, total = askYear ? svMax(sv) : svTotal(sv, yr);
   setTimeout(svApplyYear);   // number the questions shown
   return `<div class="view" style="max-width:46rem">
     <section class="page-head"><div class="eyebrow">Survey${total ? ` · up to ${total} leaderboard points` : ''}</div><h1 class="page">${esc(sv.title)}</h1>
@@ -1736,7 +1740,7 @@ function surveyBuilderBody(){
   return `<div class="stack" style="gap:16px">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span class="muted">Make a survey, give each question points, and open it. Members earn a question’s points by answering it; open surveys show on the home page and Leaderboard.</span><button class="btn" data-act="sv-new">New survey</button></div>
     <div>${list.map(sv => `<div class="list-row"><div><div class="ev-title">${esc(sv.title)} ${tag(sv)}</div>
-      <div class="ev-sub">${(sv.questions || []).length} question${(sv.questions || []).length === 1 ? '' : 's'} · up to ${svTotal(sv)} points · ${(db.svCounts || {})[sv.id] || 0} response${((db.svCounts || {})[sv.id] || 0) === 1 ? '' : 's'}${sv.closes_at ? ' · closes ' + fmtMtStamp(Date.parse(sv.closes_at)) : ''}</div></div>
+      <div class="ev-sub">${(sv.questions || []).length} question${(sv.questions || []).length === 1 ? '' : 's'} · up to ${svMax(sv)} points${svByYear(sv) ? ' per person' : ''} · ${(db.svCounts || {})[sv.id] || 0} response${((db.svCounts || {})[sv.id] || 0) === 1 ? '' : 's'}${sv.closes_at ? ' · closes ' + fmtMtStamp(Date.parse(sv.closes_at)) : ''}</div></div>
       <div class="row" style="gap:6px"><button class="btn ghost small" data-act="sv-results" data-id="${sv.id}">Results</button><button class="btn ghost small" data-act="sv-edit" data-id="${sv.id}">Edit</button>
         ${sv.status === 'open' ? `<button class="btn ghost small" data-act="sv-status" data-id="${sv.id}" data-s="closed">Close</button>` : `<button class="btn ghost small" data-act="sv-status" data-id="${sv.id}" data-s="open">${sv.status === 'draft' ? 'Open it' : 'Reopen'}</button>`}
         ${sv.status !== 'draft' ? `<a class="btn ghost small" href="#survey/${sv.id}">View</a>` : ''}${delBtn('sv-' + sv.id, 'Delete', 'sv-del', sv.id)}</div></div>`).join('') || '<div class="empty">No surveys yet.</div>'}</div></div>`;
@@ -1766,7 +1770,7 @@ function svEditor(){
     <label>Description <span class="hint">Optional. Shown at the top of the survey.</span><textarea id="sv-descr" rows="3" maxlength="2000">${esc(d.descr)}</textarea></label>
     <div class="grid2"><label>Closes <span class="hint">Optional (Mountain Time)</span><input id="sv-closes" type="datetime-local" value="${esc(d.closes)}"></label>
       <div class="stack" style="gap:6px;justify-content:end"><label class="check"><input type="checkbox" id="sv-home" ${d.show_home ? 'checked' : ''}> Show on the home page</label><label class="check"><input type="checkbox" id="sv-lb" ${d.show_leaderboard ? 'checked' : ''}> Show on the Leaderboard page</label></div></div>
-    <div class="row" style="justify-content:space-between;align-items:baseline"><h3 style="margin:0">Questions</h3><span class="hint">Up to ${d.questions.reduce((n, q) => n + (+q.points || 0), 0)} points in all</span></div>
+    <div class="row" style="justify-content:space-between;align-items:baseline"><h3 style="margin:0">Questions</h3><span class="hint">Up to ${svMax(d)} points per person${svByYear(d) ? ' (the most any one year can earn)' : ''}</span></div>
     ${d.questions.map(qRow).join('') || '<div class="empty">Add a question to get started.</div>'}
     <div class="row" style="gap:6px">${Object.entries(SV_TYPES).map(([k, l]) => `<button type="button" class="btn ghost small" data-act="sv-add-q" data-type="${k}">+ ${l}</button>`).join('')}</div>
     <div class="err" id="svb-err"></div>
