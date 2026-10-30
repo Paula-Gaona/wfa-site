@@ -1769,7 +1769,8 @@ function svEditor(){
     <label>Title<input id="sv-title" maxlength="120" value="${esc(d.title)}"></label>
     <label>Description <span class="hint">Optional. Shown at the top of the survey.</span><textarea id="sv-descr" rows="3" maxlength="2000">${esc(d.descr)}</textarea></label>
     <div class="grid2"><label>Closes <span class="hint">Optional (Mountain Time)</span><input id="sv-closes" type="datetime-local" value="${esc(d.closes)}"></label>
-      <div class="stack" style="gap:6px;justify-content:end"><label class="check"><input type="checkbox" id="sv-home" ${d.show_home ? 'checked' : ''}> Show on the home page</label><label class="check"><input type="checkbox" id="sv-lb" ${d.show_leaderboard ? 'checked' : ''}> Show on the Leaderboard page</label></div></div>
+      <div class="stack" style="gap:6px;justify-content:end"><label class="check"><input type="checkbox" id="sv-home" ${d.show_home ? 'checked' : ''}> Show on the home page</label><label class="check"><input type="checkbox" id="sv-lb" ${d.show_leaderboard ? 'checked' : ''}> Show on the Leaderboard page</label>
+        <label class="check"><input type="checkbox" id="sv-email" ${d.email ? 'checked' : ''}> ${d.emailed_at ? 'Email it to members again' : 'Email it to members'} <span class="hint">${d.emailed_at ? 'Already emailed ' + fmtMtStamp(Date.parse(d.emailed_at)) + '. ' : ''}Sent when you save it open, to everyone who gets club emails.</span></label></div></div>
     <div class="row" style="justify-content:space-between;align-items:baseline"><h3 style="margin:0">Questions</h3><span class="hint">Up to ${svMax(d)} points per person${svByYear(d) ? ' (the most any one year can earn)' : ''}</span></div>
     ${d.questions.map(qRow).join('') || '<div class="empty">Add a question to get started.</div>'}
     <div class="row" style="gap:6px">${Object.entries(SV_TYPES).map(([k, l]) => `<button type="button" class="btn ghost small" data-act="sv-add-q" data-type="${k}">+ ${l}</button>`).join('')}</div>
@@ -1782,7 +1783,7 @@ function readSvDraft(){
   const d = ui.svDraft, f = document.getElementById('f-survey-build'); if (!d || !f) return;
   const v = id => (document.getElementById(id) || {}).value || '';
   d.title = v('sv-title'); d.descr = v('sv-descr'); d.closes = v('sv-closes');
-  d.show_home = !!(document.getElementById('sv-home') || {}).checked; d.show_leaderboard = !!(document.getElementById('sv-lb') || {}).checked;
+  d.show_home = !!(document.getElementById('sv-home') || {}).checked; d.show_leaderboard = !!(document.getElementById('sv-lb') || {}).checked; d.email = !!(document.getElementById('sv-email') || {}).checked;
   d.questions.forEach(q => { q.years = []; if (f.querySelector(`[data-sq="${d.questions.indexOf(q)}:opt"]`)) q.options = []; });
   f.querySelectorAll('[data-sq]').forEach(el => {
     const [i, k] = el.dataset.sq.split(':'), q = d.questions[+i]; if (!q) return;
@@ -1817,6 +1818,20 @@ function svResultsBody(sv){
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><button type="button" class="btn ghost small" data-act="sv-cancel">← All surveys</button><button class="btn ghost small" data-act="sv-csv" data-id="${sv.id}" ${rows.length ? '' : 'disabled'}>Download responses (CSV)</button></div>
     <div><h2 style="margin:0">${esc(sv.title)}</h2><span class="hint">${rows.length} response${rows.length === 1 ? '' : 's'} · ${rows.reduce((n, r) => n + (r.points || 0), 0)} points given</span></div>
     ${(sv.questions || []).map((q, i) => `<section class="panel stack" style="gap:8px"><div><strong>${i + 1}. ${esc(q.label)}</strong> <span class="hint">${SV_TYPES[q.type] || ''}${(q.years || []).length ? ' · shown to ' + esc(q.years.join(', ')) : ''}</span></div>${summary(q)}</section>`).join('')}</div>`;
+}
+// Emails a survey to everyone who gets club emails (one email, everyone BCC'd, through the email builder's sender).
+async function emailSurvey(sv){
+  const to = audienceEmails('all'), link = location.origin + '/#survey/' + sv.id, pts = svMax(sv);
+  if (!to.length) return toast('Saved. No one is on the club email list yet.');
+  const md = `Hi,\n\nWe’d love your input: **${sv.title}**${sv.descr ? '\n\n' + sv.descr : ''}\n\n`
+    + `It only takes a few minutes${pts ? `, and you can earn up to ${pts} leaderboard points for answering` : ''}${sv.closes_at ? `. It closes ${fmtMtStamp(Date.parse(sv.closes_at))}` : ''}.\n\nTake the survey: ${link}\n\nThanks,\nThe Wolverine Finance Association`;
+  toast('Saved. Emailing members…');
+  const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to, subject: 'New survey: ' + sv.title, text: mdToPlain(md), md } });
+  if (error){ let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch(_){} return toast('The survey is open, but the email wasn’t sent: ' + m); }
+  await sb.from('surveys').update({ emailed_at: new Date().toISOString() }).eq('id', sv.id);   // needs 66-survey-emails.sql; harmless before
+  await logChange('Emailed the survey “' + sv.title + '” to ' + data.sent + ' people');
+  await load(); render();
+  toast(`The survey is open and was emailed to ${data.sent} ${data.sent === 1 ? 'person' : 'people'}${data.failed ? ` (${data.failed} couldn’t be sent)` : ''}.`);
 }
 function svCsv(sv){
   const rows = (db.svResp || []).filter(r => r.survey_id === sv.id), qs = sv.questions || [];
@@ -6442,9 +6457,9 @@ document.addEventListener('click', async ev => {
         if (!['ok', 'rsvp', 'going'].includes(res)) throw new Error({ started: 'This event has already started.', missing: 'This event isn’t open for RSVPs.', signin: 'Sign in first.' }[res] || res); });
       if (ok){ toast(res === 'rsvp' ? 'A seat opened up: you’re going!' : res === 'going' ? 'You’re already going.' : 'You’re on the waitlist. If a seat opens, it’s yours automatically.'); refreshEvent(id); }
       break; }
-    case 'sv-new': ui.svResults = null; ui.svDraft = { id: '', title: '', descr: '', closes: '', show_home: true, show_leaderboard: true, status: 'draft', questions: [svNewQ('single')] }; render(); window.scrollTo(0, 0); break;
+    case 'sv-new': ui.svResults = null; ui.svDraft = { id: '', title: '', descr: '', closes: '', show_home: true, show_leaderboard: true, email: true, status: 'draft', questions: [svNewQ('single')] }; render(); window.scrollTo(0, 0); break;
     case 'sv-edit': { const sv = svById(id); if (!sv) break; ui.svResults = null;
-      ui.svDraft = { id: sv.id, title: sv.title, descr: sv.descr || '', closes: mtLocalInput(sv.closes_at), show_home: sv.show_home, show_leaderboard: sv.show_leaderboard, status: sv.status, questions: JSON.parse(JSON.stringify(sv.questions || [])) };
+      ui.svDraft = { id: sv.id, title: sv.title, descr: sv.descr || '', closes: mtLocalInput(sv.closes_at), show_home: sv.show_home, show_leaderboard: sv.show_leaderboard, status: sv.status, emailed_at: sv.emailed_at || null, email: false, questions: JSON.parse(JSON.stringify(sv.questions || [])) };
       render(); window.scrollTo(0, 0); break; }
     case 'sv-cancel': ui.svDraft = null; ui.svResults = null; render(); window.scrollTo(0, 0); break;
     case 'sv-results': ui.svDraft = null; ui.svResults = id; render(); window.scrollTo(0, 0); break;
@@ -7501,11 +7516,13 @@ async function handleSubmit(f, v, err){
     const row = { title: d.title.trim(), descr: d.descr.trim(), closes_at: mtFromInput(d.closes), show_home: d.show_home, show_leaderboard: d.show_leaderboard,
       questions: d.questions.map(q => ({ id: q.id, type: q.type, label: q.label.trim(), hint: (q.hint || '').trim(), required: !!q.required, options: svHasOptions(q.type) ? q.options : [], other: ['single', 'multi', 'dropdown'].includes(q.type) && !!q.other, points: +q.points || 0, years: q.years || [] })),
       status: mode === 'open' ? 'open' : (d.status === 'closed' ? 'closed' : 'draft') };
-    await act(async () => {
-      if (d.id) must(await sb.from('surveys').update(row).eq('id', d.id)); else must(await sb.from('surveys').insert(row));
+    let svId = d.id;
+    const saved = await act(async () => {
+      if (d.id) must(await sb.from('surveys').update(row).eq('id', d.id)); else svId = must(await sb.from('surveys').insert(row).select('id').single()).id;
       await logChange((d.id ? 'Edited survey “' : 'Made survey “') + row.title + '”');
       ui.svDraft = null;
-    }, row.status === 'open' ? 'Saved. The survey is open.' : 'Saved as a draft.');
+    }, row.status === 'open' && !d.email ? 'Saved. The survey is open.' : row.status === 'open' ? '' : 'Saved as a draft.');
+    if (saved && row.status === 'open' && d.email) await emailSurvey({ ...row, id: svId });
     return;
   }
 
