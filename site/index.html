@@ -514,6 +514,12 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
 .site-head{background:var(--header-bg)!important;border-bottom:1px solid var(--gold)}
 .seal{width:3.4rem;height:3.4rem;flex:none}
 .ct-who.firm-first .ct-org{order:-1}
+.ct-slots{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.ct-slot{display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border:1px dashed var(--line);border-radius:6px}
+.ct-slot.filled{border-style:solid;background:var(--surface,transparent)}
+.ct-slot-n{flex:none;width:1.4rem;height:1.4rem;border-radius:50%;display:grid;place-items:center;font-size:.75rem;font-weight:700;background:var(--line)}
+.ct-slot.filled .ct-slot-n{background:var(--gold,#B8923A);color:#fff}
+.linkish{background:none;border:0;padding:0;font:inherit;font-weight:700;color:var(--brand-text,inherit);text-decoration:underline;cursor:pointer}
 .ct-plan{display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:12px}
 .ct-goal{border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px}
 .ct-bar{height:8px;border-radius:99px;background:var(--line);overflow:hidden}
@@ -1567,13 +1573,24 @@ function ctPlanPanel(){
   if (ui.ctPlanEdit && isLeader()) return `<form class="panel stack" id="f-ct-plan" style="gap:12px" novalidate>${head}
       <div class="ct-plan">${CT_CATS.map(k => `<label>${catName(k)}<input id="ctp-${k}" type="number" min="0" max="50" value="${plan[k] || 0}"></label>`).join('')}</div>
       <div class="row" style="gap:8px"><button class="btn" type="submit">Save the plan</button><button class="btn ghost" type="button" data-act="ct-plan-cancel">Cancel</button></div><div class="err" id="ctp-err"></div></form>`;
-  const used = CT_CATS.filter(k => plan[k] || conf(k).length);
+  // Who's being considered: in progress for that semester, interested in (or considered for) that kind of event.
+  const maybe = cat => (db.contacts || []).filter(c => c.semester === sem && ['prospect', 'contacted', 'interested'].includes(c.status) && (c.types || []).includes(cat))
+    .sort((a, b) => ['interested', 'contacted', 'prospect'].indexOf(a.status) - ['interested', 'contacted', 'prospect'].indexOf(b.status));
+  const who = c => `<button type="button" class="linkish" data-act="ct-edit" data-id="${c.id}">${esc(c.kind === 'firm' ? c.org || c.name : c.name || c.org)}</button>`;
+  const slot = (c, i) => { const ev = c && c.event_id && evById(c.event_id), date = (ev && ev.date) || (c && c.planned_date);
+    return `<li class="ct-slot ${c ? 'filled' : ''}"><span class="ct-slot-n">${i + 1}</span>${c ? `<span>${who(c)}${c.kind !== 'firm' && c.org ? ' <span class="hint">· ' + esc(c.org) + '</span>' : ''}${(c.areas || []).length ? ' <span class="hint">· ' + esc(c.areas.slice(0, 2).join(', ')) + '</span>' : ''}
+      <span class="hint" style="display:block">${[date && fmtDay(date), ev ? 'Event: ' + esc(ev.title) + (ev.draft ? ' (being scheduled)' : '') : 'No event yet', ctOwners(c).length ? 'with ' + esc(ctOwnText(ctOwners(c))) : ''].filter(Boolean).join(' · ')}</span></span>`
+      : '<span class="hint">Open</span>'}</li>`; };
+  const used = CT_CATS.filter(k => plan[k] || conf(k).length || maybe(k).length);
   return `<section class="panel stack" style="gap:12px"><div class="row" style="justify-content:space-between;align-items:start;gap:10px">${head}
       ${isLeader() ? `<button class="btn ghost small" data-act="ct-plan-edit">${used.length ? 'Edit the plan' : 'Set the plan'}</button>` : ''}</div>
     ${used.length ? `<div class="ct-plan">${used.map(k => { const list = conf(k), n = plan[k] || 0;
       return `<div class="ct-goal stack" style="gap:6px"><div class="row" style="justify-content:space-between;gap:8px"><strong>${catName(k)}</strong><span class="hint">${list.length} of ${n || '?'} confirmed</span></div>
         <div class="ct-bar" role="img" aria-label="${list.length} of ${n} confirmed"><span style="width:${n ? Math.min(100, list.length / n * 100) : 0}%"></span></div>
-        ${list.length ? `<span class="hint">${list.map(c => esc(c.name || c.org) + ((c.areas || []).length ? ' (' + esc(c.areas.join(', ')) + ')' : '')).join(' · ')}</span>` : ''}</div>`; }).join('')}</div>`
+        <ol class="ct-slots">${Array.from({ length: Math.max(n, list.length) }, (_, i) => slot(list[i], i)).join('')}</ol>
+        ${maybe(k).length ? `<div class="stack" style="gap:4px"><span class="hint" style="font-weight:700">Being considered (${maybe(k).length})</span>
+          <div class="stack" style="gap:2px">${maybe(k).map(c => `<span class="hint">${who(c)} <span class="tag ${CT_STATUS[c.status][1]}" style="font-size:.65rem">${CT_STATUS[c.status][0]}</span>${ctOwners(c).length ? ' · ' + esc(ctOwnText(ctOwners(c))) : ' · <span class="warn-text">not claimed</span>'}</span>`).join('')}</div></div>`
+          : list.length < n ? '<span class="hint">No one being considered yet.</span>' : ''}</div>`; }).join('')}</div>`
       : `<div class="empty">${isLeader() ? `No plan for ${esc(sem)} yet. Set how many guest speakers, workshops, and other events you want.` : `Leadership hasn’t set the plan for ${esc(sem)} yet.`}</div>`}
   </section>`;
 }
