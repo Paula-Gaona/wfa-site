@@ -39,6 +39,14 @@ drop policy if exists "officers manage contacts" on public.contacts;
 create policy "officers manage contacts" on public.contacts for all using (public.is_officer()) with check (public.is_officer());
 grant select, insert, update, delete on public.contacts to authenticated;
 grant select, insert, update, delete on public.contacts to service_role;
+-- Different details for each kind of contact: the specific ways they could help (the same choices as the Partner with
+-- us form, plus a faculty list), and the courses a faculty member teaches. For a firm, "areas" are the finance areas it
+-- works in; for a person, the areas they can speak to.
+alter table public.contacts add column if not exists ways text[] not null default '{}';
+alter table public.contacts add column if not exists courses text not null default '';
+alter table public.contacts add column if not exists call_time text not null default '' check (char_length(call_time) <= 120);   -- best time to call, when they prefer phone calls
+alter table public.contacts drop constraint if exists contacts_extra_len;
+alter table public.contacts add constraint contacts_extra_len check (cardinality(ways) <= 20 and char_length(courses) <= 500);
 
 -- The semester plan: how many of each kind of event leadership wants this semester (no topics or months, on purpose).
 create table if not exists public.outreach_plan (
@@ -61,6 +69,7 @@ grant select, insert, update, delete on public.outreach_plan to authenticated;
 alter table public.questions add column if not exists preferred text not null default '';
 alter table public.questions add column if not exists phone text not null default '';
 alter table public.questions add column if not exists linkedin text not null default '';
+alter table public.questions add column if not exists call_time text not null default '' check (char_length(call_time) <= 120);
 alter table public.questions drop constraint if exists questions_reach_len;
 alter table public.questions add constraint questions_reach_len
   check (char_length(preferred) <= 60 and char_length(phone) <= 40 and char_length(linkedin) <= 300);
@@ -90,10 +99,10 @@ begin
       when w ilike 'Office visit%' then 'excursion'
       else null end;
   end loop;
-  insert into contacts (created_by, kind, name, org, title, email, phone, linkedin, preferred, status, types, availability, semester, notes, source, question_id)
+  insert into contacts (created_by, kind, name, org, title, email, phone, linkedin, call_time, preferred, status, types, ways, areas, availability, semester, notes, source, question_id)
   values ('partner form', case when q.topic = 'Firm or organization' then 'firm' else 'professional' end,
-    left(coalesce(q.name, ''), 120), left(coalesce(q.company, ''), 160), left(coalesce(q.job_title, ''), 160), left(q.email, 254), left(coalesce(q.phone, ''), 40), left(coalesce(q.linkedin, ''), 300), coalesce(nullif(q.preferred, ''), 'Email'),
-    'interested', (select coalesce(array_agg(distinct x), '{}') from unnest(t) x where x is not null), q.availability,
+    left(coalesce(q.name, ''), 120), left(coalesce(q.company, ''), 160), left(coalesce(q.job_title, ''), 160), left(q.email, 254), left(coalesce(q.phone, ''), 40), left(coalesce(q.linkedin, ''), 300), left(coalesce(q.call_time, ''), 120), coalesce(nullif(q.preferred, ''), 'Email'),
+    'interested', (select coalesce(array_agg(distinct x), '{}') from unnest(t) x where x is not null), coalesce(q.ways, '{}'), coalesce(q.functions, '{}'), q.availability,
     coalesce((select s.semester from settings s where s.id = 1), ''),
     left('From the Partner with us form (' || to_char(q.created_at at time zone 'America/Denver', 'Mon DD, YYYY') || ').'
       || case when cardinality(coalesce(q.ways, '{}')) > 0 then E'\nInterested in: ' || array_to_string(q.ways, ', ') else '' end

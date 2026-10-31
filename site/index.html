@@ -513,6 +513,7 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
   --header-bg:#0E2A19; --ticker-bg:#07160D; --ticker-fg:#E9DDBB; --gold:#D4AF5A; --gold-soft:#E9DDBB}}
 .site-head{background:var(--header-bg)!important;border-bottom:1px solid var(--gold)}
 .seal{width:3.4rem;height:3.4rem;flex:none}
+.ct-who.firm-first .ct-org{order:-1}
 .ct-plan{display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:12px}
 .ct-goal{border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px}
 .ct-bar{height:8px;border-radius:99px;background:var(--line);overflow:hidden}
@@ -1452,7 +1453,8 @@ function reachFieldset(p, pref, vals = {}, you = true){
   return `<fieldset class="stack" style="gap:8px" data-reach-box="${p}" data-you="${you ? 1 : ''}"><legend>Best way to reach ${you ? 'you' : 'them'}</legend>
     <div class="row" style="gap:4px 18px">${Object.entries(REACH_WAYS).map(([k, [l]]) => `<label class="check"><input type="radio" name="${p}-pref" value="${k}" ${k === (REACH_WAYS[pref] ? pref : 'email') ? 'checked' : ''}> ${l}</label>`).join('')}</div>
     ${Object.entries(REACH_FIELDS).map(([k, [l, type, ph, ac, max]]) => `<label data-reach="${k}" ${k === need || vals[k] ? '' : 'hidden'}><span>${l} <span class="hint" data-reach-opt ${k === need && you ? 'hidden' : ''}>(optional)</span></span>
-      <input id="${p}-${k}" type="${type}" autocomplete="${ac}" maxlength="${max}" placeholder="${ph}" value="${esc(vals[k] || '')}" data-vcheck="${k}"><span class="err field-err"></span></label>`).join('')}
+      <input id="${p}-${k}" type="${type}" autocomplete="${ac}" maxlength="${max}" placeholder="${ph}" value="${esc(vals[k] || '')}" data-vcheck="${k}"><span class="err field-err"></span></label>`
+      + (k === 'phone' ? `<label data-calltime ${pref === 'call' ? '' : 'hidden'}>Best time to call <span class="hint">(optional, Mountain Time)</span><input id="${p}-calltime" maxlength="120" value="${esc(vals.call_time || '')}" placeholder="e.g. Weekdays 9–11 AM, or after 4 PM"></label>` : '')).join('')}
     <div class="row" style="gap:6px">${Object.entries(REACH_FIELDS).map(([k, [l]]) => `<button type="button" class="btn ghost small" data-act="reach-add" data-id="${k}" ${k === need || vals[k] ? 'hidden' : ''}>+ Add ${you ? 'my' : 'their'} ${k === 'linkedin' ? l : l.toLowerCase()}</button>`).join('')}</div>
   </fieldset>`;
 }
@@ -1466,6 +1468,7 @@ function syncReach(box){
     lab.querySelector('[data-reach-opt]').hidden = k === need && you;
     const b = box.querySelector(`[data-act="reach-add"][data-id="${k}"]`); if (b) b.hidden = !lab.hidden;
   });
+  box.querySelector('[data-calltime]').hidden = pref !== 'call';
 }
 document.addEventListener('change', e => { if (e.target.name && /-pref$/.test(e.target.name)) syncReach(e.target.closest('[data-reach-box]')); });
 document.addEventListener('input', e => { if (e.target.id === 'ct-q'){ ui.ct.q = e.target.value; ctSearch(); } });
@@ -1490,13 +1493,15 @@ function readReach(p, need){
     const bad = rqCheck(k, val); if (bad) return { error: bad[0] };
     out[k] = k === 'email' ? val.toLowerCase() : k === 'phone' ? fmtPhone(val) : normLinkedin(val);
   }
+  out.call_time = pref === 'call' ? box.querySelector(`#${p}-calltime`).value.trim() : '';
   return out;
 }
 // "Text message · (801) 555-0123 · email · LinkedIn" with links, for officers.
 function reachLine(x){
   const bits = [x.email && `<a href="mailto:${esc(x.email)}">${esc(x.email)}</a>`, x.phone && `<a href="tel:${esc(x.phone.replace(/[^\d+]/g, ''))}">${esc(x.phone)}</a>`,
     x.linkedin && `<a href="${esc(x.linkedin)}" target="_blank" rel="noopener">LinkedIn</a>`].filter(Boolean);
-  return (x.preferred ? `<strong>Prefers ${esc(x.preferred.toLowerCase().replace('linkedin', 'LinkedIn'))}</strong>${bits.length ? ' · ' : ''}` : '') + bits.join(' · ');
+  return (x.preferred ? `<strong>Prefers ${esc(x.preferred.toLowerCase().replace('linkedin', 'LinkedIn'))}</strong>${bits.length ? ' · ' : ''}` : '') + bits.join(' · ')
+    + (x.call_time ? ` · <strong>Best time to call:</strong> ${esc(x.call_time)}` : '');
 }
 
 /* ---------- Contacts: industry professionals, firms, and faculty (Officer tools → Planning events → Contacts) ---------- */
@@ -1504,6 +1509,29 @@ function reachLine(x){
 // be asked). Communications claims a contact before reaching out, operations takes it from agreement to a date, and
 // "would come back" contacts are suggested again next semester. Partner with us inquiries are added automatically.
 const CT_KINDS = { professional: 'Industry professional', firm: 'Firm', faculty: 'Faculty' };
+// What each kind of contact could do with us: the Partner with us choices for professionals and firms, and a faculty list.
+const FACULTY_WAYS = ['Guest lecture or workshop', 'Speaking on a panel', 'Judging a case or stock pitch competition', 'Mentoring or advising members',
+  'Announcing WFA events in class', 'Extra credit for attending events', 'Introducing us to alumni or industry contacts', 'Helping with a competition team', 'Something else'];
+const CT_WAYS = { professional: PRO_WAYS, firm: FIRM_WAYS, faculty: FACULTY_WAYS };
+// Labels that change with the kind: [professional, firm, faculty]
+const CT_LABELS = {
+  name: ['Name', 'Contact person <span class="hint">The person you talk to there</span>', 'Name'],
+  title: ['Job title', 'Their title', 'Title'],
+  titlePh: ['e.g. Vice President, Analyst', 'e.g. Campus Recruiter', 'e.g. Associate Professor, Lecturer'],
+  org: ['Where they work <span class="hint">(optional)</span>', 'Firm or organization', 'Department'],
+  orgPh: ['e.g. Goldman Sachs', 'e.g. Zions Bank', 'e.g. Finance and Economics'],
+  areas: ['Areas they can speak to', 'Finance areas the firm works in', 'Areas of expertise'],
+  areasHint: ['(optional; helps balance topics as spots fill)', '(optional; for matching them with members and the resume book)', '(optional)'],
+  ways: ['Ways they could help', 'What the firm could do with us', 'Ways they could help']
+};
+const ctL = (key, kind) => CT_LABELS[key][Math.max(0, Object.keys(CT_KINDS).indexOf(kind))];
+// Swap the labels and sections when the kind changes (nothing typed is lost).
+function ctKindSync(form){
+  const kind = (form.querySelector('input[name="ct-kind"]:checked') || {}).value || 'professional';
+  form.querySelectorAll('[data-kl]').forEach(el => { const v = ctL(el.dataset.kl, kind); if (el.tagName === 'INPUT') el.placeholder = v; else el.innerHTML = v; });
+  form.querySelectorAll('[data-ctkind]').forEach(el => el.hidden = !el.dataset.ctkind.split(' ').includes(kind));
+  form.querySelector('.ct-who').classList.toggle('firm-first', kind === 'firm');
+}
 const CT_STATUS = { prospect: ['Not contacted yet', ''], contacted: ['Contacted', 'soon'], interested: ['Interested', 'warn'], confirmed: ['Confirmed', 'ok'],
   done: ['Event done', 'ok'], no_response: ['No response', 'bad'], declined: ['Declined', 'bad'] };
 const CT_OPEN = ['prospect', 'contacted', 'interested', 'confirmed'];
@@ -1543,15 +1571,18 @@ function ctPlanPanel(){
 }
 function ctCard(c){
   const st = CT_STATUS[c.status] || CT_STATUS.prospect, fu = ctFollow(c), ev = c.event_id && evById(c.event_id), reach = reachLine(c);
-  return `<article class="panel stack" style="gap:8px" data-find="${esc([c.name, c.org, c.title, c.email, (c.areas || []).join(' '), CT_KINDS[c.kind], c.notes].join(' ').toLowerCase())}">
+  return `<article class="panel stack" style="gap:8px" data-find="${esc([c.name, c.org, c.title, c.email, (c.areas || []).join(' '), (c.ways || []).join(' '), c.courses, CT_KINDS[c.kind], c.notes].join(' ').toLowerCase())}">
     <div class="row" style="justify-content:space-between;align-items:start;gap:8px">
-      <div><strong>${esc(c.name || c.org || 'No name')}</strong>${c.title ? ', ' + esc(c.title) : ''}${c.org && c.name ? ' · <strong>' + esc(c.org) + '</strong>' : ''}
+      <div>${c.kind === 'firm' ? `<strong>${esc(c.org || c.name || 'No name')}</strong>${c.org && c.name ? ' · ' + esc(c.name) + (c.title ? ', ' + esc(c.title) : '') : ''}`
+        : `<strong>${esc(c.name || c.org || 'No name')}</strong>${c.title ? ', ' + esc(c.title) : ''}${c.org && c.name ? ' · <strong>' + esc(c.org) + '</strong>' : ''}`}
         <div class="row" style="gap:4px;margin-top:4px"><span class="tag">${CT_KINDS[c.kind] || 'Contact'}</span><span class="tag ${st[1]}">${st[0]}</span>${fu === 'follow' ? '<span class="tag warn">Time to follow up</span>' : fu === 'quiet' ? '<span class="tag bad">No reply in 2 weeks</span>' : ''}${c.would_return === 'yes' ? '<span class="tag ok">Would come back</span>' : ''}${c.source === 'partner_form' ? '<span class="tag pinned">Reached out to us</span>' : ''}</div></div>
       <span class="hint" style="text-align:right">${c.owner ? 'Handled by <strong>' + esc(c.owner === session ? 'you' : userName(c.owner)) + '</strong>' : '<span class="warn-text">Not claimed yet</span>'}</span>
     </div>
     ${reach ? `<div class="hint">${reach}</div>` : ''}
-    ${(c.types || []).length ? `<div class="hint"><strong>Interested in:</strong> ${c.types.map(catName).join(', ')}</div>` : ''}
-    ${(c.areas || []).length ? `<div class="hint"><strong>Can speak to:</strong> ${esc(c.areas.join(', '))}</div>` : ''}
+    ${(c.ways || []).length ? `<div class="hint"><strong>${c.kind === 'firm' ? 'Could do with us' : 'Could help with'}:</strong> ${esc(c.ways.join(', '))}</div>` : ''}
+    ${(c.types || []).length ? `<div class="hint"><strong>Kinds of events:</strong> ${c.types.map(catName).join(', ')}</div>` : ''}
+    ${(c.areas || []).length ? `<div class="hint"><strong>${ctL('areas', c.kind)}:</strong> ${esc(c.areas.join(', '))}</div>` : ''}
+    ${c.courses ? `<div class="hint"><strong>Teaches:</strong> ${esc(c.courses)}</div>` : ''}
     ${availabilityText(c.availability) ? `<div class="hint"><strong>When works:</strong> ${esc(availabilityText(c.availability))}</div>` : ''}
     ${c.confirmed_cat || c.planned_date || ev ? `<div class="hint"><strong>Plan:</strong> ${[c.confirmed_cat && catName(c.confirmed_cat), c.planned_date && fmtDay(c.planned_date), ev && 'Event: ' + esc(ev.title)].filter(Boolean).join(' · ')}</div>` : ''}
     <div class="hint">${[c.last_contacted && 'Last reached out ' + fmtDay(c.last_contacted), c.semester].filter(Boolean).join(' · ')}</div>
@@ -1570,21 +1601,27 @@ function ctEditor(c){
   const months = [...new Set([...pMonths(), ...((c.availability || {}).months || [])])], mSel = (c.availability || {}).months || [];
   const careers = (db.careers || []).map(x => x.title);
   const evs = sortedEvents().filter(e => e.cat !== 'officer_meeting' && (!isPast(e) || e.id === c.event_id));
-  const orgLabel = k => k === 'faculty' ? 'Department' : k === 'firm' ? 'Firm or organization' : 'Where they work';
   return `<form class="panel stack" id="f-contact" data-id="${isNew ? 'new' : c.id}" style="gap:14px" novalidate>
     <h3 style="margin:0">${isNew ? 'Add a contact' : 'Edit ' + esc(c.name || c.org)}</h3>
     <fieldset class="stack" style="gap:6px"><legend>Who they are</legend><div class="row" style="gap:18px">${Object.entries(CT_KINDS).map(([k, l]) => `<label class="check"><input type="radio" name="ct-kind" value="${k}" ${c.kind === k ? 'checked' : ''}> ${l}</label>`).join('')}</div></fieldset>
-    <div class="grid2"><label>Name <span class="hint">For a firm, the person you talk to</span><input id="ct-name" maxlength="120" value="${esc(c.name || '')}"></label>
-      <label>Title<input id="ct-title" maxlength="160" value="${esc(c.title || '')}" placeholder="e.g. Vice President, Professor of Finance"></label></div>
-    <label><span id="ct-org-label">${orgLabel(c.kind)}</span><input id="ct-org" maxlength="160" value="${esc(c.org || '')}"></label>
+    <div class="stack ct-who ${c.kind === 'firm' ? 'firm-first' : ''}" style="gap:12px">
+      <div class="grid2"><label><span data-kl="name">${ctL('name', c.kind)}</span><input id="ct-name" maxlength="120" value="${esc(c.name || '')}"></label>
+        <label><span data-kl="title">${ctL('title', c.kind)}</span><input id="ct-title" maxlength="160" list="ct-titles" value="${esc(c.title || '')}" data-kl="titlePh" placeholder="${ctL('titlePh', c.kind)}"></label></div>
+      <label class="ct-org"><span data-kl="org">${ctL('org', c.kind)}</span><input id="ct-org" maxlength="160" value="${esc(c.org || '')}" data-kl="orgPh" placeholder="${ctL('orgPh', c.kind)}"></label>
+    </div>
+    <datalist id="ct-titles">${(c.kind === 'faculty' ? ['Professor', 'Associate Professor', 'Assistant Professor', 'Lecturer', 'Adjunct Professor', 'Department Chair', 'Dean'] : []).map(t => `<option value="${t}">`).join('')}</datalist>
+    <label data-ctkind="faculty" ${c.kind === 'faculty' ? '' : 'hidden'}>Courses they teach <span class="hint">(optional; good for announcing events in class)</span><input id="ct-courses" maxlength="500" value="${esc(c.courses || '')}" placeholder="e.g. FIN 3400 Corporate Finance, FIN 4500 Investments"></label>
     ${reachFieldset('ct', prefKey(c.preferred), c, false)}
     <div class="grid2">
       <label>Where it stands<select id="ct-status">${Object.entries(CT_STATUS).map(([k, [l]]) => `<option value="${k}" ${c.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label>Handled by <span class="hint">Claim it before reaching out, so no one else emails them too</span><select id="ct-owner"><option value="">No one yet</option>${staffEmails().map(e => `<option value="${esc(e)}" ${c.owner === e ? 'selected' : ''}>${esc(userName(e))}</option>`).join('')}</select></label>
     </div>
-    <fieldset class="stack" style="gap:6px"><legend>Interested in or being considered for <span class="hint">(check any)</span></legend>
+    ${Object.entries(CT_WAYS).map(([k, list]) => { const sel = (c.ways || []).filter(w => list.includes(w)), extra = c.kind === k ? (c.ways || []).filter(w => !list.includes(w)) : [];
+      return `<fieldset class="stack" style="gap:6px" data-ctkind="${k}" ${c.kind === k ? '' : 'hidden'}><legend><span data-kl="ways">${ctL('ways', k)}</span> <span class="hint">(check any)</span></legend>
+        <div class="checks">${[...list, ...extra].map(w => `<label class="check"><input type="checkbox" class="ct-way" value="${esc(w)}" ${sel.includes(w) || extra.includes(w) ? 'checked' : ''}> ${esc(w)}</label>`).join('')}</div></fieldset>`; }).join('')}
+    <fieldset class="stack" style="gap:6px"><legend>Kinds of events they’re interested in or being considered for <span class="hint">(check any; counts toward the plan once confirmed)</span></legend>
       <div class="checks">${CT_CATS.map(k => `<label class="check"><input type="checkbox" class="ct-type" value="${k}" ${(c.types || []).includes(k) ? 'checked' : ''}> ${catName(k)}</label>`).join('')}</div></fieldset>
-    ${careers.length ? `<fieldset class="stack" style="gap:6px"><legend>Areas they can speak to <span class="hint">(optional; helps balance topics as spots fill)</span></legend>
+    ${careers.length ? `<fieldset class="stack" style="gap:6px"><legend><span data-kl="areas">${ctL('areas', c.kind)}</span> <span class="hint" data-kl="areasHint">${ctL('areasHint', c.kind)}</span></legend>
       <div class="checks">${careers.map(t => `<label class="check"><input type="checkbox" class="ct-area" value="${esc(t)}" ${(c.areas || []).includes(t) ? 'checked' : ''}> ${esc(t)}</label>`).join('')}</div></fieldset>` : ''}
     <fieldset class="stack" style="gap:8px"><legend>When works for them <span class="hint">(optional; narrow it down to a date below once it’s settled)</span></legend>
       <div class="row" style="gap:2px 14px">${months.map(t => `<label class="check"><input type="checkbox" class="ct-when-m" value="${esc(t)}" ${mSel.includes(t) ? 'checked' : ''}> ${esc(t)}</label>`).join('')}</div>
@@ -7276,7 +7313,8 @@ document.addEventListener('change', async e => {
   if (id === 'tk-mine'){ ui.tasksMine = e.target.checked; render(); }
   if (id === 'ct-mine'){ ui.ct.mine = e.target.checked; render(); }
   if (id === 'ct-kind-f'){ ui.ct.kind = e.target.value; render(); }
-  if (e.target.name === 'ct-kind') document.getElementById('ct-org-label').textContent = { faculty: 'Department', firm: 'Firm or organization' }[e.target.value] || 'Where they work';
+  if (e.target.name === 'ct-kind'){ ctKindSync(e.target.form); const dl = document.getElementById('ct-titles');
+    dl.innerHTML = e.target.value === 'faculty' ? ['Professor', 'Associate Professor', 'Assistant Professor', 'Lecturer', 'Adjunct Professor', 'Department Chair', 'Dean'].map(t => `<option value="${t}">`).join('') : ''; }
   if (id === 'bulk-mode') ui.bulkMode = e.target.value;
   if (id === 'bulk-csv' && e.target.files[0]){
     const file = e.target.files[0]; e.target.value = '';
@@ -7421,8 +7459,8 @@ async function handleSubmit(f, v, err){
     Object.assign(q, reach);
     if (!q.message) return err('p-err', 'Add a short message.');
     let r = await sb.from('questions').insert(q);
-    if (r.error && q.email && /preferred|phone|linkedin/.test(r.error.message || '')){   // database not updated yet: put the extra ways in the message
-      const { preferred, phone, linkedin, ...rest } = q; q.message += `\n\nPrefers: ${preferred}${phone ? '\nPhone: ' + phone : ''}${linkedin ? '\nLinkedIn: ' + linkedin : ''}`;
+    if (r.error && q.email && /preferred|phone|linkedin|call_time/.test(r.error.message || '')){   // database not updated yet: put the extra ways in the message
+      const { preferred, phone, linkedin, call_time, ...rest } = q; q.message += `\n\nPrefers: ${preferred}${phone ? '\nPhone: ' + phone : ''}${call_time ? '\nBest time to call: ' + call_time : ''}${linkedin ? '\nLinkedIn: ' + linkedin : ''}`;
       Object.keys(q).forEach(k => { if (!(k in rest) && k !== 'message') delete q[k]; }); r = await sb.from('questions').insert(q);
     }
     if (r.error && q.availability && /availability/.test(r.error.message || '')){   // database not updated yet: send without the times
@@ -7941,9 +7979,11 @@ async function handleSubmit(f, v, err){
     const when = { months: picked('ct-when-m'), slots: [...(ui.ctWhen || [])] };
     const row = { kind: (f.querySelector('input[name="ct-kind"]:checked') || {}).value || 'professional', name: v('ct-name'), title: v('ct-title'), org: v('ct-org'), ...reach,
       owner: v('ct-owner'), status: v('ct-status'), semester: v('ct-sem'), types: picked('ct-type'), areas: picked('ct-area'),
+      ways: [...f.querySelectorAll('fieldset[data-ctkind]:not([hidden]) .ct-way:checked')].map(x => x.value),
       availability: when.months.length || when.slots.length ? when : null, planned_date: v('ct-date') || null, confirmed_cat: v('ct-cat'),
       event_id: v('ct-ev') || null, last_contacted: v('ct-last') || null, would_return: v('ct-return'), notes: v('ct-notes'), updated_at: new Date().toISOString() };
-    if (!row.name && !row.org) return err('ct-err', 'Add a name, or the firm or department.');
+    row.courses = row.kind === 'faculty' ? v('ct-courses') : '';
+    if (row.kind === 'firm' ? !row.org : !row.name) return err('ct-err', row.kind === 'firm' ? 'Add the firm’s name.' : 'Add their name.');
     if (row.status === 'confirmed' && !row.confirmed_cat && row.types.length === 1) row.confirmed_cat = row.types[0];
     if (row.status === 'confirmed' && !row.confirmed_cat) return err('ct-err', 'Pick what they’re confirmed for, so it counts toward the semester plan.');
     // Claim before reaching out: don't add someone who's already on the list.
