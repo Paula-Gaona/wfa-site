@@ -1656,7 +1656,15 @@ function contactsBody(){
   const again = db.contacts.filter(c => c.would_return === 'yes' && c.semester !== sem && !CT_OPEN.includes(c.status));
   const match = c => (f.f === 'all' || (f.f === 'open' ? CT_OPEN.includes(c.status) : c.status === f.f)) && (!f.kind || c.kind === f.kind) && (!f.mine || c.owner === session);
   const list = db.contacts.filter(match).sort((a, b) => (ctFollow(b) ? 1 : 0) - (ctFollow(a) ? 1 : 0) || CT_OPEN.indexOf(b.status) - CT_OPEN.indexOf(a.status));
-  const n = k => db.contacts.filter(c => k === 'all' || (k === 'open' ? CT_OPEN.includes(c.status) : c.status === k)).length;
+  // Counts: each status within the chosen type, and each type within the chosen status.
+  const byStatus = (c, k) => k === 'all' || (k === 'open' ? CT_OPEN.includes(c.status) : c.status === k), mineOk = c => !f.mine || c.owner === session;
+  const n = k => db.contacts.filter(c => byStatus(c, k) && (!f.kind || c.kind === f.kind) && mineOk(c)).length;
+  const nk = k => db.contacts.filter(c => (!k || c.kind === k) && byStatus(c, f.f) && mineOk(c)).length;
+  const PLURAL = { professional: 'Industry professionals', firm: 'Firms', faculty: 'Faculty' };
+  const empty = `<div class="empty">${db.contacts.length ? 'No contacts match.' : 'No contacts yet. Add the people you plan to reach out to, and claim them so no one doubles up.'}</div>`;
+  // Everyone: a section for each type. One type: just that list.
+  const listHtml = !list.length ? empty : f.kind ? list.map(ctCard).join('')
+    : Object.keys(CT_KINDS).map(k => { const l = list.filter(c => c.kind === k); return l.length ? `<section class="stack ct-group" style="gap:10px"><div class="section-head"><h3 style="margin:0">${PLURAL[k]}</h3><span class="muted">${l.length}</span></div>${l.map(ctCard).join('')}</section>` : ''; }).join('');
   return `<div class="stack" style="gap:16px">
     <div class="row" style="justify-content:space-between;align-items:center;gap:10px">
       <span class="muted">Industry professionals, firms, and faculty: who’s handling each one and where it stands. Only officers can see this page. <button class="btn ghost small" data-act="proc-tab" data-id="speakers">How outreach works</button></span>
@@ -1667,18 +1675,22 @@ function contactsBody(){
       <div class="stack" style="gap:6px">${again.map(c => `<div class="panel row" style="justify-content:space-between;align-items:center;gap:8px;padding:10px 14px">
         <span><strong>${esc(c.name || c.org)}</strong>${c.org && c.name ? ' · ' + esc(c.org) : ''} <span class="hint">${esc(c.semester || '')}${c.confirmed_cat ? ': ' + catName(c.confirmed_cat) : ''}</span></span>
         <button class="btn ghost small" data-act="ct-again" data-id="${c.id}">Add to ${esc(sem || 'this semester')}</button></div>`).join('')}</div></section>` : ''}
+    <div class="seg-tabs" role="tablist" aria-label="Type of contact">${[['', 'All'], ...Object.entries(PLURAL)].map(([k, l]) => `<button role="tab" aria-selected="${f.kind === k}" class="btn ${f.kind === k ? '' : 'ghost '}small" data-act="ct-kind" data-id="${k}">${l} (${nk(k)})</button>`).join('')}</div>
     <div class="row" style="gap:8px;align-items:center">
       <span class="row" style="gap:6px" role="group" aria-label="Show">${[['open', 'In progress'], ...Object.entries(CT_STATUS).map(([k, [l]]) => [k, l]), ['all', 'All']].map(([k, l]) => `<button class="btn ${f.f === k ? '' : 'ghost '}small" data-act="ct-filter" data-f="${k}" aria-pressed="${f.f === k}">${l} (${n(k)})</button>`).join('')}</span>
     </div>
     <div class="row" style="gap:10px;align-items:center">
       <input id="ct-q" type="search" placeholder="Search names, firms, areas, notes" value="${esc(f.q)}" style="flex:1;min-width:12rem">
-      <select id="ct-kind-f" style="width:auto"><option value="">Everyone</option>${Object.entries(CT_KINDS).map(([k, l]) => `<option value="${k}" ${f.kind === k ? 'selected' : ''}>${l === 'Firm' ? 'Firms' : l === 'Faculty' ? 'Faculty' : 'Industry professionals'}</option>`).join('')}</select>
       <label class="check"><input type="checkbox" id="ct-mine" ${f.mine ? 'checked' : ''}> Only mine</label>
     </div>
-    <div class="stack" style="gap:10px" id="ct-list">${list.map(ctCard).join('') || `<div class="empty">${db.contacts.length ? 'No contacts match.' : 'No contacts yet. Add the people you plan to reach out to, and claim them so no one doubles up.'}</div>`}</div>
+    <div class="stack" style="gap:${f.kind ? 10 : 22}px" id="ct-list">${listHtml}</div>
   </div>`;
 }
-function ctSearch(){ const q = (ui.ct.q || '').toLowerCase().trim(); document.querySelectorAll('#ct-list [data-find]').forEach(el => el.hidden = !!q && !el.dataset.find.includes(q)); }
+function ctSearch(){
+  const q = (ui.ct.q || '').toLowerCase().trim();
+  document.querySelectorAll('#ct-list [data-find]').forEach(el => el.hidden = !!q && !el.dataset.find.includes(q));
+  document.querySelectorAll('#ct-list .ct-group').forEach(g => { const shown = g.querySelectorAll('[data-find]:not([hidden])').length; g.hidden = !shown; const c = g.querySelector('.section-head .muted'); if (c) c.textContent = shown; });
+}
 
 // About page text. Officers edit it with "Edit page"; edits are saved in settings.about.
 const ABOUT_DEFAULTS = {
@@ -6932,6 +6944,7 @@ document.addEventListener('click', async ev => {
     case 'q-filter': ui.qFilter = t.dataset.f; render(); break;
     case 'reach-add': { const box = t.closest('[data-reach-box]'), lab = box.querySelector(`[data-reach="${id}"]`); lab.dataset.added = '1'; syncReach(box); lab.querySelector('input').focus(); break; }
     case 'ct-filter': ui.ct.f = t.dataset.f; render(); break;
+    case 'ct-kind': ui.ct.kind = id || ''; render(); break;
     case 'ct-new': ui.ctEdit = 'new'; ui.ctWhen = new Set(); render(); window.scrollTo(0, 0); break;
     case 'ct-edit': { const c = ctById(id); ui.ctEdit = id; ui.ctWhen = new Set(((c && c.availability) || {}).slots || []); render(); window.scrollTo(0, 0); break; }
     case 'ct-cancel': ui.ctEdit = null; ui.ctWhen = null; ui.dirtyForm = false; render(); break;
@@ -7320,7 +7333,6 @@ document.addEventListener('change', async e => {
   if (id === 'avail-who'){ ui.availWho = e.target.value; ui.availPick = null; render(); }
   if (id === 'tk-mine'){ ui.tasksMine = e.target.checked; render(); }
   if (id === 'ct-mine'){ ui.ct.mine = e.target.checked; render(); }
-  if (id === 'ct-kind-f'){ ui.ct.kind = e.target.value; render(); }
   if (e.target.name === 'ct-kind'){ ctKindSync(e.target.form); const dl = document.getElementById('ct-titles');
     dl.innerHTML = e.target.value === 'faculty' ? ['Professor', 'Associate Professor', 'Assistant Professor', 'Lecturer', 'Adjunct Professor', 'Department Chair', 'Dean'].map(t => `<option value="${t}">`).join('') : ''; }
   if (id === 'bulk-mode') ui.bulkMode = e.target.value;
