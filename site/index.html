@@ -724,7 +724,7 @@ async function load(){
     pending: off && sb.from('pending_changes').select('*').order('created_at', { ascending: false }).limit(200),
     questions: off && sb.from('questions').select('*').order('created_at', { ascending: false }),
     contacts: off && sb.from('contacts').select('*').order('updated_at', { ascending: false }),
-    plan: off && t('outreach_plan'),
+    pevents: off && sb.from('planned_events').select('*').order('sort').order('created_at'),
     members: signed && t('members'),
     rsvps: signed && t('rsvps'),
     att: signed && t('attendance'),
@@ -804,7 +804,7 @@ async function load(){
   db.timeline = R.timeline || [];
   db.careers = R.careers || [];
   db.questions = R.questions || [];
-  db.contacts = Array.isArray(R.contacts) ? R.contacts : null; db.plan = Array.isArray(R.plan) ? R.plan : [];
+  db.contacts = Array.isArray(R.contacts) ? R.contacts : null; db.pevents = Array.isArray(R.pevents) ? R.pevents : [];
   db.mySurveys = R.mySurveys || []; db.surveyResults = Array.isArray(R.surveyResults) ? R.surveyResults : [];
   db.surveyPending = Array.isArray(R.surveyPending) ? R.surveyPending : [];
   db.testAccounts = Array.isArray(R.testAccounts) ? R.testAccounts : [];
@@ -1479,7 +1479,7 @@ function syncReach(box){
   box.querySelector('[data-calltime]').hidden = pref !== 'call';
 }
 document.addEventListener('change', e => { if (e.target.name && /-pref$/.test(e.target.name)) syncReach(e.target.closest('[data-reach-box]')); });
-document.addEventListener('input', e => { if (e.target.id === 'ct-q'){ ui.ct.q = e.target.value; ctSearch(); } });
+document.addEventListener('input', e => { if (e.target.id === 'ct-q'){ ui.ct.q = e.target.value; ctSearch(); } if (e.target.dataset && e.target.dataset.pe) ui.dirtyForm = true; });
 // Emails, phone numbers, and LinkedIn links are checked when you leave the box (a message only clears once it's fixed).
 document.addEventListener('focusout', e => {
   const t = e.target; if (!t.dataset || !t.dataset.vcheck) return;
@@ -1569,33 +1569,43 @@ const ctOwnRow = list => ({ owners: list, owner: list[0] || '' });
 const ctOwnText = list => { const n = list.map(e => e === session ? 'you' : userName(e)); return n.length > 1 ? n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1] : n[0] || ''; };
 const ctMineDue = () => (db.contacts || []).filter(c => ctMine(c) && ctFollow(c)).length;
 
+// Planned events: one per event the club wants that semester. "Guest speaker #2", or just "Panel" when there's one.
+const peById = id => (db.pevents || []).find(e => e.id === id);
+const peOfKind = (sem, cat) => (db.pevents || []).filter(e => e.semester === sem && e.cat === cat);
+function peLabel(pe){ if (!pe) return ''; const sib = peOfKind(pe.semester, pe.cat); return ctCat(pe.cat) + (sib.length > 1 ? ' #' + (sib.indexOf(pe) + 1) : ''); }
+const peFill = pe => (db.contacts || []).filter(c => c.plan_id === pe.id && ['confirmed', 'done'].includes(c.status));
+const peMaybe = pe => (db.contacts || []).filter(c => c.plan_id === pe.id && ['prospect', 'contacted', 'interested'].includes(c.status))
+  .sort((a, b) => ['interested', 'contacted', 'prospect'].indexOf(a.status) - ['interested', 'contacted', 'prospect'].indexOf(b.status));
 function ctPlanPanel(){
-  const sem = ctPlanSem(), plan = Object.fromEntries((db.plan || []).filter(p => p.semester === sem).map(p => [p.cat, p.target]));
-  const conf = cat => (db.contacts || []).filter(c => c.semester === sem && ['confirmed', 'done'].includes(c.status) && c.confirmed_cat === cat);
-  const head = `<div class="stack" style="gap:6px"><h3 style="margin:0">${esc(sem || 'This semester')}: the plan</h3><span class="hint">How many of each kind of event leadership wants that semester. Set it a semester ahead, so there’s time to line people up. Topics and dates stay open, so anyone who’s a good fit can be asked. As spots fill, look at what’s already confirmed to decide who to ask next.</span>
-    ${ctSems().length > 1 ? `<span class="row" style="gap:6px" role="group" aria-label="Semester">${ctSems().map((x, i) => `<button type="button" class="btn ${x === sem ? '' : 'ghost '}small" data-act="ct-sem" data-id="${esc(x)}" aria-pressed="${x === sem}">${esc(x)}${i ? '' : ' (now)'}</button>`).join('')}</span>` : ''}</div>`;
-  if (ui.ctPlanEdit && isLeader()) return `<form class="panel stack" id="f-ct-plan" style="gap:12px" novalidate>${head}
-      <div class="ct-plan">${CT_CATS.map(k => `<label>${ctCat(k)}<input id="ctp-${k}" type="number" min="0" max="50" value="${plan[k] || 0}"></label>`).join('')}</div>
-      <div class="row" style="gap:8px"><button class="btn" type="submit">Save the plan</button><button class="btn ghost" type="button" data-act="ct-plan-cancel">Cancel</button></div><div class="err" id="ctp-err"></div></form>`;
-  // Who's being considered: in progress for that semester, interested in (or considered for) that kind of event.
-  const maybe = cat => (db.contacts || []).filter(c => c.semester === sem && ['prospect', 'contacted', 'interested'].includes(c.status) && (c.types || []).includes(cat))
-    .sort((a, b) => ['interested', 'contacted', 'prospect'].indexOf(a.status) - ['interested', 'contacted', 'prospect'].indexOf(b.status));
+  const sem = ctPlanSem(), lead = isLeader(), evs = (db.pevents || []).filter(e => e.semester === sem);
+  const kinds = CT_CATS.filter(k => evs.some(e => e.cat === k) || (db.contacts || []).some(c => c.semester === sem && !c.plan_id && CT_OPEN.includes(c.status) && (c.types || []).includes(k)));
   const who = c => `<button type="button" class="linkish" data-act="ct-edit" data-id="${c.id}">${esc(c.kind === 'firm' ? c.org || c.name : c.name || c.org)}</button>`;
-  const slot = (c, i) => { const ev = c && c.event_id && evById(c.event_id), date = (ev && ev.date) || (c && c.planned_date);
-    return `<li class="ct-slot ${c ? 'filled' : ''}"><span class="ct-slot-n">${i + 1}</span>${c ? `<span>${who(c)}${c.kind !== 'firm' && c.org ? ' <span class="hint">· ' + esc(c.org) + '</span>' : ''}${(c.areas || []).length ? ' <span class="hint">· ' + esc(c.areas.slice(0, 2).join(', ')) + '</span>' : ''}
-      <span class="hint" style="display:block">${[date && fmtDay(date), ev ? 'Event: ' + esc(ev.title) + (ev.draft ? ' (being scheduled)' : '') : 'No event yet', ctOwners(c).length ? 'with ' + esc(ctOwnText(ctOwners(c))) : ''].filter(Boolean).join(' · ')}</span></span>`
-      : '<span class="hint">Open</span>'}</li>`; };
-  const used = CT_CATS.filter(k => plan[k] || conf(k).length || maybe(k).length);
-  return `<section class="panel stack" style="gap:12px"><div class="row" style="justify-content:space-between;align-items:start;gap:10px">${head}
-      ${isLeader() ? `<button class="btn ghost small" data-act="ct-plan-edit">${used.length ? 'Edit the plan' : 'Set the plan'}</button>` : ''}</div>
-    ${used.length ? `<div class="ct-plan">${used.map(k => { const list = conf(k), n = plan[k] || 0;
-      return `<div class="ct-goal stack" style="gap:6px"><div class="row" style="justify-content:space-between;gap:8px"><strong>${ctCat(k)}</strong><span class="hint">${list.length} of ${n || '?'} confirmed</span></div>
-        <div class="ct-bar" role="img" aria-label="${list.length} of ${n} confirmed"><span style="width:${n ? Math.min(100, list.length / n * 100) : 0}%"></span></div>
-        <ol class="ct-slots">${Array.from({ length: Math.max(n, list.length) }, (_, i) => slot(list[i], i)).join('')}</ol>
-        ${maybe(k).length ? `<div class="stack" style="gap:4px"><span class="hint" style="font-weight:700">Being considered (${maybe(k).length})</span>
-          <div class="stack" style="gap:2px">${maybe(k).map(c => `<span class="hint">${who(c)} <span class="tag ${CT_STATUS[c.status][1]}" style="font-size:.65rem">${CT_STATUS[c.status][0]}</span>${ctOwners(c).length ? ' · ' + esc(ctOwnText(ctOwners(c))) : ' · <span class="warn-text">not claimed</span>'}</span>`).join('')}</div></div>`
-          : list.length < n ? '<span class="hint">No one being considered yet.</span>' : ''}</div>`; }).join('')}</div>`
-      : `<div class="empty">${isLeader() ? `No plan for ${esc(sem)} yet. Set how many guest speakers, workshops, and other events you want.` : `Leadership hasn’t set the plan for ${esc(sem)} yet.`}</div>`}
+  const tag = c => `<span class="tag ${CT_STATUS[c.status][1]}" style="font-size:.65rem">${CT_STATUS[c.status][0]}</span>${ctOwners(c).length ? ' · ' + esc(ctOwnText(ctOwners(c))) : ' · <span class="warn-text">not claimed</span>'}`;
+  const filled = c => { const ev = c.event_id && evById(c.event_id), date = (ev && ev.date) || c.planned_date;
+    return `<div class="ct-slot filled"><span class="ct-slot-n">✓</span><span>${who(c)}${c.kind !== 'firm' && c.org ? ' <span class="hint">· ' + esc(c.org) + '</span>' : ''}
+      <span class="hint" style="display:block">${[date && fmtDay(date), ev ? 'Event: ' + esc(ev.title) + (ev.draft ? ' (being scheduled)' : '') : 'No event yet', ctOwners(c).length ? 'with ' + esc(ctOwnText(ctOwners(c))) : ''].filter(Boolean).join(' · ')}</span></span></div>`; };
+  const card = pe => { const f = peFill(pe), m = peMaybe(pe);
+    return `<article class="ct-goal stack" style="gap:8px">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><strong>${esc(peLabel(pe))}</strong><span class="tag ${f.length ? 'ok' : ''}">${f.length ? 'Filled' : 'Open'}</span></div>
+      ${lead ? `<label class="stack" style="gap:4px"><span class="hint">Description</span><textarea rows="2" maxlength="2000" data-pe="${pe.id}" placeholder="What it’s about, who you’d like, rough timing, anything to keep in mind">${esc(pe.descr || '')}</textarea></label>
+        <div class="row" style="gap:6px"><button type="button" class="btn ghost small" data-act="pe-save" data-id="${pe.id}">Save description</button>${delBtn('pe-' + pe.id, 'Remove', 'pe-del', pe.id)}</div>`
+        : pe.descr ? `<p style="margin:0;white-space:pre-wrap">${esc(pe.descr)}</p>` : '<span class="hint">No description yet.</span>'}
+      ${f.length ? f.map(filled).join('') : '<div class="ct-slot"><span class="ct-slot-n">?</span><span class="hint">No one confirmed yet</span></div>'}
+      ${m.length ? `<div class="stack" style="gap:2px"><span class="hint" style="font-weight:700">Being considered (${m.length})</span>${m.map(c => `<span class="hint">${who(c)} ${tag(c)}</span>`).join('')}</div>` : ''}
+    </article>`; };
+  // Contacts interested in this kind of event who aren't attached to one yet.
+  const loose = k => (db.contacts || []).filter(c => c.semester === sem && !c.plan_id && CT_OPEN.includes(c.status) && (c.types || []).includes(k));
+  const assign = (c, k) => { const opts = peOfKind(sem, k); return opts.length ? `<select class="ct-assign" data-id="${c.id}" style="width:auto;padding:2px 6px;font-size:.85rem" aria-label="Assign ${esc(c.name || c.org)} to a planned event"><option value="">Assign to…</option>${opts.map(pe => `<option value="${pe.id}">${esc(peLabel(pe))}</option>`).join('')}</select>` : ''; };
+  return `<section class="panel stack" style="gap:14px">
+    <div class="stack" style="gap:6px"><h3 style="margin:0">${esc(sem || 'This semester')}: the plan</h3>
+      <span class="hint">Each event leadership wants that semester. Set it a semester ahead, so there’s time to line people up. Keep descriptions open-ended, so anyone who’s a good fit can be asked. Click a name to open their contact.</span>
+      ${ctSems().length > 1 ? `<span class="row" style="gap:6px" role="group" aria-label="Semester">${ctSems().map((x, i) => `<button type="button" class="btn ${x === sem ? '' : 'ghost '}small" data-act="ct-sem" data-id="${esc(x)}" aria-pressed="${x === sem}">${esc(x)}${i ? '' : ' (now)'}</button>`).join('')}</span>` : ''}</div>
+    ${lead ? `<div class="row" style="gap:8px;align-items:center"><select id="pe-cat" style="width:auto">${CT_CATS.map(k => `<option value="${k}">${ctCat(k)}</option>`).join('')}</select><button type="button" class="btn small" data-act="pe-add">+ Add to the plan</button></div>` : ''}
+    ${kinds.length ? kinds.map(k => { const list = peOfKind(sem, k), l = loose(k);
+      return `<div class="stack" style="gap:10px"><div class="section-head"><h3 style="margin:0">${ctCat(k)}${list.length > 1 || !list.length ? 's' : ''}</h3><span class="muted">${list.filter(pe => peFill(pe).length).length} of ${list.length} filled</span></div>
+        ${list.length ? `<div class="ct-plan">${list.map(card).join('')}</div>` : ''}
+        ${l.length ? `<div class="stack" style="gap:4px"><span class="hint" style="font-weight:700">Interested in a ${ctCat(k).toLowerCase()}, not assigned to one yet</span>${l.map(c => `<span class="hint row" style="gap:6px;align-items:center">${who(c)} ${tag(c)} ${assign(c, k)}</span>`).join('')}</div>` : ''}</div>`; }).join('')
+      : `<div class="empty">${lead ? `Nothing planned for ${esc(sem)} yet. Add the guest speakers, panels, workshops, and other events you want.` : `Leadership hasn’t planned ${esc(sem)} yet.`}</div>`}
   </section>`;
 }
 function ctCard(c){
@@ -1613,7 +1623,7 @@ function ctCard(c){
     ${(c.areas || []).length ? `<div class="hint"><strong>${ctL('areas', c.kind)}:</strong> ${esc(c.areas.join(', '))}</div>` : ''}
     ${c.courses ? `<div class="hint"><strong>Teaches:</strong> ${esc(c.courses)}</div>` : ''}
     ${availabilityText(c.availability) ? `<div class="hint"><strong>When works:</strong> ${esc(availabilityText(c.availability))}</div>` : ''}
-    ${c.confirmed_cat || c.planned_date || ev ? `<div class="hint"><strong>Plan:</strong> ${[c.confirmed_cat && ctCat(c.confirmed_cat), c.planned_date && fmtDay(c.planned_date), ev && 'Event: ' + esc(ev.title)].filter(Boolean).join(' · ')}</div>` : ''}
+    ${c.plan_id || c.confirmed_cat || c.planned_date || ev ? `<div class="hint"><strong>Plan:</strong> ${[peById(c.plan_id) ? peLabel(peById(c.plan_id)) + ' (' + esc(peById(c.plan_id).semester) + ')' : c.confirmed_cat && ctCat(c.confirmed_cat), c.planned_date && fmtDay(c.planned_date), ev && 'Event: ' + esc(ev.title)].filter(Boolean).join(' · ')}</div>` : ''}
     <div class="hint">${[c.last_contacted && 'Last reached out ' + fmtDay(c.last_contacted), c.semester].filter(Boolean).join(' · ')}</div>
     ${c.notes ? `<details><summary class="hint">Notes</summary><p style="white-space:pre-wrap;margin:6px 0 0">${esc(c.notes)}</p></details>` : ''}
     <div class="row" style="gap:6px">
@@ -1663,7 +1673,7 @@ function ctEditor(c){
         return `<button type="button" class="slot ${on ? 'on' : ''}" data-slot="${key}" aria-pressed="${on}" aria-label="${l} ${fmtMin(m)}" data-tip="${l} ${fmtMin(m)}–${fmtMin(m + P_STEP)}"></button>`; }, DAYS.slice(0, 5), P_MINS)}</div></fieldset>
     <div class="grid2">
       <label>Date <span class="hint">Once it’s settled</span><input id="ct-date" type="date" value="${esc(c.planned_date || '')}"></label>
-      <label>Confirmed for<select id="ct-cat"><option value="">Not yet</option>${CT_CATS.map(k => `<option value="${k}" ${c.confirmed_cat === k ? 'selected' : ''}>${ctCat(k)}</option>`).join('')}</select></label>
+      <label>Planned event <span class="hint">The one they’re filling or being considered for</span><select id="ct-plan"><option value="">Not attached to one yet</option>${ctSems().map(sm => { const l = (db.pevents || []).filter(e => e.semester === sm); return l.length ? `<optgroup label="${esc(sm)}">${l.map(pe => `<option value="${pe.id}" ${c.plan_id === pe.id ? 'selected' : ''}>${esc(peLabel(pe))}${pe.descr ? ': ' + esc(pe.descr.slice(0, 50)) : ''}</option>`).join('')}</optgroup>` : ''; }).join('')}</select></label>
     </div>
     <div class="grid2">
       <label>The event <span class="hint">Or use Start the event once they’re confirmed</span><select id="ct-ev"><option value="">None yet</option>${evs.map(e => `<option value="${e.id}" ${c.event_id === e.id ? 'selected' : ''}>${fmtDay(e.date)} · ${esc(e.title)}${e.draft ? ' (draft)' : ''}</option>`).join('')}</select></label>
@@ -1699,7 +1709,7 @@ function contactsBody(){
       <span class="muted">Industry professionals, firms, and faculty: who’s handling each one and where it stands. Only officers can see this page. <button class="btn ghost small" data-act="proc-tab" data-id="speakers">How outreach works</button></span>
       <button class="btn" data-act="ct-new">+ Add a contact</button>
     </div>
-    <div class="row" style="gap:8px;align-items:center"><span class="hint">How many of each event leadership wants, the spots filled so far, and who’s being considered:</span><button class="btn ghost small" data-act="otab" data-tab="eventplan">Semester plan →</button></div>
+    <div class="row" style="gap:8px;align-items:center"><span class="hint">Each event leadership wants, who’s filling it, and who’s being considered:</span><button class="btn ghost small" data-act="otab" data-tab="eventplan">Semester plan →</button></div>
     ${again.length ? `<section class="stack" style="gap:8px"><div class="section-head"><h2>Worth asking again</h2><span class="muted">Said they’d come back</span></div>
       <div class="stack" style="gap:6px">${again.map(c => `<div class="panel row" style="justify-content:space-between;align-items:center;gap:8px;padding:10px 14px">
         <span><strong>${esc(c.name || c.org)}</strong>${c.org && c.name ? ' · ' + esc(c.org) : ''} <span class="hint">${esc(c.semester || '')}${c.confirmed_cat ? ': ' + ctCat(c.confirmed_cat) : ''}</span></span>
@@ -4453,7 +4463,7 @@ function processBody(){
       ${role('Officers', 'Anyone planning an event', ['Create the event and fill out its scheduling request: website details, dates, location, layout, guests, A/V, and the RSVP timing they’d like.', 'Plan ahead: 3 months for case competitions, 2 months for career fairs, 6 weeks for guest speakers, 3 weeks for workshops and everything else.', 'Send it on, change it if needed while it’s being confirmed with UVU, and fix it if it’s sent back.', 'Wait to promote anything until it’s published (a scheduler can put up a coming-soon page).'])}
       ${role('Branch presidents and vice presidents', 'For their branch’s officers', ['Review their officers’ events: approve them, edit and approve them, or send them back with notes.', 'Vice presidents can also approve a workshop or social sign-off after 36 business hours, when the scheduler isn’t a president.'])}
       ${role('Event schedulers', 'Chosen by admins; tagged in the <a href="#officer/directory">Officer directory</a>', ['Confirm events with UVU and mark them confirmed, or send them back with notes.', 'Finalize confirmed events: the date, times, location, and RSVP timing, then send them for sign-off.', 'Turn on coming-soon pages.'])}
-      ${role('Presidents', 'The final check and the semester plan', ['Set how many of each kind of event to hold next semester, a semester ahead (Officer tools → Semester plan), with the vice presidents.', 'Sign off on the final details before anything is published: every president for big events, one president (not the scheduler) for workshops and socials.', 'Request changes by editing fields directly, with a reason for each.'])}
+      ${role('Presidents', 'The final check and the semester plan', ['List next semester’s events, a semester ahead, with a description for each (Officer tools → Semester plan), with the vice presidents.', 'Sign off on the final details before anything is published: every president for big events, one president (not the scheduler) for workshops and socials.', 'Request changes by editing fields directly, with a reason for each.'])}
       ${role('Communications', 'Outreach', ['Reach out to industry professionals, firms, and faculty, claiming each contact in Contacts first.', 'Follow up once after a week, and hand confirmed guests to operations the way they like to be reached.', 'Send thank-yous after events and ask if they’d come back.'])}
       ${role('Operations', 'Guests, once they agree', ['Settle the date with confirmed guests, then start the event from their contact.', 'Handle the logistics for speakers, office visits, and career fairs.'])}
       ${role('Admins', 'Site settings', ['Choose who the event schedulers are.', 'Set officers’ positions and branches, which decide who reviews what.', 'Edit the officer application questions and the planning checklists.'])}
@@ -4473,7 +4483,7 @@ function processBody(){
   if (tab === 'speakers') body = `
     <p style="margin:0">How the club lines up guest speakers, workshop leaders, judges, and firms, from the semester plan to the thank-you. Everything is tracked in <a href="#officer/contacts" data-act="otab" data-tab="contacts">Contacts</a>: industry professionals, firms, and faculty.</p>
     <section class="panel stack flow" style="gap:0;padding:18px" aria-label="Outreach steps">
-      ${step('1', 'Leadership sets the semester plan', 'A semester ahead (planning next semester while this one is going), the presidents and vice presidents decide <b>how many</b> of each kind of event to hold (like 4 guest speakers and 2 workshops) and share it with officers. Professionals’ calendars fill up months out, and every event still needs its scheduling lead time after someone agrees. Not topics or months: that keeps the pool of people to ask as wide as possible. The <a href="#officer/eventplan" data-act="otab" data-tab="eventplan">Semester plan</a> page shows each spot, who’s filling it, and who’s being considered.', 'start')}
+      ${step('1', 'Leadership sets the semester plan', 'A semester ahead (planning next semester while this one is going), the presidents and vice presidents list the events to hold (like Guest speaker #1–#4, a panel, and 2 workshops), each with a short description, and share it with officers. Professionals’ calendars fill up months out, and every event still needs its scheduling lead time after someone agrees. Not topics or months: that keeps the pool of people to ask as wide as possible. The <a href="#officer/eventplan" data-act="otab" data-tab="eventplan">Semester plan</a> page shows each spot, who’s filling it, and who’s being considered.', 'start')}
       ${arrow()}${step('2', 'Communications reaches out', '<b>Claim the contact first</b> (add them to Contacts or click Claim it), so no one else emails them too. The first message covers who the WFA is, who our members are (the numbers on the <a href="#partners">Partner with us</a> page), the kinds of events that might fit, and rough months. No exact dates yet. Start as soon as the plan is set, months before the events. Click <b>Reached out today</b> after.')}
       ${arrow()}${ask('Did they reply within a week?', step('', 'Keep talking', 'Mark them <b>Interested</b> and note what fits.'), step('', 'Follow up once', 'Contacts flags it after a week. After two weeks with no reply, mark them <b>No response</b>. They can be asked again another semester.'), 'Yes', 'No')}
       ${arrow()}${step('3', 'They agree: hand off to operations', 'Mark them <b>Confirmed</b> and pick what they’re confirmed for (it counts toward the plan). Communications introduces them to an operations officer <b>the way they prefer to be reached</b> (it’s on their contact) and sends the external guest form from Get started with an event.')}
@@ -6980,8 +6990,12 @@ document.addEventListener('click', async ev => {
     case 'ct-new': ui.ctEdit = 'new'; ui.ctWhen = new Set(); render(); window.scrollTo(0, 0); break;
     case 'ct-edit': { const c = ctById(id); ui.officerTab = 'contacts'; ui.ctEdit = id; ui.ctWhen = new Set(((c && c.availability) || {}).slots || []); render(); window.scrollTo(0, 0); break; }
     case 'ct-cancel': ui.ctEdit = null; ui.ctWhen = null; ui.dirtyForm = false; render(); break;
-    case 'ct-plan-edit': ui.ctPlanEdit = true; render(); break;
-    case 'ct-plan-cancel': ui.ctPlanEdit = false; render(); break;
+    case 'pe-add': { const sem = ctPlanSem(), cat = document.getElementById('pe-cat').value; if (!sem){ toast('Set the current semester first (Admin → Leaderboard seasons).'); break; }
+      const sort = Math.max(0, ...peOfKind(sem, cat).map(e => e.sort || 0)) + 1;
+      await act(async () => { must(await sb.from('planned_events').insert({ semester: sem, cat, sort })); await logChange('Added a ' + ctCat(cat).toLowerCase() + ' to the ' + sem + ' plan'); }, 'Added to the plan. Give it a description.'); break; }
+    case 'pe-save': { const ta = document.querySelector(`[data-pe="${id}"]`);
+      await act(async () => must(await sb.from('planned_events').update({ descr: ta.value.trim() }).eq('id', id)), 'Description saved'); break; }
+    case 'pe-del': { const pe = peById(id); await act(async () => { must(await sb.from('planned_events').delete().eq('id', id)); await logChange('Removed ' + peLabel(pe) + ' from the ' + pe.semester + ' plan'); }, 'Removed from the plan'); break; }
     case 'ct-claim': { const c = ctById(id), cur = ctOwners(c), join = t.dataset.v === 'me', list = join ? [...cur, session] : cur.filter(e => e !== session);
       await act(async () => must(await sb.from('contacts').update({ ...ctOwnRow(list), updated_at: new Date().toISOString() }).eq('id', id)), join ? (cur.length ? 'You’re on it too' : 'It’s yours') : cur.length > 1 ? 'You’re off it' : 'Released'); break; }
     case 'ct-touch': { const c = ctById(id);
@@ -6994,7 +7008,7 @@ document.addEventListener('click', async ev => {
     case 'ct-open': ui.officerTab = 'contacts'; ui.ctEdit = id; ui.ctWhen = new Set(((ctById(id) || {}).availability || {}).slots || []); render(); window.scrollTo(0, 0); break;
     case 'ct-q': ui.officerTab = 'questions'; ui.qFilter = 'all'; render(); window.scrollTo(0, 0); break;
     case 'ct-event': { const c = ctById(id);
-      ui.officerTab = 'events'; ui.editEvent = null; ui.guestForm = null; ui.evNewCat = ctEventCat(c.confirmed_cat || (c.types || [])[0]); ui.ctLink = id;
+      ui.officerTab = 'events'; ui.editEvent = null; ui.guestForm = null; ui.evNewCat = ctEventCat((peById(c.plan_id) || {}).cat || c.confirmed_cat || (c.types || [])[0]); ui.ctLink = id;
       ui.rq = { key: 'new', d: { ...rqDefaults(null), dates: c.planned_date ? [c.planned_date] : [], speaker: 'yes', speakerCount: 1,
         speakers: [{ name: c.name || '', title: c.title || '', company: c.org || '', email: c.email || '', phone: c.phone || '', show: true }] }, files: {} };
       render(); window.scrollTo(0, 0); toast(`Started an event with ${c.name || c.org} as the guest. Fill in the rest, then send it on.`); break; }
@@ -7370,6 +7384,8 @@ document.addEventListener('change', async e => {
   if (id === 'avail-who'){ ui.availWho = e.target.value; ui.availPick = null; render(); }
   if (id === 'tk-mine'){ ui.tasksMine = e.target.checked; render(); }
   if (id === 'ct-mine'){ ui.ct.mine = e.target.checked; render(); }
+  if (e.target.classList && e.target.classList.contains('ct-assign') && e.target.value){ const pe = peById(e.target.value);
+    await act(async () => must(await sb.from('contacts').update({ plan_id: pe.id, semester: pe.semester, updated_at: new Date().toISOString() }).eq('id', e.target.dataset.id)), 'Assigned to ' + peLabel(pe)); }
   if (e.target.name === 'ct-kind'){ ctKindSync(e.target.form); const dl = document.getElementById('ct-titles');
     dl.innerHTML = e.target.value === 'faculty' ? ['Professor', 'Associate Professor', 'Assistant Professor', 'Lecturer', 'Adjunct Professor', 'Department Chair', 'Dean'].map(t => `<option value="${t}">`).join('') : ''; }
   if (id === 'bulk-mode') ui.bulkMode = e.target.value;
@@ -8037,12 +8053,14 @@ async function handleSubmit(f, v, err){
     const row = { kind: (f.querySelector('input[name="ct-kind"]:checked') || {}).value || 'professional', name: v('ct-name'), title: v('ct-title'), org: v('ct-org'), ...reach,
       ...ctOwnRow([...f.querySelectorAll('.ct-own:checked')].map(x => x.value)), status: v('ct-status'), semester: v('ct-sem'), types: picked('ct-type'), areas: picked('ct-area'),
       ways: [...f.querySelectorAll('fieldset[data-ctkind]:not([hidden]) .ct-way:checked')].map(x => x.value),
-      availability: when.months.length || when.slots.length ? when : null, planned_date: v('ct-date') || null, confirmed_cat: v('ct-cat'),
+      availability: when.months.length || when.slots.length ? when : null, planned_date: v('ct-date') || null, plan_id: v('ct-plan') || null,
       event_id: v('ct-ev') || null, last_contacted: v('ct-last') || null, would_return: v('ct-return'), notes: v('ct-notes'), updated_at: new Date().toISOString() };
     row.courses = row.kind === 'faculty' ? v('ct-courses') : '';
     if (row.kind === 'firm' ? !row.org : !row.name) return err('ct-err', row.kind === 'firm' ? 'Add the firm’s name.' : 'Add their name.');
-    if (row.status === 'confirmed' && !row.confirmed_cat && row.types.length === 1) row.confirmed_cat = row.types[0];
-    if (row.status === 'confirmed' && !row.confirmed_cat) return err('ct-err', 'Pick what they’re confirmed for, so it counts toward the semester plan.');
+    // The planned event decides the kind (and the semester); without one, a single kind of event stands in.
+    const pe = peById(row.plan_id);
+    row.confirmed_cat = pe ? pe.cat : row.types.length === 1 ? row.types[0] : '';
+    if (pe){ row.semester = pe.semester; if (!row.types.includes(pe.cat)) row.types.push(pe.cat); }
     // Claim before reaching out: don't add someone who's already on the list.
     const same = (db.contacts || []).find(c => c.id !== id && ((row.email && c.email === row.email) || (row.name && c.name.toLowerCase() === row.name.toLowerCase() && c.org.toLowerCase() === row.org.toLowerCase())));
     if (same) return err('ct-err', `${same.name || same.org} is already in Contacts${ctOwners(same).length ? ', handled by ' + ctOwnText(ctOwners(same)) : ''}. Edit that one instead.`);
@@ -8054,10 +8072,7 @@ async function handleSubmit(f, v, err){
   }
 
   if (f.id === 'f-ct-plan'){
-    const sem = ctPlanSem(); if (!sem) return err('ctp-err', 'Set the current semester first (Admin → Leaderboard seasons).');
-    const rows = CT_CATS.map(k => ({ semester: sem, cat: k, target: Math.max(0, Math.min(50, parseInt(v('ctp-' + k)) || 0)) }));
-    await act(async () => { must(await sb.from('outreach_plan').upsert(rows)); await logChange('Set the ' + sem + ' event plan'); ui.ctPlanEdit = false; }, 'Plan saved');
-    return;
+    return;   // replaced by individual planned events (70-planned-events.sql)
   }
 
   if (f.id === 'f-task'){
