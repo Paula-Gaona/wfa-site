@@ -1552,7 +1552,12 @@ const ctById = id => (db.contacts || []).find(c => c.id === id);
 const ctDays = d => d ? Math.round((parseDay(todayIso()) - parseDay(d)) / 864e5) : 0;
 // Contacted a week ago with no news: follow up once. Two weeks: probably no response.
 function ctFollow(c){ if (c.status !== 'contacted') return ''; const n = ctDays(c.last_contacted || String(c.updated_at || '').slice(0, 10)); return n >= 14 ? 'quiet' : n >= 7 ? 'follow' : ''; }
-const ctMineDue = () => (db.contacts || []).filter(c => c.owner === session && ctFollow(c)).length;
+// The officers handling a contact (owner is the older single field; it stays as the first one).
+const ctOwners = c => (c.owners || []).length ? c.owners : c.owner ? [c.owner] : [];
+const ctMine = c => ctOwners(c).includes(session);
+const ctOwnRow = list => ({ owners: list, owner: list[0] || '' });
+const ctOwnText = list => { const n = list.map(e => e === session ? 'you' : userName(e)); return n.length > 1 ? n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1] : n[0] || ''; };
+const ctMineDue = () => (db.contacts || []).filter(c => ctMine(c) && ctFollow(c)).length;
 
 function ctPlanPanel(){
   const sem = ctPlanSem(), plan = Object.fromEntries((db.plan || []).filter(p => p.semester === sem).map(p => [p.cat, p.target]));
@@ -1579,7 +1584,7 @@ function ctCard(c){
       <div>${c.kind === 'firm' ? `<strong>${esc(c.org || c.name || 'No name')}</strong>${c.org && c.name ? ' · Contact: ' + esc(c.name) + (c.title ? ', ' + esc(c.title) : '') : ''}`
         : `<strong>${esc(c.name || c.org || 'No name')}</strong>${c.title ? ', ' + esc(c.title) : ''}${c.org && c.name ? ' · <strong>' + esc(c.org) + '</strong>' : ''}`}
         <div class="row" style="gap:4px;margin-top:4px"><span class="tag">${CT_KINDS[c.kind] || 'Contact'}</span><span class="tag ${st[1]}">${st[0]}</span>${fu === 'follow' ? '<span class="tag warn">Time to follow up</span>' : fu === 'quiet' ? '<span class="tag bad">No reply in 2 weeks</span>' : ''}${c.would_return === 'yes' ? '<span class="tag ok">Would come back</span>' : ''}${c.source === 'partner_form' ? '<span class="tag pinned">Reached out to us</span>' : ''}</div></div>
-      <span class="hint" style="text-align:right">${c.owner ? 'Handled by <strong>' + esc(c.owner === session ? 'you' : userName(c.owner)) + '</strong>' : '<span class="warn-text">Not claimed yet</span>'}</span>
+      <span class="hint" style="text-align:right">${ctOwners(c).length ? 'Handled by <strong>' + esc(ctOwnText(ctOwners(c))) + '</strong>' : '<span class="warn-text">Not claimed yet</span>'}</span>
     </div>
     ${reach ? `<div class="hint">${reach}</div>` : ''}
     ${(c.ways || []).length ? `<div class="hint"><strong>${c.kind === 'firm' ? 'Could do with us' : 'Could help with'}:</strong> ${esc(c.ways.join(', '))}</div>` : ''}
@@ -1592,7 +1597,7 @@ function ctCard(c){
     ${c.notes ? `<details><summary class="hint">Notes</summary><p style="white-space:pre-wrap;margin:6px 0 0">${esc(c.notes)}</p></details>` : ''}
     <div class="row" style="gap:6px">
       <button class="btn small" data-act="ct-edit" data-id="${c.id}">Edit</button>
-      ${c.owner === session ? `<button class="btn ghost small" data-act="ct-claim" data-id="${c.id}" data-v="">Release</button>` : `<button class="btn ghost small" data-act="ct-claim" data-id="${c.id}" data-v="me">${c.owner ? 'Take over' : 'Claim it'}</button>`}
+      ${ctMine(c) ? `<button class="btn ghost small" data-act="ct-claim" data-id="${c.id}" data-v="">${ctOwners(c).length > 1 ? 'Leave' : 'Release'}</button>` : `<button class="btn ghost small" data-act="ct-claim" data-id="${c.id}" data-v="me">${ctOwners(c).length ? 'Join' : 'Claim it'}</button>`}
       ${CT_OPEN.includes(c.status) ? `<button class="btn ghost small" data-act="ct-touch" data-id="${c.id}">Reached out today</button>` : ''}
       ${ev ? `<button class="btn ghost small" data-act="open-event" data-id="${ev.id}">Open the event</button>` : c.status === 'confirmed' ? `<button class="btn ghost small" data-act="ct-event" data-id="${c.id}">Start the event →</button>` : ''}
       ${c.question_id && db.questions.some(q => q.id === c.question_id) ? `<button class="btn ghost small" data-act="ct-q">Their message</button>` : ''}
@@ -1600,7 +1605,8 @@ function ctCard(c){
     </div></article>`;
 }
 function ctEditor(c){
-  const isNew = !c; c = c || { kind: 'professional', status: 'prospect', owner: session, semester: ctPlanSem(), types: [], areas: [] };
+  const isNew = !c; c = c || { kind: 'professional', status: 'prospect', owners: [session], semester: ctPlanSem(), types: [], areas: [] };
+  const own = ctOwners(c), staff = [...new Set([...staffEmails(), ...own])];
   const months = [...new Set([...pMonths(), ...((c.availability || {}).months || [])])], mSel = (c.availability || {}).months || [];
   const careers = (db.careers || []).map(x => x.title);
   const evs = sortedEvents().filter(e => e.cat !== 'officer_meeting' && (!isPast(e) || e.id === c.event_id));
@@ -1618,7 +1624,9 @@ function ctEditor(c){
     ${reachFieldset('ct', prefKey(c.preferred), c, false).replace('<legend>Best way to reach them</legend>', `<legend data-kl="reach">${ctL('reach', c.kind)}</legend>`)}
     <div class="grid2">
       <label>Where it stands<select id="ct-status">${Object.entries(CT_STATUS).map(([k, [l]]) => `<option value="${k}" ${c.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-      <label>Handled by <span class="hint">Claim it before reaching out, so no one else emails them too</span><select id="ct-owner"><option value="">No one yet</option>${staffEmails().map(e => `<option value="${esc(e)}" ${c.owner === e ? 'selected' : ''}>${esc(userName(e))}</option>`).join('')}</select></label>
+      <div class="ms-wrap"><span class="label-text" style="display:block;font-weight:600;margin-bottom:4px">Handled by <span class="hint" style="font-weight:400">Pick everyone working on it. Claim it before reaching out, so no one else emails them too.</span></span>
+        <details class="ms" id="ct-owners"><summary>${esc(ctOwnText(own) || 'No one yet')}</summary>
+          <div class="ms-pop">${staff.map(e => `<label class="check"><input type="checkbox" class="ct-own" value="${esc(e)}" data-label="${esc(e === session ? 'you' : userName(e))}" ${own.includes(e) ? 'checked' : ''}> ${esc(userName(e))}${e === session ? ' (you)' : ''}</label>`).join('')}</div></details></div>
     </div>
     ${Object.entries(CT_WAYS).map(([k, list]) => { const sel = (c.ways || []).filter(w => list.includes(w)), extra = c.kind === k ? (c.ways || []).filter(w => !list.includes(w)) : [];
       return `<fieldset class="stack" style="gap:6px" data-ctkind="${k}" ${c.kind === k ? '' : 'hidden'}><legend><span data-kl="ways">${ctL('ways', k)}</span> <span class="hint">(check any)</span></legend>
@@ -1654,10 +1662,10 @@ function contactsBody(){
   if (ui.ctEdit) return ctEditor(ui.ctEdit === 'new' ? null : ctById(ui.ctEdit));
   const f = ui.ct || (ui.ct = { f: 'open', kind: '', mine: false, q: '' }), sem = ctPlanSem();
   const again = db.contacts.filter(c => c.would_return === 'yes' && c.semester !== sem && !CT_OPEN.includes(c.status));
-  const match = c => (f.f === 'all' || (f.f === 'open' ? CT_OPEN.includes(c.status) : c.status === f.f)) && (!f.kind || c.kind === f.kind) && (!f.mine || c.owner === session);
+  const match = c => (f.f === 'all' || (f.f === 'open' ? CT_OPEN.includes(c.status) : c.status === f.f)) && (!f.kind || c.kind === f.kind) && (!f.mine || ctMine(c));
   const list = db.contacts.filter(match).sort((a, b) => (ctFollow(b) ? 1 : 0) - (ctFollow(a) ? 1 : 0) || CT_OPEN.indexOf(b.status) - CT_OPEN.indexOf(a.status));
   // Counts: each status within the chosen type, and each type within the chosen status.
-  const byStatus = (c, k) => k === 'all' || (k === 'open' ? CT_OPEN.includes(c.status) : c.status === k), mineOk = c => !f.mine || c.owner === session;
+  const byStatus = (c, k) => k === 'all' || (k === 'open' ? CT_OPEN.includes(c.status) : c.status === k), mineOk = c => !f.mine || ctMine(c);
   const n = k => db.contacts.filter(c => byStatus(c, k) && (!f.kind || c.kind === f.kind) && mineOk(c)).length;
   const nk = k => db.contacts.filter(c => (!k || c.kind === k) && byStatus(c, f.f) && mineOk(c)).length;
   const PLURAL = { professional: 'Industry professionals', firm: 'Firms', faculty: 'Faculty' };
@@ -6950,9 +6958,10 @@ document.addEventListener('click', async ev => {
     case 'ct-cancel': ui.ctEdit = null; ui.ctWhen = null; ui.dirtyForm = false; render(); break;
     case 'ct-plan-edit': ui.ctPlanEdit = true; render(); break;
     case 'ct-plan-cancel': ui.ctPlanEdit = false; render(); break;
-    case 'ct-claim': await act(async () => must(await sb.from('contacts').update({ owner: t.dataset.v === 'me' ? session : '', updated_at: new Date().toISOString() }).eq('id', id)), t.dataset.v === 'me' ? 'It’s yours' : 'Released'); break;
+    case 'ct-claim': { const c = ctById(id), cur = ctOwners(c), join = t.dataset.v === 'me', list = join ? [...cur, session] : cur.filter(e => e !== session);
+      await act(async () => must(await sb.from('contacts').update({ ...ctOwnRow(list), updated_at: new Date().toISOString() }).eq('id', id)), join ? (cur.length ? 'You’re on it too' : 'It’s yours') : cur.length > 1 ? 'You’re off it' : 'Released'); break; }
     case 'ct-touch': { const c = ctById(id);
-      await act(async () => must(await sb.from('contacts').update({ last_contacted: todayIso(), status: c.status === 'prospect' ? 'contacted' : c.status, owner: c.owner || session, updated_at: new Date().toISOString() }).eq('id', id)), 'Noted. If there’s no reply in a week, it’ll remind you to follow up.'); break; }
+      await act(async () => must(await sb.from('contacts').update({ last_contacted: todayIso(), status: c.status === 'prospect' ? 'contacted' : c.status, ...ctOwnRow(ctOwners(c).length ? ctOwners(c) : [session]), updated_at: new Date().toISOString() }).eq('id', id)), 'Noted. If there’s no reply in a week, it’ll remind you to follow up.'); break; }
     case 'ct-sem': ui.ctSem = id; ui.ctPlanEdit = false; render(); break;
     case 'ct-again': { const c = ctById(id), ev = evById(c.event_id), sem = ctPlanSem();
       const note = `${c.semester || 'Before'}: ${c.confirmed_cat ? catName(c.confirmed_cat) : CT_STATUS[c.status][0]}${ev ? ' (' + ev.title + ')' : ''}. Asked again for ${sem}.`;
@@ -7282,6 +7291,10 @@ document.addEventListener('change', async e => {
     render(); drawQrTool();
   }
   if (id === 'ev-cat') syncCaseBox();
+  if (e.target.classList && e.target.classList.contains('ct-own')){
+    const box = e.target.closest('.ms'), picked = [...box.querySelectorAll('.ct-own:checked')].map(c => c.dataset.label);
+    box.querySelector('summary').textContent = picked.length ? (picked.length > 1 ? picked.slice(0, -1).join(', ') + ' and ' + picked[picked.length - 1] : picked[0]) : 'No one yet';
+  }
   if (e.target.classList && e.target.classList.contains('cn-filter')){
     const box = e.target.closest('.ms'); if (box){ const picked = [...box.querySelectorAll('.cn-filter:checked')].map(c => c.dataset.label); box.querySelector('summary').textContent = picked.length ? picked.join(', ') : 'Any'; }
     filterChatPeople();
@@ -7998,7 +8011,7 @@ async function handleSubmit(f, v, err){
     const reach = readReach('ct', false); if (reach.error) return err('ct-err', reach.error);
     const when = { months: picked('ct-when-m'), slots: [...(ui.ctWhen || [])] };
     const row = { kind: (f.querySelector('input[name="ct-kind"]:checked') || {}).value || 'professional', name: v('ct-name'), title: v('ct-title'), org: v('ct-org'), ...reach,
-      owner: v('ct-owner'), status: v('ct-status'), semester: v('ct-sem'), types: picked('ct-type'), areas: picked('ct-area'),
+      ...ctOwnRow([...f.querySelectorAll('.ct-own:checked')].map(x => x.value)), status: v('ct-status'), semester: v('ct-sem'), types: picked('ct-type'), areas: picked('ct-area'),
       ways: [...f.querySelectorAll('fieldset[data-ctkind]:not([hidden]) .ct-way:checked')].map(x => x.value),
       availability: when.months.length || when.slots.length ? when : null, planned_date: v('ct-date') || null, confirmed_cat: v('ct-cat'),
       event_id: v('ct-ev') || null, last_contacted: v('ct-last') || null, would_return: v('ct-return'), notes: v('ct-notes'), updated_at: new Date().toISOString() };
@@ -8008,7 +8021,7 @@ async function handleSubmit(f, v, err){
     if (row.status === 'confirmed' && !row.confirmed_cat) return err('ct-err', 'Pick what they’re confirmed for, so it counts toward the semester plan.');
     // Claim before reaching out: don't add someone who's already on the list.
     const same = (db.contacts || []).find(c => c.id !== id && ((row.email && c.email === row.email) || (row.name && c.name.toLowerCase() === row.name.toLowerCase() && c.org.toLowerCase() === row.org.toLowerCase())));
-    if (same) return err('ct-err', `${same.name || same.org} is already in Contacts${same.owner ? ', handled by ' + (same.owner === session ? 'you' : userName(same.owner)) : ''}. Edit that one instead.`);
+    if (same) return err('ct-err', `${same.name || same.org} is already in Contacts${ctOwners(same).length ? ', handled by ' + ctOwnText(ctOwners(same)) : ''}. Edit that one instead.`);
     await act(async () => {
       if (id === 'new') must(await sb.from('contacts').insert(row)); else must(await sb.from('contacts').update(row).eq('id', id));
       ui.ctEdit = null; ui.ctWhen = null;
