@@ -1509,6 +1509,14 @@ const CT_STATUS = { prospect: ['Not contacted yet', ''], contacted: ['Contacted'
 const CT_OPEN = ['prospect', 'contacted', 'interested', 'confirmed'];
 const CT_CATS = Object.keys(CATS).filter(k => k !== 'officer_meeting');
 const ctSem = () => db.settings.semester || '';
+// Plans are made a semester or more ahead: the current semester and the next two (Fall → Spring → Fall, skipping summer).
+function ctSems(){
+  const cur = ctSem(), m = cur.match(/^(Spring|Summer|Fall)\s+(\d{4})$/i); if (!m) return cur ? [cur] : [];
+  let [, t, y] = m; t = t[0].toUpperCase() + t.slice(1).toLowerCase(); y = +y; const out = [t + ' ' + y];
+  for (let i = 0; i < 2; i++){ if (t === 'Fall'){ t = 'Spring'; y++; } else t = 'Fall'; out.push(t + ' ' + y); }
+  return out;
+}
+const ctPlanSem = () => ctSems().includes(ui.ctSem) ? ui.ctSem : (ctSems()[0] || '');
 const ctById = id => (db.contacts || []).find(c => c.id === id);
 const ctDays = d => d ? Math.round((parseDay(todayIso()) - parseDay(d)) / 864e5) : 0;
 // Contacted a week ago with no news: follow up once. Two weeks: probably no response.
@@ -1516,9 +1524,10 @@ function ctFollow(c){ if (c.status !== 'contacted') return ''; const n = ctDays(
 const ctMineDue = () => (db.contacts || []).filter(c => c.owner === session && ctFollow(c)).length;
 
 function ctPlanPanel(){
-  const sem = ctSem(), plan = Object.fromEntries((db.plan || []).filter(p => p.semester === sem).map(p => [p.cat, p.target]));
+  const sem = ctPlanSem(), plan = Object.fromEntries((db.plan || []).filter(p => p.semester === sem).map(p => [p.cat, p.target]));
   const conf = cat => (db.contacts || []).filter(c => c.semester === sem && ['confirmed', 'done'].includes(c.status) && c.confirmed_cat === cat);
-  const head = `<div><h3 style="margin:0">${esc(sem || 'This semester')}: the plan</h3><span class="hint">How many of each kind of event leadership wants this semester. Topics and dates stay open, so anyone who’s a good fit can be asked. As spots fill, look at what’s already confirmed to decide who to ask next.</span></div>`;
+  const head = `<div class="stack" style="gap:6px"><h3 style="margin:0">${esc(sem || 'This semester')}: the plan</h3><span class="hint">How many of each kind of event leadership wants that semester. Set it a semester ahead, so there’s time to line people up. Topics and dates stay open, so anyone who’s a good fit can be asked. As spots fill, look at what’s already confirmed to decide who to ask next.</span>
+    ${ctSems().length > 1 ? `<span class="row" style="gap:6px" role="group" aria-label="Semester">${ctSems().map((x, i) => `<button type="button" class="btn ${x === sem ? '' : 'ghost '}small" data-act="ct-sem" data-id="${esc(x)}" aria-pressed="${x === sem}">${esc(x)}${i ? '' : ' (now)'}</button>`).join('')}</span>` : ''}</div>`;
   if (ui.ctPlanEdit && isLeader()) return `<form class="panel stack" id="f-ct-plan" style="gap:12px" novalidate>${head}
       <div class="ct-plan">${CT_CATS.map(k => `<label>${catName(k)}<input id="ctp-${k}" type="number" min="0" max="50" value="${plan[k] || 0}"></label>`).join('')}</div>
       <div class="row" style="gap:8px"><button class="btn" type="submit">Save the plan</button><button class="btn ghost" type="button" data-act="ct-plan-cancel">Cancel</button></div><div class="err" id="ctp-err"></div></form>`;
@@ -1529,7 +1538,7 @@ function ctPlanPanel(){
       return `<div class="ct-goal stack" style="gap:6px"><div class="row" style="justify-content:space-between;gap:8px"><strong>${catName(k)}</strong><span class="hint">${list.length} of ${n || '?'} confirmed</span></div>
         <div class="ct-bar" role="img" aria-label="${list.length} of ${n} confirmed"><span style="width:${n ? Math.min(100, list.length / n * 100) : 0}%"></span></div>
         ${list.length ? `<span class="hint">${list.map(c => esc(c.name || c.org) + ((c.areas || []).length ? ' (' + esc(c.areas.join(', ')) + ')' : '')).join(' · ')}</span>` : ''}</div>`; }).join('')}</div>`
-      : `<div class="empty">${isLeader() ? 'No plan yet. Set how many guest speakers, workshops, and other events you want this semester.' : 'Leadership hasn’t set this semester’s plan yet.'}</div>`}
+      : `<div class="empty">${isLeader() ? `No plan for ${esc(sem)} yet. Set how many guest speakers, workshops, and other events you want.` : `Leadership hasn’t set the plan for ${esc(sem)} yet.`}</div>`}
   </section>`;
 }
 function ctCard(c){
@@ -1557,7 +1566,7 @@ function ctCard(c){
     </div></article>`;
 }
 function ctEditor(c){
-  const isNew = !c; c = c || { kind: 'professional', status: 'prospect', owner: session, semester: ctSem(), types: [], areas: [] };
+  const isNew = !c; c = c || { kind: 'professional', status: 'prospect', owner: session, semester: ctPlanSem(), types: [], areas: [] };
   const months = [...new Set([...pMonths(), ...((c.availability || {}).months || [])])], mSel = (c.availability || {}).months || [];
   const careers = (db.careers || []).map(x => x.title);
   const evs = sortedEvents().filter(e => e.cat !== 'officer_meeting' && (!isPast(e) || e.id === c.event_id));
@@ -1591,7 +1600,7 @@ function ctEditor(c){
       <label>Last reached out<input id="ct-last" type="date" value="${esc(c.last_contacted || '')}"></label>
     </div>
     <div class="grid2">
-      <label>Semester<input id="ct-sem" maxlength="40" value="${esc(c.semester || ctSem())}"></label>
+      <label>For which semester<select id="ct-sem">${[...new Set([...ctSems(), c.semester].filter(Boolean))].map(x => `<option ${x === (c.semester || ctPlanSem()) ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
       <label>Would they come back? <span class="hint">Ask in the thank-you</span><select id="ct-return">${[['', 'Haven’t asked yet'], ['yes', 'Yes'], ['maybe', 'Maybe'], ['no', 'No']].map(([k, l]) => `<option value="${k}" ${(c.would_return || '') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     </div>
     <label>Notes <span class="hint">Who introduced you, what you talked about, referrals</span><textarea id="ct-notes" rows="4" maxlength="8000">${esc(c.notes || '')}</textarea></label>
@@ -1602,7 +1611,7 @@ function ctEditor(c){
 function contactsBody(){
   if (!Array.isArray(db.contacts)) return '<div class="empty">Contacts isn’t set up yet. An admin needs to run 68-contacts.sql in Supabase.</div>';
   if (ui.ctEdit) return ctEditor(ui.ctEdit === 'new' ? null : ctById(ui.ctEdit));
-  const f = ui.ct || (ui.ct = { f: 'open', kind: '', mine: false, q: '' }), sem = ctSem();
+  const f = ui.ct || (ui.ct = { f: 'open', kind: '', mine: false, q: '' }), sem = ctPlanSem();
   const again = db.contacts.filter(c => c.would_return === 'yes' && c.semester !== sem && !CT_OPEN.includes(c.status));
   const match = c => (f.f === 'all' || (f.f === 'open' ? CT_OPEN.includes(c.status) : c.status === f.f)) && (!f.kind || c.kind === f.kind) && (!f.mine || c.owner === session);
   const list = db.contacts.filter(match).sort((a, b) => (ctFollow(b) ? 1 : 0) - (ctFollow(a) ? 1 : 0) || CT_OPEN.indexOf(b.status) - CT_OPEN.indexOf(a.status));
@@ -4360,7 +4369,7 @@ function processBody(){
       ${role('Officers', 'Anyone planning an event', ['Create the event and fill out its scheduling request: website details, dates, location, layout, guests, A/V, and the RSVP timing they’d like.', 'Plan ahead: 3 months for case competitions, 2 months for career fairs, 6 weeks for guest speakers, 3 weeks for workshops and everything else.', 'Send it on, change it if needed while it’s being confirmed with UVU, and fix it if it’s sent back.', 'Wait to promote anything until it’s published (a scheduler can put up a coming-soon page).'])}
       ${role('Branch presidents and vice presidents', 'For their branch’s officers', ['Review their officers’ events: approve them, edit and approve them, or send them back with notes.', 'Vice presidents can also approve a workshop or social sign-off after 36 business hours, when the scheduler isn’t a president.'])}
       ${role('Event schedulers', 'Chosen by admins; tagged in the <a href="#officer/directory">Officer directory</a>', ['Confirm events with UVU and mark them confirmed, or send them back with notes.', 'Finalize confirmed events: the date, times, location, and RSVP timing, then send them for sign-off.', 'Turn on coming-soon pages.'])}
-      ${role('Presidents', 'The final check and the semester plan', ['Set how many of each kind of event to hold each semester (Contacts → the plan), with the vice presidents.', 'Sign off on the final details before anything is published: every president for big events, one president (not the scheduler) for workshops and socials.', 'Request changes by editing fields directly, with a reason for each.'])}
+      ${role('Presidents', 'The final check and the semester plan', ['Set how many of each kind of event to hold next semester, a semester ahead (Contacts → the plan), with the vice presidents.', 'Sign off on the final details before anything is published: every president for big events, one president (not the scheduler) for workshops and socials.', 'Request changes by editing fields directly, with a reason for each.'])}
       ${role('Communications', 'Outreach', ['Reach out to industry professionals, firms, and faculty, claiming each contact in Contacts first.', 'Follow up once after a week, and hand confirmed guests to operations the way they like to be reached.', 'Send thank-yous after events and ask if they’d come back.'])}
       ${role('Operations', 'Guests, once they agree', ['Settle the date with confirmed guests, then start the event from their contact.', 'Handle the logistics for speakers, office visits, and career fairs.'])}
       ${role('Admins', 'Site settings', ['Choose who the event schedulers are.', 'Set officers’ positions and branches, which decide who reviews what.', 'Edit the officer application questions and the planning checklists.'])}
@@ -4380,8 +4389,8 @@ function processBody(){
   if (tab === 'speakers') body = `
     <p style="margin:0">How the club lines up guest speakers, workshop leaders, judges, and firms, from the semester plan to the thank-you. Everything is tracked in <a href="#officer/contacts" data-act="otab" data-tab="contacts">Contacts</a>: industry professionals, firms, and faculty.</p>
     <section class="panel stack flow" style="gap:0;padding:18px" aria-label="Outreach steps">
-      ${step('1', 'Leadership sets the semester plan', 'At the start of the semester, the presidents and vice presidents decide <b>how many</b> of each kind of event to hold (like 4 guest speakers and 2 workshops) and share it with officers. Not topics or months: that keeps the pool of people to ask as wide as possible. As spots fill, look at who’s confirmed to decide who to ask next.', 'start')}
-      ${arrow()}${step('2', 'Communications reaches out', '<b>Claim the contact first</b> (add them to Contacts or click Claim it), so no one else emails them too. The first message covers who the WFA is, who our members are (the numbers on the <a href="#partners">Partner with us</a> page), the kinds of events that might fit, and rough months. No exact dates yet. Click <b>Reached out today</b> after.')}
+      ${step('1', 'Leadership sets the semester plan', 'A semester ahead (planning next semester while this one is going), the presidents and vice presidents decide <b>how many</b> of each kind of event to hold (like 4 guest speakers and 2 workshops) and share it with officers. Professionals’ calendars fill up months out, and every event still needs its scheduling lead time after someone agrees. Not topics or months: that keeps the pool of people to ask as wide as possible. As spots fill, look at who’s confirmed to decide who to ask next.', 'start')}
+      ${arrow()}${step('2', 'Communications reaches out', '<b>Claim the contact first</b> (add them to Contacts or click Claim it), so no one else emails them too. The first message covers who the WFA is, who our members are (the numbers on the <a href="#partners">Partner with us</a> page), the kinds of events that might fit, and rough months. No exact dates yet. Start as soon as the plan is set, months before the events. Click <b>Reached out today</b> after.')}
       ${arrow()}${ask('Did they reply within a week?', step('', 'Keep talking', 'Mark them <b>Interested</b> and note what fits.'), step('', 'Follow up once', 'Contacts flags it after a week. After two weeks with no reply, mark them <b>No response</b>. They can be asked again another semester.'), 'Yes', 'No')}
       ${arrow()}${step('3', 'They agree: hand off to operations', 'Mark them <b>Confirmed</b> and pick what they’re confirmed for (it counts toward the plan). Communications introduces them to an operations officer <b>the way they prefer to be reached</b> (it’s on their contact) and sends the external guest form from Get started with an event.')}
       ${arrow()}${step('4', 'Operations sets the date', 'Narrow their months and times down to a date with them, then click <b>Start the event</b>: it opens a new event with them already filled in as the guest. From there it’s the usual scheduling: guest speakers need <b>6 weeks’</b> notice.')}
@@ -6886,7 +6895,8 @@ document.addEventListener('click', async ev => {
     case 'ct-claim': await act(async () => must(await sb.from('contacts').update({ owner: t.dataset.v === 'me' ? session : '', updated_at: new Date().toISOString() }).eq('id', id)), t.dataset.v === 'me' ? 'It’s yours' : 'Released'); break;
     case 'ct-touch': { const c = ctById(id);
       await act(async () => must(await sb.from('contacts').update({ last_contacted: todayIso(), status: c.status === 'prospect' ? 'contacted' : c.status, owner: c.owner || session, updated_at: new Date().toISOString() }).eq('id', id)), 'Noted. If there’s no reply in a week, it’ll remind you to follow up.'); break; }
-    case 'ct-again': { const c = ctById(id), ev = evById(c.event_id), sem = ctSem();
+    case 'ct-sem': ui.ctSem = id; ui.ctPlanEdit = false; render(); break;
+    case 'ct-again': { const c = ctById(id), ev = evById(c.event_id), sem = ctPlanSem();
       const note = `${c.semester || 'Before'}: ${c.confirmed_cat ? catName(c.confirmed_cat) : CT_STATUS[c.status][0]}${ev ? ' (' + ev.title + ')' : ''}. Asked again for ${sem}.`;
       await act(async () => must(await sb.from('contacts').update({ status: 'prospect', semester: sem, event_id: null, planned_date: null, confirmed_cat: '', notes: ((c.notes ? c.notes + '\n' : '') + note).slice(0, 8000), updated_at: new Date().toISOString() }).eq('id', id)), 'Added to ' + (sem || 'this semester')); break; }
     case 'ct-del': await act(async () => must(await sb.from('contacts').delete().eq('id', id)), 'Contact deleted'); break;
@@ -7947,7 +7957,7 @@ async function handleSubmit(f, v, err){
   }
 
   if (f.id === 'f-ct-plan'){
-    const sem = ctSem(); if (!sem) return err('ctp-err', 'Set the current semester first (Admin → Leaderboard seasons).');
+    const sem = ctPlanSem(); if (!sem) return err('ctp-err', 'Set the current semester first (Admin → Leaderboard seasons).');
     const rows = CT_CATS.map(k => ({ semester: sem, cat: k, target: Math.max(0, Math.min(50, parseInt(v('ctp-' + k)) || 0)) }));
     await act(async () => { must(await sb.from('outreach_plan').upsert(rows)); await logChange('Set the ' + sem + ' event plan'); ui.ctPlanEdit = false; }, 'Plan saved');
     return;
