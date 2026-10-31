@@ -651,7 +651,7 @@ function buildTitle(tier, branch){
 // Officer tools, in groups (the menu shows the headings; the tab row puts a divider between groups).
 const OFFICER_GROUPS = [
   ['To do', [['approvals','Approvals'],['questions','Questions'],['tasks','Tasks']]],
-  ['Planning events', [['events','Events'],['scheduling','Scheduling'],['contacts','Contacts'],['plan','Get started with an event'],['process','How scheduling works'],['availability','Availability']]],
+  ['Planning events', [['events','Events'],['scheduling','Scheduling'],['contacts','Contacts'],['eventplan','Semester plan'],['plan','Get started with an event'],['process','How scheduling works'],['availability','Availability']]],
   ['At the event', [['checkin','Check-in & attendance'],['qr','QR codes'],['surveys','Event surveys']]],
   ['Communications', [['announcements','Announcements'],['email','Email builder'],['forms','Survey builder'],['recaps','Recaps']]],
   ['People & data', [['members','Members'],['directory','Officer directory'],['resumes','Resume book'],...(DUES_ENABLED ? [['dues','Dues']] : []),['stats','Statistics'],['results','Survey results']]]
@@ -1695,7 +1695,7 @@ function contactsBody(){
       <span class="muted">Industry professionals, firms, and faculty: who’s handling each one and where it stands. Only officers can see this page. <button class="btn ghost small" data-act="proc-tab" data-id="speakers">How outreach works</button></span>
       <button class="btn" data-act="ct-new">+ Add a contact</button>
     </div>
-    ${ctPlanPanel()}
+    <div class="row" style="gap:8px;align-items:center"><span class="hint">How many of each event leadership wants, the spots filled so far, and who’s being considered:</span><button class="btn ghost small" data-act="otab" data-tab="eventplan">Semester plan →</button></div>
     ${again.length ? `<section class="stack" style="gap:8px"><div class="section-head"><h2>Worth asking again</h2><span class="muted">Said they’d come back</span></div>
       <div class="stack" style="gap:6px">${again.map(c => `<div class="panel row" style="justify-content:space-between;align-items:center;gap:8px;padding:10px 14px">
         <span><strong>${esc(c.name || c.org)}</strong>${c.org && c.name ? ' · ' + esc(c.org) : ''} <span class="hint">${esc(c.semester || '')}${c.confirmed_cat ? ': ' + catName(c.confirmed_cat) : ''}</span></span>
@@ -4449,7 +4449,7 @@ function processBody(){
       ${role('Officers', 'Anyone planning an event', ['Create the event and fill out its scheduling request: website details, dates, location, layout, guests, A/V, and the RSVP timing they’d like.', 'Plan ahead: 3 months for case competitions, 2 months for career fairs, 6 weeks for guest speakers, 3 weeks for workshops and everything else.', 'Send it on, change it if needed while it’s being confirmed with UVU, and fix it if it’s sent back.', 'Wait to promote anything until it’s published (a scheduler can put up a coming-soon page).'])}
       ${role('Branch presidents and vice presidents', 'For their branch’s officers', ['Review their officers’ events: approve them, edit and approve them, or send them back with notes.', 'Vice presidents can also approve a workshop or social sign-off after 36 business hours, when the scheduler isn’t a president.'])}
       ${role('Event schedulers', 'Chosen by admins; tagged in the <a href="#officer/directory">Officer directory</a>', ['Confirm events with UVU and mark them confirmed, or send them back with notes.', 'Finalize confirmed events: the date, times, location, and RSVP timing, then send them for sign-off.', 'Turn on coming-soon pages.'])}
-      ${role('Presidents', 'The final check and the semester plan', ['Set how many of each kind of event to hold next semester, a semester ahead (Contacts → the plan), with the vice presidents.', 'Sign off on the final details before anything is published: every president for big events, one president (not the scheduler) for workshops and socials.', 'Request changes by editing fields directly, with a reason for each.'])}
+      ${role('Presidents', 'The final check and the semester plan', ['Set how many of each kind of event to hold next semester, a semester ahead (Officer tools → Semester plan), with the vice presidents.', 'Sign off on the final details before anything is published: every president for big events, one president (not the scheduler) for workshops and socials.', 'Request changes by editing fields directly, with a reason for each.'])}
       ${role('Communications', 'Outreach', ['Reach out to industry professionals, firms, and faculty, claiming each contact in Contacts first.', 'Follow up once after a week, and hand confirmed guests to operations the way they like to be reached.', 'Send thank-yous after events and ask if they’d come back.'])}
       ${role('Operations', 'Guests, once they agree', ['Settle the date with confirmed guests, then start the event from their contact.', 'Handle the logistics for speakers, office visits, and career fairs.'])}
       ${role('Admins', 'Site settings', ['Choose who the event schedulers are.', 'Set officers’ positions and branches, which decide who reviews what.', 'Edit the officer application questions and the planning checklists.'])}
@@ -4469,7 +4469,7 @@ function processBody(){
   if (tab === 'speakers') body = `
     <p style="margin:0">How the club lines up guest speakers, workshop leaders, judges, and firms, from the semester plan to the thank-you. Everything is tracked in <a href="#officer/contacts" data-act="otab" data-tab="contacts">Contacts</a>: industry professionals, firms, and faculty.</p>
     <section class="panel stack flow" style="gap:0;padding:18px" aria-label="Outreach steps">
-      ${step('1', 'Leadership sets the semester plan', 'A semester ahead (planning next semester while this one is going), the presidents and vice presidents decide <b>how many</b> of each kind of event to hold (like 4 guest speakers and 2 workshops) and share it with officers. Professionals’ calendars fill up months out, and every event still needs its scheduling lead time after someone agrees. Not topics or months: that keeps the pool of people to ask as wide as possible. As spots fill, look at who’s confirmed to decide who to ask next.', 'start')}
+      ${step('1', 'Leadership sets the semester plan', 'A semester ahead (planning next semester while this one is going), the presidents and vice presidents decide <b>how many</b> of each kind of event to hold (like 4 guest speakers and 2 workshops) and share it with officers. Professionals’ calendars fill up months out, and every event still needs its scheduling lead time after someone agrees. Not topics or months: that keeps the pool of people to ask as wide as possible. The <a href="#officer/eventplan" data-act="otab" data-tab="eventplan">Semester plan</a> page shows each spot, who’s filling it, and who’s being considered.', 'start')}
       ${arrow()}${step('2', 'Communications reaches out', '<b>Claim the contact first</b> (add them to Contacts or click Claim it), so no one else emails them too. The first message covers who the WFA is, who our members are (the numbers on the <a href="#partners">Partner with us</a> page), the kinds of events that might fit, and rough months. No exact dates yet. Start as soon as the plan is set, months before the events. Click <b>Reached out today</b> after.')}
       ${arrow()}${ask('Did they reply within a week?', step('', 'Keep talking', 'Mark them <b>Interested</b> and note what fits.'), step('', 'Follow up once', 'Contacts flags it after a week. After two weeks with no reply, mark them <b>No response</b>. They can be asked again another semester.'), 'Yes', 'No')}
       ${arrow()}${step('3', 'They agree: hand off to operations', 'Mark them <b>Confirmed</b> and pick what they’re confirmed for (it counts toward the plan). Communications introduces them to an operations officer <b>the way they prefer to be reached</b> (it’s on their contact) and sends the external guest form from Get started with an event.')}
@@ -5008,6 +5008,9 @@ function viewOfficer(){
   else if (T === 'scheduling'){ body = schedulingBody(); }
   else if (T === 'process'){ body = processBody(); }
   else if (T === 'contacts'){ body = contactsBody(); setTimeout(ctSearch); }
+  else if (T === 'eventplan'){ body = Array.isArray(db.contacts) ? `<div class="stack" style="gap:16px">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:10px"><span class="muted">The events the club is planning, and who’s confirmed or being considered for each. Click a name to open their contact.</span>
+        <button class="btn ghost small" data-act="otab" data-tab="contacts">Contacts →</button></div>${ctPlanPanel()}</div>` : contactsBody(); }
   else if (T === 'directory'){ body = `<p class="hint" style="margin:0 0 4px">Every officer, including honorary officers (who aren’t on the public <a href="#officers">Officers page</a>). Only officers can see this page and who the event schedulers are.</p>${officerSections(staffEmails(), true)}`; }
 
   else if (T === 'surveys'){ body = surveysBody(); }
@@ -6971,7 +6974,7 @@ document.addEventListener('click', async ev => {
     case 'ct-filter': ui.ct.f = t.dataset.f; render(); break;
     case 'ct-kind': ui.ct.kind = id || ''; render(); break;
     case 'ct-new': ui.ctEdit = 'new'; ui.ctWhen = new Set(); render(); window.scrollTo(0, 0); break;
-    case 'ct-edit': { const c = ctById(id); ui.ctEdit = id; ui.ctWhen = new Set(((c && c.availability) || {}).slots || []); render(); window.scrollTo(0, 0); break; }
+    case 'ct-edit': { const c = ctById(id); ui.officerTab = 'contacts'; ui.ctEdit = id; ui.ctWhen = new Set(((c && c.availability) || {}).slots || []); render(); window.scrollTo(0, 0); break; }
     case 'ct-cancel': ui.ctEdit = null; ui.ctWhen = null; ui.dirtyForm = false; render(); break;
     case 'ct-plan-edit': ui.ctPlanEdit = true; render(); break;
     case 'ct-plan-cancel': ui.ctPlanEdit = false; render(); break;
