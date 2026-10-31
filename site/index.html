@@ -523,6 +523,9 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
 .pe-label{flex:none;min-width:8.5rem;font-size:.92rem}
 .pe-desc{flex:1;min-width:0;padding:3px 8px;font-size:.9rem;border:1px solid transparent;background:transparent}
 .pe-desc:hover,.pe-desc:focus{border-color:var(--line);background:var(--surface,#fff)}
+.pe-del{flex:none;background:none;border:1px solid transparent;border-radius:6px;color:var(--danger);font-size:.8rem;font-weight:700;padding:2px 6px;cursor:pointer}
+.pe-del:hover{border-color:var(--danger)}
+.pe-del.armed{background:var(--danger);color:#fff}
 .pe-desc-text{flex:1;font-size:.9rem}
 .pe-who{padding-left:calc(8.5rem + 10px)}
 @media (max-width:600px){.pe-top{flex-wrap:wrap}.pe-label{min-width:0}.pe-who{padding-left:0}}
@@ -1608,7 +1611,8 @@ function ctPlanPanel(){
     return `<div class="pe-row">
       <div class="pe-top"><strong class="pe-label">${esc(peLabel(pe))}</strong>
         ${lead ? `<input class="pe-desc" data-pe="${pe.id}" maxlength="2000" value="${esc(pe.descr || '')}" placeholder="Add a description" aria-label="Description for ${esc(peLabel(pe))}">` : `<span class="pe-desc-text">${pe.descr ? esc(pe.descr) : '<span class="hint">No description</span>'}</span>`}
-        <span class="tag ${f.length ? 'ok' : ''}">${f.length ? 'Filled' : 'Open'}</span></div>
+        <span class="tag ${f.length ? 'ok' : ''}">${f.length ? 'Filled' : 'Open'}</span>
+        ${lead ? `<button type="button" class="pe-del ${ui.armed === 'pe-' + pe.id ? 'armed' : ''}" data-act="pe-del" data-id="${pe.id}" data-key="pe-${pe.id}" title="Delete ${esc(peLabel(pe))}">${ui.armed === 'pe-' + pe.id ? 'Click again to delete' : 'Delete'}</button>` : ''}</div>
       ${conf || maybe ? `<div class="hint pe-who">${conf ? '<strong>Confirmed:</strong> ' + conf : ''}${conf && maybe ? ' &nbsp;·&nbsp; ' : ''}${maybe ? '<strong>Considering:</strong> ' + maybe : ''}</div>` : ''}
     </div>`; };
   const loose = k => (db.contacts || []).filter(c => c.semester === sem && !c.plan_id && CT_OPEN.includes(c.status) && (c.types || []).includes(k));
@@ -7010,7 +7014,8 @@ document.addEventListener('click', async ev => {
       await act(async () => { must(await sb.from('planned_events').insert({ semester: sem, cat, sort })); await logChange('Added a ' + ctCat(cat).toLowerCase() + ' to the ' + sem + ' plan'); }, 'Added to the plan. Give it a description.'); break; }
     case 'pe-save': { const ta = document.querySelector(`[data-pe="${id}"]`);
       await act(async () => must(await sb.from('planned_events').update({ descr: ta.value.trim() }).eq('id', id)), 'Description saved'); break; }
-    case 'pe-del': { const pe = peById(id); await act(async () => { must(await sb.from('planned_events').delete().eq('id', id)); await logChange('Removed ' + peLabel(pe) + ' from the ' + pe.semester + ' plan'); }, 'Removed from the plan'); break; }
+    case 'pe-del': { const pe = peById(id), had = (db.contacts || []).filter(c => c.plan_id === id).length;   // attached contacts go back to "not assigned yet"
+      await act(async () => { must(await sb.from('planned_events').delete().eq('id', id)); await logChange('Deleted ' + peLabel(pe) + ' from the ' + pe.semester + ' plan'); }, 'Deleted ' + peLabel(pe) + (had ? `. ${had} contact${had === 1 ? ' is' : 's are'} back under “Not assigned yet.”` : '')); break; }
     case 'ct-claim': { const c = ctById(id), cur = ctOwners(c), join = t.dataset.v === 'me', list = join ? [...cur, session] : cur.filter(e => e !== session);
       await act(async () => must(await sb.from('contacts').update({ ...ctOwnRow(list), updated_at: new Date().toISOString() }).eq('id', id)), join ? (cur.length ? 'You’re on it too' : 'It’s yours') : cur.length > 1 ? 'You’re off it' : 'Released'); break; }
     case 'ct-touch': { const c = ctById(id);
