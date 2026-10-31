@@ -8105,7 +8105,7 @@ async function handleSubmit(f, v, err){
         if (want < cur.length){
           const free = [...cur].reverse().filter(pe => !(db.contacts || []).some(c => c.plan_id === pe.id)), drop = free.slice(0, cur.length - want);
           if (drop.length < cur.length - want) stuck.push(ctCat(k));
-          if (drop.length) must(await sb.from('planned_events').delete().in('id', drop.map(pe => pe.id)));
+          for (const pe of drop) must(await sb.from('planned_events').delete().eq('id', pe.id));
         }
       }
       await logChange('Set the ' + sem + ' event plan'); ui.ctPlanEdit = false;
