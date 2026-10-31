@@ -647,7 +647,7 @@ const OFFICER_GROUPS = [
   ['To do', [['approvals','Approvals'],['questions','Questions'],['tasks','Tasks']]],
   ['Planning events', [['events','Events'],['scheduling','Scheduling'],['contacts','Contacts'],['plan','Get started with an event'],['process','How scheduling works'],['availability','Availability']]],
   ['At the event', [['checkin','Check-in & attendance'],['qr','QR codes'],['surveys','Event surveys']]],
-  ['Communications', [['announcements','Announcements'],['email','Email builder'],['forms','Survey builder'],['recaps','Recaps'],['archive','Archive']]],
+  ['Communications', [['announcements','Announcements'],['email','Email builder'],['forms','Survey builder'],['recaps','Recaps']]],
   ['People & data', [['members','Members'],['directory','Officer directory'],['resumes','Resume book'],...(DUES_ENABLED ? [['dues','Dues']] : []),['stats','Statistics'],['results','Survey results']]]
 ];
 const OFFICER_TABS = OFFICER_GROUPS.flatMap(([, tabs]) => tabs);
@@ -971,7 +971,7 @@ function setPendingRsvp(id){ ui._pending = id; try { id ? sessionStorage.setItem
 function renderChrome(route){
   const links = [['home','Home'],['calendar','Calendar'],['recaps','Recaps'],['officers','Officers'],['about','About'],['resources','Resources'],['partners','Partner with us'],['contact','Contact']];
   if (appsOpen()) links.push(['apply','Apply']);
-  const mem = [['archive','Archive'],['leaderboard','Leaderboard'],['availability','Availability'],['messages','Messages'],['account','My account']];
+  const mem = [['leaderboard','Leaderboard'],['availability','Availability'],['messages','Messages'],['account','My account']];
   const staff = [];
   if (can('officer')) staff.push(['officer','Officer tools']);
   if (can('admin')) staff.push(['admin','Admin']);
@@ -1515,8 +1515,9 @@ const FACULTY_WAYS = ['Guest lecture or workshop', 'Speaking on a panel', 'Judgi
 const CT_WAYS = { professional: PRO_WAYS, firm: FIRM_WAYS, faculty: FACULTY_WAYS };
 // Labels that change with the kind: [professional, firm, faculty]
 const CT_LABELS = {
-  name: ['Name', 'Contact person <span class="hint">The person you talk to there</span>', 'Name'],
-  title: ['Job title', 'Their title', 'Title'],
+  name: ['Name', 'Their name', 'Name'],
+  title: ['Job title', 'Their job title', 'Title'],
+  reach: ['Best way to reach them', 'Best way to reach your contact', 'Best way to reach them'],
   titlePh: ['e.g. Vice President, Analyst', 'e.g. Campus Recruiter', 'e.g. Associate Professor, Lecturer'],
   org: ['Where they work <span class="hint">(optional)</span>', 'Firm or organization', 'Department'],
   orgPh: ['e.g. Goldman Sachs', 'e.g. Zions Bank', 'e.g. Finance and Economics'],
@@ -1573,7 +1574,7 @@ function ctCard(c){
   const st = CT_STATUS[c.status] || CT_STATUS.prospect, fu = ctFollow(c), ev = c.event_id && evById(c.event_id), reach = reachLine(c);
   return `<article class="panel stack" style="gap:8px" data-find="${esc([c.name, c.org, c.title, c.email, (c.areas || []).join(' '), (c.ways || []).join(' '), c.courses, CT_KINDS[c.kind], c.notes].join(' ').toLowerCase())}">
     <div class="row" style="justify-content:space-between;align-items:start;gap:8px">
-      <div>${c.kind === 'firm' ? `<strong>${esc(c.org || c.name || 'No name')}</strong>${c.org && c.name ? ' · ' + esc(c.name) + (c.title ? ', ' + esc(c.title) : '') : ''}`
+      <div>${c.kind === 'firm' ? `<strong>${esc(c.org || c.name || 'No name')}</strong>${c.org && c.name ? ' · Contact: ' + esc(c.name) + (c.title ? ', ' + esc(c.title) : '') : ''}`
         : `<strong>${esc(c.name || c.org || 'No name')}</strong>${c.title ? ', ' + esc(c.title) : ''}${c.org && c.name ? ' · <strong>' + esc(c.org) + '</strong>' : ''}`}
         <div class="row" style="gap:4px;margin-top:4px"><span class="tag">${CT_KINDS[c.kind] || 'Contact'}</span><span class="tag ${st[1]}">${st[0]}</span>${fu === 'follow' ? '<span class="tag warn">Time to follow up</span>' : fu === 'quiet' ? '<span class="tag bad">No reply in 2 weeks</span>' : ''}${c.would_return === 'yes' ? '<span class="tag ok">Would come back</span>' : ''}${c.source === 'partner_form' ? '<span class="tag pinned">Reached out to us</span>' : ''}</div></div>
       <span class="hint" style="text-align:right">${c.owner ? 'Handled by <strong>' + esc(c.owner === session ? 'you' : userName(c.owner)) + '</strong>' : '<span class="warn-text">Not claimed yet</span>'}</span>
@@ -1605,13 +1606,14 @@ function ctEditor(c){
     <h3 style="margin:0">${isNew ? 'Add a contact' : 'Edit ' + esc(c.name || c.org)}</h3>
     <fieldset class="stack" style="gap:6px"><legend>Who they are</legend><div class="row" style="gap:18px">${Object.entries(CT_KINDS).map(([k, l]) => `<label class="check"><input type="radio" name="ct-kind" value="${k}" ${c.kind === k ? 'checked' : ''}> ${l}</label>`).join('')}</div></fieldset>
     <div class="stack ct-who ${c.kind === 'firm' ? 'firm-first' : ''}" style="gap:12px">
+      <strong data-ctkind="firm" ${c.kind === 'firm' ? '' : 'hidden'} style="margin-top:4px">Your contact at the firm <span class="hint" style="font-weight:400">The person you talk to there, and how to reach them</span></strong>
       <div class="grid2"><label><span data-kl="name">${ctL('name', c.kind)}</span><input id="ct-name" maxlength="120" value="${esc(c.name || '')}"></label>
         <label><span data-kl="title">${ctL('title', c.kind)}</span><input id="ct-title" maxlength="160" list="ct-titles" value="${esc(c.title || '')}" data-kl="titlePh" placeholder="${ctL('titlePh', c.kind)}"></label></div>
       <label class="ct-org"><span data-kl="org">${ctL('org', c.kind)}</span><input id="ct-org" maxlength="160" value="${esc(c.org || '')}" data-kl="orgPh" placeholder="${ctL('orgPh', c.kind)}"></label>
     </div>
     <datalist id="ct-titles">${(c.kind === 'faculty' ? ['Professor', 'Associate Professor', 'Assistant Professor', 'Lecturer', 'Adjunct Professor', 'Department Chair', 'Dean'] : []).map(t => `<option value="${t}">`).join('')}</datalist>
     <label data-ctkind="faculty" ${c.kind === 'faculty' ? '' : 'hidden'}>Courses they teach <span class="hint">(optional; good for announcing events in class)</span><input id="ct-courses" maxlength="500" value="${esc(c.courses || '')}" placeholder="e.g. FIN 3400 Corporate Finance, FIN 4500 Investments"></label>
-    ${reachFieldset('ct', prefKey(c.preferred), c, false)}
+    ${reachFieldset('ct', prefKey(c.preferred), c, false).replace('<legend>Best way to reach them</legend>', `<legend data-kl="reach">${ctL('reach', c.kind)}</legend>`)}
     <div class="grid2">
       <label>Where it stands<select id="ct-status">${Object.entries(CT_STATUS).map(([k, [l]]) => `<option value="${k}" ${c.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label>Handled by <span class="hint">Claim it before reaching out, so no one else emails them too</span><select id="ct-owner"><option value="">No one yet</option>${staffEmails().map(e => `<option value="${esc(e)}" ${c.owner === e ? 'selected' : ''}>${esc(userName(e))}</option>`).join('')}</select></label>
@@ -1811,7 +1813,7 @@ function viewResources(){
   const links = db.resources || [];
   return `<div class="view">
     <section class="page-head"><div class="eyebrow">Resources</div><h1 class="page">Where we start our research</h1>
-      <p class="muted">Free sources officers use to prepare workshops and stock pitches. Members can find past slides and recordings in the <a href="#archive">Archive</a>.</p></section>
+      <p class="muted">Free sources officers use to prepare workshops and stock pitches. Members can find past slides and recordings on the <a href="#recaps">Recaps</a> page.</p></section>
     <div class="res-grid">${links.map(r => `<div class="res"><h3>${esc(r.title)}</h3>${r.descr ? `<p class="muted">${esc(r.descr)}</p>` : ''}
       <div class="row" style="margin-top:auto;justify-content:space-between"><a class="go" href="${esc(r.url)}" target="_blank" rel="noopener">Open site ↗</a>${can('officer') ? delBtn('res-' + r.id, 'Delete', 'del-resource', r.id) : ''}</div></div>`).join('') || '<div class="empty">No resources yet.</div>'}</div>
     ${can('officer') ? `<form class="panel stack" id="f-resource" novalidate style="max-width:40rem">
@@ -1832,38 +1834,40 @@ function viewResources(){
   </div>`;
 }
 
+// Recaps: write-ups and photos from past events (anyone), with each event's slides, recordings, notes, and templates
+// underneath (members only). Materials not tied to a recap are listed at the bottom. (This used to be two pages.)
+function matLinks(items){
+  return `<div class="row" style="gap:6px">${items.map(a => a.url ? `<a class="btn ghost small" href="${esc(a.url)}" target="_blank" rel="noopener">${ARCH[a.type]}: ${esc(a.title)} ↗</a>`
+    : `<span class="hint">${ARCH[a.type]}: ${esc(a.title)} (link coming soon)</span>`).join('')}</div>`;
+}
 function viewRecaps(){
-  const list = [...db.recaps].sort((a,b) => b.date.localeCompare(a.date));
+  const list = [...db.recaps].sort((a,b) => b.date.localeCompare(a.date)), mem = can('member');
+  const withRecap = new Set(list.map(r => r.eventId).filter(Boolean));
+  const mats = id => db.archive.filter(a => a.eventId === id);
+  const loose = [...db.archive].filter(a => !a.eventId || !withRecap.has(a.eventId)).sort((a,b) => b.date.localeCompare(a.date)).filter(a => (ui.archType || 'all') === 'all' || a.type === ui.archType);
   return `<div class="view">
     <section class="page-head"><div class="eyebrow">Event recaps</div><h1 class="page">What you missed</h1>
-      <p class="muted">Notes and photos from past events.</p></section>
-    ${can('officer') ? '<div><a class="btn small" href="#officer" data-tab="recaps">+ Write a recap</a></div>' : ''}
-    <div class="stack" style="gap:32px">${list.map(r => { const e = evById(r.eventId); return `<article class="recap">
+      <p class="muted">Notes and photos from past events${mem ? ', with the slides, recordings, and templates' : '. Members can also open the slides, recordings, and templates.'}${mem ? '' : ' <a href="#signin">Sign in</a>'}</p></section>
+    ${can('officer') ? '<div class="row" style="gap:8px"><a class="btn small" href="#officer" data-tab="recaps">+ Write a recap</a><a class="btn ghost small" href="#officer" data-tab="recaps">+ Add slides or a recording</a></div>' : ''}
+    <div class="stack" style="gap:32px">${list.map(r => { const e = evById(r.eventId), m = r.eventId ? mats(r.eventId) : []; return `<article class="recap">
       <div class="ann-meta">${e ? `<span class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</span><span>${esc(e.title)} · ${fmtDay(e.date)}</span>` : ''}<span>· by ${esc(userName(r.author))}</span></div>
       <h2>${esc(r.title)}</h2>
       <p class="ann-body">${esc(r.body)}</p>
       ${r.photos.length ? `<div class="photos">${r.photos.map((p,i) => `<button data-act="photo" data-id="${r.id}" data-i="${i}" aria-label="View photo ${i+1}"><img src="${esc(p)}" alt="Photo ${i+1} from ${esc(r.title)}" loading="lazy"></button>`).join('')}</div>` : ''}
+      ${mem && m.length ? `<div class="stack" style="gap:6px"><span class="hint" style="font-weight:700">From this event</span>${matLinks(m)}</div>` : ''}
     </article>`; }).join('') || '<div class="empty">No recaps yet.</div>'}</div>
+    ${mem && db.archive.some(a => !a.eventId || !withRecap.has(a.eventId)) ? `<section class="stack" style="gap:12px">
+      <div class="section-head"><h2>Slides, recordings, and templates</h2><span class="muted">Members only</span></div>
+      <div class="filters">${[['all','All'], ...Object.entries(ARCH)].map(([k,l]) => `<button class="chip" aria-pressed="${(ui.archType || 'all')===k}" data-act="arch-type" data-type="${k}">${l}</button>`).join('')}</div>
+      <div>${loose.map(a => { const e = evById(a.eventId); return `<div class="arch">
+        <div><span class="tag ok">${ARCH[a.type]}</span><div class="ev-sub" style="margin-top:6px">${fmtDay(a.date)}</div></div>
+        <div><div class="ev-title">${esc(a.title)}</div>${e ? `<div class="ev-sub">From: ${esc(e.title)}</div>` : ''}${a.desc ? `<p class="muted">${esc(a.desc)}</p>` : ''}</div>
+        <div>${a.url ? `<a class="btn ghost small" href="${esc(a.url)}" target="_blank" rel="noopener">Open ↗</a>` : '<span class="hint">Link not added yet</span>'}</div>
+      </div>`; }).join('') || '<div class="empty">Nothing of that type yet.</div>'}</div></section>` : ''}
   </div>`;
 }
 
 /* ---------- Member views ---------- */
-function viewArchive(){
-  if (!can('member')) return gate('member');
-  const items = [...db.archive].sort((a,b) => b.date.localeCompare(a.date)).filter(a => ui.archType === 'all' || a.type === ui.archType);
-  return `<div class="view">
-    <section class="page-head"><div class="eyebrow">Members only</div><h1 class="page">Workshop archive</h1>
-      <p class="muted">Slides, recordings, and templates from past events.</p></section>
-    <div class="filters">${[['all','All'], ...Object.entries(ARCH)].map(([k,l]) => `<button class="chip" aria-pressed="${ui.archType===k}" data-act="arch-type" data-type="${k}">${l}</button>`).join('')}</div>
-    <div>${items.map(a => { const e = evById(a.eventId); return `<div class="arch">
-      <div><span class="tag ok">${ARCH[a.type]}</span><div class="ev-sub" style="margin-top:6px">${fmtDay(a.date)}</div></div>
-      <div><div class="ev-title">${esc(a.title)}</div>${e ? `<div class="ev-sub">From: ${esc(e.title)}</div>` : ''}${a.desc ? `<p class="muted">${esc(a.desc)}</p>` : ''}</div>
-      <div>${a.url ? `<a class="btn ghost small" href="${esc(a.url)}" target="_blank" rel="noopener">Open ↗</a>` : '<span class="hint">Link not added yet</span>'}</div>
-    </div>`; }).join('') || '<div class="empty">Nothing here yet.</div>'}</div>
-    ${can('officer') ? '<div><a class="btn small" href="#officer" data-tab="archive">+ Add to archive</a></div>' : ''}
-  </div>`;
-}
-
 // This season's prize, at the top of the Leaderboard page. Admins edit it right there (settings.lb_prize).
 function lbPrizeBox(){
   const text = db.settings.lbPrize;
@@ -2402,7 +2406,7 @@ function viewAuth(mode){
   const side = `<div class="auth-side">
       <div class="stack"><div class="eyebrow">${mode==='signin'?'Members':'New members'}</div>
       <h2>${mode==='signin'?'Welcome back':'Join the WFA'}</h2>
-      <p>${mode==='signin'?'Sign in to RSVP, check in at events, and see the archive and leaderboard.':'Membership is open to every UVU student. Your account lets you RSVP, check in for points, and see member-only content.'}</p></div>
+      <p>${mode==='signin'?'Sign in to RSVP, check in at events, and see past slides, recordings, and the leaderboard.':'Membership is open to every UVU student. Your account lets you RSVP, check in for points, and see member-only content.'}</p></div>
       <p style="opacity:.8;font-size:.9rem">Officer and admin access comes from the club’s access lists. If your email is on one, you’ll see those tools as soon as you sign in.</p>
     </div>`;
   const notice = (ui.notice ? `<div class="notice">${esc(ui.notice)}</div>` : '') +
@@ -2761,7 +2765,7 @@ const BRANCH_DEFAULTS = {
     items: 'Book rooms and handle event logistics, food, and supplies\nCoordinate with faculty and UVU staff, including the club’s faculty advisor and the department\nRun check-in at events and keep track of attendance and member data\nManage the budget, reimbursements, and UVU club paperwork\nHandle logistics for speakers, office visits, and career fairs',
     fit: 'Great fit if you’re organized, reliable, and like being the person who keeps everything on track.' },
   financial_applications: { summary: 'Runs the club’s technical, hands-on finance programming.',
-    items: 'Teach or help run workshops in Excel, financial modeling, valuation, and Bloomberg\nHelp prepare and run the club’s case competitions\nPrepare members for case and stock pitch competitions\nBuild templates and guides for the archive\nHelp members prep for technical interviews',
+    items: 'Teach or help run workshops in Excel, financial modeling, valuation, and Bloomberg\nHelp prepare and run the club’s case competitions\nPrepare members for case and stock pitch competitions\nBuild templates and guides for members (shared on the Recaps page)\nHelp members prep for technical interviews',
     fit: 'Great fit if you enjoy the technical side of finance and like teaching what you learn.' }
 };
 function branchInfo(k){ return { ...BRANCH_DEFAULTS[k], ...((db.app.info || {})[k] || {}) }; }
@@ -3269,7 +3273,7 @@ const MAIL_TEMPLATES = {
   reminder: ['Event reminder', 'Reminder: {event} on {date}', 'Hi everyone,\n\nQuick reminder that {event} is on {date} at {time} in {location}.\n\nDetails and RSVP: {link}\n\nSee you there,\nWolverine Finance Association'],
   dues: ['Dues reminder', '{semester} WFA dues reminder', 'Hi,\n\nOur records show your {semester} dues (${dues}) are still outstanding. You can pay any officer at the next meeting.\n\nThanks,\nWolverine Finance Association'],
   survey: ['Survey reminder', 'How was {event}? Quick survey', 'Hi {first},\n\nThanks for coming to {event} on {date}! We’d love to hear what you thought. The survey is one star rating and an optional comment, it earns you ' + SURVEY_POINTS + ' leaderboard points, and you can answer anonymously.\n\nFill it out in My account: ' + location.origin + '/#account\n\nIt closes 7 days after the event.\n\nThanks,\nWolverine Finance Association'],
-  missed: ['We missed you', 'Sorry we missed you at {event}', 'Hi,\n\nWe missed you at {event} on {date}. Slides and notes are in the members archive on our site.\n\nHope to see you at the next one,\nWolverine Finance Association']
+  missed: ['We missed you', 'Sorry we missed you at {event}', 'Hi,\n\nWe missed you at {event} on {date}. Slides and notes are on the Recaps page on our site.\n\nHope to see you at the next one,\nWolverine Finance Association']
 };
 function mailAudiences(){
   const ev = sortedEvents();
@@ -3511,7 +3515,7 @@ const PLAN_DEFAULTS = {
     ['Scheduler confirms it with UVU', -18], ['Scheduler finalizes the details; the presidents sign off and it’s published', -14],
     ['Make a flyer and post it on social media (only once it’s published)', -10], ['Prepare slides, templates, and practice files', -7], ['Email members about the event', -7],
     ['Order snacks', -5], ['Test the software and lab access', -3], ['Set the check-in code', -1], ['Send a reminder email', -1],
-    ['Upload the materials to the archive', 2], ['Post a recap with photos', 2]],
+    ['Post a recap with photos', 2], ['Add the slides or recording to Recaps', 2]],
   case_competition: [
     ['Set the format, team size, and a few possible dates', -98], ['Fill out the scheduling request and send it on', -91],
     ['Scheduler confirms it with UVU', -84], ['Coordinate with the faculty advisor and department', -77], ['Recruit judges', -63],
@@ -3638,7 +3642,7 @@ const PUBLISH_TIERS = ['president', 'vice_president', 'advisor'], APPROVER_TIERS
 function canPublish(){ if (myRole === 'admin') return true; const p = db.profiles[session] || {}; return myRole === 'officer' && (PUBLISH_TIERS.includes(p.tier) || !!p.canPublish); }
 function isApprover(){ if (myRole === 'admin') return true; return myRole === 'officer' && APPROVER_TIERS.includes((db.profiles[session] || {}).tier); }
 const CHANGE_TABLES = { announcement: 'announcements', recap: 'recaps', archive: 'archive', resource: 'resources', career: 'careers' };
-const CHANGE_NAMES = { event: 'Event', announcement: 'Announcement', recap: 'Recap', archive: 'Archive item', resource: 'Resource', career: 'Career', timeline: 'Recruiting timeline', about: 'About page', settings: 'Semester settings' };
+const CHANGE_NAMES = { event: 'Event', announcement: 'Announcement', recap: 'Recap', archive: 'Slides or recording', resource: 'Resource', career: 'Career', timeline: 'Recruiting timeline', about: 'About page', settings: 'Semester settings' };
 // Makes one member-visible change. Runs for publishers right away, and for approvers when they approve a submission.
 async function applyChange(kind, action, target, p){
   p = p || {};
@@ -3711,7 +3715,7 @@ function approvalsBody(){
         : c.status === 'pending' && c.author === session ? `<div>${delBtn('wd-' + c.id, 'Withdraw', 'ap-withdraw', c.id)}</div>` : ''}
     </article>`;
   return `<div class="stack" style="gap:24px">
-    <p class="muted" style="margin:0">${canPublish() ? 'You can publish changes directly.' : 'Changes members can see (events, announcements, recaps, the archive, resources, careers, the timeline, and the About page) go here for a president or vice president to approve.'}</p>
+    <p class="muted" style="margin:0">${canPublish() ? 'You can publish changes directly.' : 'Changes members can see (events, announcements, recaps and their slides, resources, careers, the timeline, and the About page) go here for a president or vice president to approve.'}</p>
     ${isApprover() ? `<section class="stack" style="gap:12px"><div class="section-head"><h2>Waiting for approval</h2><span class="muted">${pending.length}</span></div>
       ${pending.map(c => card(c, true)).join('') || '<div class="empty">Nothing waiting. Nice.</div>'}</section>` : ''}
     <section class="stack" style="gap:12px"><div class="section-head"><h2>Your submissions</h2></div>
@@ -5112,13 +5116,12 @@ function viewOfficer(){
       <section class="stack">
         <div class="section-head"><h3>Published</h3><span class="muted">${db.recaps.length}</span></div>
         <div>${[...db.recaps].sort((a,b) => b.date.localeCompare(a.date)).map(r => `<div class="list-row"><div><div class="ev-title">${esc(r.title)}</div><div class="ev-sub">${fmtDay(r.date)} · ${r.photos.length} photo${r.photos.length===1?'':'s'}</div></div>${delBtn('rc-'+r.id,'Delete','del-recap',r.id)}</div>`).join('') || '<div class="empty">No recaps yet.</div>'}</div>
-      </section></div>`;
-  }
-
-  else if (T === 'archive'){
-    body = `<div class="split">
+      </section></div>
+    <div class="section-head" style="margin-top:28px"><h2>Slides, recordings, and templates</h2></div>
+    <p class="hint" style="margin-top:-6px">Members see these under the event’s recap on the <a href="#recaps">Recaps</a> page (or at the bottom, if the event has no recap).</p>
+    <div class="split">
       <form class="panel stack" id="f-arch">
-        <h3>Add to the archive</h3>
+        <h3>Add slides or a recording</h3>
         <label>Title<input id="ar-title" required placeholder="e.g. Three-statement model: slides"></label>
         <div class="grid2">
           <label>Type<select id="ar-type">${Object.entries(ARCH).map(([k,l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
@@ -5130,7 +5133,7 @@ function viewOfficer(){
         <div class="row"><button class="btn" type="submit">Add</button></div>
       </form>
       <section class="stack">
-        <div class="section-head"><h3>In the archive</h3><span class="muted">${db.archive.length}</span></div>
+        <div class="section-head"><h3>Added</h3><span class="muted">${db.archive.length}</span></div>
         <div>${[...db.archive].sort((a,b) => b.date.localeCompare(a.date)).map(a => `<div class="list-row"><div><div class="ev-title">${esc(a.title)}</div><div class="ev-sub">${ARCH[a.type]} · ${a.url ? 'linked' : 'no link'}</div></div>${delBtn('ar-'+a.id,'Remove','del-arch',a.id)}</div>`).join('') || '<div class="empty">Empty.</div>'}</div>
       </section></div>`;
   }
@@ -5378,7 +5381,7 @@ function viewAdmin(){
         <label>Custom title <span class="hint">Optional, like “Treasurer” or “Firm Outreach Officer.” Shown on the Officers page and around the site instead of the automatic title. Rank and branch still decide permissions and chats.</span>
           <input id="of-ctitle" maxlength="60" value="${esc(p.customTitle || '')}" placeholder="Leave blank to use: ${esc(buildTitle(p.tier || 'officer', p.branch || ''))}"></label>
         <label class="check"><input type="checkbox" id="of-publish" ${p.canPublish ? 'checked' : ''}> Can publish updates without approval</label>
-        <span class="hint" style="margin-top:-8px">Announcements, recaps, the archive, resources, careers, the recruiting timeline, the About page, officer meetings, and edits to events that are already published. Presidents, vice presidents, faculty advisors, and admins always can; other officers’ changes go to the Approvals inbox unless this is checked. New events always go through Scheduling.</span>
+        <span class="hint" style="margin-top:-8px">Announcements, recaps and their slides, resources, careers, the recruiting timeline, the About page, officer meetings, and edits to events that are already published. Presidents, vice presidents, faculty advisors, and admins always can; other officers’ changes go to the Approvals inbox unless this is checked. New events always go through Scheduling.</span>
         <label class="check"><input type="checkbox" id="of-sched" ${ed && (db.schedulers || []).includes(ed) ? 'checked' : ''}> Event scheduler</label>
         <span class="hint" style="margin-top:-8px">Gets every event’s scheduling request, submits it to UVU, and publishes events once UVU approves them. Only officers can see who’s a scheduler.</span>
         <fieldset class="pwset">
@@ -5428,7 +5431,7 @@ function viewAdmin(){
       <div class="table-wrap"><table><thead><tr><th>When</th><th>Who</th><th>What changed</th></tr></thead><tbody>
         ${rows.map(l => `<tr><td style="white-space:nowrap">${fmtStamp(l.ts)}</td><td style="white-space:nowrap">${esc(userName(l.who))}</td><td>${esc(l.text)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No entries yet.</td></tr>'}
       </tbody></table></div>
-      <p class="hint">Records changes made by officers and admins: events, announcements, recaps, archive, tasks, resources, careers, check-in codes, profiles, and access lists.</p>
+      <p class="hint">Records changes made by officers and admins: events, announcements, recaps and slides, tasks, resources, careers, check-in codes, profiles, and access lists.</p>
     </section>`;
   }
   return `<div class="view">
@@ -6478,7 +6481,7 @@ async function showCode(id, fresh){
 
 /* ---------- Render ---------- */
 const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources,
-  archive:viewArchive, leaderboard:viewLeaderboard, account:viewAccount, apply:viewApply, availability:viewAvailability,
+  archive:viewRecaps, leaderboard:viewLeaderboard, account:viewAccount, apply:viewApply, availability:viewAvailability,
   contact:viewContact, partners:viewPartners, event:viewEvent, survey:viewSurvey, messages:viewMessages, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
 function route(){ const r = location.hash.slice(1).split('/')[0]; return VIEWS[r] ? r : 'home'; }
 // Officer and admin tabs live in the address (#officer/stats, #admin/applications), so a refresh,
@@ -7033,7 +7036,7 @@ document.addEventListener('click', async ev => {
       const photos = x.photos.map(u => u.split('/recap-photos/')[1]).filter(Boolean);
       await doOrPropose('recap', 'delete', id, { photos, row: { title: x.title } }, 'Delete recap “' + x.title + '”', 'Recap deleted'); break; }
     case 'del-arch': { const x = db.archive.find(n => n.id === id);
-      await doOrPropose('archive', 'delete', id, { row: { title: x.title } }, 'Remove “' + x.title + '” from the archive', 'Removed from the archive'); break; }
+      await doOrPropose('archive', 'delete', id, { row: { title: x.title } }, 'Remove “' + x.title + '” from Recaps', 'Removed'); break; }
     case 'toggle-task': { const x = db.tasks.find(n => n.id === id);
       await act(async () => { must(await sb.from('tasks').update({ done: !x.done }).eq('id', id)); await logChange((x.done ? 'Reopened' : 'Completed') + ' task “' + x.title + '”'); }); break; }
     case 'del-task': { const x = db.tasks.find(n => n.id === id);
@@ -7837,7 +7840,7 @@ async function handleSubmit(f, v, err){
     if (!a.title) return err('ar-err', 'Add a title.');
     if (a.url && !/^https?:\/\//i.test(a.url)) return err('ar-err', 'Links must start with https://');
     const e = evById(a.event_id); a.date = e ? e.date : todayIso();
-    await doOrPropose('archive', 'add', '', { row: a }, 'Add “' + a.title + '” to the archive', 'Added to the archive');
+    await doOrPropose('archive', 'add', '', { row: a }, 'Add “' + a.title + '” to Recaps', 'Added. Members see it on the Recaps page.');
   }
 
   if (f.dataset.survey){
