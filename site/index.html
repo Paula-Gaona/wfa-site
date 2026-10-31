@@ -523,6 +523,8 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
 .pe-label{flex:none;min-width:8.5rem;font-size:.92rem}
 .pe-desc{flex:1;min-width:0;padding:3px 8px;font-size:.9rem;border:1px solid transparent;background:transparent}
 .pe-desc:hover,.pe-desc:focus{border-color:var(--line);background:var(--surface,#fff)}
+.pe-un{background:none;border:0;padding:0 4px;margin-left:2px;color:var(--muted,#888);font-size:1rem;line-height:1;cursor:pointer;border-radius:4px}
+.pe-un:hover{color:#fff;background:var(--danger)}
 .pe-del{flex:none;background:none;border:1px solid transparent;border-radius:6px;color:var(--danger);font-size:.8rem;font-weight:700;padding:2px 6px;cursor:pointer}
 .pe-del:hover{border-color:var(--danger)}
 .pe-del.armed{background:var(--danger);color:#fff}
@@ -1605,9 +1607,10 @@ function ctPlanPanel(){
   const kinds = CT_CATS.filter(k => evs.some(e => e.cat === k) || (db.contacts || []).some(c => c.semester === sem && !c.plan_id && CT_OPEN.includes(c.status) && (c.types || []).includes(k)));
   const who = c => `<button type="button" class="linkish" data-act="ct-edit" data-id="${c.id}">${esc(c.kind === 'firm' ? c.org || c.name : c.name || c.org)}</button>`;
   const row = pe => { const f = peFill(pe), m = peMaybe(pe);
+    const un = c => `<button type="button" class="pe-un" data-act="ct-unassign" data-id="${c.id}" title="Take ${esc(c.name || c.org)} off ${esc(peLabel(pe))}" aria-label="Unassign ${esc(c.name || c.org)}">×</button>`;
     const conf = f.map(c => { const ev = c.event_id && evById(c.event_id), date = (ev && ev.date) || c.planned_date;
-      return `${who(c)}${[date && fmtDay(date), ev && esc(ev.title), ctOwners(c).length && 'with ' + esc(ctOwnText(ctOwners(c)))].filter(Boolean).map(x => ' · ' + x).join('')}`; }).join('; ');
-    const maybe = m.map(c => `${who(c)} <span class="hint">(${CT_STATUS[c.status][0].toLowerCase()})</span>`).join(', ');
+      return `${who(c)}${un(c)}${[date && fmtDay(date), ev && esc(ev.title), ctOwners(c).length && 'with ' + esc(ctOwnText(ctOwners(c)))].filter(Boolean).map(x => ' · ' + x).join('')}`; }).join('; ');
+    const maybe = m.map(c => `${who(c)} <span class="hint">(${CT_STATUS[c.status][0].toLowerCase()})</span>${un(c)}`).join(', ');
     return `<div class="pe-row">
       <div class="pe-top"><strong class="pe-label">${esc(peLabel(pe))}</strong>
         ${lead ? `<input class="pe-desc" data-pe="${pe.id}" maxlength="2000" value="${esc(pe.descr || '')}" placeholder="Add a description" aria-label="Description for ${esc(peLabel(pe))}">` : `<span class="pe-desc-text">${pe.descr ? esc(pe.descr) : '<span class="hint">No description</span>'}</span>`}
@@ -7014,6 +7017,8 @@ document.addEventListener('click', async ev => {
       await act(async () => { must(await sb.from('planned_events').insert({ semester: sem, cat, sort })); await logChange('Added a ' + ctCat(cat).toLowerCase() + ' to the ' + sem + ' plan'); }, 'Added to the plan. Give it a description.'); break; }
     case 'pe-save': { const ta = document.querySelector(`[data-pe="${id}"]`);
       await act(async () => must(await sb.from('planned_events').update({ descr: ta.value.trim() }).eq('id', id)), 'Description saved'); break; }
+    case 'ct-unassign': { const c = ctById(id), pe = peById(c.plan_id);
+      await act(async () => must(await sb.from('contacts').update({ plan_id: null, updated_at: new Date().toISOString() }).eq('id', id)), `${c.name || c.org} is off ${pe ? peLabel(pe) : 'that event'}. They’re under “Not assigned yet.”`); break; }
     case 'pe-del': { const pe = peById(id), had = (db.contacts || []).filter(c => c.plan_id === id).length;   // attached contacts go back to "not assigned yet"
       await act(async () => { must(await sb.from('planned_events').delete().eq('id', id)); await logChange('Deleted ' + peLabel(pe) + ' from the ' + pe.semester + ' plan'); }, 'Deleted ' + peLabel(pe) + (had ? `. ${had} contact${had === 1 ? ' is' : 's are'} back under “Not assigned yet.”` : '')); break; }
     case 'ct-claim': { const c = ctById(id), cur = ctOwners(c), join = t.dataset.v === 'me', list = join ? [...cur, session] : cur.filter(e => e !== session);
