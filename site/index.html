@@ -6061,7 +6061,7 @@ async function qrPng(text, style, px){
   if (bg){ g.fillStyle = bg; g.fillRect(0, 0, size, size); }
   const box = (x, y, w, r) => { if (g.roundRect) g.roundRect(x, y, w, w, r); else g.rect(x, y, w, w); };
   const eye = (r, c) => (r < 7 && c < 7) || (r < 7 && c >= n - 7) || (r >= n - 7 && c < 7);
-  const round = style === 'plain' ? 0 : 1;
+  const round = style === 'plain' || ui.qrShape === 'square' ? 0 : 1;   // square: classic blocky modules that touch
   g.fillStyle = ink; g.beginPath();
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++)
     if (!eye(r, c) && qr.isDark(r, c)) box((c + pad) * cell + cell * .05 * round, (r + pad) * cell + cell * .05 * round, cell * (1 - .1 * round), cell * .32 * round);
@@ -6082,6 +6082,12 @@ async function qrPng(text, style, px){
   return cv.toDataURL('image/png');
 }
 function qrFileName(name){ return (String(name).replace(/[^\w]+/g, '-').replace(/^-|-$/g, '') || 'wfa') + '-qr.png'; }
+// Rounded dots, or the classic blocky squares. Works with every color and background.
+function qrShapePicker(act, extra){
+  const cur = ui.qrShape === 'square' ? 'square' : 'round';
+  return `<div class="row" style="gap:6px" role="group" aria-label="QR shape"><span class="hint" style="font-weight:700;align-self:center">Shape</span>${[['round', 'Rounded dots'], ['square', 'Square blocks']].map(([k, l]) =>
+    `<button type="button" class="btn ${k === cur ? '' : 'ghost '}small" data-act="${act}" data-shape="${k}" ${extra || ''} aria-pressed="${k === cur}">${l}</button>`).join('')}</div>`;
+}
 function qrStylePicker(cur, act, extra){
   const btns = list => list.map(([k, [l]]) => `<button type="button" class="btn ${k === cur ? '' : 'ghost '}small" data-act="${act}" data-style="${k}" ${extra || ''} aria-pressed="${k === cur}">${l.replace(/, transparent| \(for dark backgrounds\)/g, '')}</button>`).join('');
   const all = Object.entries(QR_STYLES), clear = all.filter(([, x]) => !x[1]), solid = all.filter(([, x]) => x[1]);
@@ -6102,6 +6108,7 @@ async function showQr(id, kind, style){
     <div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="eyebrow">${kind === 'checkin' ? 'Check-in QR' : 'Event QR code'}</div></div>
     <h2>${esc(e.title)}</h2>
     ${qrStylePicker(style, 'qr-style', `data-id="${id}" data-kind="${kind}"`)}
+    ${qrShapePicker('qr-shape', `data-id="${id}" data-kind="${kind}"`)}
     ${qrPreview(png, style)}
     <p class="hint" style="word-break:break-all;text-align:center">${esc(url)}</p>
     <p class="muted">${kind === 'checkin' ? `Scanning this opens the event with the code <strong>${esc(e.code)}</strong> already filled in. People still need to sign in and tap Check in, and it only works on the day of the event. If you make a new code, make a new QR too.` : 'Scanning this opens the event page, where people can RSVP (signing in first if needed). Good for flyers, slides, and social posts.'} Need another size? Use Officer tools → QR codes.</p>
@@ -6121,7 +6128,7 @@ function qrToolBody(){
       </select></label>
       <label>Link or text<input id="qr-text" value="${esc(q.text)}" placeholder="https://…"></label>
       <label>File name<input id="qr-name" value="${esc(q.name)}"></label>
-      <div class="stack" style="gap:6px"><span class="label-text">Style</span>${qrStylePicker(q.style, 'qr-tool-style')}</div>
+      <div class="stack" style="gap:6px"><span class="label-text">Style</span>${qrStylePicker(q.style, 'qr-tool-style')}${qrShapePicker('qr-tool-shape')}</div>
       <label>Size<select id="qr-size">${Object.entries(QR_SIZES).map(([k, l]) => `<option value="${k}" ${+k === +q.size ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <p class="hint" style="margin:0">Transparent PNGs drop onto flyers, slides, and posts without a white box. Use the white-background or black-and-white style if a QR has to go on a busy photo. Always test-scan before printing.</p>
     </div>
@@ -6451,6 +6458,8 @@ document.addEventListener('click', async ev => {
     case 'qr': await showQr(id, t.dataset.kind); break;
     case 'qr-style': await showQr(id, t.dataset.kind, t.dataset.style); break;
     case 'qr-tool-style': ui.qr.style = t.dataset.style; render(); drawQrTool(); break;
+    case 'qr-shape': ui.qrShape = t.dataset.shape; await showQr(id, t.dataset.kind, ui.qrStyle); break;
+    case 'qr-tool-shape': ui.qrShape = t.dataset.shape; render(); drawQrTool(); break;
     case 'copy-link': await copyText(eventLink(id), (evById(id) || {}).draft ? 'Link copied. It works once the event is published' : 'Event link copied'); break;
     case 'copy-text': await copyText(t.dataset.text, 'Link copied'); break;
     case 'close': closeModal(); break;
