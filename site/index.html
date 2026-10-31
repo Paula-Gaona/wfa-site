@@ -513,6 +513,10 @@ footer{border-top:1px solid var(--line);padding-block:24px;font-size:.88rem;colo
   --header-bg:#0E2A19; --ticker-bg:#07160D; --ticker-fg:#E9DDBB; --gold:#D4AF5A; --gold-soft:#E9DDBB}}
 .site-head{background:var(--header-bg)!important;border-bottom:1px solid var(--gold)}
 .seal{width:3.4rem;height:3.4rem;flex:none}
+.qr-custom{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px dashed var(--line);border-radius:8px}
+.qr-custom.on{border:2px solid var(--brand,#1F4D2E)}
+.qr-custom input[type=color]{width:2rem;height:1.6rem;padding:0;border:1px solid var(--line);border-radius:4px;background:none;cursor:pointer}
+.qr-custom .qr-hex{width:6.2rem;padding:4px 6px;font-family:ui-monospace,monospace;font-size:.85rem}
 .brand-name{font-family:"Cinzel",Georgia,serif;font-weight:600;letter-spacing:.14em;font-size:1.05rem;text-transform:uppercase}
 .brand-name small{font-family:"Cinzel",Georgia,serif;color:var(--gold-soft);letter-spacing:.34em;font-size:.6rem;opacity:1;margin-top:4px}
 .nav a[aria-current="page"],.nav .menu-btn.current{border-bottom-color:var(--gold)}
@@ -6011,32 +6015,39 @@ function takeReturnTo(){
 }
 
 /* ---------- QR codes ---------- */
-// Green and gold, with rounded dots and gold corner "eyes". Transparent PNGs unless the style has a background.
+// Green and gold, with rounded dots and gold corner "eyes". The color, background, shape, and seal are picked separately.
 const QR_GOLD = '#B8923A';
-// [label, background (null = transparent), dots, corner squares, 'seal' = WFA seal in the middle]
-const QR_STYLES = {
-  brand:     ['Green & gold, transparent', null, '#1F4D2E', QR_GOLD],
-  seal:      ['Green & gold with the seal, transparent', null, '#1F4D2E', QR_GOLD, 'seal'],
-  green:     ['Green, transparent', null, '#1F4D2E', '#1F4D2E'],
-  black:     ['Black, transparent', null, '#000000', '#000000'],
-  blackseal: ['Black with the seal, transparent', null, '#000000', '#000000', 'seal'],
-  ongreen:   ['Cream & gold on crest green', '#123622', '#F4EFE1', QR_GOLD],
-  white:     ['Green & gold on white', '#ffffff', '#1F4D2E', QR_GOLD],
-  dark:      ['White & gold, transparent (for dark backgrounds)', null, '#ffffff', QR_GOLD],
-  whiteonly: ['All white, transparent (for dark backgrounds)', null, '#ffffff', '#ffffff'],
-  whiteonlyseal: ['All white with the seal, transparent (for dark backgrounds)', null, '#ffffff', '#ffffff', 'seal'],
-  cream:     ['Cream & gold, transparent (for dark backgrounds)', null, '#F4EFE1', QR_GOLD],
-  creamseal: ['Cream & gold with the seal, transparent (for dark backgrounds)', null, '#F4EFE1', QR_GOLD, 'seal'],
-  gold:      ['Gold, transparent', null, QR_GOLD, QR_GOLD],
-  goldseal:  ['Gold with the seal, transparent', null, QR_GOLD, QR_GOLD, 'seal'],
-  ongreenseal: ['Cream & gold on crest green, with the seal', '#123622', '#F4EFE1', QR_GOLD, 'seal'],
-  oncream:   ['Green & gold on cream', '#F4EFE1', '#1F4D2E', QR_GOLD],
-  oncreamseal: ['Green & gold on cream, with the seal', '#F4EFE1', '#1F4D2E', QR_GOLD, 'seal'],
-  whiteseal: ['Green & gold on white, with the seal', '#ffffff', '#1F4D2E', QR_GOLD, 'seal'],
-  plain:     ['Black on white (most reliable)', '#ffffff', '#000000', '#000000']
-};
+// A main color for the dots and an optional accent color for the three corner squares. A style is "main:accent"
+// ("green:gold"); "same" means no accent. [label, color, tone]: a color only goes on a background of the opposite
+// tone (gold goes on anything).
+const QR_INKS = { green: ['Green', '#1F4D2E', 'dark'], black: ['Black', '#000000', 'dark'], gold: ['Gold', QR_GOLD, 'mid'], white: ['White', '#ffffff', 'light'], cream: ['Cream', '#F4EFE1', 'light'] };
+const QR_LEGACY = { brand: 'green:gold', green: 'green:same', black: 'black:same', gold: 'gold:same', dark: 'white:gold', whiteonly: 'white:same', cream: 'cream:gold' };
+// Either can also be a custom hex code ("#7a1f3d:gold").
+const QR_HEX = /^#[0-9a-f]{6}$/i;
+const qrParts = style => { const [i, e] = String(QR_LEGACY[style] || style || '').split(':'); return [QR_INKS[i] || QR_HEX.test(i) ? i : 'green', QR_INKS[e] || QR_HEX.test(e) ? e : 'same']; };
+const qrHexOf = k => QR_INKS[k] ? QR_INKS[k][1] : k;
+function qrLum(hex){ const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4); return .2126 * c[0] + .7152 * c[1] + .0722 * c[2]; }
+const qrContrast = (a, b) => { const x = qrLum(a), y = qrLum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+// "#7a1f3d" or "7A1F3D" or "#abc" as "#7a1f3d"; null if it isn't a color.
+function qrHexIn(v){ v = String(v || '').trim().replace(/^#/, ''); if (/^[0-9a-f]{3}$/i.test(v)) v = v.replace(/./g, c => c + c); return /^[0-9a-f]{6}$/i.test(v) ? '#' + v.toLowerCase() : null; }
+// [label, color (null = transparent), tone]
+const QR_BGS = { none: ['Transparent', null, ''], white: ['White', '#ffffff', 'light'], cream: ['Cream', '#F4EFE1', 'light'], green: ['Crest green', '#123622', 'dark'] };
+// Styles saved before the background was its own switch.
+const QR_OLD = { ongreen: ['cream', 'green'], white: ['brand', 'white'], oncream: ['brand', 'cream'], plain: ['black', 'white'] };
+// The background can also be a custom hex code. [label, color, tone] for any of them.
+const qrBg = () => QR_BGS[ui.qrBg] || QR_HEX.test(ui.qrBg || '') ? ui.qrBg : 'none';
+const qrBgInfo = (k = qrBg()) => QR_BGS[k] || ['custom', k, qrLum(k) > .35 ? 'light' : 'dark'];
+const qrFits = (ink, bg) => { if (QR_HEX.test(ink)) return true;   // custom colors are up to you (with a warning when it's hard to see)
+  const t = qrBgInfo(bg)[2], s = (QR_INKS[ink] || [])[2]; return ink === 'same' || !t || s === 'mid' || s !== t; };
+function qrStyleOf(style){
+  if (QR_OLD[style]){ ui.qrBg = QR_OLD[style][1]; style = QR_OLD[style][0]; }
+  let [ink, eye] = qrParts(style);
+  if (!qrFits(ink, qrBg())) ink = qrBgInfo()[2] === 'dark' ? 'cream' : 'green';
+  if (!qrFits(eye, qrBg()) || qrHexOf(eye) === qrHexOf(ink)) eye = ink === 'gold' ? 'same' : 'gold';
+  return ink + ':' + eye;
+}
 // Light dots with no background only show up on a dark preview.
-const qrNeedsDark = style => { const [, bg, ink] = QR_STYLES[style] || []; return !bg && ['#ffffff', '#F4EFE1'].includes(ink); };
+const qrNeedsDark = style => qrBg() === 'none' && qrLum(qrHexOf(qrParts(style)[0])) > .5;
 let qrSeal = null;
 function loadQrSeal(){ return qrSeal || (qrSeal = new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => { qrSeal = null; rej(new Error('The seal image didn’t load.')); }; i.src = '/crest-seal.png'; })); }
 const QR_SIZES = { 600: 'Small (600 px)', 1200: 'Medium (1200 px)', 2400: 'Print (2400 px)' };
@@ -6055,13 +6066,13 @@ async function qrPng(text, style, px){
   const qrcode = await loadQr();
   const qr = qrcode(0, 'H'); qr.addData(text); qr.make();   // high error correction keeps the rounded style easy to scan
   const n = qr.getModuleCount(), pad = 4, cell = Math.max(4, Math.floor((+px || 1200) / (n + pad * 2))), size = (n + pad * 2) * cell;
-  const [, bg, ink, gold, logo] = QR_STYLES[style] || QR_STYLES.brand;
+  const [i, e] = qrParts(style), ink = qrHexOf(i), gold = e === 'same' ? ink : qrHexOf(e), bg = qrBgInfo()[1], logo = ui.qrSeal === 'seal';
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
   const g = cv.getContext('2d');
   if (bg){ g.fillStyle = bg; g.fillRect(0, 0, size, size); }
   const box = (x, y, w, r) => { if (g.roundRect) g.roundRect(x, y, w, w, r); else g.rect(x, y, w, w); };
   const eye = (r, c) => (r < 7 && c < 7) || (r < 7 && c >= n - 7) || (r >= n - 7 && c < 7);
-  const round = style === 'plain' || ui.qrShape === 'square' ? 0 : 1;   // square: classic blocky modules that touch
+  const round = ui.qrShape === 'square' ? 0 : 1;   // square: classic blocky modules that touch
   g.fillStyle = ink; g.beginPath();
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++)
     if (!eye(r, c) && qr.isDark(r, c)) box((c + pad) * cell + cell * .05 * round, (r + pad) * cell + cell * .05 * round, cell * (1 - .1 * round), cell * .32 * round);
@@ -6072,7 +6083,7 @@ async function qrPng(text, style, px){
     g.fillStyle = ink; g.beginPath(); box(x + 2 * cell, y + 2 * cell, 3 * cell, .9 * cell * round); g.fill();
   });
   // The seal in the middle covers about 5% of the code; high error correction makes up for the hidden dots.
-  if (logo === 'seal'){
+  if (logo){
     const img = await loadQrSeal(), d = Math.round(size * 0.22), cx = size / 2, gap = cell * 0.8;
     g.save(); g.beginPath(); g.arc(cx, cx, d / 2 + gap, 0, Math.PI * 2);
     if (bg){ g.fillStyle = bg; g.fill(); } else { g.globalCompositeOperation = 'destination-out'; g.fill(); }
@@ -6082,33 +6093,58 @@ async function qrPng(text, style, px){
   return cv.toDataURL('image/png');
 }
 function qrFileName(name){ return (String(name).replace(/[^\w]+/g, '-').replace(/^-|-$/g, '') || 'wfa') + '-qr.png'; }
-// Rounded dots, or the classic blocky squares. Works with every color and background.
-function qrShapePicker(act, extra){
-  const cur = ui.qrShape === 'square' ? 'square' : 'round';
-  return `<div class="row" style="gap:6px" role="group" aria-label="QR shape"><span class="hint" style="font-weight:700;align-self:center">Shape</span>${[['round', 'Rounded dots'], ['square', 'Square blocks']].map(([k, l]) =>
-    `<button type="button" class="btn ${k === cur ? '' : 'ghost '}small" data-act="${act}" data-shape="${k}" ${extra || ''} aria-pressed="${k === cur}">${l}</button>`).join('')}</div>`;
+// Two-way switches beside the colors: rounded dots or classic blocky squares, and the WFA seal in the middle or not.
+// Both work with every color and background.
+function qrSwitch(label, data, cur, opts, act, extra, more = ''){
+  return `<div class="row" style="gap:6px;align-items:center" role="group" aria-label="QR ${label.toLowerCase()}"><span class="hint" style="font-weight:700;min-width:5.6rem">${label}</span>${opts.map(([k, l]) =>
+    `<button type="button" class="btn ${k === cur ? '' : 'ghost '}small" data-act="${act}" data-${data}="${k}" ${extra || ''} aria-pressed="${k === cur}">${l}</button>`).join('')}${more}</div>`;
 }
+// Custom: a color chart (the browser's color picker) and a box for a hex code. which: main, accent, or bg.
+function qrCustomBox(which, on, act, extra){
+  const hex = QR_HEX.test(on) ? on : '', dflt = { main: '#1F4D2E', accent: '#B8923A', bg: '#F4EFE1' }[which];
+  return `<span class="qr-custom ${hex ? 'on' : ''}"><label class="check" style="gap:6px" title="Pick from a color chart">Custom
+      <input type="color" value="${hex || dflt.toLowerCase()}" data-qrcolor="${which}" data-qract="${act}" ${extra || ''} aria-label="Pick a custom ${which === 'bg' ? 'background' : which} color"></label>
+    <input type="text" class="qr-hex" maxlength="7" placeholder="${dflt}" value="${hex.toUpperCase()}" data-qrcolor="${which}" data-qract="${act}" ${extra || ''} aria-label="Hex code"></span>`;
+}
+const qrShapePicker = (act, extra) => qrSwitch('Shape', 'shape', ui.qrShape === 'square' ? 'square' : 'round', [['round', 'Rounded dots'], ['square', 'Square blocks']], act, extra);
+const qrSealPicker = (act, extra) => qrSwitch('Seal', 'seal', ui.qrSeal === 'seal' ? 'seal' : 'none', [['none', 'No seal'], ['seal', 'Seal in the middle']], act, extra);
+const qrFileTag = style => qrParts(style).filter(x => x !== 'same').join('-') + (qrBg() === 'none' ? '' : '-on-' + qrBg().replace('#', '')) + (ui.qrSeal === 'seal' ? '-seal' : '') + (ui.qrShape === 'square' ? '-square' : '');
 function qrStylePicker(cur, act, extra){
-  const btns = list => list.map(([k, [l]]) => `<button type="button" class="btn ${k === cur ? '' : 'ghost '}small" data-act="${act}" data-style="${k}" ${extra || ''} aria-pressed="${k === cur}">${l.replace(/, transparent| \(for dark backgrounds\)/g, '')}</button>`).join('');
-  const all = Object.entries(QR_STYLES), clear = all.filter(([, x]) => !x[1]), solid = all.filter(([, x]) => x[1]);
-  return `<div class="stack" style="gap:8px" role="group" aria-label="QR style">
-    <div class="stack" style="gap:4px"><span class="hint" style="font-weight:700">Transparent background</span><div class="row" style="gap:6px">${btns(clear)}</div></div>
-    <div class="stack" style="gap:4px"><span class="hint" style="font-weight:700">With a background</span><div class="row" style="gap:6px">${btns(solid)}</div></div></div>`;
+  const bg = qrBg(), [ink, eye] = qrParts(cur), off = k => `disabled title="Doesn’t show up on a ${qrBgInfo(bg)[0].toLowerCase()} background"`;
+  const custom = (which, on) => qrCustomBox(which, on, act, extra);
+  const row = (label, list, on, val, which) => `<div class="row" style="gap:6px;align-items:center" role="group" aria-label="QR ${label.toLowerCase()}"><span class="hint" style="font-weight:700;min-width:5.6rem">${label}</span>${list.map(([k, l]) =>
+    `<button type="button" class="btn ${k === on ? '' : 'ghost '}small" data-act="${act}" data-style="${val(k)}" ${extra || ''} aria-pressed="${k === on}" ${qrFits(k, bg) ? '' : off(k)}>${l}</button>`).join('')}${custom(which, on)}</div>`;
+  const inks = Object.entries(QR_INKS).map(([k, [l]]) => [k, l]);
+  const bgHex = qrBgInfo(bg)[1], low = [ink, eye].filter(k => k !== 'same' && bgHex && (QR_HEX.test(k) || QR_HEX.test(bg)) && qrContrast(qrHexOf(k), bgHex) < 3).length;
+  return row('Main color', inks, ink, k => k + ':' + (k === eye ? 'same' : eye), 'main')
+    + row('Accent color', [['same', 'None'], ...inks.filter(([k]) => k !== ink)], eye, k => ink + ':' + k, 'accent')
+    + (low ? `<span class="hint warn-text">Those colors are hard to tell apart, so the code may not scan. Test-scan it first.</span>` : '');
 }
+// A custom main, accent, or background color from the color chart or a typed hex code: same as clicking a color button.
+async function qrCustomColor(t){
+  const hex = qrHexIn(t.value);
+  if (!hex){ if (t.value.trim()) toast('Enter a hex code like #1F4D2E.'); return; }
+  const tool = t.dataset.qract.startsWith('qr-tool'), [ink, eye] = qrParts(tool ? ui.qr.style : ui.qrStyle);
+  if (t.dataset.qrcolor === 'bg'){ ui.qrBg = hex; if (tool){ ui.qr.style = qrStyleOf(ui.qr.style); render(); drawQrTool(); } else await showQr(t.dataset.id, t.dataset.kind, ui.qrStyle); return; }
+  const style = t.dataset.qrcolor === 'main' ? hex + ':' + (qrHexOf(eye) === hex ? 'same' : eye) : ink + ':' + (qrHexOf(ink) === hex ? 'same' : hex);
+  if (tool){ ui.qr.style = style; render(); drawQrTool(); } else await showQr(t.dataset.id, t.dataset.kind, style);
+}
+document.addEventListener('change', e => { if (e.target.dataset && e.target.dataset.qrcolor) qrCustomColor(e.target); });
+const qrBgPicker = (act, extra) => qrSwitch('Background', 'bg', qrBg(), Object.entries(QR_BGS).map(([k, [l]]) => [k, l]), act, extra, qrCustomBox('bg', qrBg(), act, extra));
 function qrPreview(png, style, name){
   return `<div class="qr-stage ${qrNeedsDark(style) ? 'dark' : ''}"><img src="${png}" alt="QR code" style="width:min(300px,100%);display:block;margin:0 auto"></div>`;
 }
 async function showQr(id, kind, style){
   const e = evById(id); if (!e) return;
-  style = style || ui.qrStyle || 'brand'; ui.qrStyle = style;
+  style = qrStyleOf(style || ui.qrStyle); ui.qrStyle = style;
   const url = eventLink(id, kind === 'checkin' ? e.code : '');
   let png; try { png = await qrPng(url, style, 1200); } catch(err){ return toast(err.message); }
-  const file = qrFileName(e.title + (kind === 'checkin' ? '-check-in' : '') + '-' + style);
+  const file = qrFileName(e.title + (kind === 'checkin' ? '-check-in' : '') + '-' + qrFileTag(style));
   showModal(`<div class="modal-in">
     <div><button class="modal-x" data-act="close" aria-label="Close">×</button><div class="eyebrow">${kind === 'checkin' ? 'Check-in QR' : 'Event QR code'}</div></div>
     <h2>${esc(e.title)}</h2>
-    ${qrStylePicker(style, 'qr-style', `data-id="${id}" data-kind="${kind}"`)}
-    ${qrShapePicker('qr-shape', `data-id="${id}" data-kind="${kind}"`)}
+    <div class="stack" style="gap:6px">${qrStylePicker(style, 'qr-style', `data-id="${id}" data-kind="${kind}"`)}${qrBgPicker('qr-bg', `data-id="${id}" data-kind="${kind}"`)}
+    ${qrShapePicker('qr-shape', `data-id="${id}" data-kind="${kind}"`)}${qrSealPicker('qr-seal', `data-id="${id}" data-kind="${kind}"`)}</div>
     ${qrPreview(png, style)}
     <p class="hint" style="word-break:break-all;text-align:center">${esc(url)}</p>
     <p class="muted">${kind === 'checkin' ? `Scanning this opens the event with the code <strong>${esc(e.code)}</strong> already filled in. People still need to sign in and tap Check in, and it only works on the day of the event. If you make a new code, make a new QR too.` : 'Scanning this opens the event page, where people can RSVP (signing in first if needed). Good for flyers, slides, and social posts.'} Need another size? Use Officer tools → QR codes.</p>
@@ -6118,6 +6154,7 @@ async function showQr(id, kind, style){
 // Officer tools → QR codes: a QR for any link, with quick picks for event pages and main site pages.
 function qrToolBody(){
   const q = ui.qr || (ui.qr = { text: location.origin + '/', style: 'brand', size: 1200, name: 'WFA website' });
+  q.style = qrStyleOf(q.style);
   const pages = [['', 'Home page'], ['#signup', 'Join (sign up)'], ['#calendar', 'Events calendar'], ['#apply', 'Officer applications'], ['#partners', 'Partner with us'], ['#contact', 'Contact / questions'], ['#leaderboard', 'Leaderboard']];
   const evs = upcoming().filter(e => !e.draft && e.cat !== 'officer_meeting');
   return `<div class="grid2" style="gap:24px;align-items:start">
@@ -6128,9 +6165,9 @@ function qrToolBody(){
       </select></label>
       <label>Link or text<input id="qr-text" value="${esc(q.text)}" placeholder="https://…"></label>
       <label>File name<input id="qr-name" value="${esc(q.name)}"></label>
-      <div class="stack" style="gap:6px"><span class="label-text">Style</span>${qrStylePicker(q.style, 'qr-tool-style')}${qrShapePicker('qr-tool-shape')}</div>
+      <div class="stack" style="gap:6px"><span class="label-text">Style</span>${qrStylePicker(q.style, 'qr-tool-style')}${qrBgPicker('qr-tool-bg')}${qrShapePicker('qr-tool-shape')}${qrSealPicker('qr-tool-seal')}</div>
       <label>Size<select id="qr-size">${Object.entries(QR_SIZES).map(([k, l]) => `<option value="${k}" ${+k === +q.size ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-      <p class="hint" style="margin:0">Transparent PNGs drop onto flyers, slides, and posts without a white box. Use the white-background or black-and-white style if a QR has to go on a busy photo. Always test-scan before printing.</p>
+      <p class="hint" style="margin:0">Transparent PNGs drop onto flyers, slides, and posts without a white box. On a busy photo, use a White background (black on white scans best). Always test-scan before printing.</p>
     </div>
     <div class="stack" style="gap:10px" id="qr-out"><div class="empty">Making the QR code…</div></div>
   </div>`;
@@ -6142,7 +6179,7 @@ async function drawQrTool(){
   let png; try { png = await qrPng(text, q.style, q.size); } catch(err){ out.innerHTML = `<div class="err">${esc(err.message)}</div>`; return; }
   if (document.getElementById('qr-out') !== out) return;
   out.innerHTML = `${qrPreview(png, q.style)}<p class="hint" style="word-break:break-all;text-align:center;margin:0">${esc(text)}</p>
-    <div class="row" style="gap:8px;justify-content:center"><a class="btn" href="${png}" download="${esc(qrFileName(q.name + '-' + q.style))}">Download PNG</a><button class="btn ghost" data-act="copy-text" data-text="${esc(text)}">Copy link</button></div>`;
+    <div class="row" style="gap:8px;justify-content:center"><a class="btn" href="${png}" download="${esc(qrFileName(q.name + '-' + qrFileTag(q.style)))}">Download PNG</a><button class="btn ghost" data-act="copy-text" data-text="${esc(text)}">Copy link</button></div>`;
 }
 async function copyText(text, ok){
   try { await navigator.clipboard.writeText(text); toast(ok || 'Copied'); }
@@ -6460,6 +6497,10 @@ document.addEventListener('click', async ev => {
     case 'qr-tool-style': ui.qr.style = t.dataset.style; render(); drawQrTool(); break;
     case 'qr-shape': ui.qrShape = t.dataset.shape; await showQr(id, t.dataset.kind, ui.qrStyle); break;
     case 'qr-tool-shape': ui.qrShape = t.dataset.shape; render(); drawQrTool(); break;
+    case 'qr-seal': ui.qrSeal = t.dataset.seal; await showQr(id, t.dataset.kind, ui.qrStyle); break;
+    case 'qr-tool-seal': ui.qrSeal = t.dataset.seal; render(); drawQrTool(); break;
+    case 'qr-bg': ui.qrBg = t.dataset.bg; await showQr(id, t.dataset.kind, ui.qrStyle); break;
+    case 'qr-tool-bg': ui.qrBg = t.dataset.bg; ui.qr.style = qrStyleOf(ui.qr.style); render(); drawQrTool(); break;
     case 'copy-link': await copyText(eventLink(id), (evById(id) || {}).draft ? 'Link copied. It works once the event is published' : 'Event link copied'); break;
     case 'copy-text': await copyText(t.dataset.text, 'Link copied'); break;
     case 'close': closeModal(); break;
