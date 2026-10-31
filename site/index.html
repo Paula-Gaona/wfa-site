@@ -1544,7 +1544,11 @@ function ctKindSync(form){
 const CT_STATUS = { prospect: ['Not contacted yet', ''], contacted: ['Contacted', 'soon'], interested: ['Interested', 'warn'], confirmed: ['Confirmed', 'ok'],
   done: ['Event done', 'ok'], no_response: ['No response', 'bad'], declined: ['Declined', 'bad'] };
 const CT_OPEN = ['prospect', 'contacted', 'interested', 'confirmed'];
-const CT_CATS = Object.keys(CATS).filter(k => k !== 'officer_meeting');
+// Kinds of events in the plan and on contacts: the event types, plus panels (scheduled as guest speaker events).
+const CT_EXTRA = { panel: 'Panel' };
+const CT_CATS = Object.keys(CATS).filter(k => k !== 'officer_meeting').flatMap(k => k === 'guest_speaker' ? [k, 'panel'] : [k]);
+const ctCat = k => CT_EXTRA[k] || catName(k);
+const ctEventCat = k => CATS[k] ? k : 'guest_speaker';
 const ctSem = () => db.settings.semester || '';
 // Plans are made a semester or more ahead: the current semester and the next two (Fall → Spring → Fall, skipping summer).
 function ctSems(){
@@ -1571,7 +1575,7 @@ function ctPlanPanel(){
   const head = `<div class="stack" style="gap:6px"><h3 style="margin:0">${esc(sem || 'This semester')}: the plan</h3><span class="hint">How many of each kind of event leadership wants that semester. Set it a semester ahead, so there’s time to line people up. Topics and dates stay open, so anyone who’s a good fit can be asked. As spots fill, look at what’s already confirmed to decide who to ask next.</span>
     ${ctSems().length > 1 ? `<span class="row" style="gap:6px" role="group" aria-label="Semester">${ctSems().map((x, i) => `<button type="button" class="btn ${x === sem ? '' : 'ghost '}small" data-act="ct-sem" data-id="${esc(x)}" aria-pressed="${x === sem}">${esc(x)}${i ? '' : ' (now)'}</button>`).join('')}</span>` : ''}</div>`;
   if (ui.ctPlanEdit && isLeader()) return `<form class="panel stack" id="f-ct-plan" style="gap:12px" novalidate>${head}
-      <div class="ct-plan">${CT_CATS.map(k => `<label>${catName(k)}<input id="ctp-${k}" type="number" min="0" max="50" value="${plan[k] || 0}"></label>`).join('')}</div>
+      <div class="ct-plan">${CT_CATS.map(k => `<label>${ctCat(k)}<input id="ctp-${k}" type="number" min="0" max="50" value="${plan[k] || 0}"></label>`).join('')}</div>
       <div class="row" style="gap:8px"><button class="btn" type="submit">Save the plan</button><button class="btn ghost" type="button" data-act="ct-plan-cancel">Cancel</button></div><div class="err" id="ctp-err"></div></form>`;
   // Who's being considered: in progress for that semester, interested in (or considered for) that kind of event.
   const maybe = cat => (db.contacts || []).filter(c => c.semester === sem && ['prospect', 'contacted', 'interested'].includes(c.status) && (c.types || []).includes(cat))
@@ -1585,7 +1589,7 @@ function ctPlanPanel(){
   return `<section class="panel stack" style="gap:12px"><div class="row" style="justify-content:space-between;align-items:start;gap:10px">${head}
       ${isLeader() ? `<button class="btn ghost small" data-act="ct-plan-edit">${used.length ? 'Edit the plan' : 'Set the plan'}</button>` : ''}</div>
     ${used.length ? `<div class="ct-plan">${used.map(k => { const list = conf(k), n = plan[k] || 0;
-      return `<div class="ct-goal stack" style="gap:6px"><div class="row" style="justify-content:space-between;gap:8px"><strong>${catName(k)}</strong><span class="hint">${list.length} of ${n || '?'} confirmed</span></div>
+      return `<div class="ct-goal stack" style="gap:6px"><div class="row" style="justify-content:space-between;gap:8px"><strong>${ctCat(k)}</strong><span class="hint">${list.length} of ${n || '?'} confirmed</span></div>
         <div class="ct-bar" role="img" aria-label="${list.length} of ${n} confirmed"><span style="width:${n ? Math.min(100, list.length / n * 100) : 0}%"></span></div>
         <ol class="ct-slots">${Array.from({ length: Math.max(n, list.length) }, (_, i) => slot(list[i], i)).join('')}</ol>
         ${maybe(k).length ? `<div class="stack" style="gap:4px"><span class="hint" style="font-weight:700">Being considered (${maybe(k).length})</span>
@@ -1605,11 +1609,11 @@ function ctCard(c){
     </div>
     ${reach ? `<div class="hint">${reach}</div>` : ''}
     ${(c.ways || []).length ? `<div class="hint"><strong>${c.kind === 'firm' ? 'Could do with us' : 'Could help with'}:</strong> ${esc(c.ways.join(', '))}</div>` : ''}
-    ${(c.types || []).length ? `<div class="hint"><strong>Kinds of events:</strong> ${c.types.map(catName).join(', ')}</div>` : ''}
+    ${(c.types || []).length ? `<div class="hint"><strong>Kinds of events:</strong> ${c.types.map(ctCat).join(', ')}</div>` : ''}
     ${(c.areas || []).length ? `<div class="hint"><strong>${ctL('areas', c.kind)}:</strong> ${esc(c.areas.join(', '))}</div>` : ''}
     ${c.courses ? `<div class="hint"><strong>Teaches:</strong> ${esc(c.courses)}</div>` : ''}
     ${availabilityText(c.availability) ? `<div class="hint"><strong>When works:</strong> ${esc(availabilityText(c.availability))}</div>` : ''}
-    ${c.confirmed_cat || c.planned_date || ev ? `<div class="hint"><strong>Plan:</strong> ${[c.confirmed_cat && catName(c.confirmed_cat), c.planned_date && fmtDay(c.planned_date), ev && 'Event: ' + esc(ev.title)].filter(Boolean).join(' · ')}</div>` : ''}
+    ${c.confirmed_cat || c.planned_date || ev ? `<div class="hint"><strong>Plan:</strong> ${[c.confirmed_cat && ctCat(c.confirmed_cat), c.planned_date && fmtDay(c.planned_date), ev && 'Event: ' + esc(ev.title)].filter(Boolean).join(' · ')}</div>` : ''}
     <div class="hint">${[c.last_contacted && 'Last reached out ' + fmtDay(c.last_contacted), c.semester].filter(Boolean).join(' · ')}</div>
     ${c.notes ? `<details><summary class="hint">Notes</summary><p style="white-space:pre-wrap;margin:6px 0 0">${esc(c.notes)}</p></details>` : ''}
     <div class="row" style="gap:6px">
@@ -1649,7 +1653,7 @@ function ctEditor(c){
       return `<fieldset class="stack" style="gap:6px" data-ctkind="${k}" ${c.kind === k ? '' : 'hidden'}><legend><span data-kl="ways">${ctL('ways', k)}</span> <span class="hint">(check any)</span></legend>
         <div class="checks">${[...list, ...extra].map(w => `<label class="check"><input type="checkbox" class="ct-way" value="${esc(w)}" ${sel.includes(w) || extra.includes(w) ? 'checked' : ''}> ${esc(w)}</label>`).join('')}</div></fieldset>`; }).join('')}
     <fieldset class="stack" style="gap:6px"><legend>Kinds of events they’re interested in or being considered for <span class="hint">(check any; counts toward the plan once confirmed)</span></legend>
-      <div class="checks">${CT_CATS.map(k => `<label class="check"><input type="checkbox" class="ct-type" value="${k}" ${(c.types || []).includes(k) ? 'checked' : ''}> ${catName(k)}</label>`).join('')}</div></fieldset>
+      <div class="checks">${CT_CATS.map(k => `<label class="check"><input type="checkbox" class="ct-type" value="${k}" ${(c.types || []).includes(k) ? 'checked' : ''}> ${ctCat(k)}</label>`).join('')}</div></fieldset>
     ${careers.length ? `<fieldset class="stack" style="gap:6px"><legend><span data-kl="areas">${ctL('areas', c.kind)}</span> <span class="hint" data-kl="areasHint">${ctL('areasHint', c.kind)}</span></legend>
       <div class="checks">${careers.map(t => `<label class="check"><input type="checkbox" class="ct-area" value="${esc(t)}" ${(c.areas || []).includes(t) ? 'checked' : ''}> ${esc(t)}</label>`).join('')}</div></fieldset>` : ''}
     <fieldset class="stack" style="gap:8px"><legend>When works for them <span class="hint">(optional; narrow it down to a date below once it’s settled)</span></legend>
@@ -1659,7 +1663,7 @@ function ctEditor(c){
         return `<button type="button" class="slot ${on ? 'on' : ''}" data-slot="${key}" aria-pressed="${on}" aria-label="${l} ${fmtMin(m)}" data-tip="${l} ${fmtMin(m)}–${fmtMin(m + P_STEP)}"></button>`; }, DAYS.slice(0, 5), P_MINS)}</div></fieldset>
     <div class="grid2">
       <label>Date <span class="hint">Once it’s settled</span><input id="ct-date" type="date" value="${esc(c.planned_date || '')}"></label>
-      <label>Confirmed for<select id="ct-cat"><option value="">Not yet</option>${CT_CATS.map(k => `<option value="${k}" ${c.confirmed_cat === k ? 'selected' : ''}>${catName(k)}</option>`).join('')}</select></label>
+      <label>Confirmed for<select id="ct-cat"><option value="">Not yet</option>${CT_CATS.map(k => `<option value="${k}" ${c.confirmed_cat === k ? 'selected' : ''}>${ctCat(k)}</option>`).join('')}</select></label>
     </div>
     <div class="grid2">
       <label>The event <span class="hint">Or use Start the event once they’re confirmed</span><select id="ct-ev"><option value="">None yet</option>${evs.map(e => `<option value="${e.id}" ${c.event_id === e.id ? 'selected' : ''}>${fmtDay(e.date)} · ${esc(e.title)}${e.draft ? ' (draft)' : ''}</option>`).join('')}</select></label>
@@ -1698,7 +1702,7 @@ function contactsBody(){
     <div class="row" style="gap:8px;align-items:center"><span class="hint">How many of each event leadership wants, the spots filled so far, and who’s being considered:</span><button class="btn ghost small" data-act="otab" data-tab="eventplan">Semester plan →</button></div>
     ${again.length ? `<section class="stack" style="gap:8px"><div class="section-head"><h2>Worth asking again</h2><span class="muted">Said they’d come back</span></div>
       <div class="stack" style="gap:6px">${again.map(c => `<div class="panel row" style="justify-content:space-between;align-items:center;gap:8px;padding:10px 14px">
-        <span><strong>${esc(c.name || c.org)}</strong>${c.org && c.name ? ' · ' + esc(c.org) : ''} <span class="hint">${esc(c.semester || '')}${c.confirmed_cat ? ': ' + catName(c.confirmed_cat) : ''}</span></span>
+        <span><strong>${esc(c.name || c.org)}</strong>${c.org && c.name ? ' · ' + esc(c.org) : ''} <span class="hint">${esc(c.semester || '')}${c.confirmed_cat ? ': ' + ctCat(c.confirmed_cat) : ''}</span></span>
         <button class="btn ghost small" data-act="ct-again" data-id="${c.id}">Add to ${esc(sem || 'this semester')}</button></div>`).join('')}</div></section>` : ''}
     <div class="seg-tabs" role="tablist" aria-label="Type of contact">${[['', 'All'], ...Object.entries(PLURAL)].map(([k, l]) => `<button role="tab" aria-selected="${f.kind === k}" class="btn ${f.kind === k ? '' : 'ghost '}small" data-act="ct-kind" data-id="${k}">${l} (${nk(k)})</button>`).join('')}</div>
     <div class="row" style="gap:8px;align-items:center">
@@ -6984,13 +6988,13 @@ document.addEventListener('click', async ev => {
       await act(async () => must(await sb.from('contacts').update({ last_contacted: todayIso(), status: c.status === 'prospect' ? 'contacted' : c.status, ...ctOwnRow(ctOwners(c).length ? ctOwners(c) : [session]), updated_at: new Date().toISOString() }).eq('id', id)), 'Noted. If there’s no reply in a week, it’ll remind you to follow up.'); break; }
     case 'ct-sem': ui.ctSem = id; ui.ctPlanEdit = false; render(); break;
     case 'ct-again': { const c = ctById(id), ev = evById(c.event_id), sem = ctPlanSem();
-      const note = `${c.semester || 'Before'}: ${c.confirmed_cat ? catName(c.confirmed_cat) : CT_STATUS[c.status][0]}${ev ? ' (' + ev.title + ')' : ''}. Asked again for ${sem}.`;
+      const note = `${c.semester || 'Before'}: ${c.confirmed_cat ? ctCat(c.confirmed_cat) : CT_STATUS[c.status][0]}${ev ? ' (' + ev.title + ')' : ''}. Asked again for ${sem}.`;
       await act(async () => must(await sb.from('contacts').update({ status: 'prospect', semester: sem, event_id: null, planned_date: null, confirmed_cat: '', notes: ((c.notes ? c.notes + '\n' : '') + note).slice(0, 8000), updated_at: new Date().toISOString() }).eq('id', id)), 'Added to ' + (sem || 'this semester')); break; }
     case 'ct-del': await act(async () => must(await sb.from('contacts').delete().eq('id', id)), 'Contact deleted'); break;
     case 'ct-open': ui.officerTab = 'contacts'; ui.ctEdit = id; ui.ctWhen = new Set(((ctById(id) || {}).availability || {}).slots || []); render(); window.scrollTo(0, 0); break;
     case 'ct-q': ui.officerTab = 'questions'; ui.qFilter = 'all'; render(); window.scrollTo(0, 0); break;
     case 'ct-event': { const c = ctById(id);
-      ui.officerTab = 'events'; ui.editEvent = null; ui.guestForm = null; ui.evNewCat = c.confirmed_cat || (c.types || [])[0] || 'guest_speaker'; ui.ctLink = id;
+      ui.officerTab = 'events'; ui.editEvent = null; ui.guestForm = null; ui.evNewCat = ctEventCat(c.confirmed_cat || (c.types || [])[0]); ui.ctLink = id;
       ui.rq = { key: 'new', d: { ...rqDefaults(null), dates: c.planned_date ? [c.planned_date] : [], speaker: 'yes', speakerCount: 1,
         speakers: [{ name: c.name || '', title: c.title || '', company: c.org || '', email: c.email || '', phone: c.phone || '', show: true }] }, files: {} };
       render(); window.scrollTo(0, 0); toast(`Started an event with ${c.name || c.org} as the guest. Fill in the rest, then send it on.`); break; }
