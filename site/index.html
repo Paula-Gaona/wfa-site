@@ -660,6 +660,8 @@ const MINORS = ["Accounting","American Indian Studies","American Studies","Anthr
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function iso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+// Links people share (QR codes, event links, emails) always point at the real site, even in a local preview.
+const SITE_URL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname) || location.hostname.endsWith('.localhost') ? 'https://wolverinefinanceassociation.org' : location.origin;
 /* ---------- Club time: everything event-related runs on Mountain Time (America/Denver), wherever the viewer is ---------- */
 const CLUB_TZ = 'America/Denver';
 const mtFmt = new Intl.DateTimeFormat('en-US', { timeZone: CLUB_TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -2090,7 +2092,7 @@ function svResultsBody(sv){
 }
 // Emails a survey to everyone who gets club emails (one email, everyone BCC'd, through the email builder's sender).
 async function emailSurvey(sv){
-  const to = audienceEmails('all'), link = location.origin + '/#survey/' + sv.id, pts = svMax(sv);
+  const to = audienceEmails('all'), link = SITE_URL + '/#survey/' + sv.id, pts = svMax(sv);
   if (!to.length) return toast('Saved. No one is on the club email list yet.');
   const md = `Hi,\n\nWe’d love your input: **${sv.title}**${sv.descr ? '\n\n' + sv.descr : ''}\n\n`
     + `It only takes a few minutes${pts ? `, and you can earn up to ${pts} leaderboard points for answering` : ''}${sv.closes_at ? `. It closes ${fmtMtStamp(Date.parse(sv.closes_at))}` : ''}.\n\nTake the survey: ${link}\n\nThanks,\nThe Wolverine Finance Association`;
@@ -2941,7 +2943,7 @@ async function notifyApplicationsOpen(){
   if (!to.length) return toast('Applications are open. There are no members to email yet.');
   const text = `Hi,\n\nApplications are open for WFA officer positions in the ${branchList()}.` +
     (db.app.deadline ? `\n\nApply by ${fmtDay(db.app.deadline)}.` : '') +
-    `\n\nApply here: ${location.origin}/#apply\n\nWolverine Finance Association`;
+    `\n\nApply here: ${SITE_URL}/#apply\n\nWolverine Finance Association`;
   const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to, subject: 'WFA officer applications are open', text } });
   if (error){ let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch(_){} return toast('Applications are open, but the email didn’t send: ' + m); }
   toast(`Applications are open. Emailed ${data.sent} member${data.sent === 1 ? '' : 's'}.`);
@@ -3272,7 +3274,7 @@ const SURVEY_POINTS = 2, SURVEY_DAYS = 7;
 const MAIL_TEMPLATES = {
   reminder: ['Event reminder', 'Reminder: {event} on {date}', 'Hi everyone,\n\nQuick reminder that {event} is on {date} at {time} in {location}.\n\nDetails and RSVP: {link}\n\nSee you there,\nWolverine Finance Association'],
   dues: ['Dues reminder', '{semester} WFA dues reminder', 'Hi,\n\nOur records show your {semester} dues (${dues}) are still outstanding. You can pay any officer at the next meeting.\n\nThanks,\nWolverine Finance Association'],
-  survey: ['Survey reminder', 'How was {event}? Quick survey', 'Hi {first},\n\nThanks for coming to {event} on {date}! We’d love to hear what you thought. The survey is one star rating and an optional comment, it earns you ' + SURVEY_POINTS + ' leaderboard points, and you can answer anonymously.\n\nFill it out in My account: ' + location.origin + '/#account\n\nIt closes 7 days after the event.\n\nThanks,\nWolverine Finance Association'],
+  survey: ['Survey reminder', 'How was {event}? Quick survey', 'Hi {first},\n\nThanks for coming to {event} on {date}! We’d love to hear what you thought. The survey is one star rating and an optional comment, it earns you ' + SURVEY_POINTS + ' leaderboard points, and you can answer anonymously.\n\nFill it out in My account: ' + SITE_URL + '/#account\n\nIt closes 7 days after the event.\n\nThanks,\nWolverine Finance Association'],
   missed: ['We missed you', 'Sorry we missed you at {event}', 'Hi,\n\nWe missed you at {event} on {date}. Slides and notes are on the Recaps page on our site.\n\nHope to see you at the next one,\nWolverine Finance Association']
 };
 function mailAudiences(){
@@ -3474,7 +3476,7 @@ function mailText(){
   const closing = fillMerge(ui.mail.closing || '').trim();
   // "---" is a spacer line, so the conclusion stands apart from the last event.
   // Member emails end with how to turn club emails off. Officer-team emails don't need it.
-  const footer = ui.mail.aud === 'staff' ? '' : `\n\n---\n*You’re getting this because you’re a Wolverine Finance Association member. To stop club emails, turn them off in My account: ${location.origin}/#account*`;
+  const footer = ui.mail.aud === 'staff' ? '' : `\n\n---\n*You’re getting this because you’re a Wolverine Finance Association member. To stop club emails, turn them off in My account: ${SITE_URL}/#account*`;
   return (fillMerge(ui.mail.body).trim() + eventBlock() + (closing ? '\n\n---\n' + closing : '') + footer).trim();
 }
 // Formatting buttons for one of the email builder's text boxes.
@@ -5460,7 +5462,7 @@ window.addEventListener('scroll', closeNavMenu, { passive: true });
 
 // Each event has its own page (#event/<id>) to link to or put on a QR code. The calendar opens the same content in a pop-up.
 // A check-in QR adds the code (#event/<id>/<code>) so it's filled in for people who scan it at the event.
-function eventLink(id, code){ return location.origin + '/#event/' + id + (code ? '/' + encodeURIComponent(code) : ''); }
+function eventLink(id, code){ return SITE_URL + '/#event/' + id + (code ? '/' + encodeURIComponent(code) : ''); }
 function eventInner(id, page){
   const e = evById(id); if (!e) return '';
   const n = rsvpCount(id), mine = session && going(id).includes(session), full = e.cap && n >= e.cap, wl = (db.wait || {})[id] || {};
@@ -6432,7 +6434,7 @@ async function showQr(id, kind, style){
 }
 // Officer tools → QR codes: a QR for any link, with quick picks for event pages and main site pages.
 function qrToolBody(){
-  const q = ui.qr || (ui.qr = { text: location.origin + '/', style: 'brand', size: 1200, name: 'WFA website' });
+  const q = ui.qr || (ui.qr = { text: SITE_URL + '/', style: 'brand', size: 1200, name: 'WFA website' });
   q.style = qrStyleOf(q.style);
   const pages = [['', 'Home page'], ['#signup', 'Join (sign up)'], ['#calendar', 'Events calendar'], ['#apply', 'Officer applications'], ['#partners', 'Partner with us'], ['#contact', 'Contact / questions'], ['#leaderboard', 'Leaderboard']];
   const evs = upcoming().filter(e => !e.draft && e.cat !== 'officer_meeting');
@@ -7263,7 +7265,7 @@ document.addEventListener('change', async e => {
   if (id === 'qr-pick' && e.target.value){
     const v = e.target.value;
     if (v.startsWith('ev:')){ const ev = evById(v.slice(3)); ui.qr.text = eventLink(ev.id); ui.qr.name = ev.title; }
-    else { const [h, l] = v.slice(5).split('|'); ui.qr.text = location.origin + '/' + h; ui.qr.name = 'WFA ' + l; }
+    else { const [h, l] = v.slice(5).split('|'); ui.qr.text = SITE_URL + '/' + h; ui.qr.name = 'WFA ' + l; }
     render(); drawQrTool();
   }
   if (id === 'ev-cat') syncCaseBox();
