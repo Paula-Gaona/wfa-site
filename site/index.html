@@ -3983,7 +3983,9 @@ const rqReviewing = id => { const r = rqOf(id); return !!r && r.status === 'bran
 // Officers (not presidents, vice presidents, advisors, or admins) start with their branch president.
 // Quick scheduling (an admin switch, 71-quick-scheduling.sql): events an admin sends skip the presidents' sign-off.
 const rqQuick = () => !!db.settings.quick;
-const rqQuickFor = id => rqQuick() && roleOf((rqOf(id) || {}).sent_by) === 'admin';
+// Older requests don't record who sent them; any admin can sign those off.
+const rqQuickFor = id => { const by = (rqOf(id) || {}).sent_by; return rqQuick() && (!by || roleOf(by) === 'admin'); };
+const rqSignerName = id => { const by = (rqOf(id) || {}).sent_by; return by ? userName(by) : 'an admin'; };
 const needsBranchReview = em => !['president', 'vice_president', 'advisor'].includes((db.profiles[em] || {}).tier) && roleOf(em) !== 'admin';
 function rqWaitingOnMe(r){
   if (!r) return false;
@@ -3992,7 +3994,7 @@ function rqWaitingOnMe(r){
   if (st === 'review' || st === 'signoff') return rqCanVote(r);
   if (st === 'sent' || st === 'submitted' || st === 'approved') return isScheduler();
   if (st === 'returned') return r.sent_by === session;
-  if (st === 'adminok') return r.sent_by === session && myRole === 'admin';
+  if (st === 'adminok') return myRole === 'admin' && (!r.sent_by || r.sent_by === session);
   return false;
 }
 function rqSignoffText(r){
@@ -4558,7 +4560,7 @@ function rqDetail(e, r){
     actions = `<div class="row"><button class="btn ghost" data-act="edit-event" data-id="${e.id}">Change the request</button></div><span class="hint">A scheduler is confirming this with UVU. You can still make changes.</span>`;
   else if (isScheduler() && st === 'approved')
     actions = `${r.signoff_note ? `<div class="rq-warn"><strong>${rqQuickFor(e.id) ? 'The admin' : 'A president'} requested changes:</strong><div style="white-space:pre-wrap">${esc(r.signoff_note)}</div></div>` : ''}
-      <div class="row"><button class="btn" data-act="edit-event" data-id="${e.id}">Finalize and send to ${rqQuickFor(e.id) ? esc(userName(r.sent_by)) : 'the presidents'}</button></div>`;
+      <div class="row"><button class="btn" data-act="edit-event" data-id="${e.id}">Finalize and send to ${rqQuickFor(e.id) ? esc(rqSignerName(e.id)) : 'the presidents'}</button></div>`;
   else if (st === 'returned' && r.sent_by === session)
     actions = `<div class="row"><button class="btn" data-act="edit-event" data-id="${e.id}">Edit and send again</button></div>`;
   else if (st === 'adminok' && myRole === 'admin')
@@ -4566,7 +4568,7 @@ function rqDetail(e, r){
       <span class="hint">A scheduler confirmed this with UVU and set the final details (below). Quick scheduling is on, so you sign off instead of the presidents.</span>
       <div class="row"><button class="btn" data-act="rq-adminok" data-id="${e.id}">Publish it</button></div></div>${back('adminok', 'Send it back to the scheduler with notes', 'They’re notified and can fix it and send it to you again.')}`;
   else if (st === 'adminok')
-    actions = `<span class="hint">Quick scheduling: waiting for ${esc(userName(r.sent_by))} to sign off.</span>`;
+    actions = `<span class="hint">Quick scheduling: waiting for ${esc(rqSignerName(e.id))} to sign off.</span>`;
   const hist = (r.history || []).slice().reverse().map(h => `<li><strong>${esc((RQ_STATUS[h.status] || [h.status])[0])}</strong> · ${esc(h.by === 'system' ? 'Automatic' : userName(h.by))} · ${fmtMtStamp(Date.parse(h.at))}${h.note ? `<div style="white-space:pre-wrap" class="hint">${esc(h.note)}</div>` : ''}</li>`).join('');
   return `<div class="stack" style="gap:16px"><div><button type="button" class="btn ghost small" data-act="rq-open" data-id="">← All requests</button></div>
     <div><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</div><h2 style="margin:4px 0">${esc(e.title)}</h2>${rqTag(e.id)}${r.sent_by ? ` <span class="hint">From ${esc(userName(r.sent_by))}</span>` : ''}</div>
@@ -4753,7 +4755,7 @@ function evButtons(e, cat){
   if (!needsSched(cat)) return `<button class="btn" type="submit" data-mode="publish">${canPublish() ? 'Publish to calendar' : 'Submit for approval'}</button><button class="btn ghost" type="submit" data-mode="draft">${e ? 'Save draft' : 'Save as draft'}</button>${cancel}`;
   const st = (rqOf(e && e.id) || {}).status || 'draft';
   if (rqReviewing(e && e.id)) return `<button class="btn" type="submit" data-mode="branchok">${rqFixing(rqOf(e.id)) ? 'Send it back to the presidents' : 'Approve and send it on'}</button><button class="btn ghost" type="submit" data-mode="draft">Save changes</button>${cancel}`;
-  return `${st === 'approved' && isScheduler() ? `<button class="btn" type="submit" data-mode="signoff">${rqQuickFor(e && e.id) ? 'Send to ' + esc(userName(rqOf(e.id).sent_by)) + ' for sign-off' : 'Send to the presidents for sign-off'}</button>` : ''}${['draft', 'returned'].includes(st) ? `<button class="btn" type="submit" data-mode="send">${st === 'returned' ? 'Send it again' : rqSendLabel(cat)}</button>` : ''}<button class="btn ghost" type="submit" data-mode="draft">${rqUvuEditable(e && e.id) ? 'Save changes' : e ? 'Save draft' : 'Save as draft'}</button>${cancel}`;
+  return `${st === 'approved' && isScheduler() ? `<button class="btn" type="submit" data-mode="signoff">${rqQuickFor(e && e.id) ? 'Send to ' + esc(rqSignerName(e.id)) + ' for sign-off' : 'Send to the presidents for sign-off'}</button>` : ''}${['draft', 'returned'].includes(st) ? `<button class="btn" type="submit" data-mode="send">${st === 'returned' ? 'Send it again' : rqSendLabel(cat)}</button>` : ''}<button class="btn ghost" type="submit" data-mode="draft">${rqUvuEditable(e && e.id) ? 'Save changes' : e ? 'Save draft' : 'Save as draft'}</button>${cancel}`;
 }
 const RQ_ERR = { 'err:notscheduler': 'Only event schedulers can do that.', 'err:notyours': 'Only the officer who made it can change it.', 'err:window': 'The window has to be inside the semester.', 'err:notpresident': 'Only presidents can do that.', 'err:notreviewer': 'Only the branch president can do that.', 'err:state': 'This request changed since you opened it. Refresh and try again.', 'err:note': 'Write what needs to be fixed.', 'err:missing': 'That request doesn’t exist anymore.', 'err:notadmin': 'Only admins can do that.' };
 // Typing in the scheduling form keeps ui.rq up to date; some answers redraw the form (they show or hide questions).
@@ -5109,7 +5111,7 @@ function viewOfficer(){
         <label>Check-in code <span class="hint">(optional)</span>
           <span class="row" style="gap:8px;flex-wrap:nowrap"><input id="ev-code" maxlength="8" autocomplete="off" value="${esc(e?.code || '')}" placeholder="e.g. BULL" style="font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;flex:1;min-width:0"><button type="button" class="btn ghost small" data-act="ev-gen-code">Generate</button></span>
           <span class="hint">Members type this at the event to check in. It only works on the event’s date. Leave blank to make one on the day.</span></label>
-        ${rqFinalizing(e?.id) ? (rqQuickFor(e.id) ? `<div class="rq-warn"><strong>UVU approved this event.</strong> Set the final date, times, location, and RSVP timing, then send it to ${esc(userName(rqOf(e.id).sent_by))} for sign-off. (Quick scheduling is on and an admin sent it, so the presidents don’t sign off.)</div>` : '<div class="rq-warn"><strong>UVU approved this event.</strong> Set the final date, times, location, and RSVP timing, then send it to the presidents for sign-off. It publishes once they all approve, or after 2 business days.</div>') + (rqOf(e.id).signoff_note ? `<div class="rq-warn"><strong>${rqQuickFor(e.id) ? 'The admin' : 'A president'} requested changes:</strong><div style="white-space:pre-wrap">${esc(rqOf(e.id).signoff_note)}</div></div>` : '') : ''}
+        ${rqFinalizing(e?.id) ? (rqQuickFor(e.id) ? `<div class="rq-warn"><strong>UVU approved this event.</strong> Set the final date, times, location, and RSVP timing, then send it to ${esc(rqSignerName(e.id))} for sign-off. (Quick scheduling is on and an admin sent it, so the presidents don’t sign off.)</div>` : '<div class="rq-warn"><strong>UVU approved this event.</strong> Set the final date, times, location, and RSVP timing, then send it to the presidents for sign-off. It publishes once they all approve, or after 2 business days.</div>') + (rqOf(e.id).signoff_note ? `<div class="rq-warn"><strong>${rqQuickFor(e.id) ? 'The admin' : 'A president'} requested changes:</strong><div style="white-space:pre-wrap">${esc(rqOf(e.id).signoff_note)}</div></div>` : '') : ''}
         <label>Description <span class="hint">(required; for events that need scheduling, it also goes on UVU’s form)</span><textarea id="ev-desc" placeholder="What members will do or learn, who it’s for, and anything to bring">${esc(e?.desc)}</textarea></label><span id="ev-help-desc"></span>${descPreview('ev-desc-preview', e?.desc)}
         <div id="rq-box">${rqPanel(e, e?.cat || ui.evNewCat || Object.keys(CATS)[0])}</div>${(setTimeout(evHelpRefresh), '')}
         <div class="err" id="ev-err"></div>
@@ -6976,7 +6978,7 @@ document.addEventListener('click', async ev => {
     case 'rq-status': { const s = t.dataset.s, e = evById(id) || {};
       await act(async () => { const r = await sb.rpc('scheduler_update', { p_event: id, p_status: s, p_note: '' }); if (r.error) throw r.error;
         if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
-        await logChange('Confirmed with UVU: “' + e.title + '”'); }, rqQuickFor(id) ? 'Marked confirmed by UVU. Finalize the details, then send it to ' + userName(rqOf(id).sent_by) + ' for sign-off.' : 'Marked confirmed by UVU. Finalize the details, then send it to the presidents for sign-off.'); break; }
+        await logChange('Confirmed with UVU: “' + e.title + '”'); }, rqQuickFor(id) ? 'Marked confirmed by UVU. Finalize the details, then send it to ' + rqSignerName(id) + ' for sign-off.' : 'Marked confirmed by UVU. Finalize the details, then send it to the presidents for sign-off.'); break; }
     case 'rq-doc': { const e = evById(id), r = rqOf(id); if (e && r) wordDoc(e.title + ' - scheduling request', e.title, 'Scheduling request · ' + catName(e.cat), rqRows(e, r).map(([l, v]) => [l, v || ''])); break; }
     case 'guest-doc': wordDoc('External guest form', 'External guest form', 'Wolverine Finance Association · fill this out for each speaker, judge, panelist, or other outside guest', GUEST_DOC_ROWS.map(l => [l, ''])); break;
     case 'tpl-open': { const cat = (evById(ui.planEv) || {}).cat || 'guest_speaker'; ui.tplDraft = { cat, rows: planTemplate(cat).map(r => [...r]) }; render(); window.scrollTo(0, 0); break; }
@@ -7127,7 +7129,7 @@ document.addEventListener('click', async ev => {
       if (pub && !(e.desc || '').trim()){ ui.editEvent = id; render(); window.scrollTo(0, 0); toast('Add a description first. It’s required to publish an event.'); break; }
       if (pub && needsSched(e.cat)){
         if (!((rqOf(id) || {}).status === 'approved' && isScheduler())){ toast('Only an event scheduler can publish this, once UVU approves it.'); break; }
-        ui.officerTab = 'events'; ui.editEvent = id; render(); window.scrollTo(0, 0); toast(rqQuickFor(id) ? 'Set the final details, then send it to ' + userName(rqOf(id).sent_by) + ' for sign-off.' : 'Set the final details, then send it to the presidents for sign-off.'); break;
+        ui.officerTab = 'events'; ui.editEvent = id; render(); window.scrollTo(0, 0); toast(rqQuickFor(id) ? 'Set the final details, then send it to ' + rqSignerName(id) + ' for sign-off.' : 'Set the final details, then send it to the presidents for sign-off.'); break;
       }
       await doOrPropose('event', pub ? 'publish' : 'unpublish', id, {}, (pub ? 'Publish “' : 'Move back to drafts: “') + e.title + '”',
         pub ? 'Published to the calendar' : 'Moved back to drafts. Members can’t see it now.'); break; }
@@ -7866,7 +7868,7 @@ async function handleSubmit(f, v, err){
         await sugSendReplies(editing);
         const r = await sb.rpc('scheduler_update', { p_event: editing, p_status: 'signoff', p_note: '' }); if (r.error) throw r.error;
         if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
-        const adm = r.data === 'ok:adminok', who = userName(rqOf(editing).sent_by);
+        const adm = r.data === 'ok:adminok', who = rqSignerName(editing);
         await logChange((adm ? 'Sent to ' + who + ' for sign-off: “' : 'Sent for presidents’ sign-off: “') + e.title + '”');
         ui.officerTab = 'scheduling'; ui.schedOpen = editing; ui.editEvent = null; ui.rq = null;
         ui.schedMsg = adm ? 'Sent to ' + who + ' for sign-off.' : 'Sent for sign-off. You’ll be notified when it’s published.';
