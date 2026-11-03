@@ -3568,7 +3568,7 @@ function fmtBar(target){
 // Email signatures: blank in the database means this built-in one. The placeholders fill in when it's inserted.
 const SIG_DEFAULT = `| {green:**{name}**}
 | {title}
-| {gold:**Wolverine Finance Association**}
+| **Wolverine Finance Association**
 | [{email}](mailto:{email}) · [LinkedIn]({linkedin})
 | [wolverinefinanceassociation.org](${SITE_URL})`;
 function mySig(){ return (db.profiles[session] || {}).signature || SIG_DEFAULT; }
