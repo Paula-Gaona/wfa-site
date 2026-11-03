@@ -807,7 +807,7 @@ async function load(){
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
-    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, rsvpUrl:e.rsvp_url || '', linkClicks:e.rsvp_link_clicks || 0, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
+    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -3838,7 +3838,7 @@ function eventStatsSection(){
         <button class="btn ${who === 'rsvp' ? '' : 'ghost '}small" data-act="stats-who" data-w="rsvp" aria-pressed="${who === 'rsvp'}">RSVPs</button></span>` : ''}
     </div>
     <div class="tiles">
-      ${tile(rs.length + (e.linkClicks || 0), e.rsvpUrl ? 'RSVP link clicks' : 'RSVPs', e.rsvpUrl && e.linkClicks ? `${e.linkClicks} without an account` : e.cap ? `${e.cap} spots` : '')}
+      ${tile(rs.length, 'RSVPs', e.cap ? `${e.cap} spots` : '')}
       ${past ? tile(at.length, 'Checked in', catName(e.cat)) : ''}
       ${past ? tile(rs.length ? pct(came.length, rs.length) + '%' : '—', 'RSVPs who came', `${came.length} of ${rs.length}`) : ''}
       ${past ? tile(rs.length - came.length, 'No-shows', 'RSVP’d but didn’t check in') : ''}
@@ -4583,7 +4583,7 @@ function rqDetail(e, r){
 // What the presidents are signing off on: the event as it'll appear on the site.
 function evFinalSummary(e){
   const rows = [['Title', e.title], ['Date', fmtDay(e.date)], ['Time', `${fmtTime(e.start)}–${fmtTime(e.end)}`], ['Location', e.loc], ['Seat limit', e.cap ? String(e.cap) : 'No limit'],
-    ['Members only', e.membersOnly ? 'Yes' : 'No'], ...(e.rsvpUrl ? [['RSVP link', e.rsvpUrl]] : []), ...(e.cat === 'case_competition' ? [] : [['RSVPs open', e.rsvpOpens ? fmtMtStamp(Date.parse(e.rsvpOpens)) : 'As soon as it’s published'],
+    ['Members only', e.membersOnly ? 'Yes' : 'No'], ...(e.cat === 'case_competition' ? [] : [['RSVPs open', e.rsvpOpens ? fmtMtStamp(Date.parse(e.rsvpOpens)) : 'As soon as it’s published'],
     ['Guest RSVPs', e.membersOnly ? 'Members only' : e.guestDelay ? `${e.guestDelay} day${e.guestDelay === 1 ? '' : 's'} after members` : e.guestOpens && e.guestOpens !== e.rsvpOpens ? fmtMtStamp(Date.parse(e.guestOpens)) : 'Same time as members']]),
     ...(e.cat === 'guest_speaker' ? [['Q&A', e.qaEnabled ? 'On' : 'Off']] : []), ['Description', e.desc]];
   return `<dl class="rq-sum">${rows.map(([l, v]) => `<dt>${esc(l)}</dt><dd style="white-space:pre-wrap">${esc(v || '—')}</dd>`).join('')}</dl>`;
@@ -4735,7 +4735,6 @@ function rsvpBox(e){
   if (!RQ_GUEST.some(x => x[0] === mode)) mode = '7';
   return `<div id="ev-go-wrap" class="ev-final stack" style="gap:10px" ${cat === 'officer_meeting' || cat === 'case_competition' || evHideFinal(e, cat) ? 'hidden' : ''}>
     ${fin ? `<span class="hint"><strong>Requested: members ${esc(rqRsvpText(want).replace(/^On /, 'on ').replace(/^As soon/, 'as soon'))}; guests ${esc(rqGuestText(want).replace(/^On /, 'on ').replace(/^Same time/, 'same time'))}.</strong></span>` : ''}
-    <label>RSVP link <span class="hint">Optional. If RSVPs are on another site, paste the link: the RSVP button opens it, and we count who clicks. That site handles the seat limit.</span><input id="ev-rsvp-url" inputmode="url" maxlength="500" placeholder="https://" value="${esc(e?.rsvpUrl || '')}"></label>
     <label>When do RSVPs open?<select id="ev-rsvp-when"><option value="publish" ${when === 'publish' ? 'selected' : ''}>As soon as it’s published</option><option value="date" ${when === 'date' ? 'selected' : ''}>On a specific date and time</option></select></label>
     <label id="ev-rsvp-at-wrap" ${when === 'date' ? '' : 'hidden'}>Date and time RSVPs open <span class="hint">Pick both the day and the time (Mountain Time)</span><input id="ev-rsvp-at" type="datetime-local" value="${esc(at)}"></label>
     <div id="ev-guest-wrap" class="stack" style="gap:10px" ${e?.membersOnly ? 'hidden' : ''}>
@@ -5553,10 +5552,6 @@ window.addEventListener('scroll', closeNavMenu, { passive: true });
 // Each event has its own page (#event/<id>) to link to or put on a QR code. The calendar opens the same content in a pop-up.
 // A check-in QR adds the code (#event/<id>/<code>) so it's filled in for people who scan it at the event.
 function eventLink(id, code){ return SITE_URL + '/#event/' + id + (code ? '/' + encodeURIComponent(code) : ''); }
-// An RSVP link to another site (73-rsvp-link.sql): clicking saves a member's RSVP, or adds to the count for a visitor.
-function rsvpHost(u){ try { return new URL(u).hostname.replace(/^www\./, ''); } catch(e){ return 'the RSVP site'; } }
-function rsvpLinkBtn(e, ghost){ return `<a class="btn${ghost ? ' ghost' : ''}" href="${esc(e.rsvpUrl)}" target="_blank" rel="noopener" data-act="rsvp-link" data-id="${e.id}">RSVP on ${esc(rsvpHost(e.rsvpUrl))} ↗</a>`; }
-function rsvpLinkClicked(id){ try { return !!localStorage.getItem('wfa-rlink-' + id); } catch(e){ return !!(ui.rlink || {})[id]; } }
 function eventInner(id, page){
   const e = evById(id); if (!e) return '';
   const n = rsvpCount(id), mine = session && going(id).includes(session), full = e.cap && n >= e.cap, wl = (db.wait || {})[id] || {};
@@ -5566,12 +5561,10 @@ function eventInner(id, page){
   else if (hasStarted(e)) action = `<span class="muted">${here ? 'You’re checked in.' : mine ? 'You RSVP’d. Check in with the code above.' : 'RSVPs closed when the event started. Here without an RSVP? Check in with the code above.'}</span>`;
   else if (isCase(e)) action = '';   // case competitions use team registration (caseSection) instead of RSVPs
   else if (!session) action = '';   // visitors: guestRsvpBox (or the members-only note) below
-  else if (mine && e.rsvpUrl) action = `<span class="going">You opened the RSVP link.</span><span class="hint">Finish signing up on ${esc(rsvpHost(e.rsvpUrl))} if you haven’t.</span>${rsvpLinkBtn(e, true)}${armBtn('unrsvp-' + id, 'I’m not going', 'Click again to take back your RSVP', 'unrsvp', id)}`;
   else if (mine) action = `<span class="going">You’re going.</span>${wl.promoted ? '<span class="hint">You got a seat from the waitlist.</span>' : ''}${armBtn('unrsvp-' + id, 'Cancel RSVP', 'Click again to cancel your RSVP', 'unrsvp', id)}`;
   else if (wl.my_place) action = `<span class="going" style="background:var(--tint);color:var(--ink)">You’re #${wl.my_place} on the waitlist.</span><span class="hint">If a seat opens, it’s yours automatically and we’ll let you know.</span>${armBtn('wl-leave-' + id, 'Leave the waitlist', 'Click again to leave the waitlist', 'wl-leave', id)}`;
   else if (e.draft) action = `<button class="btn" type="button" disabled>RSVP</button><span class="hint">RSVPs open when the event is published.</span>`;
   else if (e.rsvpOpens && Date.now() < Date.parse(e.rsvpOpens) && !can('officer')) action = `<button class="btn" type="button" disabled>RSVP</button><span class="hint">RSVPs open ${fmtMtStamp(Date.parse(e.rsvpOpens))}.</span>`;
-  else if (e.rsvpUrl) action = rsvpLinkBtn(e);
   else if (e.rsvpOpens && Date.now() < Date.parse(e.rsvpOpens) && !full) action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button><span class="hint">Officers can RSVP before RSVPs open for everyone.</span>`;
   else if (full || wl.waiting) action = `<span class="muted">All ${e.cap} seats are taken.</span><button class="btn" data-act="wl-join" data-id="${id}">Join the waitlist</button>${wl.waiting ? `<span class="hint">${wl.waiting} ${wl.waiting === 1 ? 'person is' : 'people are'} waiting.</span>` : ''}`;
   else action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button>`;
@@ -5646,18 +5639,13 @@ function rsvpTimesNote(e){
   return `<div class="rsvp-times"><strong>When RSVPs open</strong><dl class="facts" style="margin:4px 0 0"><dt>Members</dt><dd>${when(m)}</dd>${e.membersOnly ? '<dt>Guests</dt><dd>Members only</dd>' : `<dt>Guests</dt><dd>${when(Math.max(g, m))}</dd>`}</dl></div>`;
 }
 function guestRsvpBox(e){
-  const id = e.id, done = guestRsvpDone(id), full = !e.rsvpUrl && e.cap && rsvpCount(id) >= e.cap;
+  const id = e.id, done = guestRsvpDone(id), full = e.cap && rsvpCount(id) >= e.cap;
   const join = `<div class="row" style="gap:8px"><button class="btn" data-act="event-auth" data-to="signup" data-id="${id}">Join WFA (free) and RSVP</button><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">I have an account: sign in</button></div>`;
   if (done) return `<div class="panel stack" style="gap:10px"><div class="notice"><span><strong>You’re going, ${esc(done.first)}!</strong> ${done.reminders ? 'We’ll email you reminders about this event.' : ''} Join WFA to earn points for coming and get the full calendar.</span></div>${join}</div>`;
   if (full) return `<div class="panel"><span class="muted">All ${e.cap} seats are taken.</span></div>`;
   const memberWait = e.rsvpOpens && Date.now() < Date.parse(e.rsvpOpens);
   if (e.guestOpens && Date.now() < Date.parse(e.guestOpens)) return `<div class="panel stack" style="gap:10px"><div><strong>Members get early access</strong>
       <div class="hint">Guest RSVPs open ${fmtMtStamp(Date.parse(e.guestOpens))}${e.cap ? `, and there are ${e.cap} seats` : ''}. ${memberWait ? `Join WFA (free) to RSVP as soon as member RSVPs open, ${fmtMtStamp(Date.parse(e.rsvpOpens))}.` : 'Join WFA (free) to RSVP now.'}</div></div>${join}</div>`;
-  if (e.rsvpUrl) return `<div class="panel stack" style="gap:12px">
-    <strong style="font-size:1.1rem">RSVP</strong>
-    <p style="margin:0">RSVPs for this event are on ${esc(rsvpHost(e.rsvpUrl))}.${rsvpLinkClicked(id) ? ' Finish signing up there if you haven’t.' : ''}</p>
-    <div>${rsvpLinkBtn(e)}</div>
-    <div class="row" style="gap:8px"><button class="btn ghost small" data-act="event-auth" data-to="signup" data-id="${id}">Join WFA (free)</button><button class="btn ghost small" data-act="event-auth" data-to="signin" data-id="${id}">I have an account: sign in</button></div></div>`;
   return `<div class="panel stack" style="gap:12px">
     <strong style="font-size:1.1rem">RSVP</strong>
     <p style="margin:0">Members ${PTS[e.cat] ? `earn <strong>${PTS[e.cat]} points</strong> for coming, ` : ''}get reminders for every event, and can join the resume book. Joining is free.</p>
@@ -5694,10 +5682,6 @@ function qaBox(e){
 function eventOfficerExtras(e){
   const g = (db.guestRsvps || {})[e.id] || [], qs = (db.evQuestions || []).filter(q => q.event_id === e.id);
   let h = '';
-  if (e.rsvpUrl) h += `<div class="panel stack" style="gap:6px;padding:12px 14px"><strong>RSVP link clicks (${going(e.id).length + e.linkClicks})</strong>
-    <div class="ev-sub">${going(e.id).length} signed-in member${going(e.id).length === 1 ? '' : 's'} · ${e.linkClicks} visitor${e.linkClicks === 1 ? '' : 's'} without an account</div>
-    <a class="ev-sub" href="${esc(e.rsvpUrl)}" target="_blank" rel="noopener">${esc(e.rsvpUrl)}</a>
-    <span class="hint">A click means they opened the link, not that they finished signing up there. ${esc(rsvpHost(e.rsvpUrl))} has the actual list.</span></div>`;
   if (g.length) h += `<div class="panel stack" style="gap:6px;padding:12px 14px"><div class="row" style="justify-content:space-between;align-items:center"><strong>Guest RSVPs (${g.length})</strong>
       <button class="btn ghost small" data-act="copy-text" data-text="${esc(g.map(x => x.email).join('; '))}">Copy emails</button></div>
     ${g.map(x => `<div class="ev-sub">${esc(x.first)} ${esc(x.last)} · ${esc(x.email)}${x.reminders ? ' · wants reminders' : ''}</div>`).join('')}
@@ -6752,8 +6736,7 @@ async function afterLogin(){
   await load();
   const p = pendingRsvp();
   setPendingRsvp(null);
-  if (p && (evById(p) || {}).rsvpUrl){ await load(); takeReturnTo(); location.hash = 'event/' + p; }
-  else if (p){
+  if (p){
     const r = await sb.from('rsvps').insert({ event_id: p });
     toast(r.error ? errMsg(r.error) : 'RSVP saved');
     await load(); takeReturnTo(); location.hash = 'event/' + p;
@@ -6900,12 +6883,6 @@ document.addEventListener('click', async ev => {
       if (!session){ setPendingRsvp(id); closeModal(); location.hash = 'signin'; break; }
       if (await act(async () => must(await sb.from('rsvps').insert({ event_id: id })), 'RSVP saved')) refreshEvent(id);
       break;
-    case 'rsvp-link': {   // the link opens on its own; this just records the click
-      if (session ? going(id).includes(session) : rsvpLinkClicked(id)) break;
-      const r = await sb.rpc('rsvp_link_click', { p_event: id });
-      if (r.error) break;
-      if (!session){ ui.rlink = { ...ui.rlink, [id]: 1 }; try { localStorage.setItem('wfa-rlink-' + id, '1'); } catch(x){} }
-      await load(); refreshEvent(id); break; }
     case 'unrsvp':
       if (await act(async () => must(await sb.from('rsvps').delete().eq('event_id', id).eq('email', session)), 'RSVP canceled')) refreshEvent(id);
       break;
@@ -7854,12 +7831,9 @@ async function handleSubmit(f, v, err){
     e.members_only = e.cat !== 'officer_meeting' && document.getElementById('ev-members-only').checked;
     e.qa_enabled = e.cat === 'guest_speaker' && document.getElementById('ev-qa').checked;
     if (document.getElementById('ev-soon')){ e.coming_soon = document.getElementById('ev-soon').checked; e.soon_desc = v('ev-soon-desc'); }
-    if (['officer_meeting', 'case_competition'].includes(e.cat)){ e.rsvp_opens = null; e.guest_rsvp_opens = null; e.guest_rsvp_delay = null; e.rsvp_url = ''; }
-    else if (waitFinal){ e.rsvp_opens = cur0.rsvpOpens || null; e.guest_rsvp_opens = cur0.guestOpens || null; e.guest_rsvp_delay = cur0.guestDelay ?? null; e.rsvp_url = cur0.rsvpUrl || ''; }
+    if (['officer_meeting', 'case_competition'].includes(e.cat)){ e.rsvp_opens = null; e.guest_rsvp_opens = null; e.guest_rsvp_delay = null; }
+    else if (waitFinal){ e.rsvp_opens = cur0.rsvpOpens || null; e.guest_rsvp_opens = cur0.guestOpens || null; e.guest_rsvp_delay = cur0.guestDelay ?? null; }
     else {
-      e.rsvp_url = v('ev-rsvp-url').trim();
-      if (e.rsvp_url && !/^https?:\/\//i.test(e.rsvp_url)) e.rsvp_url = 'https://' + e.rsvp_url;
-      if (e.rsvp_url && !/^https?:\/\/[^\s.]+\.[^\s]+$/i.test(e.rsvp_url)) return err('ev-err', 'Check the RSVP link. It should look like https://example.com/event.');
       e.rsvp_opens = v('ev-rsvp-when') === 'date' ? mtFromInput(v('ev-rsvp-at')) : null;
       if (v('ev-rsvp-when') === 'date' && !e.rsvp_opens) return err('ev-err', 'Pick when RSVPs open, or choose “As soon as it’s published.”');
       const later = !e.members_only && document.getElementById('ev-guest-later').checked, mode = v('ev-guest-mode');
