@@ -3351,7 +3351,7 @@ const MAIL_TEMPLATES = {
 function mailAudiences(){
   const ev = sortedEvents();
   return [
-    ['General', [['all','All members'],['members','Members only (no officers)'],['staff','Officers and admins'], ...(DUES_ENABLED ? [['unpaid','Members with unpaid dues']] : [])]],
+    ['General', [['all','All members'],['members','Members only (no officers)'],['staff','Officers and admins'], ...(DUES_ENABLED ? [['unpaid','Members with unpaid dues']] : []), ['custom','Specific people (type their emails)']]],
     ['RSVP’d to…', ev.map(e => ['rsvp:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
     ['Attended…', ev.filter(hasStarted).map(e => ['att:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
     ['RSVP’d but missed…', ev.filter(isPast).map(e => ['noshow:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
@@ -3365,6 +3365,21 @@ function surveyEvents(){ const n = Date.now(); return sortedEvents().filter(e =>
 function surveyPendingFor(id){ return (db.surveyPending || []).filter(r => r.event_id === id).map(r => r.email);
 }
 // Club emails skip members who turned them off in My account. Emails to the officer team always go.
+// "Specific people": addresses typed into the email builder, separated by spaces, commas, or semicolons.
+function mailCustom(){
+  const all = [...new Set(String(ui.mail.custom || '').split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean))];
+  return { good: all.filter(x => EMAIL_RE.test(x)), bad: all.filter(x => !EMAIL_RE.test(x)) };
+}
+function mailCustomHint(){ const { good, bad } = mailCustom(); return bad.length ? `<span class="err">Check ${bad.length === 1 ? 'this address' : 'these addresses'}: ${esc(bad.join(', '))}</span>` : good.length + ' address' + (good.length === 1 ? '' : 'es') + '. Separate them with spaces, commas, or semicolons.'; }
+// Keeps the recipient count and send buttons right while someone types addresses (without redrawing the box they're typing in).
+function mailCountSync(){
+  const n = audienceEmails(ui.mail.aud).length, send = document.querySelector('[data-act="mail-send"]'), hint = document.getElementById('ml-custom-hint'), count = document.getElementById('ml-count');
+  if (ui.armed === 'mail-send') ui.armed = null;
+  if (send){ send.classList.remove('danger', 'armed'); send.disabled = !n; send.textContent = `Send from the club address to ${n}`; }
+  document.querySelectorAll('[data-act="mail-merge"], [data-act="mail-copy"][data-what="to"]').forEach(b => { b.disabled = !n; });
+  if (hint) hint.innerHTML = mailCustomHint();
+  if (count) count.textContent = n + ' recipients';
+}
 function audienceEmails(key){
   const list = audienceAll(key);
   if (key === 'staff') return list;
@@ -3374,6 +3389,7 @@ function audienceEmails(key){
 function optedOutCount(key){ return key === 'staff' ? 0 : audienceAll(key).length - audienceEmails(key).length; }
 function audienceAll(key){
   const [k, id] = key.split(':');
+  if (k === 'custom') return mailCustom().good;
   if (k === 'all') return db.users.map(u => u.email);
   if (k === 'members') return db.users.filter(u => roleOf(u.email) === 'member').map(u => u.email);
   if (k === 'staff') return staffEmails();
@@ -3555,7 +3571,7 @@ function mailText(){
   const closing = fillMerge(ui.mail.closing || '').trim();
   // "---" is a spacer line, so the conclusion stands apart from the last event.
   // Member emails end with how to turn club emails off. Officer-team emails don't need it.
-  const footer = ui.mail.aud === 'staff' ? '' : `\n\n---\n*You’re getting this because you’re a Wolverine Finance Association member. To stop club emails, turn them off in My account: ${SITE_URL}/#account*`;
+  const footer = ['staff', 'custom'].includes(ui.mail.aud) ? '' : `\n\n---\n*You’re getting this because you’re a Wolverine Finance Association member. To stop club emails, turn them off in My account: ${SITE_URL}/#account*`;
   return (fillMerge(ui.mail.body).trim() + eventBlock() + (closing ? '\n\n---\n' + closing : '') + footer).trim();
 }
 // Formatting buttons for one of the email builder's text boxes.
@@ -5293,6 +5309,7 @@ function viewOfficer(){
         <h3>Email draft builder</h3>
         <div class="row" style="gap:6px"><span class="hint">Start from:</span>${Object.entries(MAIL_TEMPLATES).filter(([k]) => k !== 'dues' || DUES_ENABLED).map(([k,[l]]) => `<button type="button" class="btn ghost small" data-act="mail-tpl" data-tpl="${k}">${l}</button>`).join('')}</div>
         <label>Send to<select id="ml-aud">${mailAudiences().map(([g, opts]) => opts.length ? `<optgroup label="${esc(g)}">${opts.map(([k,l]) => `<option value="${k}" ${ui.mail.aud===k?'selected':''}>${esc(l)}</option>`).join('')}</optgroup>` : '').join('')}</select></label>
+        ${ui.mail.aud === 'custom' ? `<label>Email addresses<textarea id="ml-custom" style="min-height:64px" placeholder="name@example.com, another@example.com">${esc(ui.mail.custom || '')}</textarea><span class="hint" id="ml-custom-hint">${mailCustomHint()}</span></label>` : ''}
         <label>Event <span class="hint">(optional)</span><select id="ml-ev">${eventOptions(sortedEvents(), ui.mail.ev, 'None')}</select><span class="hint">Only needed if the message uses {event}, {date}, {time}, {location}, or {link}.</span></label>
         <label>Subject<input id="ml-subject" value="${esc(ui.mail.subject)}"></label>
         <label for="ml-body">Message</label>
@@ -5313,7 +5330,7 @@ function viewOfficer(){
         ${ui.sigDraft != null ? sigEditor() : ''}
       </form>
       <section class="stack">
-        <div class="section-head"><h3>Preview</h3><span class="muted">${to.length} recipients${optedOutCount(ui.mail.aud) ? ` · ${optedOutCount(ui.mail.aud)} opted out of club emails and won’t get it` : ''}</span></div>
+        <div class="section-head"><h3>Preview</h3><span class="muted"><span id="ml-count">${to.length} recipients</span>${optedOutCount(ui.mail.aud) ? ` · ${optedOutCount(ui.mail.aud)} opted out of club emails and won’t get it` : ''}</span></div>
         <div class="preview" id="ml-preview">${mailPreview()}</div>
         <div class="panel stack" style="gap:8px">
           <strong>Send from your own Outlook</strong>
@@ -7369,6 +7386,7 @@ document.addEventListener('keydown', e => {
 async function sendMail(){
   readMail();
   const to = audienceEmails(ui.mail.aud), subject = fillMerge(ui.mail.subject).trim(), md = mailText(), text = mdToPlain(md);
+  if (ui.mail.aud === 'custom' && mailCustom().bad.length) return toast('Fix the email addresses that don’t look right first.');
   if (!to.length) return toast('No one is in that group.');
   if (!subject || !text) return toast('Add a subject and a message.');
   if (/\{(event|date|time|location|link)\}/.test(subject + text)) return toast('Pick an event, or remove {event}, {date}, {time}, {location}, and {link} from the message.');
@@ -7395,7 +7413,7 @@ async function sendMail(){
 
 /* ---------- Inputs ---------- */
 function rerenderKeepFocus(id){ const el = document.getElementById(id), pos = el.selectionStart; render(); const s = document.getElementById(id); s.focus(); try { s.setSelectionRange(pos, pos); } catch(e){} }
-function readMail(){ const g = id => document.getElementById(id); if (!g('ml-aud')) return; ui.mail = { aud: g('ml-aud').value, ev: g('ml-ev').value, subject: g('ml-subject').value, body: g('ml-body').value, closing: g('ml-closing').value, evs: [...document.querySelectorAll('.ml-evs:checked')].map(c => c.value) }; }
+function readMail(){ const g = id => document.getElementById(id); if (!g('ml-aud')) return; ui.mail = { aud: g('ml-aud').value, custom: g('ml-custom') ? g('ml-custom').value : ui.mail.custom, ev: g('ml-ev').value, subject: g('ml-subject').value, body: g('ml-body').value, closing: g('ml-closing').value, evs: [...document.querySelectorAll('.ml-evs:checked')].map(c => c.value) }; }
 function updateAnnPreview(){
   const v = id => document.getElementById(id);
   v('an-preview').innerHTML = annHtml({ title: v('an-title').value || 'Your headline', body: v('an-body').value || 'Your message will appear here.', aud: v('an-aud').value, pinned: v('an-pin').checked, date: todayIso(), author: session });
@@ -7410,6 +7428,7 @@ document.addEventListener('input', e => {
   if (id === 'aw-search'){ ui.awPts = document.getElementById('aw-pts').value; ui.awReason = document.getElementById('aw-reason').value; ui.awSearch = e.target.value; rerenderKeepFocus(id); }
   if (id === 'log-search'){ ui.logSearch = e.target.value; rerenderKeepFocus(id); }
   if (['an-title','an-body'].includes(id)) updateAnnPreview();
+  if (id === 'ml-custom'){ readMail(); mailCountSync(); document.getElementById('ml-preview').innerHTML = mailPreview(); document.getElementById('ml-outlook').innerHTML = outlookButtons(audienceEmails(ui.mail.aud)); }
   if (id === 'ml-sig'){ ui.sigDraft = e.target.value; document.getElementById('ml-sig-prev').innerHTML = mdToHtml(sigFill(ui.sigDraft)); }
   if (['ml-subject','ml-body','ml-closing'].includes(id)){ readMail(); document.getElementById('ml-preview').innerHTML = mailPreview(); document.getElementById('ml-outlook').innerHTML = outlookButtons(audienceEmails(ui.mail.aud)); }
   if (['qr-text', 'qr-name'].includes(id)){ ui.qr[id === 'qr-text' ? 'text' : 'name'] = e.target.value; clearTimeout(drawQrTool.t); drawQrTool.t = setTimeout(drawQrTool, 250); }
