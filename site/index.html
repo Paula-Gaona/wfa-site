@@ -793,7 +793,7 @@ async function load(){
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
   (R.profiles || []).forEach(p => {
     const auto = buildTitle(p.tier, p.branch), custom = p.title && p.title !== auto ? p.title : '';   // older profiles saved the automatic title
-    db.profiles[p.email] = { name:p.name, title:custom || auto, customTitle:custom, rawTitle:p.title || '', bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '', majors:p.majors || [], minor:p.minor || '', canPublish:!!p.can_publish };
+    db.profiles[p.email] = { name:p.name, title:custom || auto, customTitle:custom, rawTitle:p.title || '', bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, signature:p.signature || '', tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '', majors:p.majors || [], minor:p.minor || '', canPublish:!!p.can_publish };
     (p.role === 'admin' ? db.adminEmails : db.officerEmails).push(p.email);
   });
   if (R.access){
@@ -3451,19 +3451,26 @@ function fillMerge(s){
   return s.replace(/\{event\}/g, e ? e.title : '{event}').replace(/\{date\}/g, e ? fmtDay(e.date) : '{date}').replace(/\{time\}/g, e ? fmtTime(e.start) : '{time}')
     .replace(/\{location\}/g, e ? e.loc : '{location}').replace(/\{link\}/g, e ? eventLink(e.id) : '{link}').replace(/\{semester\}/g, db.settings.semester).replace(/\{dues\}/g, db.settings.dues);
 }
-/* ---------- Email formatting: **bold**, *italic*, "- " bullets, "## " headings, links ---------- */
+/* ---------- Email formatting: **bold**, *italic*, {green:colors}, "- " bullets, "## " headings, links, [text](link) ---------- */
+const MD_COLORS = { green: '#275D38', gold: '#8F6E22', gray: '#5E6B60' };
 function mdInline(s){
-  return esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1<em>$2</em>')
-    .replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" style="color:#275D38">$1</a>');
+  // [text](link) is set aside first, so the plain-link step below doesn't touch it.
+  const links = [];
+  return esc(s).replace(/\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/g, (_, t, u) => { links.push(u); return '\u0001' + (links.length - 1) + '\u0002' + t + '\u0003'; })
+    .replace(/\{(green|gold|gray):(.+?)\}/g, (_, c, t) => '<span style="color:' + MD_COLORS[c] + '">' + t + '</span>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1<em>$2</em>')
+    .replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" style="color:#275D38">$1</a>')
+    .replace(/\u0001(\d+)\u0002/g, (_, i) => '<a href="' + links[+i] + '" style="color:#275D38">').replace(/\u0003/g, '</a>');
 }
-// Lines starting with "> " are indented (used for event descriptions).
+// Lines starting with "> " are indented (used for event descriptions). Lines starting with "| " get a gold line beside them (signatures).
 function mdToHtml(src){
   const groups = [];
   for (const raw of String(src || '').split('\n')){
-    const q = /^>\s?/.test(raw), line = raw.replace(/^>\s?/, ''), g = groups[groups.length - 1];
+    const q = /^>\s?/.test(raw) ? 'q' : /^\|\s?/.test(raw) ? 's' : '', line = raw.replace(/^[>|]\s?/, ''), g = groups[groups.length - 1];
     if (g && g.q === q) g.lines.push(line); else groups.push({ q, lines: [line] });
   }
-  return groups.map(g => g.q ? '<div style="margin:0 0 6px 24px">' + mdBlock(g.lines, true) + '</div>' : mdBlock(g.lines)).join('');
+  return groups.map(g => g.q === 'q' ? '<div style="margin:0 0 6px 24px">' + mdBlock(g.lines, true) + '</div>'
+    : g.q === 's' ? '<div style="margin:0 0 6px;padding:2px 0 2px 12px;border-left:3px solid #B8923A">' + mdBlock(g.lines, true) + '</div>' : mdBlock(g.lines)).join('');
 }
 // "#"/"##" = section heading, "###" = event title (extra space above so events stand apart).
 // tight = indented text such as event descriptions, with less space between its paragraphs.
@@ -3484,8 +3491,9 @@ function mdBlock(lines, tight){
   flushP(); flushL(); return out.join('');
 }
 function mdToPlain(src){
-  return String(src || '').split('\n').map(l => l === '---' ? '' : l).map(l => { const q = /^>\s?/.test(l); l = l.replace(/^>\s?/, ''); return (q ? '    ' : '') + l; }).map(l => l.replace(/^(\s*)[-*]\s+/, '$1• ').replace(/^#{1,3}\s+/, '')
-    .replace(/\*\*(.+?)\*\*/g, '$1').replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1$2')).join('\n');
+  return String(src || '').split('\n').map(l => l === '---' ? '' : l).map(l => { const q = /^>\s?/.test(l); l = l.replace(/^>\s?/, ''); return (q ? '    ' : '') + l.replace(/^\|\s?/, ''); }).map(l => l.replace(/^(\s*)[-*]\s+/, '$1• ').replace(/^#{1,3}\s+/, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1').replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1$2').replace(/\{(?:green|gold|gray):(.+?)\}/g, '$1')
+    .replace(/\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/g, (_, t, u) => /^mailto:|\./.test(/^mailto:/.test(u) ? u : t) ? t : t + ': ' + u)).join('\n');
 }
 // Copies the message with its formatting, so it pastes into Outlook bold and bulleted.
 async function copyRich(){
@@ -3553,8 +3561,33 @@ function mailText(){
 // Formatting buttons for one of the email builder's text boxes.
 function fmtBar(target){
   return `<div class="row" style="gap:4px;margin-bottom:-8px" role="toolbar" aria-label="Formatting">` +
-    [['b','<strong>B</strong>','Bold'],['i','<em>I</em>','Italic'],['ul','• List','Bulleted list'],['h','Heading','Heading'],['q','→ Indent','Indent']]
-      .map(([f, l, t]) => `<button type="button" class="btn ghost small" data-act="fmt" data-f="${f}" data-target="${target}" title="${t}">${l}</button>`).join('') + '</div>';
+    [['b','<strong>B</strong>','Bold'],['i','<em>I</em>','Italic'],['ul','• List','Bulleted list'],['h','Heading','Heading'],['q','→ Indent','Indent'],['bar','┃ Side line','Gold line beside the text'],
+     ...Object.keys(MD_COLORS).map(c => [c, `<strong style="color:${MD_COLORS[c]}">A</strong>`, c[0].toUpperCase() + c.slice(1) + ' text'])]
+      .map(([f, l, t]) => `<button type="button" class="btn ghost small" data-act="fmt" data-f="${f}" data-target="${target}" title="${t}" aria-label="${t}">${l}</button>`).join('') + '</div>';
+}
+// Email signatures: blank in the database means this built-in one. The placeholders fill in when it's inserted.
+const SIG_DEFAULT = `| {green:**{name}**}
+| {title}
+| {gold:**Wolverine Finance Association**}
+| [{email}](mailto:{email}) · [LinkedIn]({linkedin})
+| [wolverinefinanceassociation.org](${SITE_URL})`;
+function mySig(){ return (db.profiles[session] || {}).signature || SIG_DEFAULT; }
+function sigFill(src){
+  const p = db.profiles[session] || {}, vals = { name: p.name || userName(session), title: p.title || 'Officer', email: p.contact || session, linkedin: p.linkedin || '' };
+  return String(src || '').replace(/\{(name|title|email|linkedin)\}/g, (_, k) => vals[k])
+    .replace(/\s*·\s*\[[^\]]*\]\(\)/g, '').replace(/\[[^\]]*\]\(\)(\s*·\s*)?/g, '')
+    .split('\n').filter(l => !/^\|\s*$/.test(l)).join('\n');
+}
+function sigEditor(){
+  return `<div class="panel stack" style="gap:8px">
+    <strong>My signature</strong>
+    <span class="hint">{name}, {title}, {email}, and {linkedin} fill in from <a href="#account">your officer profile</a>. It uses your sign-in email if your profile doesn’t have a contact email.</span>
+    ${fmtBar('ml-sig')}
+    <textarea id="ml-sig" style="min-height:120px;margin-top:8px" maxlength="2000" aria-label="Signature">${esc(ui.sigDraft)}</textarea>
+    <span class="hint">How it looks</span>
+    <div class="mail-html" id="ml-sig-prev">${mdToHtml(sigFill(ui.sigDraft))}</div>
+    <div class="row" style="gap:6px"><button type="button" class="btn small" data-act="sig-save">Save signature</button><button type="button" class="btn ghost small" data-act="sig-default">Use the built-in one</button><button type="button" class="btn ghost small" data-act="sig-cancel">Cancel</button></div>
+  </div>`;
 }
 function mailPreview(){
   const to = audienceEmails(ui.mail.aud), personal = usesFirst(), name = to.length ? firstNameOf(to[0]) : 'Sam';
@@ -5276,6 +5309,8 @@ function viewOfficer(){
         ${fmtBar('ml-closing')}
         <label><textarea id="ml-closing" style="min-height:110px" aria-label="Conclusion" placeholder="We hope to see you there!&#10;&#10;Best,&#10;Your name&#10;Wolverine Finance Association">${esc(ui.mail.closing || '')}</textarea>
           <span class="hint">Added at the end of the email, after the events.</span></label>
+        <div class="row" style="gap:6px"><button type="button" class="btn ghost small" data-act="sig-insert">Insert my signature</button><button type="button" class="btn ghost small" data-act="sig-edit">Edit my signature</button></div>
+        ${ui.sigDraft != null ? sigEditor() : ''}
       </form>
       <section class="stack">
         <div class="section-head"><h3>Preview</h3><span class="muted">${to.length} recipients${optedOutCount(ui.mail.aud) ? ` · ${optedOutCount(ui.mail.aud)} opted out of club emails and won’t get it` : ''}</span></div>
@@ -7155,6 +7190,19 @@ document.addEventListener('click', async ev => {
       await act(async () => { must(await sb.from('tasks').update({ done: !x.done }).eq('id', id)); await logChange((x.done ? 'Reopened' : 'Completed') + ' task “' + x.title + '”'); }); break; }
     case 'del-task': { const x = db.tasks.find(n => n.id === id);
       await act(async () => { must(await sb.from('tasks').delete().eq('id', id)); await logChange('Deleted task “' + x.title + '”'); }); break; }
+    case 'sig-insert': {
+      readMail();
+      const sig = sigFill(mySig()), cur = (ui.mail.closing || '').trimEnd();
+      if (cur.includes(sig)){ toast('Your signature is already in the conclusion'); break; }
+      ui.mail.closing = (cur ? cur + '\n\n' : '') + sig; render(); break; }
+    case 'sig-edit': readMail(); ui.sigDraft = ui.sigDraft != null ? null : mySig(); render(); break;
+    case 'sig-default': readMail(); ui.sigDraft = SIG_DEFAULT; render(); break;
+    case 'sig-cancel': readMail(); ui.sigDraft = null; render(); break;
+    case 'sig-save': {
+      readMail();
+      const p = db.profiles[session] || {}, text = document.getElementById('ml-sig').value.trim();
+      if (await act(async () => must(await sb.from('officer_profiles').upsert({ email: session, signature: text === SIG_DEFAULT ? '' : text, name: p.name || userName(session), title: p.rawTitle || '', tier: p.tier || 'officer', branch: p.branch || '' })), 'Signature saved')){ ui.sigDraft = null; render(); }
+      break; }
     case 'mail-tpl': readMail(); useTemplate(t.dataset.tpl); render(); break;
     case 'mail-to': ui.mail.aud = t.dataset.aud; ui.mail.ev = ''; ui.mail.evs = []; useTemplate(t.dataset.tpl); ui.officerTab = 'email'; render(); window.scrollTo(0,0); break;
     case 'mail-copy': {
@@ -7193,12 +7241,15 @@ document.addEventListener('click', async ev => {
       break; }
     case 'fmt': {
       const ta = document.getElementById(t.dataset.target || 'ml-body'), f = t.dataset.f, a = ta.selectionStart, z = ta.selectionEnd, v = ta.value;
-      if (f === 'b' || f === 'i'){
+      if (MD_COLORS[f]){
+        const sel = v.slice(a, z) || 'colored text', m = '{' + f + ':';
+        ta.setRangeText(m + sel + '}', a, z, 'end'); ta.setSelectionRange(a + m.length, a + m.length + sel.length);
+      } else if (f === 'b' || f === 'i'){
         const m = f === 'b' ? '**' : '*', sel = v.slice(a, z) || (f === 'b' ? 'bold text' : 'italic text');
         ta.setRangeText(m + sel + m, a, z, 'end'); ta.setSelectionRange(a + m.length, a + m.length + sel.length);
       } else {
         // Add (or remove) the prefix on every line the selection touches.
-        const p = f === 'ul' ? '- ' : f === 'q' ? '> ' : '## ', s0 = v.lastIndexOf('\n', a - 1) + 1, lines = v.slice(s0, z).split('\n');
+        const p = f === 'ul' ? '- ' : f === 'q' ? '> ' : f === 'bar' ? '| ' : '## ', s0 = v.lastIndexOf('\n', a - 1) + 1, lines = v.slice(s0, z).split('\n');
         const off = lines.every(l => l.startsWith(p)), nb = lines.map(l => off ? l.slice(p.length) : p + l).join('\n');
         ta.setRangeText(nb, s0, z, 'end'); ta.setSelectionRange(s0, s0 + nb.length);
       }
@@ -7359,6 +7410,7 @@ document.addEventListener('input', e => {
   if (id === 'aw-search'){ ui.awPts = document.getElementById('aw-pts').value; ui.awReason = document.getElementById('aw-reason').value; ui.awSearch = e.target.value; rerenderKeepFocus(id); }
   if (id === 'log-search'){ ui.logSearch = e.target.value; rerenderKeepFocus(id); }
   if (['an-title','an-body'].includes(id)) updateAnnPreview();
+  if (id === 'ml-sig'){ ui.sigDraft = e.target.value; document.getElementById('ml-sig-prev').innerHTML = mdToHtml(sigFill(ui.sigDraft)); }
   if (['ml-subject','ml-body','ml-closing'].includes(id)){ readMail(); document.getElementById('ml-preview').innerHTML = mailPreview(); document.getElementById('ml-outlook').innerHTML = outlookButtons(audienceEmails(ui.mail.aud)); }
   if (['qr-text', 'qr-name'].includes(id)){ ui.qr[id === 'qr-text' ? 'text' : 'name'] = e.target.value; clearTimeout(drawQrTool.t); drawQrTool.t = setTimeout(drawQrTool, 250); }
   if (id === 'dc-body'){ const x = db.apps.find(a => a.id === (ui.declineList || [])[0]); if (x) document.getElementById('dc-preview').textContent = fillDecline(e.target.value, x); }

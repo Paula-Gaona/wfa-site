@@ -26,18 +26,25 @@ const BRANCHES = ['', 'communications', 'operations', 'financial_applications'];
 
 const escHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 // Email builder formatting: **bold**, *italic*, "- " bullets, "## " headings, links. Same rules as the site.
+const MD_COLORS: Record<string, string> = { green: '#275D38', gold: '#8F6E22', gray: '#5E6B60' };
 function mdInline(s: string) {
-  return escHtml(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1<em>$2</em>')
-    .replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" style="color:#275D38">$1</a>');
+  // [text](link) is set aside first, so the plain-link step below doesn't touch it.
+  const links: string[] = [];
+  return escHtml(s).replace(/\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/g, (_, t, u) => { links.push(u); return '\u0001' + (links.length - 1) + '\u0002' + t + '\u0003'; })
+    .replace(/\{(green|gold|gray):(.+?)\}/g, (_, c, t) => '<span style="color:' + MD_COLORS[c] + '">' + t + '</span>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1<em>$2</em>')
+    .replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" style="color:#275D38">$1</a>')
+    .replace(/\u0001(\d+)\u0002/g, (_, i) => '<a href="' + links[+i] + '" style="color:#275D38">').replace(/\u0003/g, '</a>');
 }
-// Lines starting with "> " are indented (used for event descriptions).
+// Lines starting with "> " are indented (used for event descriptions). Lines starting with "| " get a gold line beside them (signatures).
 function mdToHtml(src: string) {
-  const groups: { q: boolean; lines: string[] }[] = [];
+  const groups: { q: string; lines: string[] }[] = [];
   for (const raw of src.split('\n')) {
-    const q = /^>\s?/.test(raw), line = raw.replace(/^>\s?/, ''), g = groups[groups.length - 1];
+    const q = /^>\s?/.test(raw) ? 'q' : /^\|\s?/.test(raw) ? 's' : '', line = raw.replace(/^[>|]\s?/, ''), g = groups[groups.length - 1];
     if (g && g.q === q) g.lines.push(line); else groups.push({ q, lines: [line] });
   }
-  return groups.map((g) => g.q ? '<div style="margin:0 0 6px 24px">' + mdBlock(g.lines, true) + '</div>' : mdBlock(g.lines)).join('');
+  return groups.map((g) => g.q === 'q' ? '<div style="margin:0 0 6px 24px">' + mdBlock(g.lines, true) + '</div>'
+    : g.q === 's' ? '<div style="margin:0 0 6px;padding:2px 0 2px 12px;border-left:3px solid #B8923A">' + mdBlock(g.lines, true) + '</div>' : mdBlock(g.lines)).join('');
 }
 // "#"/"##" = section heading, "###" = event title (extra space above so events stand apart).
 // tight = indented text such as event descriptions, with less space between its paragraphs.
