@@ -4412,7 +4412,7 @@ function schedulingBody(){
   const names = (db.schedulers || []).map(userName).join(', ');
   const quick = rqQuick(), sw = myRole === 'admin' ? `<button type="button" class="btn ${quick ? '' : 'ghost '}small" data-act="rq-quick" data-v="${quick ? '' : '1'}">${quick ? 'Turn quick scheduling off' : 'Turn on quick scheduling for admins'}</button>` : '';
   return `<div class="stack" style="gap:18px">
-    ${quick ? `<div class="rq-warn row" style="justify-content:space-between;align-items:center;gap:10px"><span><strong>Quick scheduling is on for admins.</strong> Events an admin sends skip the presidents’ sign-off: a scheduler confirms them with UVU, sets the final details, and publishes them. Everyone else’s events go through the usual steps.</span>${sw}</div>`
+    ${quick && sw ? `<div class="rq-warn row" style="justify-content:space-between;align-items:center;gap:10px"><span><strong>Quick scheduling is on for admins.</strong> Events an admin sends skip the presidents’ sign-off: a scheduler confirms them with UVU, sets the final details, and publishes them. Everyone else’s events go through the usual steps.</span>${sw}</div>`
       : sw ? `<div class="row" style="justify-content:flex-end;align-items:center;gap:8px"><span class="hint">In a rush? Let admins’ events skip the presidents’ sign-off (UVU confirmation stays).</span>${sw}</div>` : ''}
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span class="hint">Every event except officer meetings is confirmed with UVU and signed off here before it’s published.</span><button type="button" class="btn ghost small" data-act="proc-tab" data-id="all">How scheduling works</button></div>
     ${group('Waiting on you', waiting, 'Nothing needs you right now.', gWait)}
