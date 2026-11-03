@@ -191,7 +191,7 @@ Deno.serve(async () => {
     };
     await db.rpc('request_timeouts');   // presidents' reviews that waited 48 hours move on
     await db.rpc('apply_point_rules');  // automatic point rules: new qualifiers get points, no-shows lose them (56-point-rules.sql)
-    const { data: reqs } = await db.from('event_requests').select('event_id, status, status_by, note, signoff_note, sent_by, sent_at, status_at, nudged_at, branch, votes, history').in('status', ['branch', 'review', 'sent', 'returned', 'submitted', 'approved', 'signoff', 'published']);
+    const { data: reqs } = await db.from('event_requests').select('event_id, status, status_by, note, signoff_note, sent_by, sent_at, status_at, nudged_at, branch, votes, history').in('status', ['branch', 'review', 'sent', 'returned', 'submitted', 'approved', 'signoff', 'adminok', 'published']);
     if (reqs?.length) {
       const { data: evs } = await db.from('events').select('id, title, cat, date').in('id', reqs.map((r) => r.event_id));
       const titleOf = new Map((evs || []).map((e) => [e.id, e.title])), evOf = new Map((evs || []).map((e) => [e.id, e]));
@@ -251,6 +251,11 @@ ${lastNote}`
           subject = r.signoff_note ? `Changes requested: ${t}` : `Finalize and send for sign-off: ${t}`;
           body = r.signoff_note ? `A president asked for changes to "${t}":\n${r.signoff_note}\n\nMake them, then send it to the presidents again.`
             : `UVU confirmed "${t}". Set the final date, times, location, and RSVP timing, then send it to the presidents for sign-off.`;
+        } else if (r.status === 'adminok') {
+          // Quick scheduling (71-quick-scheduling.sql): the admin who sent it signs off instead of the presidents.
+          to = [r.sent_by || '']; again = DAY;
+          subject = fresh ? `Sign off on your event: ${t}` : `Reminder: sign off on ${t}`;
+          body = `A scheduler confirmed "${t}" with UVU and set the final details. Quick scheduling is on, so you sign off: publish it, or send it back to the scheduler with notes.`;
         } else if (r.status === 'returned') {
           to = [r.sent_by || '']; subject = `Changes needed: ${t}`;
           body = `"${t}" was sent back. What to fix:\n${r.note || '(no note)'}\n\nMake the changes, then send it again.`;
