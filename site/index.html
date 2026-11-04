@@ -733,6 +733,7 @@ async function load(){
     surveys: t('surveys'),
     svResp: signed && t('survey_responses'),
     svCounts: sb.rpc('survey_counts'),
+    svRemLog: off && sb.from('survey_reminder_log').select('*'),
     lbHistory: signed && sb.rpc('leaderboard_history'),
     awards: myRole === 'admin' && sb.from('point_awards').select('*').is('rule_id', null).order('created_at', { ascending: false }).limit(200),
     pointRules: sb.from('point_rules').select('*').order('created_at', { ascending: false }),
@@ -847,6 +848,7 @@ async function load(){
   db.pstats = R.pstats || null;
   db.surveys = (Array.isArray(R.surveys) ? R.surveys : []).sort((a, b) => b.created_at.localeCompare(a.created_at));   // survey builder (63-survey-builder.sql)
   db.svResp = Array.isArray(R.svResp) ? R.svResp : [];
+  db.svRemLog = Array.isArray(R.svRemLog) ? R.svRemLog : [];   // what went out (74-survey-reminders.sql)
   db.svCounts = Object.fromEntries((Array.isArray(R.svCounts) ? R.svCounts : []).map(x => [x.survey_id, x.responses]));
   db.wait = Object.fromEntries((Array.isArray(R.wait) ? R.wait : []).map(w => [w.event_id, w]));   // waitlists (62-rsvp-waitlist.sql)
   db.pending = R.pending || [];
@@ -1983,6 +1985,15 @@ const svMax = sv => svByYear(sv) ? Math.max(...YEARS.map(y => svTotal(sv, y))) :
 const svMyMax = sv => { const yr = (me() || {}).year; return svByYear(sv) && yr ? svTotal(sv, yr) : svMax(sv); };
 const svMine = id => session ? (db.svResp || []).find(r => r.survey_id === id && r.email === session) : null;
 const svById = id => (db.surveys || []).find(x => x.id === id);
+// The next scheduled reminder for a survey that's open (74-survey-reminders.sql).
+const svNextRem = sv => svOpen(sv) && (sv.remind_at || []).map(x => Date.parse(x)).filter(x => x > Date.now()).sort((a, b) => a - b)[0];
+// How a reminder whose time has passed turned out.
+function svRemOutcome(id, iso){
+  const l = (db.svRemLog || []).find(x => x.survey_id === id && Date.parse(x.remind_at) === Date.parse(iso));
+  if (!l) return 'Not sent';
+  if (l.status === 'sent') return `Sent to ${l.recipients} ${l.recipients === 1 ? 'person' : 'people'}`;
+  return l.status === 'sending' ? 'Sending' : l.status === 'failed' ? 'Couldn’t be sent' : 'Not sent' + (l.detail ? ': ' + l.detail : '');
+}
 const liveSurveys = where => (db.surveys || []).filter(sv => svOpen(sv) && (!where || sv[where]));
 const svNewQ = (type = 'single') => ({ id: 'q' + Math.random().toString(36).slice(2, 9), type, label: '', hint: '', required: false, options: svHasOptions(type) ? ['', ''] : [], points: 1, years: [] });
 const svAnswered = v => Array.isArray(v) ? v.length > 0 : v != null && String(v).trim() !== '';
@@ -2082,7 +2093,7 @@ function surveyBuilderBody(){
   return `<div class="stack" style="gap:16px">
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span class="muted">Make a survey, give each question points, and open it. Members earn a question’s points by answering it; open surveys show on the home page and Leaderboard.</span><button class="btn" data-act="sv-new">New survey</button></div>
     <div>${list.map(sv => `<div class="list-row"><div><div class="ev-title">${esc(sv.title)} ${tag(sv)}</div>
-      <div class="ev-sub">${(sv.questions || []).length} question${(sv.questions || []).length === 1 ? '' : 's'} · up to ${svMax(sv)} points${svByYear(sv) ? ' per person' : ''} · ${(db.svCounts || {})[sv.id] || 0} response${((db.svCounts || {})[sv.id] || 0) === 1 ? '' : 's'}${sv.closes_at ? ' · closes ' + fmtMtStamp(Date.parse(sv.closes_at)) : ''}</div></div>
+      <div class="ev-sub">${(sv.questions || []).length} question${(sv.questions || []).length === 1 ? '' : 's'} · up to ${svMax(sv)} points${svByYear(sv) ? ' per person' : ''} · ${(db.svCounts || {})[sv.id] || 0} response${((db.svCounts || {})[sv.id] || 0) === 1 ? '' : 's'}${sv.closes_at ? ' · closes ' + fmtMtStamp(Date.parse(sv.closes_at)) : ''}${svNextRem(sv) ? ' · next reminder ' + fmtMtStamp(svNextRem(sv)) : ''}</div></div>
       <div class="row" style="gap:6px"><button class="btn ghost small" data-act="sv-results" data-id="${sv.id}">Results</button><button class="btn ghost small" data-act="sv-edit" data-id="${sv.id}">Edit</button>
         ${sv.status === 'open' ? `<button class="btn ghost small" data-act="sv-status" data-id="${sv.id}" data-s="closed">Close</button>` : `<button class="btn ghost small" data-act="sv-status" data-id="${sv.id}" data-s="open">${sv.status === 'draft' ? 'Open it' : 'Reopen'}</button>`}
         ${sv.status !== 'draft' ? `<a class="btn ghost small" href="#survey/${sv.id}">View</a>` : ''}${delBtn('sv-' + sv.id, 'Delete', 'sv-del', sv.id)}</div></div>`).join('') || '<div class="empty">No surveys yet.</div>'}</div></div>`;
@@ -2113,6 +2124,11 @@ function svEditor(){
     <div class="grid2"><label>Closes <span class="hint">Optional (Mountain Time)</span><input id="sv-closes" type="datetime-local" value="${esc(d.closes)}"></label>
       <div class="stack" style="gap:6px;justify-content:end"><label class="check"><input type="checkbox" id="sv-home" ${d.show_home ? 'checked' : ''}> Show on the home page</label><label class="check"><input type="checkbox" id="sv-lb" ${d.show_leaderboard ? 'checked' : ''}> Show on the Leaderboard page</label>
         <label class="check"><input type="checkbox" id="sv-email" ${d.email ? 'checked' : ''}> ${d.emailed_at ? 'Email it to members again' : 'Email it to members'} <span class="hint">${d.emailed_at ? 'Already emailed ' + fmtMtStamp(Date.parse(d.emailed_at)) + '. ' : ''}Sent when you save it open, to everyone who gets club emails.</span></label></div></div>
+    <fieldset class="stack" style="gap:8px"><legend>Email reminders <span class="hint">Optional (Mountain Time)</span></legend>
+      <span class="hint">Each one goes only to members who haven’t answered yet, and says how many points they can earn, including any bonus-point rule for this survey. Reminders only go out while the survey is open.</span>
+      ${(d.remPast || []).map(x => `<div class="hint">${esc(fmtMtStamp(Date.parse(x)))}: ${esc(svRemOutcome(d.id, x))}</div>`).join('')}
+      ${d.reminders.map((v, i) => `<div class="row" style="gap:6px;flex-wrap:nowrap"><input type="datetime-local" data-rem="${i}" value="${esc(v)}" aria-label="Reminder ${i + 1} date and time" style="flex:1;max-width:16rem"><button type="button" class="btn ghost small" data-act="sv-rm-rem" data-i="${i}" aria-label="Remove reminder ${i + 1}">×</button></div>`).join('')}
+      ${d.reminders.length < 5 ? '<div><button type="button" class="btn ghost small" data-act="sv-add-rem">+ Add a reminder</button></div>' : ''}</fieldset>
     <div class="row" style="justify-content:space-between;align-items:baseline"><h3 style="margin:0">Questions</h3><span class="hint">Up to ${svMax(d)} points per person${svByYear(d) ? ' (the most any one year can earn)' : ''}</span></div>
     ${d.questions.map(qRow).join('') || '<div class="empty">Add a question to get started.</div>'}
     <div class="row" style="gap:6px">${Object.entries(SV_TYPES).map(([k, l]) => `<button type="button" class="btn ghost small" data-act="sv-add-q" data-type="${k}">+ ${l}</button>`).join('')}</div>
@@ -2126,6 +2142,7 @@ function readSvDraft(){
   const v = id => (document.getElementById(id) || {}).value || '';
   d.title = v('sv-title'); d.descr = v('sv-descr'); d.closes = v('sv-closes');
   d.show_home = !!(document.getElementById('sv-home') || {}).checked; d.show_leaderboard = !!(document.getElementById('sv-lb') || {}).checked; d.email = !!(document.getElementById('sv-email') || {}).checked;
+  d.reminders = [...f.querySelectorAll('[data-rem]')].map(el => el.value);
   d.questions.forEach(q => { q.years = []; if (f.querySelector(`[data-sq="${d.questions.indexOf(q)}:opt"]`)) q.options = []; });
   f.querySelectorAll('[data-sq]').forEach(el => {
     const [i, k] = el.dataset.sq.split(':'), q = d.questions[+i]; if (!q) return;
@@ -6948,9 +6965,9 @@ document.addEventListener('click', async ev => {
         if (!['ok', 'rsvp', 'going'].includes(res)) throw new Error({ started: 'This event has already started.', missing: 'This event isn’t open for RSVPs.', signin: 'Sign in first.' }[res] || res); });
       if (ok){ toast(res === 'rsvp' ? 'A seat opened up: you’re going!' : res === 'going' ? 'You’re already going.' : 'You’re on the waitlist. If a seat opens, it’s yours automatically.'); refreshEvent(id); }
       break; }
-    case 'sv-new': ui.svResults = null; ui.svDraft = { id: '', title: '', descr: '', closes: '', show_home: true, show_leaderboard: true, email: true, status: 'draft', questions: [svNewQ('single')] }; render(); window.scrollTo(0, 0); break;
+    case 'sv-new': ui.svResults = null; ui.svDraft = { id: '', title: '', descr: '', closes: '', show_home: true, show_leaderboard: true, email: true, status: 'draft', reminders: [], remPast: [], questions: [svNewQ('single')] }; render(); window.scrollTo(0, 0); break;
     case 'sv-edit': { const sv = svById(id); if (!sv) break; ui.svResults = null;
-      ui.svDraft = { id: sv.id, title: sv.title, descr: sv.descr || '', closes: mtLocalInput(sv.closes_at), show_home: sv.show_home, show_leaderboard: sv.show_leaderboard, status: sv.status, emailed_at: sv.emailed_at || null, email: false, questions: JSON.parse(JSON.stringify(sv.questions || [])) };
+      ui.svDraft = { id: sv.id, title: sv.title, descr: sv.descr || '', closes: mtLocalInput(sv.closes_at), show_home: sv.show_home, show_leaderboard: sv.show_leaderboard, status: sv.status, emailed_at: sv.emailed_at || null, email: false, reminders: (sv.remind_at || []).filter(x => Date.parse(x) > Date.now()).sort().map(mtLocalInput), remPast: (sv.remind_at || []).filter(x => Date.parse(x) <= Date.now()).sort(), questions: JSON.parse(JSON.stringify(sv.questions || [])) };
       render(); window.scrollTo(0, 0); break; }
     case 'sv-cancel': ui.svDraft = null; ui.svResults = null; render(); window.scrollTo(0, 0); break;
     case 'sv-results': ui.svDraft = null; ui.svResults = id; ui.officerTab = 'results'; if (route() !== 'officer') location.hash = 'officer/results'; else render(); window.scrollTo(0, 0); break;
@@ -6958,6 +6975,8 @@ document.addEventListener('click', async ev => {
     case 'sv-add-q': readSvDraft(); ui.svDraft.questions.push(svNewQ(t.dataset.type)); render(); { const ins = document.querySelectorAll('[data-sq$=":label"]'); ins[ins.length - 1]?.focus(); } break;
     case 'sv-add-opt': { readSvDraft(); const i = +t.dataset.i; ui.svDraft.questions[i].options.push(''); render();
       const ins = document.querySelectorAll(`[data-sq="${i}:opt"]`); ins[ins.length - 1]?.focus(); break; }
+    case 'sv-add-rem': readSvDraft(); ui.svDraft.reminders.push(''); render(); { const ins = document.querySelectorAll('[data-rem]'); ins[ins.length - 1]?.focus(); } break;
+    case 'sv-rm-rem': readSvDraft(); ui.svDraft.reminders.splice(+t.dataset.i, 1); render(); break;
     case 'sv-rm-opt': readSvDraft(); ui.svDraft.questions[+t.dataset.i].options.splice(+t.dataset.j, 1); render(); break;
     case 'sv-rm-q': readSvDraft(); ui.svDraft.questions.splice(+t.dataset.i, 1); render(); break;
     case 'sv-move-q': { readSvDraft(); const q = ui.svDraft.questions, i = +t.dataset.i, j = i + +t.dataset.d; if (q[j]) [q[i], q[j]] = [q[j], q[i]]; render(); break; }
@@ -8087,7 +8106,11 @@ async function handleSubmit(f, v, err){
     const bad = d.questions.findIndex(q => !q.label.trim()); if (bad >= 0) return err('svb-err', `Question ${bad + 1} needs a question.`);
     d.questions.forEach(q => { q.options = (q.options || []).map(o => o.trim()).filter(Boolean); });
     const few = d.questions.findIndex(q => svHasOptions(q.type) && (q.options || []).length < 2); if (few >= 0) return err('svb-err', `Question ${few + 1} needs at least two choices.`);
-    const row = { title: d.title.trim(), descr: d.descr.trim(), closes_at: mtFromInput(d.closes), show_home: d.show_home, show_leaderboard: d.show_leaderboard,
+    const rem = d.reminders.filter(Boolean).map(mtFromInputMs).sort((a, b) => a - b);
+    if (rem.some(x => x <= Date.now())) return err('svb-err', 'A reminder time has already passed. Choose a later time or remove it.');
+    if (d.closes && rem.some(x => x >= mtFromInputMs(d.closes))) return err('svb-err', 'Reminders have to go out before the survey closes.');
+    if (rem.some((x, i) => i && x - rem[i - 1] < 36e5)) return err('svb-err', 'Keep reminders at least an hour apart.');
+    const row = { title: d.title.trim(), descr: d.descr.trim(), closes_at: mtFromInput(d.closes), remind_at: [...(d.remPast || []), ...rem.map(x => new Date(x).toISOString())], show_home: d.show_home, show_leaderboard: d.show_leaderboard,
       questions: d.questions.map(q => ({ id: q.id, type: q.type, label: q.label.trim(), hint: (q.hint || '').trim(), required: !!q.required, options: svHasOptions(q.type) ? q.options : [], other: ['single', 'multi', 'dropdown'].includes(q.type) && !!q.other, points: +q.points || 0, years: q.years || [] })),
       status: mode === 'open' ? 'open' : (d.status === 'closed' ? 'closed' : 'draft') };
     let svId = d.id;

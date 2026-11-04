@@ -11,6 +11,8 @@
 //   * new questions and partner inquiries: the presidents and the Communications branch (see 54-question-notifications.sql)
 //   * waitlists: anyone who just got a seat off an event's waitlist (see 62-rsvp-waitlist.sql)
 //   * a start-of-semester reminder to update your profile, in January, May, and August (see 67-profile-reminders.sql)
+//   * survey reminders at the times an officer picked in the survey builder, to members who haven't answered, with the
+//     points they can earn (see 74-survey-reminders.sql)
 //   * (not an email) applies the automatic leaderboard point rules each run (see 56-point-rules.sql)
 //   * a summary email when chat messages sit unread for over an hour (see 42-chats.sql; works even when the
 //     event emails are off)
@@ -66,6 +68,26 @@ function businessAdd(start: number, hours: number) {
   return t;
 }
 const isoDay = (ms: number) => { const p = mtParts(ms); return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`; };
+
+// What a survey reminder says for one person: the points for the questions they'd see, any bonus-point rule they can
+// still make, and when the survey closes. Officers and test accounts aren't ranked, so they get no points (ranked = false).
+type SurveyQ = { points?: number; years?: string[] };
+function surveyReminderCopy(sv: { title: string; closes_at: string | null; questions: SurveyQ[] }, rules: { points: number; deadline: string }[], year: string, ranked: boolean, now: number) {
+  const forYear = (q: SurveyQ, y: string) => !(q.years || []).length || (q.years || []).includes(y);
+  const total = (y: string) => (sv.questions || []).filter((q) => forYear(q, y)).reduce((n, q) => n + (Number(q.points) || 0), 0);
+  // No year on their profile: the most anyone can earn, the same as the survey page.
+  const years = [...new Set((sv.questions || []).flatMap((q) => q.years || []))];
+  const pts = !ranked ? 0 : year || !years.length ? total(year) : Math.max(...years.map(total));
+  const closes = sv.closes_at ? Date.parse(sv.closes_at) : Infinity;
+  const stamp = (ms: number) => `${fmtDay(ms)} at ${fmtTime(ms)}`;
+  const plural = (n: number) => `${n} ${n === 1 ? 'point' : 'points'}`;
+  const bonus = ranked ? rules.filter((r) => r.points > 0 && Date.parse(r.deadline) > now).sort((a, b) => Date.parse(a.deadline) - Date.parse(b.deadline)) : [];
+  const body = `You haven't answered "${sv.title}" yet. It only takes a few minutes${pts ? `, and you can earn up to ${plural(pts)} on the leaderboard for answering` : ''}.`
+    + bonus.map((r) => ` Answer by ${stamp(Math.min(Date.parse(r.deadline), closes))} for ${r.points} bonus ${r.points === 1 ? 'point' : 'points'}.`).join('')
+    + (closes < Infinity ? ` It closes ${stamp(closes)}.` : '');
+  const most = pts + bonus.reduce((n, r) => n + r.points, 0);
+  return { body, most, subject: `Reminder: ${sv.title}${most ? ` (earn up to ${plural(most)})` : ''}` };
+}
 
 // ---------- Email ----------
 function htmlEmail(bodyHtml: string, button: { label: string; url: string }, footer: string) {
@@ -123,7 +145,7 @@ Deno.serve(async () => {
     const cfg = st?.auto_email;
 
     // Members, their choices, and who has a device signed up for notifications.
-    const { data: members } = await db.from('members').select('email, email_opt_in, first, notify');
+    const { data: members } = await db.from('members').select('email, email_opt_in, first, notify, year');
     const { data: tests } = await db.from('test_accounts').select('email');
     const { data: subs } = await db.from('push_subscriptions').select('email');
     const testSet = new Set((tests || []).map((t) => t.email));
@@ -358,12 +380,69 @@ ${lastNote}`
       }
     }
 
+    // Emails sent automatically in the last 24 hours, one per person (the daily limit, a safety net).
+    const sentToday = async () => {
+      const since = new Date(Date.now() - DAY).toISOString();
+      const { data: a } = await db.from('auto_email_log').select('emails').gte('sent_at', since);
+      const { data: b } = await db.from('survey_reminder_log').select('emails').gte('sent_at', since);
+      return [...(a || []), ...(b || [])].reduce((n: number, r: { emails: number }) => n + (r.emails || 0), 0);
+    };
+
+    // Survey reminders (see 74-survey-reminders.sql): the times an officer picked for an open survey, to members who
+    // haven't answered. Each is claimed in survey_reminder_log first so it only goes out once. Works even when the event
+    // emails are off, since an officer scheduled each one by hand.
+    const { data: openSurveys } = await db.from('surveys').select('id, title, closes_at, created_by, questions, remind_at').eq('status', 'open');
+    for (const sv of openSurveys || []) {
+      const at = Date.now(), times: number[] = (sv.remind_at || []).map((t: string) => Date.parse(t));
+      if (!times.length || testSet.has(sv.created_by) || (sv.closes_at && Date.parse(sv.closes_at) <= at)) continue;
+      const { data: past } = await db.from('survey_reminder_log').select('remind_at').eq('survey_id', sv.id);
+      const last = Math.max(0, ...(past || []).map((l: { remind_at: string }) => Date.parse(l.remind_at)));
+      const due = times.filter((t) => t <= at && t >= at - STALE && t > last);
+      if (!due.length) continue;
+      const claim = await db.from('survey_reminder_log').insert({ survey_id: sv.id, remind_at: new Date(Math.max(...due)).toISOString() }).select('id').single();
+      if (claim.error) continue;
+      const finish = (row: Record<string, unknown>) => db.from('survey_reminder_log').update(row).eq('id', claim.data.id);
+
+      const { data: answered } = await db.from('survey_responses').select('email').eq('survey_id', sv.id);
+      const { data: rules } = await db.from('point_rules').select('points, deadline').eq('kind', 'form').eq('survey_id', sv.id);
+      const { data: staff } = await db.from('access_list').select('email');
+      const done = new Set((answered || []).map((r: { email: string }) => r.email)), unranked = new Set((staff || []).map((r: { email: string }) => r.email));
+      const yearOf = (e: string) => String((byEmail.get(e) || {}).year || '');
+      // Skip anyone whose year has no questions in this survey.
+      const sees = (e: string) => !yearOf(e) || (sv.questions || []).some((q: SurveyQ) => !(q.years || []).length || (q.years || []).includes(yearOf(e)));
+      const to = real((members || []).map((m) => m.email)).filter((e) => !done.has(e) && sees(e));
+      const copy = (e: string) => surveyReminderCopy(sv, rules || [], yearOf(e), !unranked.has(e), at);
+      const link = `${site}/#survey/${sv.id}`;
+
+      // Notifications first, grouped by how many points they mention; anyone they don't reach can get the email.
+      const reached = new Set<string>(), groups = new Map<number, string[]>();
+      for (const e of to.filter((x) => getsPush(x, 'surveys'))) groups.set(copy(e).most, [...(groups.get(copy(e).most) || []), e]);
+      for (const [most, list] of groups) {
+        const got = await sendPush(db, list, `Reminder: ${sv.title}`, most ? `Earn up to ${most} leaderboard ${most === 1 ? 'point' : 'points'}.` : 'It only takes a few minutes.', link, `survey-remind-${sv.id}`);
+        got.forEach((e) => reached.add(e));
+      }
+      const viaEmail = to.filter((e) => !reached.has(e) && (byEmail.get(e) || {}).email_opt_in !== false && choice(e, 'surveys_email'));
+      if (!to.length) { await finish({ status: 'skipped', detail: 'Everyone has answered' }); continue; }
+      const cap = Math.max(0, Math.min(5000, Number(cfg?.daily_cap ?? 500)));
+      if (await sentToday() + viaEmail.length > cap) { await finish({ status: 'skipped', recipients: reached.size, detail: `Daily limit of ${cap} automatic emails reached` }); continue; }
+
+      const footer = `You're getting this because you're a Wolverine Finance Association member and haven't answered this survey yet. To stop these emails, turn off club emails in My account: <a href="${site}/#account" style="color:#1f4d2e">${site}/#account</a>`;
+      let ok = 0, fail = 0, note = '';
+      for (let i = 0; i < viaEmail.length; i += 100) {
+        const chunk = viaEmail.slice(i, i + 100);
+        const r = await resendBatch(chunk.map((e) => { const c = copy(e); return { to: [e], subject: c.subject,
+          html: htmlEmail(`<p style="margin:0 0 12px">${escHtml(hi(e))}</p><p style="margin:0 0 12px">${escHtml(c.body)}</p>`, { label: 'Take the survey', url: link }, footer),
+          text: `${hi(e)}\n\n${c.body}\n\nTake the survey: ${link}` }; }));
+        if (r.ok) ok += chunk.length; else { fail += chunk.length; note = r.detail; }
+        await new Promise((res) => setTimeout(res, 600));
+      }
+      await finish({ status: ok || reached.size || !fail ? 'sent' : 'failed', recipients: reached.size + ok, emails: ok + fail, detail: note.slice(0, 500) });
+    }
+
     if (!cfg?.enabled) return json({ ok: true, sent: 0, chat_alerts: chatAlerts, scheduling: schedNotes, note: 'Automatic emails are off.' });
     const now = Date.now();
 
-    // Daily limit (a safety net): emails sent automatically in the last 24 hours, one per person.
-    const { data: recent } = await db.from('auto_email_log').select('emails').gte('sent_at', new Date(now - DAY).toISOString());
-    let used = (recent || []).reduce((n: number, r: { emails: number }) => n + (r.emails || 0), 0);
+    let used = await sentToday();
     const cap = Math.max(0, Math.min(5000, Number(cfg.daily_cap ?? 500)));
 
     const { data: events } = await db.from('events').select('id, title, cat, date, start_time, end_time, loc, descr, draft, test')
