@@ -5734,10 +5734,13 @@ function qaBox(e){
 function eventOfficerExtras(e){
   const g = (db.guestRsvps || {})[e.id] || [], qs = (db.evQuestions || []).filter(q => q.event_id === e.id);
   let h = '';
-  if (g.length) h += `<div class="panel stack" style="gap:6px;padding:12px 14px"><div class="row" style="justify-content:space-between;align-items:center"><strong>Guest RSVPs (${g.length})</strong>
-      <button class="btn ghost small" data-act="copy-text" data-text="${esc(g.map(x => x.email).join('; '))}">Copy emails</button></div>
-    ${g.map(x => `<div class="ev-sub">${esc(x.first)} ${esc(x.last)} · ${esc(x.email)}${x.reminders ? ' · wants reminders' : ''}</div>`).join('')}
-    <span class="hint">Guests who join with the same email get their RSVP moved to their account.</span></div>`;
+  // Everyone who RSVP'd, members and guests. Case competitions use teams instead.
+  const rs = [...going(e.id).map(em => ({ name: userName(em), email: em, note: '' })), ...g.map(x => ({ name: (x.first + ' ' + x.last).trim(), email: x.email, note: x.reminders ? 'Guest, wants reminders' : 'Guest' }))].sort((a, b) => a.name.localeCompare(b.name));
+  if (rs.length) h += `<div class="panel stack" style="gap:6px;padding:12px 14px"><div class="row" style="justify-content:space-between;align-items:center"><strong>RSVPs (${rs.length})</strong>
+      <button class="btn ghost small" data-act="copy-text" data-label="Emails copied" data-text="${esc(rs.map(x => x.email).join('; '))}">Copy emails</button></div>
+    ${rs.map(x => `<div class="ev-sub">${esc(x.name)} · ${esc(x.email)}${x.note ? ' · ' + x.note : ''}</div>`).join('')}
+    ${g.length ? '<span class="hint">Guests who join with the same email get their RSVP moved to their account.</span>' : ''}</div>`;
+  else if (!isCase(e) && !e.draft) h += '<div class="panel" style="padding:12px 14px"><strong>RSVPs (0)</strong><div class="ev-sub">No one has RSVP’d yet.</div></div>';
   if (e.qaEnabled){
     const sorted = qs.slice().sort((a, b) => (b.starred - a.starred) || String(a.created_at).localeCompare(String(b.created_at)));
     h += `<div class="panel stack" style="gap:8px;padding:12px 14px"><div class="row" style="justify-content:space-between;align-items:center"><strong>Questions for the ${(e.speakers || []).length > 1 ? 'guests' : 'speaker'} (${qs.length})</strong>
@@ -6924,7 +6927,7 @@ document.addEventListener('click', async ev => {
     case 'qr-bg': ui.qrBg = t.dataset.bg; await showQr(id, t.dataset.kind, ui.qrStyle); break;
     case 'qr-tool-bg': ui.qrBg = t.dataset.bg; ui.qr.style = qrStyleOf(ui.qr.style); render(); drawQrTool(); break;
     case 'copy-link': await copyText(eventLink(id), (evById(id) || {}).draft ? 'Link copied. It works once the event is published' : 'Event link copied'); break;
-    case 'copy-text': await copyText(t.dataset.text, 'Link copied'); break;
+    case 'copy-text': await copyText(t.dataset.text, t.dataset.label || 'Link copied'); break;
     case 'close': closeModal(); break;
     case 'copy': copyText(t.dataset.text, t.dataset.label); break;
     case 'signout': { const sub = await pushSub(); if (sub) await sb.from('push_subscriptions').delete().eq('endpoint', sub.endpoint); ui.pushSyncedFor = null; ui.pushOnDevice = false; }
