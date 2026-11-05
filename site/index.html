@@ -2000,26 +2000,45 @@ function viewJobs(){
       ${employers.map(jobRow).join('') || `<div class="empty">${f.career.length ? 'None listed for these career paths yet.' : 'None listed yet.'}</div>`}</section>
   </div>`;
 }
-const JOB_COLUMNS = [['Type', 18], ['Company', 24], ['Job title', 32], ['Description', 50], ['Link', 40], ['Opens', 12], ['Deadline', 12], ['Career paths', 36], ['Semesters', 24], ['Officer notes', 40]];
+const JOB_COLUMNS = [['Type', 18], ['Company', 24], ['Job title', 32], ['Description', 50], ['Link', 40], ['Opens', 12], ['Deadline', 12], ['Officer notes', 40]];
 async function downloadJobTemplate(){
   try {
     const ExcelJS = await loadExcelJS(), wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('Jobs', { views: [{ state: 'frozen', ySplit: 1 }] });
-    ws.columns = JOB_COLUMNS.map(([header, width]) => ({ header, width }));
-    const paint = row => { row.font = { bold: true, color: { argb: 'FFFFFFFF' } }; row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF275D38' } }; };
-    paint(ws.getRow(1));
-    for (let r = 2; r <= 500; r++){
-      ws.getCell('A' + r).dataValidation = { type: 'list', allowBlank: true, formulae: ['"' + Object.values(JOB_KINDS).join(',') + '"'], showErrorMessage: true, errorStyle: 'stop', errorTitle: 'Pick from the list', error: 'Choose a type from the drop-down list.' };
-      ws.getCell('F' + r).numFmt = ws.getCell('G' + r).numFmt = 'm/d/yyyy';
+    const ws = wb.addWorksheet('Jobs', { views: [{ state: 'frozen', xSplit: 3, ySplit: 2 }] });
+    const careers = (db.careers || []).map(c => c.title), nowKey = jobSemKey((db.settings.semester || '').trim()), sems = jobSems().filter(x => jobSemKey(x) >= nowKey);
+    const base = JOB_COLUMNS.length, heads = [...JOB_COLUMNS.map(c => c[0]), ...careers, ...sems];
+    ws.columns = heads.map((h, i) => ({ width: i < base ? JOB_COLUMNS[i][1] : 14 }));
+    // Row 1 names the groups, row 2 has the column names. Each career path and semester is its own column to check off.
+    const groups = [[1, base, 'Job details', 'FF275D38'], [base + 1, base + careers.length, 'Career paths: check each one that applies', 'FF8F6E22'], [base + careers.length + 1, heads.length, 'Semesters: check each one that applies', 'FF2D5D86']];
+    groups.forEach(([from, to, label, argb]) => {
+      if (to < from) return;
+      if (to > from) ws.mergeCells(1, from, 1, to);
+      ws.getCell(1, from).value = label;
+      for (let c = from; c <= to; c++) [1, 2].forEach(r => {
+        const cell = ws.getCell(r, c);
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+        cell.alignment = { vertical: 'middle', horizontal: r === 1 || c > base ? 'center' : 'left', wrapText: true };
+      });
+    });
+    heads.forEach((h, i) => { ws.getCell(2, i + 1).value = h; });
+    ws.getRow(2).height = 48;
+    for (let r = 3; r <= 500; r++){
+      ws.getCell(r, 1).dataValidation = { type: 'list', allowBlank: true, formulae: ['"' + Object.values(JOB_KINDS).join(',') + '"'], showErrorMessage: true, errorStyle: 'stop', errorTitle: 'Pick from the list', error: 'Choose a type from the drop-down list.' };
+      ws.getCell(r, 6).numFmt = ws.getCell(r, 7).numFmt = 'm/d/yyyy';
+      for (let c = base + 1; c <= heads.length; c++){
+        const cell = ws.getCell(r, c);
+        cell.dataValidation = { type: 'list', allowBlank: true, formulae: ['"✓"'], showErrorMessage: false };
+        cell.alignment = { horizontal: 'center' };
+      }
     }
     const how = wb.addWorksheet('How to fill this out');
-    how.columns = [{ width: 34 }, { width: 80 }];
+    how.columns = [{ width: 24 }, { width: 90 }];
     [['Column', 'What to enter'], ['Type', 'Internship, Full-time, or Employer website (a firm that recruits year-round).'], ['Company', 'Required.'], ['Job title', 'Required, except for an Employer website row.'], ['Description', 'Optional.'],
       ['Link', 'Required. The job posting, or the careers page for an Employer website row.'], ['Opens, Deadline', 'Optional dates, like 1/15/2027. Jobs are hidden from members after the deadline. Ignored for an Employer website row.'],
-      ['Career paths', 'Optional. One or more from the list below, separated by semicolons.'], ['Semesters', 'Optional. One or more, like Fall 2026; Spring 2027. Ignored for an Employer website row.'], ['Officer notes', 'Optional. Shown on the listing.'],
-      [], ['Example', 'Internship | Example Capital | Summer Analyst | … | https://example.com/jobs/123 | 1/15/2027 | 3/1/2027 | Investment banking; Private equity | Summer 2027 | Our alum Sam can refer you.'], [], ['Career paths you can use']
-    ].forEach((r, i) => { const row = how.addRow(r); if (!i) paint(row); else if (i === 13) row.font = { bold: true }; });
-    (db.careers || []).forEach(c => how.addRow([c.title]));
+      ['Officer notes', 'Optional. Shown on the listing.'], ['Career paths', 'Optional. Choose ✓ from the drop-down, or type an x, in every career path that applies. Leave the others blank.'],
+      ['Semesters', 'Optional. Mark every semester that applies, the same way. Ignored for an Employer website row.'], ['Another semester', 'To tag a semester that isn’t listed, add a column named like Summer 2028.']
+    ].forEach((r, i) => { const row = how.addRow(r); if (!i){ row.font = { bold: true, color: { argb: 'FFFFFFFF' } }; row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF275D38' } }; } });
     how.getColumn(2).alignment = { wrapText: true, vertical: 'top' };
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
@@ -2056,11 +2075,16 @@ function jobDateIn(x){
 // the same file can be uploaded again after adding to it.
 function jobImportFrom(rows, name){
   rows = rows.filter(r => r.some(x => String(x).trim()));
-  const head = (rows[0] || []).map(x => String(x).trim().toLowerCase()), col = (...names) => head.findIndex(h => names.includes(h));
+  const top = rows.findIndex(r => r.some(x => String(x).trim().toLowerCase() === 'company'));   // the template has a row of group names above this
+  const head = (rows[top] || []).map(x => String(x).trim().toLowerCase()), col = (...names) => head.findIndex(h => names.includes(h));
   const at = { kind: col('type'), company: col('company'), title: col('job title', 'title'), descr: col('description'), url: col('link', 'url'), opens: col('opens'), closes: col('deadline'), careers: col('career paths', 'careers'), sems: col('semesters', 'semester'), notes: col('officer notes', 'notes') };
   if (at.kind < 0 || at.company < 0 || at.url < 0) return toast('That file doesn’t match the template. It needs Type, Company, and Link columns.');
+  // Every other named column is a career path or semester to check off.
+  const named = new Set(['type', 'company', 'job title', 'title', 'description', 'link', 'url', 'opens', 'deadline', 'career paths', 'careers', 'semesters', 'semester', 'officer notes', 'notes']);
+  const tickCols = head.map((h, i) => [h, i]).filter(([h]) => h && !named.has(h));
+  const semOf = x => { const m = x.match(/^(spring|summer|fall)\s*'?(\d{2}|\d{4})$/i); return m ? m[1][0].toUpperCase() + m[1].slice(1).toLowerCase() + ' ' + (m[2].length === 2 ? '20' + m[2] : m[2]) : ''; };
   const careers = db.careers || [], keyOf = r => [r.kind, r.company, r.title].join('|').toLowerCase(), seen = new Set((db.jobs || []).map(keyOf));
-  const out = rows.slice(1).map(cells => {
+  const out = rows.slice(top + 1).map(cells => {
     const cell = i => i < 0 ? '' : String(cells[i] == null ? '' : cells[i]).trim(), problems = [], list = i => cell(i).split(/[;,\n]/).map(x => x.trim()).filter(Boolean);
     const t = cell(at.kind).toLowerCase().replace(/[\s_-]+/g, ' ');
     const kind = /^intern(ship)?$/.test(t) ? 'internship' : /^full ?time$/.test(t) ? 'full_time' : /^(employer( website)?|year ?round)$/.test(t) ? 'employer' : '';
@@ -2072,9 +2096,15 @@ function jobImportFrom(rows, name){
     if (row.company.length > 120 || row.title.length > 200 || row.descr.length > 5000 || row.officer_notes.length > 2000) problems.push('Some text is too long.');
     list(at.careers).forEach(x => { const low = x.toLowerCase(), hit = careers.filter(c => c.title.toLowerCase() === low), near = careers.filter(c => c.title.toLowerCase().includes(low)), c = hit[0] || (near.length === 1 ? near[0] : null);
       if (c) row.careers.includes(c.id) || row.careers.push(c.id); else problems.push(`“${x}” isn’t a career path on the site.`); });
+    tickCols.forEach(([h, i]) => {
+      if (!cell(i) || /^(no|n|false|0|-)$/i.test(cell(i))) return;
+      const c = careers.find(x => x.title.toLowerCase() === h), sem = semOf(h);
+      if (c) row.careers.includes(c.id) || row.careers.push(c.id);
+      else if (sem){ if (!emp && !row.semesters.includes(sem)) row.semesters.push(sem); }
+      else problems.push(`The “${h}” column isn’t a career path or semester on the site.`);
+    });
     if (!emp){
-      list(at.sems).forEach(x => { const m = x.match(/^(spring|summer|fall)\s*'?(\d{2}|\d{4})$/i);
-        if (m) row.semesters.push(m[1][0].toUpperCase() + m[1].slice(1).toLowerCase() + ' ' + (m[2].length === 2 ? '20' + m[2] : m[2])); else problems.push(`“${x}” should look like Fall 2026.`); });
+      list(at.sems).forEach(x => { const sem = semOf(x); if (!sem) problems.push(`“${x}” should look like Fall 2026.`); else if (!row.semesters.includes(sem)) row.semesters.push(sem); });
       [['opens_on', at.opens, 'Opens'], ['closes_on', at.closes, 'Deadline']].forEach(([k, i, l]) => { const v = jobDateIn(cell(i)); if (v === null) problems.push(`${l} isn’t a date.`); else row[k] = v || null; });
       if (row.opens_on && row.closes_on && row.opens_on > row.closes_on) problems.push('The deadline is before it opens.');
     }
