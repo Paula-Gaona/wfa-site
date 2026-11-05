@@ -444,6 +444,11 @@ table.bulk input,table.bulk select{padding:6px 8px;min-width:120px}
 .job-tags{display:flex;flex-wrap:wrap;gap:6px}
 .job-body{display:flex;flex-direction:column;gap:12px;padding:14px 16px}
 .job-note{border-left:3px solid var(--gold,#B8923A);padding:2px 0 2px 12px;white-space:pre-wrap}
+.job-drop{position:relative}
+.job-drop summary{list-style:none;display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border:1.5px solid var(--line);border-radius:var(--radius);background:var(--surface);cursor:pointer}
+.job-drop summary::-webkit-details-marker{display:none}
+.job-drop summary::after{content:"\25BE"}
+.job-drop-list{position:absolute;z-index:20;left:0;right:0;margin-top:4px;display:flex;flex-direction:column;gap:6px;max-height:16rem;overflow:auto;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);box-shadow:0 6px 18px rgba(0,0,0,.18)}
 .job-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr));gap:10px;align-items:end}
 .cat-head{font-size:1.35rem;text-transform:uppercase;color:var(--brand-text)}
 .mail-pre{white-space:pre-wrap;font-size:.95rem;overflow-wrap:anywhere}
@@ -1913,10 +1918,16 @@ function jobSems(){
 // A pasted link: adds https:// when it's left off. Blank if it isn't a link.
 function jobUrl(x){ const u = /^https?:\/\//i.test(x) ? x : /^[\w-]+(\.[\w-]+)+([\/?#]\S*)?$/.test(x) ? 'https://' + x : ''; return /^https?:\/\/\S+\.\S+/i.test(u) ? u : ''; }
 function jobFilters(){
-  const f = ui.jobF || (ui.jobF = { career: '', sem: '', type: '' });
-  if (location.hash !== ui._jobHash){ ui._jobHash = location.hash; f.career = location.hash.split('/')[1] || ''; f.sem = ''; f.type = ''; }
-  if (f.career && !jobCareerName(f.career)) f.career = '';
+  const f = ui.jobF || (ui.jobF = { career: [], sem: [], type: [] });
+  if (location.hash !== ui._jobHash){ ui._jobHash = location.hash; f.career = (location.hash.split('/')[1] || '').split(',').filter(Boolean); f.sem = []; f.type = []; }
+  if ((db.careers || []).length) f.career = f.career.filter(jobCareerName);
   return f;
+}
+// A filter you can pick several things in: a dropdown of checkboxes that stays open while you tick them.
+function jobDrop(key, title, all, many, opts, cur){
+  const label = !cur.length ? all : cur.length === 1 ? (opts.find(o => o[0] === cur[0]) || [])[1] || all : cur.length + ' ' + many;
+  return `<div class="stack" style="gap:4px"><span class="label-text">${title}</span><details class="job-drop" data-jobdrop="${key}" ${ui.jobDrop === key ? 'open' : ''}><summary>${esc(label)}</summary>
+    <div class="job-drop-list">${opts.map(([v, l]) => `<label class="check"><input type="checkbox" data-jobf="${key}" value="${esc(v)}" ${cur.includes(v) ? 'checked' : ''}> ${esc(l)}</label>`).join('') || '<span class="hint">None yet</span>'}</div></details></div>`;
 }
 function jobRow(j){
   const emp = j.kind === 'employer', past = j.closes_on && j.closes_on < todayIso();
@@ -1965,11 +1976,10 @@ function jobImportTable(){
 function viewJobs(){
   const f = jobFilters(), all = db.jobs || [], off = can('officer'), today = todayIso();
   const isPast = j => j.closes_on && j.closes_on < today, due = j => j.closes_on || '9999';
-  const inCareer = j => !f.career || (j.careers || []).includes(f.career);
-  const jobs = all.filter(j => j.kind !== 'employer' && (off || !isPast(j)) && inCareer(j) && (!f.sem || (j.semesters || []).includes(f.sem)) && (!f.type || j.kind === f.type))
+  const inCareer = j => !f.career.length || (j.careers || []).some(c => f.career.includes(c)), filtered = f.career.length || f.sem.length || f.type.length;
+  const jobs = all.filter(j => j.kind !== 'employer' && (off || !isPast(j)) && inCareer(j) && (!f.sem.length || (j.semesters || []).some(x => f.sem.includes(x))) && (!f.type.length || f.type.includes(j.kind)))
     .sort((a, b) => isPast(a) - isPast(b) || due(a).localeCompare(due(b)) || b.created_at.localeCompare(a.created_at));
   const employers = all.filter(j => j.kind === 'employer' && inCareer(j)).sort((a, b) => a.company.localeCompare(b.company));
-  const opt = (v, l, cur) => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(l)}</option>`;
   return `<div class="view">
     <section class="page-head"><div class="eyebrow">Careers</div><h1 class="page">Jobs and internships</h1>
       <p class="muted">Finance openings for UVU students, picked out by our officers. Select a listing for the details and the link to apply.</p></section>
@@ -1979,15 +1989,15 @@ function viewJobs(){
         <label class="btn ghost small" style="flex-direction:row;cursor:pointer">Upload Excel file<input id="job-file" type="file" accept=".xlsx,.csv,text/csv" hidden></label></div>
       ${jobImportTable()}</section>${ui.jobDraft ? jobForm() : ''}` : ''}
     <div class="job-filters">
-      <label>Career path<select id="job-f-career">${opt('', 'All career paths', f.career)}${(db.careers || []).map(c => opt(c.id, c.title, f.career)).join('')}</select></label>
-      <label>Semester<select id="job-f-sem">${opt('', 'All semesters', f.sem)}${jobSems().map(x => opt(x, x, f.sem)).join('')}</select></label>
-      <label>Type<select id="job-f-type">${opt('', 'Internships and full-time', f.type)}${opt('internship', 'Internships', f.type)}${opt('full_time', 'Full-time', f.type)}</select></label>
+      ${jobDrop('career', 'Career paths', 'All career paths', 'career paths', (db.careers || []).map(c => [c.id, c.title]), f.career)}
+      ${jobDrop('sem', 'Semesters', 'All semesters', 'semesters', jobSems().map(x => [x, x]), f.sem)}
+      ${jobDrop('type', 'Type', 'Internships and full-time', 'types', [['internship', 'Internships'], ['full_time', 'Full-time']], f.type)}
     </div>
-    <section class="stack" style="gap:10px"><div class="section-head"><h2>Openings</h2><span class="muted">${jobs.length} ${jobs.length === 1 ? 'listing' : 'listings'}${f.career || f.sem || f.type ? ' · <button class="btn ghost small" data-act="job-clear">Clear filters</button>' : ''}</span></div>
-      ${jobs.map(jobRow).join('') || `<div class="empty">${f.career || f.sem || f.type ? 'No openings match these filters right now.' : 'No openings posted yet. Check back soon.'}</div>`}</section>
+    <section class="stack" style="gap:10px"><div class="section-head"><h2>Openings</h2><span class="muted">${jobs.length} ${jobs.length === 1 ? 'listing' : 'listings'}${filtered ? ' · <button class="btn ghost small" data-act="job-clear">Clear filters</button>' : ''}</span></div>
+      ${jobs.map(jobRow).join('') || `<div class="empty">${filtered ? 'No openings match these filters right now.' : 'No openings posted yet. Check back soon.'}</div>`}</section>
     <section class="stack" style="gap:10px"><div class="section-head"><h2>Employers hiring year-round</h2></div>
       <p class="hint" style="margin:0">These firms recruit all year, so check their careers pages directly.</p>
-      ${employers.map(jobRow).join('') || `<div class="empty">${f.career ? 'None listed for this career path yet.' : 'None listed yet.'}</div>`}</section>
+      ${employers.map(jobRow).join('') || `<div class="empty">${f.career.length ? 'None listed for these career paths yet.' : 'None listed yet.'}</div>`}</section>
   </div>`;
 }
 const JOB_COLUMNS = [['Type', 18], ['Company', 24], ['Job title', 32], ['Description', 50], ['Link', 40], ['Opens', 12], ['Deadline', 12], ['Career paths', 36], ['Semesters', 24], ['Officer notes', 40]];
@@ -6937,8 +6947,11 @@ function addPasswordToggles(){
 // (or a pop-up is open), only the menu dots and counts update, so nothing you're writing is lost.
 let liveBusy = false, lastLive = Date.now();
 document.addEventListener('input', e => { if (e.target.closest && e.target.closest('#app form')) ui.dirtyForm = true; }, true);
+document.addEventListener('click', e => { if (ui.jobDrop && !(e.target.closest && e.target.closest('.job-drop'))) document.querySelectorAll('[data-jobdrop][open]').forEach(x => { x.open = false; }); });
 // Listings stay open when the page redraws.
-document.addEventListener('toggle', e => { const id = e.target.dataset && e.target.dataset.job; if (!id) return; const o = ui.jobOpen || (ui.jobOpen = new Set()); if (e.target.open) o.add(id); else o.delete(id); }, true);
+document.addEventListener('toggle', e => { const dr = e.target.dataset && e.target.dataset.jobdrop;
+  if (dr){ if (e.target.open){ ui.jobDrop = dr; document.querySelectorAll('[data-jobdrop][open]').forEach(x => { if (x !== e.target) x.open = false; }); } else if (ui.jobDrop === dr) ui.jobDrop = null; return; }
+  const id = e.target.dataset && e.target.dataset.job; if (!id) return; const o = ui.jobOpen || (ui.jobOpen = new Set()); if (e.target.open) o.add(id); else o.delete(id); }, true);
 async function liveRefresh(force){
   if (!loaded || liveBusy || document.visibilityState !== 'visible') return;
   if (!force && Date.now() - lastLive < 15000) return;
@@ -7514,11 +7527,11 @@ document.addEventListener('click', async ev => {
     case 'bulk-go': await bulkAdd(); break;
     case 'bulk-template': downloadBulkTemplate(); break;
     case 'job-template': downloadJobTemplate(); break;
-    case 'job-new': ui.jobDraft = { id: '', kind: t.dataset.kind || 'internship', company: '', title: '', descr: '', url: '', opens_on: '', closes_on: '', careers: ui.jobF && ui.jobF.career ? [ui.jobF.career] : [], semesters: [], officer_notes: '' }; render(); document.getElementById('f-job')?.scrollIntoView({ block: 'center' }); break;
+    case 'job-new': ui.jobDraft = { id: '', kind: t.dataset.kind || 'internship', company: '', title: '', descr: '', url: '', opens_on: '', closes_on: '', careers: [...((ui.jobF || {}).career || [])], semesters: [], officer_notes: '' }; render(); document.getElementById('f-job')?.scrollIntoView({ block: 'center' }); break;
     case 'job-edit': { const j = jobById(id); if (!j) break; ui.jobDraft = { ...j }; render(); document.getElementById('f-job')?.scrollIntoView({ block: 'center' }); break; }
     case 'job-cancel': ui.jobDraft = null; render(); break;
     case 'job-del': { const j = jobById(id); await act(async () => { must(await sb.from('job_postings').delete().eq('id', id)); await logChange('Deleted the listing “' + (j ? j.title || j.company : '') + '”'); }, 'Listing deleted'); break; }
-    case 'job-clear': ui.jobF = { career: '', sem: '', type: '' }; history.replaceState(null, '', '#jobs'); ui._jobHash = location.hash; render(); break;
+    case 'job-clear': ui.jobF = { career: [], sem: [], type: [] }; history.replaceState(null, '', '#jobs'); ui._jobHash = location.hash; render(); break;
     case 'job-import-cancel': ui.jobImport = null; render(); break;
     case 'job-import-add': { const rows = ui.jobImport.rows.filter(r => !r.problems.length).map(r => r.row);
       await act(async () => { must(await sb.from('job_postings').insert(rows)); await logChange('Added ' + rows.length + ' job listings from a spreadsheet'); ui.jobImport = null; }, `Added ${rows.length} ${rows.length === 1 ? 'listing' : 'listings'}`); break; }
@@ -7735,10 +7748,12 @@ document.addEventListener('change', async e => {
   if (e.target.name === 'ct-kind'){ ctKindSync(e.target.form); const dl = document.getElementById('ct-titles');
     dl.innerHTML = e.target.value === 'faculty' ? ['Professor', 'Associate Professor', 'Assistant Professor', 'Lecturer', 'Adjunct Professor', 'Department Chair', 'Dean'].map(t => `<option value="${t}">`).join('') : ''; }
   if (id === 'bulk-mode') ui.bulkMode = e.target.value;
-  if (id === 'job-f-career' || id === 'job-f-sem' || id === 'job-f-type'){
-    jobFilters()[id.slice(6)] = e.target.value;
-    if (id === 'job-f-career'){ history.replaceState(null, '', '#jobs' + (e.target.value ? '/' + e.target.value : '')); ui._jobHash = location.hash; }
+  if (e.target.dataset.jobf){
+    const key = e.target.dataset.jobf, val = e.target.value, f = jobFilters();
+    f[key] = e.target.checked ? [...f[key], val] : f[key].filter(x => x !== val);
+    if (key === 'career'){ history.replaceState(null, '', '#jobs' + (f.career.length ? '/' + f.career.join(',') : '')); ui._jobHash = location.hash; }
     render();
+    document.querySelector(`[data-jobf="${key}"][value="${CSS.escape(val)}"]`)?.focus();
   }
   if (id === 'job-file' && e.target.files[0]){
     const file = e.target.files[0]; e.target.value = '';
