@@ -437,6 +437,14 @@ table.bulk input,table.bulk select{padding:6px 8px;min-width:120px}
 .careers{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:16px;align-items:start}
 .career{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .career .facts{grid-template-columns:auto 1fr}
+.job{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);min-width:0}
+.job summary{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px 14px;padding:12px 16px;cursor:pointer}
+.job[open] summary{border-bottom:1px solid var(--line)}
+.job-name{display:flex;flex-direction:column;min-width:0}
+.job-tags{display:flex;flex-wrap:wrap;gap:6px}
+.job-body{display:flex;flex-direction:column;gap:12px;padding:14px 16px}
+.job-note{border-left:3px solid var(--gold,#B8923A);padding:2px 0 2px 12px;white-space:pre-wrap}
+.job-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr));gap:10px;align-items:end}
 .cat-head{font-size:1.35rem;text-transform:uppercase;color:var(--brand-text)}
 .mail-pre{white-space:pre-wrap;font-size:.95rem;overflow-wrap:anywhere}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
@@ -731,6 +739,7 @@ async function load(){
     pstats: sb.rpc('public_stats'),
     wait: sb.rpc('waitlist_info'),
     surveys: t('surveys'),
+    jobs: t('job_postings'),
     svResp: signed && t('survey_responses'),
     svCounts: sb.rpc('survey_counts'),
     svRemLog: off && sb.from('survey_reminder_log').select('*'),
@@ -847,6 +856,7 @@ async function load(){
   db.mres = {}; (R.mres || []).forEach(r => (db.mres[r.member_id] = db.mres[r.member_id] || {})[r.category] = { path: r.path, updated: r.updated_at });
   db.pstats = R.pstats || null;
   db.surveys = (Array.isArray(R.surveys) ? R.surveys : []).sort((a, b) => b.created_at.localeCompare(a.created_at));   // survey builder (63-survey-builder.sql)
+  db.jobs = Array.isArray(R.jobs) ? R.jobs : [];   // Jobs page (75-job-postings.sql)
   db.svResp = Array.isArray(R.svResp) ? R.svResp : [];
   db.svRemLog = Array.isArray(R.svRemLog) ? R.svRemLog : [];   // what went out (74-survey-reminders.sql)
   db.svCounts = Object.fromEntries((Array.isArray(R.svCounts) ? R.svCounts : []).map(x => [x.survey_id, x.responses]));
@@ -996,7 +1006,7 @@ function setPendingRsvp(id){ ui._pending = id; try { id ? sessionStorage.setItem
 
 /* ---------- Chrome: nav, ticker ---------- */
 function renderChrome(route){
-  const links = [['home','Home'],['calendar','Calendar'],['recaps','Recaps'],['officers','Officers'],['about','About'],['resources','Resources'],['partners','Partner with us'],['contact','Contact']];
+  const links = [['home','Home'],['calendar','Calendar'],['recaps','Recaps'],['officers','Officers'],['about','About'],['resources','Resources'],['jobs','Jobs'],['partners','Partner with us'],['contact','Contact']];
   if (appsOpen()) links.push(['apply','Apply']);
   const mem = [['leaderboard','Leaderboard'],['availability','Availability'],['messages','Messages'],['account','My account']];
   const staff = [];
@@ -1845,7 +1855,8 @@ function careerCard(c){
       ${c.hours ? `<dt>Hours</dt><dd>${esc(c.hours)}</dd>` : ''}
       ${c.path ? `<dt>Getting in</dt><dd>${esc(c.path)}</dd>` : ''}
     </dl>
-    ${can('officer') ? `<div class="row" style="gap:6px;margin-top:auto"><button class="btn ghost small" data-act="career-edit" data-id="${c.id}">Edit</button>${delBtn('car-' + c.id, 'Delete', 'career-del', c.id)}</div>` : ''}
+    <div style="margin-top:auto"><a class="btn ghost small" href="#jobs/${c.id}">View opportunities</a></div>
+    ${can('officer') ? `<div class="row" style="gap:6px"><button class="btn ghost small" data-act="career-edit" data-id="${c.id}">Edit</button>${delBtn('car-' + c.id, 'Delete', 'career-del', c.id)}</div>` : ''}
   </article>`;
 }
 function careersSection(){
@@ -1884,6 +1895,186 @@ function timelineSection(){
       ${rows.map(r => `<tr><td>${esc(r.when_text)}</td><td>${esc(r.what_text)}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No timeline yet.</td></tr>'}
     </tbody></table></div>`;
 }
+// Jobs page: internships, full-time jobs, and employers who recruit year-round (75-job-postings.sql). Anyone can read it;
+// officers add to it here, one at a time or from an Excel file. #jobs/<career id> opens it filtered to that career.
+const JOB_KINDS = { internship: 'Internship', full_time: 'Full-time', employer: 'Employer website' };
+const JOB_SEASONS = ['Spring', 'Summer', 'Fall'];
+const jobById = id => (db.jobs || []).find(x => x.id === id);
+const jobCareerName = id => ((db.careers || []).find(c => c.id === id) || {}).title;
+const jobDay = d => parseDay(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+const jobSemKey = x => { const m = String(x).match(/^(\w+) (\d{4})$/); return m ? +m[2] * 4 + JOB_SEASONS.indexOf(m[1]) : 0; };
+// Semesters to tag: this one and the next four (summer counts, for internships), plus any already in use.
+function jobSems(){
+  const m = (db.settings.semester || '').match(/^(Spring|Summer|Fall)\s+(\d{4})$/i), out = [];
+  if (m){ let i = JOB_SEASONS.findIndex(x => x.toLowerCase() === m[1].toLowerCase()), y = +m[2];
+    for (let n = 0; n < 5; n++){ out.push(JOB_SEASONS[i] + ' ' + y); if (++i === 3){ i = 0; y++; } } }
+  return [...new Set([...(db.jobs || []).flatMap(j => j.semesters || []), ...out])].sort((a, b) => jobSemKey(a) - jobSemKey(b));
+}
+// A pasted link: adds https:// when it's left off. Blank if it isn't a link.
+function jobUrl(x){ const u = /^https?:\/\//i.test(x) ? x : /^[\w-]+(\.[\w-]+)+([\/?#]\S*)?$/.test(x) ? 'https://' + x : ''; return /^https?:\/\/\S+\.\S+/i.test(u) ? u : ''; }
+function jobFilters(){
+  const f = ui.jobF || (ui.jobF = { career: '', sem: '', type: '' });
+  if (location.hash !== ui._jobHash){ ui._jobHash = location.hash; f.career = location.hash.split('/')[1] || ''; f.sem = ''; f.type = ''; }
+  if (f.career && !jobCareerName(f.career)) f.career = '';
+  return f;
+}
+function jobRow(j){
+  const emp = j.kind === 'employer', past = j.closes_on && j.closes_on < todayIso();
+  const careers = (j.careers || []).map(jobCareerName).filter(Boolean);
+  return `<details class="job" data-job="${j.id}" ${(ui.jobOpen || new Set()).has(j.id) ? 'open' : ''}>
+    <summary><span class="job-name"><strong>${esc(emp ? j.company : j.title)}</strong>${emp ? '<span class="muted">Recruits year-round</span>' : `<span class="muted">${esc(j.company)}</span>`}</span>
+      <span class="job-tags">${emp ? '' : `<span class="tag ok">${JOB_KINDS[j.kind]}</span>`}${past ? '<span class="tag warn">Past deadline</span>' : j.closes_on ? `<span class="tag">Due ${jobDay(j.closes_on)}</span>` : ''}</span></summary>
+    <div class="job-body">
+      ${j.descr ? `<p style="margin:0;white-space:pre-wrap">${esc(j.descr)}</p>` : ''}
+      ${j.opens_on || j.closes_on ? `<dl class="facts">${j.opens_on ? `<dt>Opens</dt><dd>${jobDay(j.opens_on)}</dd>` : ''}${j.closes_on ? `<dt>Deadline</dt><dd>${jobDay(j.closes_on)}</dd>` : ''}</dl>` : ''}
+      ${careers.length || (j.semesters || []).length ? `<div class="job-tags">${careers.map(c => `<span class="tag">${esc(c)}</span>`).join('')}${(j.semesters || []).map(x => `<span class="tag members">${esc(x)}</span>`).join('')}</div>` : ''}
+      ${j.officer_notes ? `<div class="job-note"><strong>Officer notes</strong><br>${esc(j.officer_notes)}</div>` : ''}
+      <div class="row" style="gap:6px"><a class="btn small" href="${esc(j.url)}" target="_blank" rel="noopener">${emp ? 'View careers page' : 'View job posting'} ↗</a>
+        ${can('officer') ? `<button class="btn ghost small" data-act="job-edit" data-id="${j.id}">Edit</button>${delBtn('job-' + j.id, 'Delete', 'job-del', j.id)}` : ''}</div>
+    </div></details>`;
+}
+function jobForm(){
+  const d = ui.jobDraft, emp = d.kind === 'employer';
+  const box = (name, val, label, on) => `<label class="check"><input type="checkbox" name="${name}" value="${esc(val)}" ${on ? 'checked' : ''}> ${esc(label)}</label>`;
+  return `<form class="panel stack" id="f-job" data-id="${esc(d.id)}" data-kind="${d.kind}" novalidate style="gap:12px">
+    <h3 style="margin:0">${d.id ? 'Edit' : 'Add'} ${emp ? 'an employer who recruits year-round' : 'a job'}</h3>
+    <div class="grid2"><label>Company<input id="jb-company" maxlength="120" value="${esc(d.company)}"></label>
+      ${emp ? '' : `<label>Job title<input id="jb-title" maxlength="200" value="${esc(d.title)}"></label>
+      <label>Type<select id="jb-kind"><option value="internship" ${d.kind === 'internship' ? 'selected' : ''}>Internship</option><option value="full_time" ${d.kind === 'full_time' ? 'selected' : ''}>Full-time</option></select></label>`}
+      <label>${emp ? 'Link to their careers page' : 'Link to the job posting'}<input id="jb-url" type="url" placeholder="https://…" value="${esc(d.url)}"></label></div>
+    <label>Description <span class="hint">Optional</span><textarea id="jb-descr" rows="4" maxlength="5000">${esc(d.descr)}</textarea></label>
+    ${emp ? '' : `<div class="grid2"><label>Opens <span class="hint">Optional</span><input id="jb-opens" type="date" value="${esc(d.opens_on || '')}"></label>
+      <label>Deadline <span class="hint">Optional. It’s hidden from members after this date.</span><input id="jb-closes" type="date" value="${esc(d.closes_on || '')}"></label></div>`}
+    <fieldset class="stack" style="gap:4px"><legend>Career paths</legend><div class="row" style="gap:4px 14px">${(db.careers || []).map(c => box('jb-career', c.id, c.title, (d.careers || []).includes(c.id))).join('')}</div></fieldset>
+    ${emp ? '' : `<fieldset class="stack" style="gap:4px"><legend>Semesters</legend><div class="row" style="gap:4px 14px">${jobSems().map(x => box('jb-sem', x, x, (d.semesters || []).includes(x))).join('')}</div></fieldset>`}
+    <label>Officer notes <span class="hint">Optional. Shown on the listing when filled in.</span><textarea id="jb-notes" rows="2" maxlength="2000">${esc(d.officer_notes)}</textarea></label>
+    <div class="err" id="jb-err"></div>
+    <div class="row" style="gap:8px"><button class="btn" type="submit">Save</button><button type="button" class="btn ghost" data-act="job-cancel">Cancel</button></div>
+  </form>`;
+}
+function jobImportTable(){
+  const im = ui.jobImport; if (!im) return '';
+  const good = im.rows.filter(r => !r.problems.length).length;
+  return `<div class="stack" style="gap:10px"><strong>${esc(im.name)}: ${good} of ${im.rows.length} ready to add</strong>
+    <div class="table-wrap"><table><thead><tr><th>Type</th><th>Company</th><th>Job title</th><th>Career paths</th><th>Semesters</th><th>Deadline</th><th>Status</th></tr></thead><tbody>
+      ${im.rows.map(r => `<tr><td>${esc(JOB_KINDS[r.row.kind] || '')}</td><td>${esc(r.row.company)}</td><td>${esc(r.row.title)}</td><td>${esc(r.row.careers.map(jobCareerName).join(', '))}</td><td>${esc(r.row.semesters.join(', '))}</td><td>${r.row.closes_on ? jobDay(r.row.closes_on) : ''}</td>
+        <td>${r.problems.length ? `<span class="err">${esc(r.problems.join(' '))}</span>` : 'Ready'}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="row" style="gap:8px"><button class="btn small" data-act="job-import-add" ${good ? '' : 'disabled'}>Add ${good} ${good === 1 ? 'listing' : 'listings'}</button><button class="btn ghost small" data-act="job-import-cancel">Cancel</button></div></div>`;
+}
+function viewJobs(){
+  const f = jobFilters(), all = db.jobs || [], off = can('officer'), today = todayIso();
+  const isPast = j => j.closes_on && j.closes_on < today, due = j => j.closes_on || '9999';
+  const inCareer = j => !f.career || (j.careers || []).includes(f.career);
+  const jobs = all.filter(j => j.kind !== 'employer' && (off || !isPast(j)) && inCareer(j) && (!f.sem || (j.semesters || []).includes(f.sem)) && (!f.type || j.kind === f.type))
+    .sort((a, b) => isPast(a) - isPast(b) || due(a).localeCompare(due(b)) || b.created_at.localeCompare(a.created_at));
+  const employers = all.filter(j => j.kind === 'employer' && inCareer(j)).sort((a, b) => a.company.localeCompare(b.company));
+  const opt = (v, l, cur) => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(l)}</option>`;
+  return `<div class="view">
+    <section class="page-head"><div class="eyebrow">Careers</div><h1 class="page">Jobs and internships</h1>
+      <p class="muted">Finance openings for UVU students, picked out by our officers. Select a listing for the details and the link to apply.</p></section>
+    ${off ? `<section class="panel stack" style="gap:10px"><h3 style="margin:0">Add listings</h3>
+      <div class="row" style="gap:8px"><button class="btn small" data-act="job-new">+ Add a job</button><button class="btn ghost small" data-act="job-new" data-kind="employer">+ Add a year-round employer</button>
+        <button class="btn ghost small" data-act="job-template">Download template (Excel)</button>
+        <label class="btn ghost small" style="flex-direction:row;cursor:pointer">Upload Excel file<input id="job-file" type="file" accept=".xlsx,.csv,text/csv" hidden></label></div>
+      ${jobImportTable()}</section>${ui.jobDraft ? jobForm() : ''}` : ''}
+    <div class="job-filters">
+      <label>Career path<select id="job-f-career">${opt('', 'All career paths', f.career)}${(db.careers || []).map(c => opt(c.id, c.title, f.career)).join('')}</select></label>
+      <label>Semester<select id="job-f-sem">${opt('', 'All semesters', f.sem)}${jobSems().map(x => opt(x, x, f.sem)).join('')}</select></label>
+      <label>Type<select id="job-f-type">${opt('', 'Internships and full-time', f.type)}${opt('internship', 'Internships', f.type)}${opt('full_time', 'Full-time', f.type)}</select></label>
+    </div>
+    <section class="stack" style="gap:10px"><div class="section-head"><h2>Openings</h2><span class="muted">${jobs.length} ${jobs.length === 1 ? 'listing' : 'listings'}${f.career || f.sem || f.type ? ' · <button class="btn ghost small" data-act="job-clear">Clear filters</button>' : ''}</span></div>
+      ${jobs.map(jobRow).join('') || `<div class="empty">${f.career || f.sem || f.type ? 'No openings match these filters right now.' : 'No openings posted yet. Check back soon.'}</div>`}</section>
+    <section class="stack" style="gap:10px"><div class="section-head"><h2>Employers hiring year-round</h2></div>
+      <p class="hint" style="margin:0">These firms recruit all year, so check their careers pages directly.</p>
+      ${employers.map(jobRow).join('') || `<div class="empty">${f.career ? 'None listed for this career path yet.' : 'None listed yet.'}</div>`}</section>
+  </div>`;
+}
+const JOB_COLUMNS = [['Type', 18], ['Company', 24], ['Job title', 32], ['Description', 50], ['Link', 40], ['Opens', 12], ['Deadline', 12], ['Career paths', 36], ['Semesters', 24], ['Officer notes', 40]];
+async function downloadJobTemplate(){
+  try {
+    const ExcelJS = await loadExcelJS(), wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Jobs', { views: [{ state: 'frozen', ySplit: 1 }] });
+    ws.columns = JOB_COLUMNS.map(([header, width]) => ({ header, width }));
+    const paint = row => { row.font = { bold: true, color: { argb: 'FFFFFFFF' } }; row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF275D38' } }; };
+    paint(ws.getRow(1));
+    for (let r = 2; r <= 500; r++){
+      ws.getCell('A' + r).dataValidation = { type: 'list', allowBlank: true, formulae: ['"' + Object.values(JOB_KINDS).join(',') + '"'], showErrorMessage: true, errorStyle: 'stop', errorTitle: 'Pick from the list', error: 'Choose a type from the drop-down list.' };
+      ws.getCell('F' + r).numFmt = ws.getCell('G' + r).numFmt = 'm/d/yyyy';
+    }
+    const how = wb.addWorksheet('How to fill this out');
+    how.columns = [{ width: 34 }, { width: 80 }];
+    [['Column', 'What to enter'], ['Type', 'Internship, Full-time, or Employer website (a firm that recruits year-round).'], ['Company', 'Required.'], ['Job title', 'Required, except for an Employer website row.'], ['Description', 'Optional.'],
+      ['Link', 'Required. The job posting, or the careers page for an Employer website row.'], ['Opens, Deadline', 'Optional dates, like 1/15/2027. Jobs are hidden from members after the deadline. Ignored for an Employer website row.'],
+      ['Career paths', 'Optional. One or more from the list below, separated by semicolons.'], ['Semesters', 'Optional. One or more, like Fall 2026; Spring 2027. Ignored for an Employer website row.'], ['Officer notes', 'Optional. Shown on the listing.'],
+      [], ['Example', 'Internship | Example Capital | Summer Analyst | … | https://example.com/jobs/123 | 1/15/2027 | 3/1/2027 | Investment banking; Private equity | Summer 2027 | Our alum Sam can refer you.'], [], ['Career paths you can use']
+    ].forEach((r, i) => { const row = how.addRow(r); if (!i) paint(row); else if (i === 13) row.font = { bold: true }; });
+    (db.careers || []).forEach(c => how.addRow([c.title]));
+    how.getColumn(2).alignment = { wrapText: true, vertical: 'top' };
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    a.download = 'wfa-jobs-template.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+  } catch(e){ toast(errMsg(e)); }
+}
+// The first sheet as rows of text: dates as YYYY-MM-DD, and the address behind a linked cell in the Link column.
+async function readJobRows(file){
+  if (!/\.xlsx$/i.test(file.name)) return parseCsv(await file.text());
+  const ExcelJS = await loadExcelJS(), wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(await file.arrayBuffer());
+  const ws = wb.worksheets[0], rows = []; let linkCol = 0;
+  if (ws) ws.eachRow({ includeEmpty: false }, row => {
+    const vals = [];
+    for (let c = 1; c <= ws.columnCount; c++){ const cell = row.getCell(c), x = cell.value;
+      vals.push(x instanceof Date ? x.toISOString().slice(0, 10) : c === linkCol && x && x.hyperlink ? x.hyperlink : String(cell.text || '').trim()); }
+    if (!linkCol) linkCol = vals.findIndex(v => /^(link|url)$/i.test(v)) + 1;
+    rows.push(vals);
+  });
+  return rows;
+}
+// A date as typed in a spreadsheet: '' if blank, null if it can't be read.
+function jobDateIn(x){
+  x = String(x || '').trim(); if (!x) return '';
+  if (/^\d{5}$/.test(x)) return new Date(Date.UTC(1899, 11, 30) + +x * 864e5).toISOString().slice(0, 10);   // Excel's day number
+  let m = x.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/), y, mo, d;
+  if (m) [, y, mo, d] = m.map(Number);
+  else if ((m = x.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})$/))){ [, mo, d, y] = m.map(Number); if (y < 100) y += 2000; }
+  else { const t = new Date(x); if (isNaN(t) || !/\d{4}/.test(x)) return null; return iso(t); }
+  const t = new Date(y, mo - 1, d);
+  return t.getMonth() === mo - 1 && t.getDate() === d ? iso(t) : null;
+}
+// Turns uploaded rows into listings to check, with what's wrong with each. Rows already on the page are skipped, so
+// the same file can be uploaded again after adding to it.
+function jobImportFrom(rows, name){
+  rows = rows.filter(r => r.some(x => String(x).trim()));
+  const head = (rows[0] || []).map(x => String(x).trim().toLowerCase()), col = (...names) => head.findIndex(h => names.includes(h));
+  const at = { kind: col('type'), company: col('company'), title: col('job title', 'title'), descr: col('description'), url: col('link', 'url'), opens: col('opens'), closes: col('deadline'), careers: col('career paths', 'careers'), sems: col('semesters', 'semester'), notes: col('officer notes', 'notes') };
+  if (at.kind < 0 || at.company < 0 || at.url < 0) return toast('That file doesn’t match the template. It needs Type, Company, and Link columns.');
+  const careers = db.careers || [], keyOf = r => [r.kind, r.company, r.title].join('|').toLowerCase(), seen = new Set((db.jobs || []).map(keyOf));
+  const out = rows.slice(1).map(cells => {
+    const cell = i => i < 0 ? '' : String(cells[i] == null ? '' : cells[i]).trim(), problems = [], list = i => cell(i).split(/[;,\n]/).map(x => x.trim()).filter(Boolean);
+    const t = cell(at.kind).toLowerCase().replace(/[\s_-]+/g, ' ');
+    const kind = /^intern(ship)?$/.test(t) ? 'internship' : /^full ?time$/.test(t) ? 'full_time' : /^(employer( website)?|year ?round)$/.test(t) ? 'employer' : '';
+    const emp = kind === 'employer', row = { kind, company: cell(at.company), title: emp ? '' : cell(at.title), descr: cell(at.descr), url: jobUrl(cell(at.url)), opens_on: null, closes_on: null, careers: [], semesters: [], officer_notes: cell(at.notes) };
+    if (!kind) problems.push('Type should be Internship, Full-time, or Employer website.');
+    if (!row.company) problems.push('Add the company.');
+    if (kind && !emp && !row.title) problems.push('Add the job title.');
+    if (!row.url) problems.push('The link needs to be a full web address.');
+    if (row.company.length > 120 || row.title.length > 200 || row.descr.length > 5000 || row.officer_notes.length > 2000) problems.push('Some text is too long.');
+    list(at.careers).forEach(x => { const low = x.toLowerCase(), hit = careers.filter(c => c.title.toLowerCase() === low), near = careers.filter(c => c.title.toLowerCase().includes(low)), c = hit[0] || (near.length === 1 ? near[0] : null);
+      if (c) row.careers.includes(c.id) || row.careers.push(c.id); else problems.push(`“${x}” isn’t a career path on the site.`); });
+    if (!emp){
+      list(at.sems).forEach(x => { const m = x.match(/^(spring|summer|fall)\s*'?(\d{2}|\d{4})$/i);
+        if (m) row.semesters.push(m[1][0].toUpperCase() + m[1].slice(1).toLowerCase() + ' ' + (m[2].length === 2 ? '20' + m[2] : m[2])); else problems.push(`“${x}” should look like Fall 2026.`); });
+      [['opens_on', at.opens, 'Opens'], ['closes_on', at.closes, 'Deadline']].forEach(([k, i, l]) => { const v = jobDateIn(cell(i)); if (v === null) problems.push(`${l} isn’t a date.`); else row[k] = v || null; });
+      if (row.opens_on && row.closes_on && row.opens_on > row.closes_on) problems.push('The deadline is before it opens.');
+    }
+    if (kind && row.company){ if (seen.has(keyOf(row))) problems.push('Already listed.'); else seen.add(keyOf(row)); }
+    return { row, problems };
+  });
+  if (!out.length) return toast('That file doesn’t have any listings in it.');
+  ui.jobImport = { name, rows: out }; render();
+}
+
 function viewResources(){
   const links = db.resources || [];
   return `<div class="view">
@@ -6646,7 +6837,7 @@ async function showCode(id, fresh){
 }
 
 /* ---------- Render ---------- */
-const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources,
+const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources, jobs:viewJobs,
   archive:viewRecaps, leaderboard:viewLeaderboard, account:viewAccount, apply:viewApply, availability:viewAvailability,
   contact:viewContact, partners:viewPartners, event:viewEvent, survey:viewSurvey, messages:viewMessages, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
 function route(){ const r = location.hash.slice(1).split('/')[0]; return VIEWS[r] ? r : 'home'; }
@@ -6746,6 +6937,8 @@ function addPasswordToggles(){
 // (or a pop-up is open), only the menu dots and counts update, so nothing you're writing is lost.
 let liveBusy = false, lastLive = Date.now();
 document.addEventListener('input', e => { if (e.target.closest && e.target.closest('#app form')) ui.dirtyForm = true; }, true);
+// Listings stay open when the page redraws.
+document.addEventListener('toggle', e => { const id = e.target.dataset && e.target.dataset.job; if (!id) return; const o = ui.jobOpen || (ui.jobOpen = new Set()); if (e.target.open) o.add(id); else o.delete(id); }, true);
 async function liveRefresh(force){
   if (!loaded || liveBusy || document.visibilityState !== 'visible') return;
   if (!force && Date.now() - lastLive < 15000) return;
@@ -7320,6 +7513,15 @@ document.addEventListener('click', async ev => {
     case 'bulk-rm': ui.bulk.splice(+t.dataset.i, 1); if (!ui.bulk.length) ui.bulk.push(bulkRow()); render(); break;
     case 'bulk-go': await bulkAdd(); break;
     case 'bulk-template': downloadBulkTemplate(); break;
+    case 'job-template': downloadJobTemplate(); break;
+    case 'job-new': ui.jobDraft = { id: '', kind: t.dataset.kind || 'internship', company: '', title: '', descr: '', url: '', opens_on: '', closes_on: '', careers: ui.jobF && ui.jobF.career ? [ui.jobF.career] : [], semesters: [], officer_notes: '' }; render(); document.getElementById('f-job')?.scrollIntoView({ block: 'center' }); break;
+    case 'job-edit': { const j = jobById(id); if (!j) break; ui.jobDraft = { ...j }; render(); document.getElementById('f-job')?.scrollIntoView({ block: 'center' }); break; }
+    case 'job-cancel': ui.jobDraft = null; render(); break;
+    case 'job-del': { const j = jobById(id); await act(async () => { must(await sb.from('job_postings').delete().eq('id', id)); await logChange('Deleted the listing “' + (j ? j.title || j.company : '') + '”'); }, 'Listing deleted'); break; }
+    case 'job-clear': ui.jobF = { career: '', sem: '', type: '' }; history.replaceState(null, '', '#jobs'); ui._jobHash = location.hash; render(); break;
+    case 'job-import-cancel': ui.jobImport = null; render(); break;
+    case 'job-import-add': { const rows = ui.jobImport.rows.filter(r => !r.problems.length).map(r => r.row);
+      await act(async () => { must(await sb.from('job_postings').insert(rows)); await logChange('Added ' + rows.length + ' job listings from a spreadsheet'); ui.jobImport = null; }, `Added ${rows.length} ${rows.length === 1 ? 'listing' : 'listings'}`); break; }
     case 'del-resource': { const x = (db.resources || []).find(r => r.id === id);
       await doOrPropose('resource', 'delete', id, { row: { title: x ? x.title : '' } }, 'Delete resource “' + (x ? x.title : id) + '”', 'Resource deleted'); break; }
     case 'career-edit': ui.editCareer = id; render(); break;
@@ -7533,6 +7735,16 @@ document.addEventListener('change', async e => {
   if (e.target.name === 'ct-kind'){ ctKindSync(e.target.form); const dl = document.getElementById('ct-titles');
     dl.innerHTML = e.target.value === 'faculty' ? ['Professor', 'Associate Professor', 'Assistant Professor', 'Lecturer', 'Adjunct Professor', 'Department Chair', 'Dean'].map(t => `<option value="${t}">`).join('') : ''; }
   if (id === 'bulk-mode') ui.bulkMode = e.target.value;
+  if (id === 'job-f-career' || id === 'job-f-sem' || id === 'job-f-type'){
+    jobFilters()[id.slice(6)] = e.target.value;
+    if (id === 'job-f-career'){ history.replaceState(null, '', '#jobs' + (e.target.value ? '/' + e.target.value : '')); ui._jobHash = location.hash; }
+    render();
+  }
+  if (id === 'job-file' && e.target.files[0]){
+    const file = e.target.files[0]; e.target.value = '';
+    if (/\.xls$/i.test(file.name)) toast('That’s an older Excel format. Save it as .xlsx and upload again.');
+    else { try { jobImportFrom(await readJobRows(file), file.name); } catch(err){ toast('Couldn’t read that file: ' + errMsg(err)); } }
+  }
   if (id === 'bulk-csv' && e.target.files[0]){
     const file = e.target.files[0]; e.target.value = '';
     try {
@@ -8320,6 +8532,22 @@ async function handleSubmit(f, v, err){
     const id = f.dataset.id;
     const row = id ? c : { ...c, sort: (db.careers || []).filter(x => x.category === c.category).length };
     if (await doOrPropose('career', id ? 'edit' : 'add', id || '', { row }, (id ? 'Edit' : 'Add') + ' career “' + c.title + '”', 'Career saved')) { ui.editCareer = null; render(); }
+  }
+
+  if (f.id === 'f-job'){
+    const emp = f.dataset.kind === 'employer', url = jobUrl(v('jb-url')), checked = n => [...f.querySelectorAll(`[name="${n}"]:checked`)].map(x => x.value);
+    const row = { kind: emp ? 'employer' : v('jb-kind'), company: v('jb-company'), title: emp ? '' : v('jb-title'), descr: v('jb-descr'), url, opens_on: emp ? null : v('jb-opens') || null, closes_on: emp ? null : v('jb-closes') || null, careers: checked('jb-career'), semesters: emp ? [] : checked('jb-sem'), officer_notes: v('jb-notes') };
+    if (!row.company) return err('jb-err', 'Add the company.');
+    if (!emp && !row.title) return err('jb-err', 'Add the job title.');
+    if (!url) return err('jb-err', 'Enter the full link, starting with https://');
+    if (row.opens_on && row.closes_on && row.opens_on > row.closes_on) return err('jb-err', 'The deadline is before it opens.');
+    const jid = f.dataset.id;
+    await act(async () => {
+      must(await (jid ? sb.from('job_postings').update(row).eq('id', jid) : sb.from('job_postings').insert(row)));
+      await logChange((jid ? 'Edited the listing “' : 'Added the listing “') + (row.title || row.company) + '”');
+      ui.jobDraft = null;
+    }, jid ? 'Listing saved' : 'Listing added');
+    return;
   }
 
   if (f.id === 'f-resource'){
