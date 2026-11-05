@@ -1904,6 +1904,9 @@ function timelineSection(){
 // officers add to it here, one at a time or from an Excel file. #jobs/<career id> opens it filtered to that career.
 const JOB_KINDS = { internship: 'Internship', full_time: 'Full-time', employer: 'Employer website' };
 const JOB_SEASONS = ['Spring', 'Summer', 'Fall'];
+const JOB_STATES = { AL:'Alabama', AK:'Alaska', AZ:'Arizona', AR:'Arkansas', CA:'California', CO:'Colorado', CT:'Connecticut', DE:'Delaware', DC:'Washington, DC', FL:'Florida', GA:'Georgia', HI:'Hawaii', ID:'Idaho', IL:'Illinois', IN:'Indiana', IA:'Iowa', KS:'Kansas', KY:'Kentucky', LA:'Louisiana', ME:'Maine', MD:'Maryland', MA:'Massachusetts', MI:'Michigan', MN:'Minnesota', MS:'Mississippi', MO:'Missouri', MT:'Montana', NE:'Nebraska', NV:'Nevada', NH:'New Hampshire', NJ:'New Jersey', NM:'New Mexico', NY:'New York', NC:'North Carolina', ND:'North Dakota', OH:'Ohio', OK:'Oklahoma', OR:'Oregon', PA:'Pennsylvania', RI:'Rhode Island', SC:'South Carolina', SD:'South Dakota', TN:'Tennessee', TX:'Texas', UT:'Utah', VT:'Vermont', VA:'Virginia', WA:'Washington', WV:'West Virginia', WI:'Wisconsin', WY:'Wyoming' };
+// A state as typed: its abbreviation or full name. Blank if it isn't one.
+const jobStateOf = x => { const t = String(x).trim().toLowerCase(); return Object.keys(JOB_STATES).find(k => k.toLowerCase() === t || JOB_STATES[k].toLowerCase() === t) || ''; };
 const jobById = id => (db.jobs || []).find(x => x.id === id);
 const jobCareerName = id => ((db.careers || []).find(c => c.id === id) || {}).title;
 const jobDay = d => parseDay(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -1918,8 +1921,8 @@ function jobSems(){
 // A pasted link: adds https:// when it's left off. Blank if it isn't a link.
 function jobUrl(x){ const u = /^https?:\/\//i.test(x) ? x : /^[\w-]+(\.[\w-]+)+([\/?#]\S*)?$/.test(x) ? 'https://' + x : ''; return /^https?:\/\/\S+\.\S+/i.test(u) ? u : ''; }
 function jobFilters(){
-  const f = ui.jobF || (ui.jobF = { career: [], sem: [], type: [] });
-  if (location.hash !== ui._jobHash){ ui._jobHash = location.hash; f.career = (location.hash.split('/')[1] || '').split(',').filter(Boolean); f.sem = []; f.type = []; }
+  const f = ui.jobF || (ui.jobF = { career: [], sem: [], type: [], loc: [] });
+  if (location.hash !== ui._jobHash){ ui._jobHash = location.hash; f.career = (location.hash.split('/')[1] || '').split(',').filter(Boolean); f.sem = []; f.type = []; f.loc = []; }
   if ((db.careers || []).length) f.career = f.career.filter(jobCareerName);
   return f;
 }
@@ -1934,10 +1937,10 @@ function jobRow(j){
   const careers = (j.careers || []).map(jobCareerName).filter(Boolean);
   return `<details class="job" data-job="${j.id}" ${(ui.jobOpen || new Set()).has(j.id) ? 'open' : ''}>
     <summary><span class="job-name"><strong>${esc(emp ? j.company : j.title)}</strong>${emp ? '<span class="muted">Recruits year-round</span>' : `<span class="muted">${esc(j.company)}</span>`}</span>
-      <span class="job-tags">${emp ? '' : `<span class="tag ok">${JOB_KINDS[j.kind]}</span>`}${past ? '<span class="tag warn">Past deadline</span>' : j.closes_on ? `<span class="tag">Due ${jobDay(j.closes_on)}</span>` : ''}</span></summary>
+      <span class="job-tags">${emp ? '' : `<span class="tag ok">${JOB_KINDS[j.kind]}</span>`}${j.remote ? '<span class="tag members">Remote</span>' : ''}${(j.states || []).length ? `<span class="tag">${(j.states || []).length > 3 ? j.states.length + ' states' : j.states.join(', ')}</span>` : ''}${past ? '<span class="tag warn">Past deadline</span>' : j.closes_on ? `<span class="tag">Due ${jobDay(j.closes_on)}</span>` : ''}</span></summary>
     <div class="job-body">
       ${j.descr ? `<p style="margin:0;white-space:pre-wrap">${esc(j.descr)}</p>` : ''}
-      ${j.opens_on || j.closes_on ? `<dl class="facts">${j.opens_on ? `<dt>Opens</dt><dd>${jobDay(j.opens_on)}</dd>` : ''}${j.closes_on ? `<dt>Deadline</dt><dd>${jobDay(j.closes_on)}</dd>` : ''}</dl>` : ''}
+      ${j.remote || (j.states || []).length || j.opens_on || j.closes_on ? `<dl class="facts">${j.remote || (j.states || []).length ? `<dt>Location</dt><dd>${esc([...(j.remote ? ['Remote'] : []), ...(j.states || []).map(x => JOB_STATES[x] || x)].join(', '))}</dd>` : ''}${j.opens_on ? `<dt>Opens</dt><dd>${jobDay(j.opens_on)}</dd>` : ''}${j.closes_on ? `<dt>Deadline</dt><dd>${jobDay(j.closes_on)}</dd>` : ''}</dl>` : ''}
       ${careers.length || (j.semesters || []).length ? `<div class="job-tags">${careers.map(c => `<span class="tag">${esc(c)}</span>`).join('')}${(j.semesters || []).map(x => `<span class="tag members">${esc(x)}</span>`).join('')}</div>` : ''}
       ${j.officer_notes ? `<div class="job-note"><strong>Officer notes</strong><br>${esc(j.officer_notes)}</div>` : ''}
       <div class="row" style="gap:6px"><a class="btn small" href="${esc(j.url)}" target="_blank" rel="noopener">${emp ? 'View careers page' : 'View job posting'} ↗</a>
@@ -1957,7 +1960,10 @@ function jobForm(){
     ${emp ? '' : `<div class="grid2"><label>Opens <span class="hint">Optional</span><input id="jb-opens" type="date" value="${esc(d.opens_on || '')}"></label>
       <label>Deadline <span class="hint">Optional. It’s hidden from members after this date.</span><input id="jb-closes" type="date" value="${esc(d.closes_on || '')}"></label></div>`}
     <fieldset class="stack" style="gap:4px"><legend>Career paths</legend><div class="row" style="gap:4px 14px">${(db.careers || []).map(c => box('jb-career', c.id, c.title, (d.careers || []).includes(c.id))).join('')}</div></fieldset>
-    ${emp ? '' : `<fieldset class="stack" style="gap:4px"><legend>Semesters</legend><div class="row" style="gap:4px 14px">${jobSems().map(x => box('jb-sem', x, x, (d.semesters || []).includes(x))).join('')}</div></fieldset>`}
+    ${emp ? '' : `<fieldset class="stack" style="gap:4px"><legend>Semesters</legend><div class="row" style="gap:4px 14px">${jobSems().map(x => box('jb-sem', x, x, (d.semesters || []).includes(x))).join('')}</div></fieldset>
+    <fieldset class="stack" style="gap:6px"><legend>Location <span class="hint">Optional. Check every state it’s in.</span></legend>
+      <label class="check"><input type="checkbox" id="jb-remote" ${d.remote ? 'checked' : ''}> Remote</label>
+      <div class="row" style="gap:4px 12px">${Object.entries(JOB_STATES).map(([k, n]) => `<label class="check" title="${esc(n)}"><input type="checkbox" name="jb-state" value="${k}" aria-label="${esc(n)}" ${(d.states || []).includes(k) ? 'checked' : ''}> ${k}</label>`).join('')}</div></fieldset>`}
     <label>Officer notes <span class="hint">Optional. Shown on the listing when filled in.</span><textarea id="jb-notes" rows="2" maxlength="2000">${esc(d.officer_notes)}</textarea></label>
     <div class="err" id="jb-err"></div>
     <div class="row" style="gap:8px"><button class="btn" type="submit">Save</button><button type="button" class="btn ghost" data-act="job-cancel">Cancel</button></div>
@@ -1967,8 +1973,8 @@ function jobImportTable(){
   const im = ui.jobImport; if (!im) return '';
   const good = im.rows.filter(r => !r.problems.length).length;
   return `<div class="stack" style="gap:10px"><strong>${esc(im.name)}: ${good} of ${im.rows.length} ready to add</strong>
-    <div class="table-wrap"><table><thead><tr><th>Type</th><th>Company</th><th>Job title</th><th>Career paths</th><th>Semesters</th><th>Deadline</th><th>Status</th></tr></thead><tbody>
-      ${im.rows.map(r => `<tr><td>${esc(JOB_KINDS[r.row.kind] || '')}</td><td>${esc(r.row.company)}</td><td>${esc(r.row.title)}</td><td>${esc(r.row.careers.map(jobCareerName).join(', '))}</td><td>${esc(r.row.semesters.join(', '))}</td><td>${r.row.closes_on ? jobDay(r.row.closes_on) : ''}</td>
+    <div class="table-wrap"><table><thead><tr><th>Type</th><th>Company</th><th>Job title</th><th>Career paths</th><th>Semesters</th><th>Location</th><th>Deadline</th><th>Status</th></tr></thead><tbody>
+      ${im.rows.map(r => `<tr><td>${esc(JOB_KINDS[r.row.kind] || '')}</td><td>${esc(r.row.company)}</td><td>${esc(r.row.title)}</td><td>${esc(r.row.careers.map(jobCareerName).join(', '))}</td><td>${esc(r.row.semesters.join(', '))}</td><td>${esc([...(r.row.remote ? ['Remote'] : []), ...r.row.states].join(', '))}</td><td>${r.row.closes_on ? jobDay(r.row.closes_on) : ''}</td>
         <td>${r.problems.length ? `<span class="err">${esc(r.problems.join(' '))}</span>` : 'Ready'}</td></tr>`).join('')}
     </tbody></table></div>
     <div class="row" style="gap:8px"><button class="btn small" data-act="job-import-add" ${good ? '' : 'disabled'}>Add ${good} ${good === 1 ? 'listing' : 'listings'}</button><button class="btn ghost small" data-act="job-import-cancel">Cancel</button></div></div>`;
@@ -1976,8 +1982,11 @@ function jobImportTable(){
 function viewJobs(){
   const f = jobFilters(), all = db.jobs || [], off = can('officer'), today = todayIso();
   const isPast = j => j.closes_on && j.closes_on < today, due = j => j.closes_on || '9999';
-  const inCareer = j => !f.career.length || (j.careers || []).some(c => f.career.includes(c)), filtered = f.career.length || f.sem.length || f.type.length;
-  const jobs = all.filter(j => j.kind !== 'employer' && (off || !isPast(j)) && inCareer(j) && (!f.sem.length || (j.semesters || []).some(x => f.sem.includes(x))) && (!f.type.length || f.type.includes(j.kind)))
+  const inCareer = j => !f.career.length || (j.careers || []).some(c => f.career.includes(c)), filtered = f.career.length || f.sem.length || f.type.length || f.loc.length;
+  const inPlace = j => !f.loc.length || (j.remote && f.loc.includes('remote')) || (j.states || []).some(x => f.loc.includes(x));
+  // Only places that have a listing, so the list stays short.
+  const usedStates = [...new Set([...all.flatMap(j => j.kind === 'employer' ? [] : j.states || []), ...f.loc.filter(x => x !== 'remote')])].sort((a, b) => (JOB_STATES[a] || a).localeCompare(JOB_STATES[b] || b));
+  const jobs = all.filter(j => j.kind !== 'employer' && (off || !isPast(j)) && inCareer(j) && (!f.sem.length || (j.semesters || []).some(x => f.sem.includes(x))) && (!f.type.length || f.type.includes(j.kind)) && inPlace(j))
     .sort((a, b) => isPast(a) - isPast(b) || due(a).localeCompare(due(b)) || b.created_at.localeCompare(a.created_at));
   const employers = all.filter(j => j.kind === 'employer' && inCareer(j)).sort((a, b) => a.company.localeCompare(b.company));
   return `<div class="view">
@@ -1992,6 +2001,7 @@ function viewJobs(){
       ${jobDrop('career', 'Career paths', 'All career paths', 'career paths', (db.careers || []).map(c => [c.id, c.title]), f.career)}
       ${jobDrop('sem', 'Semesters', 'All semesters', 'semesters', jobSems().map(x => [x, x]), f.sem)}
       ${jobDrop('type', 'Type', 'Internships and full-time', 'types', [['internship', 'Internships'], ['full_time', 'Full-time']], f.type)}
+      ${jobDrop('loc', 'Location', 'All locations', 'locations', [['remote', 'Remote'], ...usedStates.map(x => [x, JOB_STATES[x] || x])], f.loc)}
     </div>
     <section class="stack" style="gap:10px"><div class="section-head"><h2>Openings</h2><span class="muted">${jobs.length} ${jobs.length === 1 ? 'listing' : 'listings'}${filtered ? ' · <button class="btn ghost small" data-act="job-clear">Clear filters</button>' : ''}</span></div>
       ${jobs.map(jobRow).join('') || `<div class="empty">${filtered ? 'No openings match these filters right now.' : 'No openings posted yet. Check back soon.'}</div>`}</section>
@@ -2037,10 +2047,10 @@ async function downloadJobTemplate(){
     const ExcelJS = await loadExcelJS(), wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Jobs', { views: [{ state: 'frozen', xSplit: 3, ySplit: 2 }] });
     const careers = (db.careers || []).map(c => c.title), nowKey = jobSemKey((db.settings.semester || '').trim()), sems = jobSems().filter(x => jobSemKey(x) >= nowKey);
-    const base = JOB_COLUMNS.length, heads = [...JOB_COLUMNS.map(c => c[0]), ...careers, ...sems];
-    ws.columns = heads.map((h, i) => ({ width: i < base ? JOB_COLUMNS[i][1] : 14 }));
+    const base = JOB_COLUMNS.length, places = ['Remote', ...Object.keys(JOB_STATES)], heads = [...JOB_COLUMNS.map(c => c[0]), ...careers, ...sems, ...places], placeAt = base + careers.length + sems.length;
+    ws.columns = heads.map((h, i) => ({ width: i < base ? JOB_COLUMNS[i][1] : i < placeAt ? 14 : 8 }));
     // Row 1 names the groups, row 2 has the column names. Each career path and semester is its own column to check off.
-    const groups = [[1, base, 'Job details', 'FF275D38'], [base + 1, base + careers.length, 'Career paths: check each one that applies', 'FF8F6E22'], [base + careers.length + 1, heads.length, 'Semesters: check each one that applies', 'FF2D5D86']];
+    const groups = [[1, base, 'Job details', 'FF275D38'], [base + 1, base + careers.length, 'Career paths: check each one that applies', 'FF8F6E22'], [base + careers.length + 1, placeAt, 'Semesters: check each one that applies', 'FF2D5D86'], [placeAt + 1, heads.length, 'Location: check Remote and every state that applies', 'FF5E6B60']];
     groups.forEach(([from, to, label, argb]) => {
       if (to < from) return;
       if (to > from) ws.mergeCells(1, from, 1, to);
@@ -2069,7 +2079,7 @@ async function downloadJobTemplate(){
     [['Column', 'What to enter'], ['Type', 'Internship, Full-time, or Employer website (a firm that recruits year-round).'], ['Company', 'Required.'], ['Job title', 'Required, except for an Employer website row.'], ['Description', 'Optional.'],
       ['Link', 'Required. The job posting, or the careers page for an Employer website row.'], ['Opens, Deadline', 'Optional dates, like 1/15/2027. Jobs are hidden from members after the deadline. Ignored for an Employer website row.'],
       ['Officer notes', 'Optional. Shown on the listing.'], ['Career paths', 'Optional. Check the box for every career path that applies. If you see TRUE and FALSE instead of boxes, your version of Excel doesn’t have checkboxes: type TRUE for each one that applies.'],
-      ['Semesters', 'Optional. Check every semester that applies, the same way. Ignored for an Employer website row.'], ['Another semester', 'To tag a semester that isn’t listed, add a column named like Summer 2028.']
+      ['Semesters', 'Optional. Check every semester that applies, the same way. Ignored for an Employer website row.'], ['Location', 'Optional. Check Remote, and every state the job is in. Ignored for an Employer website row.'], ['Another semester', 'To tag a semester that isn’t listed, add a column named like Summer 2028.']
     ].forEach((r, i) => { const row = how.addRow(r); if (!i){ row.font = { bold: true, color: { argb: 'FFFFFFFF' } }; row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF275D38' } }; } });
     how.getColumn(2).alignment = { wrapText: true, vertical: 'top' };
     const a = document.createElement('a');
@@ -2109,10 +2119,10 @@ function jobImportFrom(rows, name){
   rows = rows.filter(r => r.some(x => String(x).trim() && !/^false$/i.test(String(x).trim())));   // an unchecked box counts as blank
   const top = rows.findIndex(r => r.some(x => String(x).trim().toLowerCase() === 'company'));   // the template has a row of group names above this
   const head = (rows[top] || []).map(x => String(x).trim().toLowerCase()), col = (...names) => head.findIndex(h => names.includes(h));
-  const at = { kind: col('type'), company: col('company'), title: col('job title', 'title'), descr: col('description'), url: col('link', 'url'), opens: col('opens'), closes: col('deadline'), careers: col('career paths', 'careers'), sems: col('semesters', 'semester'), notes: col('officer notes', 'notes') };
+  const at = { kind: col('type'), company: col('company'), title: col('job title', 'title'), descr: col('description'), url: col('link', 'url'), opens: col('opens'), closes: col('deadline'), careers: col('career paths', 'careers'), sems: col('semesters', 'semester'), places: col('states', 'state', 'location'), notes: col('officer notes', 'notes') };
   if (at.kind < 0 || at.company < 0 || at.url < 0) return toast('That file doesn’t match the template. It needs Type, Company, and Link columns.');
   // Every other named column is a career path or semester to check off.
-  const named = new Set(['type', 'company', 'job title', 'title', 'description', 'link', 'url', 'opens', 'deadline', 'career paths', 'careers', 'semesters', 'semester', 'officer notes', 'notes']);
+  const named = new Set(['type', 'company', 'job title', 'title', 'description', 'link', 'url', 'opens', 'deadline', 'career paths', 'careers', 'semesters', 'semester', 'states', 'state', 'location', 'officer notes', 'notes']);
   const tickCols = head.map((h, i) => [h, i]).filter(([h]) => h && !named.has(h));
   const semOf = x => { const m = x.match(/^(spring|summer|fall)\s*'?(\d{2}|\d{4})$/i); return m ? m[1][0].toUpperCase() + m[1].slice(1).toLowerCase() + ' ' + (m[2].length === 2 ? '20' + m[2] : m[2]) : ''; };
   const careers = db.careers || [], keyOf = r => [r.kind, r.company, r.title].join('|').toLowerCase(), seen = new Set((db.jobs || []).map(keyOf));
@@ -2120,7 +2130,7 @@ function jobImportFrom(rows, name){
     const cell = i => i < 0 ? '' : String(cells[i] == null ? '' : cells[i]).trim(), problems = [], list = i => cell(i).split(/[;,\n]/).map(x => x.trim()).filter(Boolean);
     const t = cell(at.kind).toLowerCase().replace(/[\s_-]+/g, ' ');
     const kind = /^intern(ship)?$/.test(t) ? 'internship' : /^full ?time$/.test(t) ? 'full_time' : /^(employer( website)?|year ?round)$/.test(t) ? 'employer' : '';
-    const emp = kind === 'employer', row = { kind, company: cell(at.company), title: emp ? '' : cell(at.title), descr: cell(at.descr), url: jobUrl(cell(at.url)), opens_on: null, closes_on: null, careers: [], semesters: [], officer_notes: cell(at.notes) };
+    const emp = kind === 'employer', row = { kind, company: cell(at.company), title: emp ? '' : cell(at.title), descr: cell(at.descr), url: jobUrl(cell(at.url)), opens_on: null, closes_on: null, careers: [], semesters: [], states: [], remote: false, officer_notes: cell(at.notes) };
     if (!kind) problems.push('Type should be Internship, Full-time, or Employer website.');
     if (!row.company) problems.push('Add the company.');
     if (kind && !emp && !row.title) problems.push('Add the job title.');
@@ -2133,10 +2143,13 @@ function jobImportFrom(rows, name){
       const c = careers.find(x => x.title.toLowerCase() === h), sem = semOf(h);
       if (c) row.careers.includes(c.id) || row.careers.push(c.id);
       else if (sem){ if (!emp && !row.semesters.includes(sem)) row.semesters.push(sem); }
-      else problems.push(`The “${h}” column isn’t a career path or semester on the site.`);
+      else if (h === 'remote'){ if (!emp) row.remote = true; }
+      else if (jobStateOf(h)){ if (!emp && !row.states.includes(jobStateOf(h))) row.states.push(jobStateOf(h)); }
+      else problems.push(`The “${h}” column isn’t a career path, semester, or location on the site.`);
     });
     if (!emp){
       list(at.sems).forEach(x => { const sem = semOf(x); if (!sem) problems.push(`“${x}” should look like Fall 2026.`); else if (!row.semesters.includes(sem)) row.semesters.push(sem); });
+      list(at.places).forEach(x => { const st = jobStateOf(x); if (/^remote$/i.test(x)) row.remote = true; else if (!st) problems.push(`“${x}” isn’t a state.`); else if (!row.states.includes(st)) row.states.push(st); });
       [['opens_on', at.opens, 'Opens'], ['closes_on', at.closes, 'Deadline']].forEach(([k, i, l]) => { const v = jobDateIn(cell(i)); if (v === null) problems.push(`${l} isn’t a date.`); else row[k] = v || null; });
       if (row.opens_on && row.closes_on && row.opens_on > row.closes_on) problems.push('The deadline is before it opens.');
     }
@@ -7589,11 +7602,11 @@ document.addEventListener('click', async ev => {
     case 'bulk-go': await bulkAdd(); break;
     case 'bulk-template': downloadBulkTemplate(); break;
     case 'job-template': downloadJobTemplate(); break;
-    case 'job-new': ui.jobDraft = { id: '', kind: t.dataset.kind || 'internship', company: '', title: '', descr: '', url: '', opens_on: '', closes_on: '', careers: [...((ui.jobF || {}).career || [])], semesters: [], officer_notes: '' }; render(); document.getElementById('f-job')?.scrollIntoView({ block: 'center' }); break;
+    case 'job-new': ui.jobDraft = { id: '', kind: t.dataset.kind || 'internship', company: '', title: '', descr: '', url: '', opens_on: '', closes_on: '', careers: [...((ui.jobF || {}).career || [])], semesters: [], states: [], remote: false, officer_notes: '' }; render(); document.getElementById('f-job')?.scrollIntoView({ block: 'center' }); break;
     case 'job-edit': { const j = jobById(id); if (!j) break; ui.jobDraft = { ...j }; render(); document.getElementById('f-job')?.scrollIntoView({ block: 'center' }); break; }
     case 'job-cancel': ui.jobDraft = null; render(); break;
     case 'job-del': { const j = jobById(id); await act(async () => { must(await sb.from('job_postings').delete().eq('id', id)); await logChange('Deleted the listing “' + (j ? j.title || j.company : '') + '”'); }, 'Listing deleted'); break; }
-    case 'job-clear': ui.jobF = { career: [], sem: [], type: [] }; history.replaceState(null, '', '#jobs'); ui._jobHash = location.hash; render(); break;
+    case 'job-clear': ui.jobF = { career: [], sem: [], type: [], loc: [] }; history.replaceState(null, '', '#jobs'); ui._jobHash = location.hash; render(); break;
     case 'job-import-cancel': ui.jobImport = null; render(); break;
     case 'job-import-add': { const rows = ui.jobImport.rows.filter(r => !r.problems.length).map(r => r.row);
       await act(async () => { must(await sb.from('job_postings').insert(rows)); await logChange('Added ' + rows.length + ' job listings from a spreadsheet'); ui.jobImport = null; }, `Added ${rows.length} ${rows.length === 1 ? 'listing' : 'listings'}`); break; }
@@ -8613,7 +8626,7 @@ async function handleSubmit(f, v, err){
 
   if (f.id === 'f-job'){
     const emp = f.dataset.kind === 'employer', url = jobUrl(v('jb-url')), checked = n => [...f.querySelectorAll(`[name="${n}"]:checked`)].map(x => x.value);
-    const row = { kind: emp ? 'employer' : v('jb-kind'), company: v('jb-company'), title: emp ? '' : v('jb-title'), descr: v('jb-descr'), url, opens_on: emp ? null : v('jb-opens') || null, closes_on: emp ? null : v('jb-closes') || null, careers: checked('jb-career'), semesters: emp ? [] : checked('jb-sem'), officer_notes: v('jb-notes') };
+    const row = { kind: emp ? 'employer' : v('jb-kind'), company: v('jb-company'), title: emp ? '' : v('jb-title'), descr: v('jb-descr'), url, opens_on: emp ? null : v('jb-opens') || null, closes_on: emp ? null : v('jb-closes') || null, careers: checked('jb-career'), semesters: emp ? [] : checked('jb-sem'), states: emp ? [] : checked('jb-state'), remote: !emp && !!(document.getElementById('jb-remote') || {}).checked, officer_notes: v('jb-notes') };
     if (!row.company) return err('jb-err', 'Add the company.');
     if (!emp && !row.title) return err('jb-err', 'Add the job title.');
     if (!url) return err('jb-err', 'Enter the full link, starting with https://');
