@@ -2000,6 +2000,37 @@ function viewJobs(){
       ${employers.map(jobRow).join('') || `<div class="empty">${f.career.length ? 'None listed for these career paths yet.' : 'None listed yet.'}</div>`}</section>
   </div>`;
 }
+// Excel's real checkboxes. ExcelJS can't make them, so the template marks those cells with a placeholder number format and
+// this swaps that for the checkbox setting in the finished file. Excel without them (and Google Sheets) shows TRUE/FALSE.
+const JOB_BOX_FMT = '"wfa-checkbox"';
+function loadJSZip(){
+  return new Promise((res, rej) => {
+    if (window.JSZip) return res(window.JSZip);
+    const sc = document.createElement('script');
+    sc.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+    sc.onload = () => res(window.JSZip);
+    sc.onerror = () => rej(new Error('The spreadsheet tool didn’t load. Check your connection and try again.'));
+    document.head.appendChild(sc);
+  });
+}
+async function jobAddCheckboxes(buf){
+  const JSZip = await loadJSZip(), zip = await JSZip.loadAsync(buf), NS = 'http://schemas.microsoft.com/office/spreadsheetml/2022/featurepropertybag';
+  let styles = await zip.file('xl/styles.xml').async('string');
+  const m = styles.match(/<numFmt numFmtId="(\d+)" formatCode="&quot;wfa-checkbox&quot;"\s*\/>/);
+  if (!m) throw new Error('Couldn’t add the checkboxes to the template.');
+  const ext = `<extLst><ext uri="{C7286773-470A-42A8-94C5-96B5CB345126}" xmlns:xfpb="${NS}"><xfpb:xfComplement i="0"/></ext></extLst>`;
+  styles = styles.replace(/<cellXfs[\s\S]*?<\/cellXfs>/, xfs => xfs.replace(/<xf\b([^>]*?)(\/>|>([\s\S]*?)<\/xf>)/g, (x, attrs, _end, inner) => {
+    if (!new RegExp(`numFmtId="${m[1]}"`).test(attrs)) return x;
+    return `<xf${attrs.replace(`numFmtId="${m[1]}"`, 'numFmtId="0"').replace(/\s+applyNumberFormat="\d"/, '')}>${inner || ''}${ext}</xf>`;
+  }));
+  zip.file('xl/styles.xml', styles);
+  zip.file('xl/featurePropertyBag/featurePropertyBag.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<FeaturePropertyBags xmlns="${NS}"><bag type="Checkbox"/><bag type="XFControls"><bagId k="CellControl">0</bagId></bag><bag type="XFComplement"><bagId k="XFControls">1</bagId></bag><bag type="XFComplements" extRef="XFComplementsMapperExtRef"><a k="MappedFeaturePropertyBags"><bagId>2</bagId></a></bag></FeaturePropertyBags>`, { createFolders: false });
+  const types = await zip.file('[Content_Types].xml').async('string');
+  zip.file('[Content_Types].xml', types.replace('</Types>', '<Override PartName="/xl/featurePropertyBag/featurePropertyBag.xml" ContentType="application/vnd.ms-excel.featurepropertybag+xml"/></Types>'));
+  const rels = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+  zip.file('xl/_rels/workbook.xml.rels', rels.replace('</Relationships>', '<Relationship Id="rIdWfaBoxes" Type="http://schemas.microsoft.com/office/2022/11/relationships/FeaturePropertyBag" Target="featurePropertyBag/featurePropertyBag.xml"/></Relationships>'));
+  return zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
+}
 const JOB_COLUMNS = [['Type', 18], ['Company', 24], ['Job title', 32], ['Description', 50], ['Link', 40], ['Opens', 12], ['Deadline', 12], ['Officer notes', 40]];
 async function downloadJobTemplate(){
   try {
@@ -2028,7 +2059,8 @@ async function downloadJobTemplate(){
       ws.getCell(r, 6).numFmt = ws.getCell(r, 7).numFmt = 'm/d/yyyy';
       for (let c = base + 1; c <= heads.length; c++){
         const cell = ws.getCell(r, c);
-        cell.dataValidation = { type: 'list', allowBlank: true, formulae: ['"✓"'], showErrorMessage: false };
+        cell.value = false;
+        cell.numFmt = JOB_BOX_FMT;
         cell.alignment = { horizontal: 'center' };
       }
     }
@@ -2036,12 +2068,12 @@ async function downloadJobTemplate(){
     how.columns = [{ width: 24 }, { width: 90 }];
     [['Column', 'What to enter'], ['Type', 'Internship, Full-time, or Employer website (a firm that recruits year-round).'], ['Company', 'Required.'], ['Job title', 'Required, except for an Employer website row.'], ['Description', 'Optional.'],
       ['Link', 'Required. The job posting, or the careers page for an Employer website row.'], ['Opens, Deadline', 'Optional dates, like 1/15/2027. Jobs are hidden from members after the deadline. Ignored for an Employer website row.'],
-      ['Officer notes', 'Optional. Shown on the listing.'], ['Career paths', 'Optional. Choose ✓ from the drop-down, or type an x, in every career path that applies. Leave the others blank.'],
-      ['Semesters', 'Optional. Mark every semester that applies, the same way. Ignored for an Employer website row.'], ['Another semester', 'To tag a semester that isn’t listed, add a column named like Summer 2028.']
+      ['Officer notes', 'Optional. Shown on the listing.'], ['Career paths', 'Optional. Check the box for every career path that applies. If you see TRUE and FALSE instead of boxes, your version of Excel doesn’t have checkboxes: type TRUE for each one that applies.'],
+      ['Semesters', 'Optional. Check every semester that applies, the same way. Ignored for an Employer website row.'], ['Another semester', 'To tag a semester that isn’t listed, add a column named like Summer 2028.']
     ].forEach((r, i) => { const row = how.addRow(r); if (!i){ row.font = { bold: true, color: { argb: 'FFFFFFFF' } }; row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF275D38' } }; } });
     how.getColumn(2).alignment = { wrapText: true, vertical: 'top' };
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    a.href = URL.createObjectURL(new Blob([await jobAddCheckboxes(await wb.xlsx.writeBuffer())], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
     a.download = 'wfa-jobs-template.xlsx'; document.body.appendChild(a); a.click(); a.remove();
   } catch(e){ toast(errMsg(e)); }
 }
@@ -2054,7 +2086,7 @@ async function readJobRows(file){
   if (ws) ws.eachRow({ includeEmpty: false }, row => {
     const vals = [];
     for (let c = 1; c <= ws.columnCount; c++){ const cell = row.getCell(c), x = cell.value;
-      vals.push(x instanceof Date ? x.toISOString().slice(0, 10) : c === linkCol && x && x.hyperlink ? x.hyperlink : String(cell.text || '').trim()); }
+      vals.push(x === false ? '' : x instanceof Date ? x.toISOString().slice(0, 10) : c === linkCol && x && x.hyperlink ? x.hyperlink : String(cell.text || '').trim()); }
     if (!linkCol) linkCol = vals.findIndex(v => /^(link|url)$/i.test(v)) + 1;
     rows.push(vals);
   });
@@ -2074,7 +2106,7 @@ function jobDateIn(x){
 // Turns uploaded rows into listings to check, with what's wrong with each. Rows already on the page are skipped, so
 // the same file can be uploaded again after adding to it.
 function jobImportFrom(rows, name){
-  rows = rows.filter(r => r.some(x => String(x).trim()));
+  rows = rows.filter(r => r.some(x => String(x).trim() && !/^false$/i.test(String(x).trim())));   // an unchecked box counts as blank
   const top = rows.findIndex(r => r.some(x => String(x).trim().toLowerCase() === 'company'));   // the template has a row of group names above this
   const head = (rows[top] || []).map(x => String(x).trim().toLowerCase()), col = (...names) => head.findIndex(h => names.includes(h));
   const at = { kind: col('type'), company: col('company'), title: col('job title', 'title'), descr: col('description'), url: col('link', 'url'), opens: col('opens'), closes: col('deadline'), careers: col('career paths', 'careers'), sems: col('semesters', 'semester'), notes: col('officer notes', 'notes') };
