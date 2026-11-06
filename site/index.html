@@ -1983,13 +1983,13 @@ function jobImportTable(){
 }
 function viewJobs(){
   const f = jobFilters(), all = db.jobs || [], off = can('officer'), today = todayIso();
-  const isPast = j => j.closes_on && j.closes_on < today, due = j => j.closes_on || '9999';
+  const isPast = j => !!j.closes_on && j.closes_on < today, inUtah = j => (j.states || []).includes('UT');
   const inCareer = j => !f.career.length || (j.careers || []).some(c => f.career.includes(c)), filtered = f.career.length || f.sem.length || f.type.length || f.loc.length;
   const inPlace = j => !f.loc.length || (j.remote && f.loc.includes('remote')) || (j.states || []).some(x => f.loc.includes(x));
   // Only places that have a listing, so the list stays short.
   const usedStates = [...new Set([...all.flatMap(j => j.kind === 'employer' ? [] : j.states || []), ...f.loc.filter(x => x !== 'remote')])].sort((a, b) => (JOB_STATES[a] || a).localeCompare(JOB_STATES[b] || b));
   const jobs = all.filter(j => j.kind !== 'employer' && (off || !isPast(j)) && inCareer(j) && (!f.sem.length || (j.semesters || []).some(x => f.sem.includes(x))) && (!f.type.length || f.type.includes(j.kind)) && inPlace(j))
-    .sort((a, b) => isPast(a) - isPast(b) || due(a).localeCompare(due(b)) || b.created_at.localeCompare(a.created_at));
+    .sort((a, b) => isPast(a) - isPast(b) || inUtah(b) - inUtah(a) || b.created_at.localeCompare(a.created_at) || a.company.localeCompare(b.company));
   const employers = all.filter(j => j.kind === 'employer' && inCareer(j)).sort((a, b) => a.company.localeCompare(b.company));
   return `<div class="view">
     <section class="page-head"><div class="eyebrow">Careers</div><h1 class="page">Jobs and internships</h1>
