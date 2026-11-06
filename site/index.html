@@ -1384,7 +1384,7 @@ function viewPartners(){
         ${s.interests.length ? `<section class="panel"><div><h3>Career interests</h3><span class="hint">Share of the ${ans} members who told us. Members can pick more than one.</span></div>
           ${hbars(s.interests.map(x => [x.name, pct(x.n, ans), `${x.name}: ${x.n} members`]), '%')}</section>` : ''}
         ${s.majors.length ? `<section class="panel"><div><h3>Top majors</h3><span class="hint">${s.majors_answered == null ? 'Number of members.' : `Number of members, out of the ${s.majors_answered} who told us.`} Double majors count once for each.</span></div>
-          ${hbars(s.majors.map(x => [x.name, x.n]))}</section>` : ''}
+          ${hbars(s.majors.map(x => [x.name, x.n]).concat(s.majors_other ? [['Other majors', s.majors_other]] : []))}</section>` : ''}
       </div></section>` : '';
   if (ui.pSent) return `<div class="view"><div class="notice"><strong>Thank you.</strong> We got your message and an officer will reach out ${esc(ui.pSent)} within a few days. <a href="#home">Back to home</a></div></div>`;
   return `<div class="view">
