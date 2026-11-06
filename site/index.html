@@ -450,6 +450,8 @@ table.bulk input,table.bulk select{padding:6px 8px;min-width:120px}
 .job-drop summary::after{content:"\25BE"}
 .job-drop-list{position:absolute;z-index:20;left:0;right:0;margin-top:4px;display:flex;flex-direction:column;gap:6px;max-height:16rem;overflow:auto;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);box-shadow:0 6px 18px rgba(0,0,0,.18)}
 .job-emp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,18rem),1fr));gap:10px;align-items:start}
+.job-emp-grid.short>:nth-child(n+7){display:none}
+@media (max-width:640px){.job-emp-grid.short>:nth-child(n+4){display:none}}
 .job-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr));gap:10px;align-items:end}
 .cat-head{font-size:1.35rem;text-transform:uppercase;color:var(--brand-text)}
 .mail-pre{white-space:pre-wrap;font-size:.95rem;overflow-wrap:anywhere}
@@ -1984,6 +1986,8 @@ function jobImportTable(){
 }
 // All the text a listing can be found by.
 const jobFindText = j => [j.title, j.company, j.descr, j.officer_notes, JOB_KINDS[j.kind], j.remote ? 'Remote' : '', ...(j.careers || []).map(jobCareerName), ...(j.semesters || []), ...(j.states || []).flatMap(x => [x, JOB_STATES[x]])].filter(Boolean).join(' ').toLowerCase();
+// Past this many year-round employers the list shortens to the first few (fewer on phones) with a button to show them all.
+const JOB_EMP_MAX = 6;
 function jobLists(){
   const f = jobFilters(), all = db.jobs || [], off = can('officer'), today = todayIso();
   const isPast = j => !!j.closes_on && j.closes_on < today, inUtah = j => (j.states || []).includes('UT');
@@ -1993,9 +1997,11 @@ function jobLists(){
   const jobs = all.filter(j => j.kind !== 'employer' && (off || !isPast(j)) && inCareer(j) && (!f.sem.length || (j.semesters || []).some(x => f.sem.includes(x))) && (!f.type.length || f.type.includes(j.kind)) && inPlace(j) && inSearch(j))
     .sort((a, b) => isPast(a) - isPast(b) || inUtah(b) - inUtah(a) || b.created_at.localeCompare(a.created_at) || a.company.localeCompare(b.company));
   const employers = all.filter(j => j.kind === 'employer' && inCareer(j) && inSearch(j)).sort((a, b) => a.company.localeCompare(b.company));
+  const empLong = employers.length > JOB_EMP_MAX && !words.length;   // a search shows every match
   return `${employers.length ? `<section class="stack" style="gap:10px"><div class="section-head"><h2>Employers hiring year-round</h2></div>
       <p class="hint" style="margin:0">These firms recruit all year, so check their careers pages directly.</p>
-      <div class="job-emp-grid">${employers.map(jobRow).join('')}</div></section>` : ''}
+      <div class="job-emp-grid${empLong && !ui.jobEmpAll ? ' short' : ''}">${employers.map(jobRow).join('')}</div>
+      ${empLong ? `<div><button class="btn ghost small" data-act="job-emp-toggle">${ui.jobEmpAll ? 'Show fewer employers' : `Show all ${employers.length} employers`}</button></div>` : ''}</section>` : ''}
     <section class="stack" style="gap:10px"><div class="section-head"><h2>Openings</h2><span class="muted">${jobs.length} ${jobs.length === 1 ? 'listing' : 'listings'}${filtered ? ' · <button class="btn ghost small" data-act="job-clear">Clear filters</button>' : ''}</span></div>
       ${jobs.map(jobRow).join('') || `<div class="empty">${filtered ? 'No openings match right now.' : 'No openings posted yet. Check back soon.'}</div>`}</section>`;
 }
@@ -7698,6 +7704,7 @@ document.addEventListener('click', async ev => {
     case 'job-edit': { const j = jobById(id); if (!j) break; ui.jobDraft = { ...j }; render(); document.getElementById('f-job')?.scrollIntoView({ block: 'center' }); break; }
     case 'job-cancel': ui.jobDraft = null; render(); break;
     case 'job-del': { const j = jobById(id); await act(async () => { must(await sb.from('job_postings').delete().eq('id', id)); await logChange('Deleted the listing “' + (j ? j.title || j.company : '') + '”'); }, 'Listing deleted'); break; }
+    case 'job-emp-toggle': ui.jobEmpAll = !ui.jobEmpAll; render(); break;
     case 'job-clear': ui.jobF = { career: [], sem: [], type: [], loc: [], q: '' }; history.replaceState(null, '', '#jobs'); ui._jobHash = location.hash; render(); break;
     case 'job-import-cancel': ui.jobImport = null; render(); break;
     case 'job-import-add': { const rows = ui.jobImport.rows.filter(r => !r.problems.length).map(r => r.row);
