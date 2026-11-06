@@ -745,6 +745,7 @@ async function load(){
     wait: sb.rpc('waitlist_info'),
     surveys: t('surveys'),
     jobs: t('job_postings'),
+    programs: t('early_programs'),
     svResp: signed && t('survey_responses'),
     svCounts: sb.rpc('survey_counts'),
     svRemLog: off && sb.from('survey_reminder_log').select('*'),
@@ -861,6 +862,7 @@ async function load(){
   db.mres = {}; (R.mres || []).forEach(r => (db.mres[r.member_id] = db.mres[r.member_id] || {})[r.category] = { path: r.path, updated: r.updated_at });
   db.pstats = R.pstats || null;
   db.surveys = (Array.isArray(R.surveys) ? R.surveys : []).sort((a, b) => b.created_at.localeCompare(a.created_at));   // survey builder (63-survey-builder.sql)
+  db.programs = Array.isArray(R.programs) ? R.programs : [];   // Early programs page (77-early-programs.sql)
   db.jobs = Array.isArray(R.jobs) ? R.jobs : [];   // Jobs page (75-job-postings.sql)
   db.svResp = Array.isArray(R.svResp) ? R.svResp : [];
   db.svRemLog = Array.isArray(R.svRemLog) ? R.svRemLog : [];   // what went out (74-survey-reminders.sql)
@@ -1011,7 +1013,7 @@ function setPendingRsvp(id){ ui._pending = id; try { id ? sessionStorage.setItem
 
 /* ---------- Chrome: nav, ticker ---------- */
 function renderChrome(route){
-  const links = [['home','Home'],['calendar','Calendar'],['recaps','Recaps'],['officers','Officers'],['about','About'],['resources','Resources'],['jobs','Jobs'],['partners','Partner with us'],['contact','Contact']];
+  const links = [['home','Home'],['calendar','Calendar'],['recaps','Recaps'],['officers','Officers'],['about','About'],['resources','Resources'],['jobs','Jobs'],['programs','Early programs'],['partners','Partner with us'],['contact','Contact']];
   if (appsOpen()) links.push(['apply','Apply']);
   const mem = [['leaderboard','Leaderboard'],['availability','Availability'],['messages','Messages'],['account','My account']];
   const staff = [];
@@ -1991,7 +1993,7 @@ function viewJobs(){
   const employers = all.filter(j => j.kind === 'employer' && inCareer(j)).sort((a, b) => a.company.localeCompare(b.company));
   return `<div class="view">
     <section class="page-head"><div class="eyebrow">Careers</div><h1 class="page">Jobs and internships</h1>
-      <p class="muted">Finance openings for UVU students, picked out by our officers. Select a listing for the details and the link to apply.</p></section>
+      <p class="muted">Finance openings for UVU students, picked out by our officers. Select a listing for the details and the link to apply. Freshman or sophomore? See <a href="#programs">Early programs</a>.</p></section>
     ${off ? `<section class="panel stack" style="gap:10px"><h3 style="margin:0">Add listings</h3>
       <div class="row" style="gap:8px"><button class="btn small" data-act="job-new">+ Add a job</button><button class="btn ghost small" data-act="job-new" data-kind="employer">+ Add a year-round employer</button>
         <button class="btn ghost small" data-act="job-template">Download template (Excel)</button>
@@ -2158,6 +2160,81 @@ function jobImportFrom(rows, name){
   });
   if (!out.length) return toast('That file doesn’t have any listings in it.');
   ui.jobImport = { name, rows: out }; render();
+}
+
+// Early programs page: insight days, fellowships, and other programs for freshmen and sophomores (77-early-programs.sql).
+// Anyone can read it; officers keep the statuses current here.
+const PROG_STATUS = { open: 'Open now', soon: 'Watch this month', exp: 'Upcoming', closed: 'Closed this cycle' };
+const PROG_YEARS = { F: 'Freshman', S: 'Sophomore', B: 'Freshman and sophomore' };
+const PROG_TRACKS = ['Investment banking', 'Markets and trading', 'PE and investing', 'Corporate and advisory', 'Pipeline organization'];
+const progFilters = () => ui.progF || (ui.progF = { 'pg-year': [], 'pg-track': [], 'pg-status': [] });
+function progRow(p){
+  const tag = { open: 'ok', soon: 'warn', exp: 'members', closed: '' }[p.status];
+  return `<details class="job" data-job="${p.id}" ${(ui.jobOpen || new Set()).has(p.id) ? 'open' : ''}>
+    <summary><span class="job-name"><strong>${esc(p.program)}</strong><span class="muted">${esc(p.firm)}</span></span>
+      <span class="job-tags"><span class="tag">${esc(PROG_YEARS[p.class_year])}</span><span class="tag ${tag}">${PROG_STATUS[p.status]}</span></span></summary>
+    <div class="job-body">
+      <dl class="facts">${p.track ? `<dt>Track</dt><dd>${esc(p.track)}</dd>` : ''}${p.who ? `<dt>Who</dt><dd>${esc(p.who)}</dd>` : ''}${p.deadline_text ? `<dt>Deadline</dt><dd>${esc(p.deadline_text)}</dd>` : ''}${p.runs ? `<dt>Runs</dt><dd>${esc(p.runs)}</dd>` : ''}</dl>
+      ${p.notes ? `<p style="margin:0;white-space:pre-wrap">${esc(p.notes)}</p>` : ''}
+      <div class="row" style="gap:6px;align-items:center"><a class="btn small" href="${esc(p.url)}" target="_blank" rel="noopener">View program ↗</a>
+        <span class="hint">${p.source === 'guide' ? 'From a career guide or tracker. Confirm on the firm’s site.' : 'From the firm.'}</span>
+        ${can('officer') ? `<button class="btn ghost small" data-act="prog-edit" data-id="${p.id}">Edit</button>${delBtn('prog-' + p.id, 'Delete', 'prog-del', p.id)}` : ''}</div>
+    </div></details>`;
+}
+function progForm(){
+  const d = ui.progDraft, opt = (o, cur) => Object.entries(o).map(([k, l]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${esc(l)}</option>`).join('');
+  return `<form class="panel stack" id="f-program" data-id="${esc(d.id)}" novalidate style="gap:12px">
+    <h3 style="margin:0">${d.id ? 'Edit' : 'Add'} a program</h3>
+    <div class="grid2"><label>Firm<input id="pg-firm" maxlength="120" value="${esc(d.firm)}"></label><label>Program<input id="pg-program" maxlength="200" value="${esc(d.program)}"></label>
+      <label>Class year<select id="pg-year">${opt(PROG_YEARS, d.class_year)}</select></label><label>Status<select id="pg-status">${opt(PROG_STATUS, d.status)}</select></label>
+      <label>Track<select id="pg-track">${opt(Object.fromEntries(PROG_TRACKS.map(x => [x, x])), d.track)}</select></label><label>Who can apply <span class="hint">Optional</span><input id="pg-who" value="${esc(d.who)}"></label>
+      <label>Deadline <span class="hint">Optional. Words are fine, like “Expected mid-Jan 2027”.</span><input id="pg-deadline" value="${esc(d.deadline_text)}"></label><label>When it runs <span class="hint">Optional</span><input id="pg-runs" value="${esc(d.runs)}"></label>
+      <label>Link<input id="pg-url" type="url" placeholder="https://…" value="${esc(d.url)}"></label><label>Link goes to<select id="pg-source">${opt({ firm: 'The firm’s own site', guide: 'A career guide or tracker' }, d.source)}</select></label></div>
+    <label>Notes <span class="hint">Optional</span><textarea id="pg-notes" rows="2">${esc(d.notes)}</textarea></label>
+    <div class="err" id="pg-err"></div>
+    <div class="row" style="gap:8px"><button class="btn" type="submit">Save</button><button type="button" class="btn ghost" data-act="prog-cancel">Cancel</button></div>
+  </form>`;
+}
+function viewPrograms(){
+  const f = progFilters(), all = db.programs || [], off = can('officer'), order = { open: 0, soon: 1, exp: 2, closed: 3 };
+  const y = f['pg-year'], t = f['pg-track'], st = f['pg-status'], filtered = y.length || t.length || st.length;
+  const list = all.filter(p => (!y.length || p.class_year === 'B' || y.includes(p.class_year)) && (!t.length || t.includes(p.track)) && (!st.length || st.includes(p.status)))
+    .sort((a, b) => order[a.status] - order[b.status] || a.firm.localeCompare(b.firm) || a.program.localeCompare(b.program));
+  const updated = all.reduce((m, p) => p.updated_at > m ? p.updated_at : m, '');
+  const pick = (who, name, text) => `<article class="career"><span class="eyebrow">${who}</span><h3>${name}</h3><p class="muted" style="margin:0">${text}</p></article>`;
+  const lane = (title, rows) => `<section class="panel stack" style="gap:10px"><h3 style="margin:0">${title}</h3><dl class="facts">${rows.map(([m, x]) => `<dt>${m}</dt><dd>${x}</dd>`).join('')}</dl></section>`;
+  return `<div class="view">
+    <section class="page-head"><div class="eyebrow">Careers</div><h1 class="page">Early programs</h1>
+      <p class="muted">Insight days, fellowships, and other programs for freshmen and sophomores. Banks often fill junior-summer seats with students they met earlier, so these are worth starting on now. Looking for open roles? See <a href="#jobs">Jobs</a>.</p>
+      ${updated ? `<span class="hint">Statuses last updated ${esc(parseDay(updated.slice(0, 10)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }))}. Many dates are estimates from last cycle, so confirm on the firm’s site before applying.</span>` : ''}</section>
+    <section class="stack" style="gap:12px"><div class="section-head"><h2>Where to start</h2></div><div class="careers">
+      ${pick('Sophomores', 'Citi Early ID', 'A three-week virtual mentorship with interview prep, open to US sophomores. It has application windows in November and February. The applicant pool is large, so what you do with your mentor matters most.')}
+      ${pick('Freshmen', 'Goldman Sachs Possibilities Series', 'A program only for first-years. Last cycle it was open February 1 to March 22. It’s very competitive, so also apply to Citi Freshman Discovery and SEO Career.')}
+      ${pick('Close to home', 'Goldman Emerging Leaders, Salt Lake City', 'A sophomore program with a Salt Lake City track in controllers, compliance, operations, and risk. This cycle’s deadline was October 4, so freshmen should plan on late summer.')}
+    </div></section>
+    <section class="stack" style="gap:12px"><div class="section-head"><h2>Two-year calendar</h2></div>
+      <p class="hint" style="margin:0">Timing is based on last cycle. Sophomore programs often open the summer before sophomore year, and recruiting for the summer after junior year starts in sophomore winter.</p>
+      <div class="careers">
+      ${lane('Freshman year', [['Sep–Oct', 'Girls Who Invest Scholars, Forté Fast Track to Finance'], ['Nov–Jan', 'Start SEO Career, Forté virtual conference'], ['Feb–Mar', 'Goldman Possibilities Series, Citadel Discover, HSBC Spring Insight'], ['Mar–Apr', 'Citi Freshman Discovery, SEO Career summer class'], ['May', 'Citi Freshman Discovery runs, Capital One Analyst Summit'], ['Jun–Aug', 'MLT Career Prep priority deadline, Bank of America Campus Insight Forum, Goldman Emerging Leaders opens']])}
+      ${lane('Sophomore year', [['Sep–Oct', 'Goldman Emerging Leaders, RBC Insights, Blackstone BREL, Moelis LDP, Houlihan Lokey Insight Day, Morgan Stanley Early Insights'], ['Nov', 'Citi Early ID, KeyBanc Sophomore Series, Stifel Sophomore Explorers, D. E. Shaw fellowships, Standard Chartered Insight'], ['Dec–Jan', 'Moelis Summer Analyst opens, Wells Fargo CIB internships open, JPMorganChase Fellowship and MLT Career Prep final deadlines, Lincoln International job shadow'], ['Feb–Mar', 'Citi Early ID, SMBC Launch, KeyBanc Summer Analyst, Citadel Discover'], ['Summer', 'JPMorganChase Fellowship, Bain Capital PiPE, Morgan Stanley IM sophomore analyst']])}
+    </div></section>
+    <section class="stack" style="gap:12px">
+      <div class="section-head"><h2>Programs</h2><span class="muted">${list.length} of ${all.length}${filtered ? ' · <button class="btn ghost small" data-act="prog-clear">Clear filters</button>' : ''}</span></div>
+      ${off ? `<div><button class="btn small" data-act="prog-new">+ Add a program</button></div>${ui.progDraft ? progForm() : ''}` : ''}
+      <div class="job-filters">
+        ${jobDrop('pg-year', 'Class year', 'All class years', 'class years', [['F', 'Freshman'], ['S', 'Sophomore']], y)}
+        ${jobDrop('pg-track', 'Track', 'All tracks', 'tracks', PROG_TRACKS.map(x => [x, x]), t)}
+        ${jobDrop('pg-status', 'Status', 'All statuses', 'statuses', Object.entries(PROG_STATUS), st)}
+      </div>
+      ${list.map(progRow).join('') || `<div class="empty">${filtered ? 'No programs match these filters.' : 'No programs listed yet.'}</div>`}</section>
+    <section class="stack" style="gap:12px"><div class="section-head"><h2>Closer to home</h2></div>
+      <p class="hint" style="margin:0">These aren’t national programs, but they add real finance experience and connect you with firms on the Wasatch Front.</p>
+      <div class="careers">
+      ${pick('Competition', 'ACG Utah Cup', 'An M&amp;A and private equity case competition run by ACG Utah, held in late winter.')}
+      ${pick('Student funds', 'Student-run investment funds', 'UVU’s Wolverine Fund, Kickstart’s Campus Founders Fund, and the University Growth Fund in Salt Lake City each recruit on their own schedule.')}
+      ${pick('Firm visits', 'Salt Lake City firms', 'Goldman Sachs, Fidelity, and Morgan Stanley all have a presence in Salt Lake City. Watch the <a href="#calendar">calendar</a> for club excursions.')}
+    </div></section>
+  </div>`;
 }
 
 function viewResources(){
@@ -6922,7 +6999,7 @@ async function showCode(id, fresh){
 }
 
 /* ---------- Render ---------- */
-const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources, jobs:viewJobs,
+const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources, jobs:viewJobs, programs:viewPrograms,
   archive:viewRecaps, leaderboard:viewLeaderboard, account:viewAccount, apply:viewApply, availability:viewAvailability,
   contact:viewContact, partners:viewPartners, event:viewEvent, survey:viewSurvey, messages:viewMessages, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
 function route(){ const r = location.hash.slice(1).split('/')[0]; return VIEWS[r] ? r : 'home'; }
@@ -7602,6 +7679,11 @@ document.addEventListener('click', async ev => {
     case 'bulk-go': await bulkAdd(); break;
     case 'bulk-template': downloadBulkTemplate(); break;
     case 'job-template': downloadJobTemplate(); break;
+    case 'prog-new': ui.progDraft = { id: '', firm: '', program: '', class_year: 'S', track: PROG_TRACKS[0], who: '', deadline_text: '', runs: '', status: 'exp', url: '', source: 'firm', notes: '' }; render(); document.getElementById('f-program')?.scrollIntoView({ block: 'center' }); break;
+    case 'prog-edit': { const p = (db.programs || []).find(x => x.id === id); if (!p) break; ui.progDraft = { ...p }; render(); document.getElementById('f-program')?.scrollIntoView({ block: 'center' }); break; }
+    case 'prog-cancel': ui.progDraft = null; render(); break;
+    case 'prog-clear': ui.progF = null; render(); break;
+    case 'prog-del': { const p = (db.programs || []).find(x => x.id === id); await act(async () => { must(await sb.from('early_programs').delete().eq('id', id)); await logChange('Deleted the early program “' + (p ? p.program : '') + '”'); }, 'Program deleted'); break; }
     case 'job-new': ui.jobDraft = { id: '', kind: t.dataset.kind || 'internship', company: '', title: '', descr: '', url: '', opens_on: '', closes_on: '', careers: [...((ui.jobF || {}).career || [])], semesters: [], states: [], remote: false, officer_notes: '' }; render(); document.getElementById('f-job')?.scrollIntoView({ block: 'center' }); break;
     case 'job-edit': { const j = jobById(id); if (!j) break; ui.jobDraft = { ...j }; render(); document.getElementById('f-job')?.scrollIntoView({ block: 'center' }); break; }
     case 'job-cancel': ui.jobDraft = null; render(); break;
@@ -7824,7 +7906,7 @@ document.addEventListener('change', async e => {
     dl.innerHTML = e.target.value === 'faculty' ? ['Professor', 'Associate Professor', 'Assistant Professor', 'Lecturer', 'Adjunct Professor', 'Department Chair', 'Dean'].map(t => `<option value="${t}">`).join('') : ''; }
   if (id === 'bulk-mode') ui.bulkMode = e.target.value;
   if (e.target.dataset.jobf){
-    const key = e.target.dataset.jobf, val = e.target.value, f = jobFilters();
+    const key = e.target.dataset.jobf, val = e.target.value, f = key.startsWith('pg-') ? progFilters() : jobFilters();
     f[key] = e.target.checked ? [...f[key], val] : f[key].filter(x => x !== val);
     if (key === 'career'){ history.replaceState(null, '', '#jobs' + (f.career.length ? '/' + f.career.join(',') : '')); ui._jobHash = location.hash; }
     render();
@@ -8622,6 +8704,20 @@ async function handleSubmit(f, v, err){
     const id = f.dataset.id;
     const row = id ? c : { ...c, sort: (db.careers || []).filter(x => x.category === c.category).length };
     if (await doOrPropose('career', id ? 'edit' : 'add', id || '', { row }, (id ? 'Edit' : 'Add') + ' career “' + c.title + '”', 'Career saved')) { ui.editCareer = null; render(); }
+  }
+
+  if (f.id === 'f-program'){
+    const url = jobUrl(v('pg-url')), row = { firm: v('pg-firm'), program: v('pg-program'), class_year: v('pg-year'), status: v('pg-status'), track: v('pg-track'), who: v('pg-who'), deadline_text: v('pg-deadline'), runs: v('pg-runs'), url, source: v('pg-source'), notes: v('pg-notes'), updated_at: new Date().toISOString() };
+    if (!row.firm) return err('pg-err', 'Add the firm.');
+    if (!row.program) return err('pg-err', 'Add the program.');
+    if (!url) return err('pg-err', 'Enter the full link, starting with https://');
+    const pid = f.dataset.id;
+    await act(async () => {
+      must(await (pid ? sb.from('early_programs').update(row).eq('id', pid) : sb.from('early_programs').insert(row)));
+      await logChange((pid ? 'Edited the early program “' : 'Added the early program “') + row.program + '”');
+      ui.progDraft = null;
+    }, pid ? 'Program saved' : 'Program added');
+    return;
   }
 
   if (f.id === 'f-job'){
