@@ -826,7 +826,7 @@ async function load(){
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
-    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
+    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, showRsvps:e.show_rsvps !== false, speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -966,6 +966,8 @@ function heldEvents(){ return sortedEvents().filter(hasStarted).reverse(); }   /
 function going(id){ return db.rsvps[id] || []; }
 function attended(id){ return db.attendance[id] || []; }
 function rsvpCount(id){ return db.stats[id] ? db.stats[id].rsvps : going(id).length; }
+// Whether this viewer sees how many people RSVP'd. Officers always do; members and guests only if the event shows it.
+function showRsvps(e){ return can('officer') || e.showRsvps !== false; }
 function attCount(id){ return db.stats[id] ? db.stats[id].attended : attended(id).length; }
 function evById(id){ return db.events.find(e => e.id === id); }
 function catVar(c){ return 'var(' + (CATS[c] || CATS.meeting)[1] + ')'; }
@@ -1040,7 +1042,7 @@ function renderChrome(route){
 
   const items = upcoming().slice(0, 6).map(e => {
     const d = parseDay(e.date);
-    return `<span class="ticker-item"><span class="sym">WFA.${e.cat.slice(0,3).toUpperCase()}</span><span>${isLive(e) ? 'NOW' : isToday(e) ? 'TODAY' : MON[d.getMonth()].toUpperCase() + ' ' + String(d.getDate()).padStart(2,'0')}</span><span>${esc(e.title.toUpperCase())}</span><span class="up">▲ ${isCase(e) ? teamsIn(e.id).length + ' TEAM' + (teamsIn(e.id).length === 1 ? '' : 'S') : rsvpCount(e.id) + ' RSVP'}</span></span>`;
+    return `<span class="ticker-item"><span class="sym">WFA.${e.cat.slice(0,3).toUpperCase()}</span><span>${isLive(e) ? 'NOW' : isToday(e) ? 'TODAY' : MON[d.getMonth()].toUpperCase() + ' ' + String(d.getDate()).padStart(2,'0')}</span><span>${esc(e.title.toUpperCase())}</span>${isCase(e) || showRsvps(e) ? `<span class="up">▲ ${isCase(e) ? teamsIn(e.id).length + ' TEAM' + (teamsIn(e.id).length === 1 ? '' : 'S') : rsvpCount(e.id) + ' RSVP'}</span>` : ''}</span>`;
   }).join('');
   setTicker(items);
 }
@@ -1082,7 +1084,7 @@ function evRow(e){
     <div style="min-width:0"><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</div>
       <div class="ev-title">${esc(e.title)} ${statusTag(e)}</div>
       <div class="ev-sub">${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc)}</div></div>
-    <div class="rsvp-count">${status}<span class="up">▲</span> ${n}${e.cap?` / ${e.cap}`:''}</div>
+    <div class="rsvp-count">${status}${showRsvps(e) ? `<span class="up">▲</span> ${n}${e.cap?` / ${e.cap}`:''}` : ''}</div>
   </button>`;
 }
 function todayBar(){
@@ -1229,7 +1231,7 @@ function featuredPanel(){
         <span class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</span>
         <strong>${esc(e.title)}</strong>
         <span class="ev-sub">${fmtDay(e.date)} · ${fmtTime(e.start)}${e.loc ? ' · ' + esc(e.loc) : ''}</span>
-        <span class="ev-sub">${ptsText(e.cat)} · ${rsvpCount(e.id)} going</span>
+        <span class="ev-sub">${ptsText(e.cat)}${showRsvps(e) ? ` · ${rsvpCount(e.id)} going` : ''}</span>
       </button>`).join('') || `<p class="muted" style="margin:0">Career fairs, case competitions, guest speakers, and excursions will show up here as they’re announced.</p>`}
   </aside>`;
 }
@@ -5538,6 +5540,7 @@ function viewOfficer(){
           <span class="hint">Need a room? <a href="https://www.uvu.edu/woodbury/current-students.html" target="_blank" rel="noopener">Reserve one through Woodbury ↗</a></span></label>
         <label>Seat limit<input id="ev-cap" type="number" min="0" value="${esc(e?.cap || 0)}"><span id="ev-help-cap"></span><div id="ev-seat-warn"></div><span class="hint">0 means no limit. RSVPs close when the limit is reached. Guest RSVPs count too.</span></label>
         ${rsvpBox(e)}
+        <label class="check" id="ev-sr-wrap" ${['officer_meeting', 'case_competition'].includes(e?.cat || ui.evNewCat || Object.keys(CATS)[0]) ? 'hidden' : ''}><input type="checkbox" id="ev-show-rsvps" ${e?.showRsvps === false ? '' : 'checked'}> Show how many people RSVP’d <span class="hint">Uncheck to hide the RSVP count from members and guests. Officers always see it.</span></label>
         <label class="check" id="ev-mo-wrap" ${e?.cat === 'officer_meeting' ? 'hidden' : ''}><input type="checkbox" id="ev-members-only" ${e?.membersOnly ? 'checked' : ''}> Members only <span class="hint">Everyone can see it, but only members can RSVP and check in (a reason to join).</span></label>
         ${!e || e.draft ? (isScheduler() ? `<label class="check"><input type="checkbox" id="ev-soon" ${e?.comingSoon ? 'checked' : ''}> Coming-soon page <span class="hint">While this is a draft, anyone who opens its link sees only the title and the coming-soon description below (no date or other details) instead of “event not found.” Copy the link or QR code from the Drafts list after saving.</span></label>
           <label id="ev-soon-wrap" ${e?.comingSoon ? '' : 'hidden'}>Coming-soon description <span class="hint">Optional. A short teaser, like “Lunch with a Goldman Sachs VP. Seats are limited; RSVPs open soon.”</span><textarea id="ev-soon-desc" rows="3" maxlength="1000">${esc(e?.soonDesc || '')}</textarea></label>`
@@ -6004,7 +6007,7 @@ function eventInner(id, page){
   else if (e.draft) action = `<button class="btn" type="button" disabled>RSVP</button><span class="hint">RSVPs open when the event is published.</span>`;
   else if (e.rsvpOpens && Date.now() < Date.parse(e.rsvpOpens) && !can('officer')) action = `<button class="btn" type="button" disabled>RSVP</button><span class="hint">RSVPs open ${fmtMtStamp(Date.parse(e.rsvpOpens))}.</span>`;
   else if (e.rsvpOpens && Date.now() < Date.parse(e.rsvpOpens) && !full) action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button><span class="hint">Officers can RSVP before RSVPs open for everyone.</span>`;
-  else if (full || wl.waiting) action = `<span class="muted">All ${e.cap} seats are taken.</span><button class="btn" data-act="wl-join" data-id="${id}">Join the waitlist</button>${wl.waiting ? `<span class="hint">${wl.waiting} ${wl.waiting === 1 ? 'person is' : 'people are'} waiting.</span>` : ''}`;
+  else if (full || wl.waiting) action = `<span class="muted">All ${e.cap} seats are taken.</span><button class="btn" data-act="wl-join" data-id="${id}">Join the waitlist</button>${wl.waiting && showRsvps(e) ? `<span class="hint">${wl.waiting} ${wl.waiting === 1 ? 'person is' : 'people are'} waiting.</span>` : ''}`;
   else action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button>`;
   let checkin = '';
   if (isToday(e) && !e.draft){
@@ -6038,7 +6041,7 @@ function eventInner(id, page){
     <h2>${esc(e.title)}</h2>
     <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} <span class="hint">Mountain Time</span></dd>
       <dt>Status</dt><dd>${{ upcoming: 'Upcoming', live: '<strong>Happening now</strong>', over: 'Over' }[evStatus(e)]}</dd>
-      <dt>Where</dt><dd>${esc(e.loc)}</dd>${e.cat === 'officer_meeting' ? `<dt>Who</dt><dd>${meetingFor(e)}${session && can('officer') ? `<br><strong>${{ required: 'You’re required.', invited: 'You’re invited (optional).', '': 'You’re not expected at this one.' }[myMeetingStatus(e)]}</strong>` : ''}</dd>` : ''}${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : `<dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}`}${hasStarted(e)?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
+      <dt>Where</dt><dd>${esc(e.loc)}</dd>${e.cat === 'officer_meeting' ? `<dt>Who</dt><dd>${meetingFor(e)}${session && can('officer') ? `<br><strong>${{ required: 'You’re required.', invited: 'You’re invited (optional).', '': 'You’re not expected at this one.' }[myMeetingStatus(e)]}</strong>` : ''}</dd>` : ''}${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : showRsvps(e) ? `<dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}` : `<dt>Seats</dt><dd class="num">${e.cap ? e.cap : 'No limit'}`}${hasStarted(e) && showRsvps(e) ?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
     ${e.cap && !isCase(e) ? `<div class="meter"><span style="width:${Math.min(100,n/e.cap*100)}%"></span></div>` : ''}
     <p style="white-space:pre-wrap">${esc(e.desc)}</p>
     ${(e.speakers || []).length ? `<div class="stack" style="gap:10px"><h3 style="margin:0">${e.speakers.length === 1 ? 'Guest' : 'Guests'}</h3>${e.speakers.map(sp => `<div class="speaker-card"><strong>${esc(sp.name)}</strong>${sp.title || sp.company ? `<div class="hint">${esc([sp.title, sp.company].filter(Boolean).join(', '))}</div>` : ''}${sp.bio ? `<p style="white-space:pre-wrap;margin:6px 0 0">${esc(sp.bio)}</p>` : ''}</div>`).join('')}</div>` : ''}
@@ -7049,6 +7052,7 @@ function syncCaseBox(){
   if (b) b.hidden = c.value !== 'case_competition'; if (m) m.hidden = c.value !== 'officer_meeting';
   const mo = document.getElementById('ev-mo-wrap'), qa = document.getElementById('ev-qa-wrap');
   if (mo) mo.hidden = c.value === 'officer_meeting'; if (qa) qa.hidden = c.value !== 'guest_speaker';
+  const sr = document.getElementById('ev-sr-wrap'); if (sr) sr.hidden = ['officer_meeting', 'case_competition'].includes(c.value);
   const go = document.getElementById('ev-go-wrap'); if (go) go.hidden = c.value === 'officer_meeting' || c.value === 'case_competition';
   if (evHideFinal(ui.editEvent ? evById(ui.editEvent) : null, c.value)) document.querySelectorAll('.ev-final').forEach(el => { el.hidden = true; });
   else document.querySelectorAll('.ev-final').forEach(el => { if (el.id !== 'ev-go-wrap') el.hidden = false; });
@@ -8324,6 +8328,7 @@ async function handleSubmit(f, v, err){
     if (e.end_time <= e.start_time) return err('ev-err', 'End time must be after the start time.');
     e.members_only = e.cat !== 'officer_meeting' && document.getElementById('ev-members-only').checked;
     e.qa_enabled = e.cat === 'guest_speaker' && document.getElementById('ev-qa').checked;
+    e.show_rsvps = ['officer_meeting', 'case_competition'].includes(e.cat) || !document.getElementById('ev-show-rsvps') || document.getElementById('ev-show-rsvps').checked;
     if (document.getElementById('ev-soon')){ e.coming_soon = document.getElementById('ev-soon').checked; e.soon_desc = v('ev-soon-desc'); }
     if (['officer_meeting', 'case_competition'].includes(e.cat)){ e.rsvp_opens = null; e.guest_rsvp_opens = null; e.guest_rsvp_delay = null; }
     else if (waitFinal){ e.rsvp_opens = cur0.rsvpOpens || null; e.guest_rsvp_opens = cur0.guestOpens || null; e.guest_rsvp_delay = cur0.guestDelay ?? null; }
