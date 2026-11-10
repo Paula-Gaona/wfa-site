@@ -197,6 +197,7 @@ main{padding-block:36px 64px}
 .tag.pinned,.tag.ok{color:var(--brand-text)}
 .tag.members{color:var(--cat-workshop)}
 .tag.warn{color:var(--warn)}
+.rsvp-count .tag{white-space:normal;max-width:9.5rem;text-align:center;line-height:1.35;display:inline-block}   /* seat status in event rows wraps instead of squeezing the title */
 .grid3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px}.grid3.zip-first{grid-template-columns:1fr 2fr 1.4fr}
 .rq-guests{border-color:var(--gold,#B8923A)}
 .rq-panel{padding:16px;border-color:var(--gold,#B8923A)}
@@ -992,7 +993,13 @@ function showRsvps(e){ return can('officer') || e.showRsvps !== false; }
 // What members and guests see instead of the count when it's hidden: Seats open, Few seats left (under 10), or Full.
 const SEATS_LOW = 10;
 function seatLeft(e){ return e.cap ? Math.max(0, e.cap - rsvpCount(e.id)) : Infinity; }
-function seatNote(e){ const left = seatLeft(e); return left === 0 ? 'Full' : left < SEATS_LOW ? 'Few seats left' : 'Seats open'; }
+function seatNote(e){ const left = seatLeft(e); return left === 0 ? 'Full' + seatWait(e) : left < SEATS_LOW ? 'Few seats left' : 'Seats open'; }
+// After "Full": point people to the waitlist (members only, and only until the event starts).
+function seatWait(e){
+  if (hasStarted(e) || (session && going(e.id).includes(session))) return '';
+  if (((db.wait || {})[e.id] || {}).my_place) return ' · You’re on the waitlist';
+  return session ? ' · Join the waitlist' : ' · Members can join the waitlist';
+}
 function seatTag(e){ const left = seatLeft(e); return `<span class="tag${left < SEATS_LOW ? ' warn' : ''}">${seatNote(e)}</span>`; }
 function attCount(id){ return db.stats[id] ? db.stats[id].attended : attended(id).length; }
 function evById(id){ return db.events.find(e => e.id === id); }
