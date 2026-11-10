@@ -844,7 +844,7 @@ async function load(){
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
-    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, showRsvps:e.show_rsvps !== false, speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
+    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, showRsvps:e.show_rsvps !== false, checkinOpenedAt:e.checkin_opened_at || null, speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -957,7 +957,10 @@ function todayIso(){ return dayOffset(0); }   // today's date in Mountain Time
 function evStartMs(ev){ return mtMs(ev.date, ev.start || '00:00'); }
 // Members can check in starting 15 minutes before an event starts (the database enforces this too).
 const CHECKIN_EARLY_MIN = 15;
-function checkinOpensMs(ev){ return evStartMs(ev) - CHECKIN_EARLY_MIN * 60e3; }
+// Check-in opens 15 minutes before the start, or earlier if an admin opened it early (81-open-checkin-early.sql).
+function checkinOpensMs(ev){ const usual = evStartMs(ev) - CHECKIN_EARLY_MIN * 60e3, early = ev.checkinOpenedAt ? Date.parse(ev.checkinOpenedAt) : 0; return early && early < usual ? early : usual; }
+// Opened early by an admin and not over yet: check-in works even before the event day.
+function openedEarly(ev){ return !!ev.checkinOpenedAt && Date.now() >= Date.parse(ev.checkinOpenedAt) && !isPast(ev); }
 function mtClock(ms){ const p = mtParts(ms); return String(p.hour % 24).padStart(2, '0') + ':' + String(p.minute).padStart(2, '0'); }
 function evEndMs(ev){ return ev.end && ev.end > (ev.start || '') ? mtMs(ev.date, ev.end) : evStartMs(ev) + 3600000; }
 // 'upcoming' before it starts, 'live' while it's happening, 'over' after it ends.
@@ -6028,7 +6031,7 @@ function eventInner(id, page){
   else if (full || wl.waiting) action = `<span class="muted">All ${e.cap} seats are taken.</span><button class="btn" data-act="wl-join" data-id="${id}">Join the waitlist</button>${wl.waiting && showRsvps(e) ? `<span class="hint">${wl.waiting} ${wl.waiting === 1 ? 'person is' : 'people are'} waiting.</span>` : ''}`;
   else action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button>`;
   let checkin = '';
-  if (isToday(e) && !e.draft){
+  if ((isToday(e) || openedEarly(e)) && !e.draft){
     const pre = page ? decodeURIComponent(location.hash.slice(1).split('/')[2] || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) : '';
     if (!session) checkin = guestCheckin(e, pre);
     else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e.cat)}.</div>`;
@@ -6054,7 +6057,9 @@ function eventInner(id, page){
           : shown ? `<span class="row" style="gap:8px;align-items:center"><span class="code-inline">${esc(e.code)}</span><button class="btn ghost small" data-act="reveal-code" data-id="${id}">Hide</button></span>`
           : `<button class="btn ghost small" data-act="reveal-code" data-id="${id}">Show code</button>`}</div>
       <div class="row" style="gap:6px"><button class="btn ghost small" data-act="ck-pdf" data-id="${id}">Check-in sheet (PDF)</button>${e.code ? `<button class="btn ghost small" data-act="show-code" data-id="${id}">Check-in screen</button><button class="btn ghost small" data-act="qr" data-id="${id}" data-kind="checkin">Check-in QR</button>` : ''}</div>
-      <span class="hint">${isToday(e) ? 'Check-in is open today.' : 'Members can check in on the day of the event.'}</span></div>`;
+      <span class="hint">${Date.now() >= checkinOpensMs(e) && (isToday(e) || openedEarly(e)) ? `Check-in is open${openedEarly(e) && Date.now() < evStartMs(e) - CHECKIN_EARLY_MIN * 60e3 ? ' (opened early)' : ''}.` : `Check-in opens ${fmtDay(e.date)} at ${fmtTime(mtClock(evStartMs(e) - CHECKIN_EARLY_MIN * 60e3))}, 15 minutes before the start.`}</span>
+      ${can('admin') ? (e.checkinOpenedAt ? `<div class="row" style="gap:8px;align-items:center"><span class="hint">Opened early ${fmtMtStamp(Date.parse(e.checkinOpenedAt))}.</span><button class="btn ghost small" data-act="ck-close-early" data-id="${id}">Undo early opening</button></div>`
+        : Date.now() < checkinOpensMs(e) ? `<div>${armBtn('ck-open-' + id, 'Open check-in now', 'Click again to open check-in now', 'ck-open-early', id)}</div>` : '') : ''}</div>`;
   }
   const soonBox = !(e.draft && can('officer')) ? '' : e.comingSoon
     ? `<div class="stack" style="gap:8px"><div class="row" style="gap:8px;align-items:center"><strong>Coming-soon page is on.</strong>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${id}">Turn off</button>` : ''}</div><span class="hint">Anyone who opens this link before it’s published sees only this:</span>${soonBlock(e.title, e.soonDesc)}</div>`
@@ -7717,6 +7722,14 @@ document.addEventListener('click', async ev => {
       break; }
     case 'show-code': await showCode(id); break;
     case 'ck-pdf': await ckPdf(id); break;
+    case 'ck-open-early': case 'ck-close-early': { const open = a === 'ck-open-early', e = evById(id);
+      await act(async () => {
+        if (open && !e.code) must(await sb.from('checkin_codes').upsert({ event_id: id, code: newCode() }));
+        const r = await sb.rpc('open_checkin', { p_event: id, p_open: open });
+        if (r.error) throw new Error(/open_checkin/.test(r.error.message || '') ? 'Opening check-in early isn’t set up yet. An admin needs to run 81-open-checkin-early.sql.' : errMsg(r.error));
+        if (r.data !== 'ok') throw new Error(r.data === 'denied' ? 'Only admins can open check-in early.' : 'That event wasn’t found.');
+        await logChange((open ? 'Opened check-in early for “' : 'Undid the early check-in opening for “') + e.title + '”');
+      }, open ? 'Check-in is open' : 'Check-in goes back to opening 15 minutes before the start'); break; }
     case 'ck-full': if (document.fullscreenElement) document.exitFullscreen(); else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {}); break;
     case 'refresh-code': await showCode(id); break;
     case 'new-code': await showCode(id, true); break;
