@@ -6039,6 +6039,11 @@ function eventInner(id, page){
       <span class="hint ci-opens" ${early ? '' : 'hidden'}>Check-in opens at ${fmtTime(mtClock(opens))}, 15 minutes before the event starts.</span><div class="err" id="ci-err"></div></form>`;
     }
   }
+  // Scanned a check-in QR before the event day: say when check-in opens, so it doesn't look broken.
+  else if (page && !e.draft && !isPast(e) && (location.hash.slice(1).split('/')[2] || '')){
+    const opens = checkinOpensMs(e);
+    checkin = `<div class="notice"><span><strong>Check-in isn’t open yet.</strong> It opens ${fmtDay(e.date)} at ${fmtTime(mtClock(opens))}, 15 minutes before the event starts. Scan the code again then.</span></div>`;
+  }
   // Officers: the check-in code, hidden until they click Show code, plus the projector view and a check-in QR.
   let codeBox = '';
   if (can('officer') && !e.draft && !isPast(e)){
