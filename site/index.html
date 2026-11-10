@@ -989,6 +989,11 @@ function attended(id){ return db.attendance[id] || []; }
 function rsvpCount(id){ return db.stats[id] ? db.stats[id].rsvps : going(id).length; }
 // Whether this viewer sees how many people RSVP'd. Officers always do; members and guests only if the event shows it.
 function showRsvps(e){ return can('officer') || e.showRsvps !== false; }
+// What members and guests see instead of the count when it's hidden: Seats open, Few seats left (under 10), or Full.
+const SEATS_LOW = 10;
+function seatLeft(e){ return e.cap ? Math.max(0, e.cap - rsvpCount(e.id)) : Infinity; }
+function seatNote(e){ const left = seatLeft(e); return left === 0 ? 'Full' : left < SEATS_LOW ? 'Few seats left' : 'Seats open'; }
+function seatTag(e){ const left = seatLeft(e); return `<span class="tag${left < SEATS_LOW ? ' warn' : ''}">${seatNote(e)}</span>`; }
 function attCount(id){ return db.stats[id] ? db.stats[id].attended : attended(id).length; }
 function evById(id){ return db.events.find(e => e.id === id); }
 function catVar(c){ return 'var(' + (CATS[c] || CATS.meeting)[1] + ')'; }
@@ -1105,7 +1110,7 @@ function evRow(e){
     <div style="min-width:0"><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</div>
       <div class="ev-title">${esc(e.title)} ${statusTag(e)}</div>
       <div class="ev-sub">${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc)}</div></div>
-    <div class="rsvp-count">${status}${showRsvps(e) ? `<span class="up">▲</span> ${n}${e.cap?` / ${e.cap}`:''}` : ''}</div>
+    <div class="rsvp-count">${status}${showRsvps(e) ? `<span class="up">▲</span> ${n}${e.cap?` / ${e.cap}`:''}` : isPast(e) || e.cat === 'officer_meeting' ? '' : seatTag(e)}</div>
   </button>`;
 }
 function todayBar(){
@@ -1252,7 +1257,7 @@ function featuredPanel(){
         <span class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</span>
         <strong>${esc(e.title)}</strong>
         <span class="ev-sub">${fmtDay(e.date)} · ${fmtTime(e.start)}${e.loc ? ' · ' + esc(e.loc) : ''}</span>
-        <span class="ev-sub">${ptsText(e.cat)}${showRsvps(e) ? ` · ${rsvpCount(e.id)} going` : ''}</span>
+        <span class="ev-sub">${ptsText(e.cat)}${showRsvps(e) ? ` · ${rsvpCount(e.id)} going` : ' · ' + seatNote(e)}</span>
       </button>`).join('') || `<p class="muted" style="margin:0">Career fairs, case competitions, guest speakers, and excursions will show up here as they’re announced.</p>`}
   </aside>`;
 }
@@ -6069,7 +6074,7 @@ function eventInner(id, page){
     <h2>${esc(e.title)}</h2>
     <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} <span class="hint">Mountain Time</span></dd>
       <dt>Status</dt><dd>${{ upcoming: 'Upcoming', live: '<strong>Happening now</strong>', over: 'Over' }[evStatus(e)]}</dd>
-      <dt>Where</dt><dd>${esc(e.loc)}</dd>${e.cat === 'officer_meeting' ? `<dt>Who</dt><dd>${meetingFor(e)}${session && can('officer') ? `<br><strong>${{ required: 'You’re required.', invited: 'You’re invited (optional).', '': 'You’re not expected at this one.' }[myMeetingStatus(e)]}</strong>` : ''}</dd>` : ''}${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : showRsvps(e) ? `<dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}` : `<dt>Seats</dt><dd class="num">${e.cap ? e.cap : 'No limit'}`}${hasStarted(e) && showRsvps(e) ?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
+      <dt>Where</dt><dd>${esc(e.loc)}</dd>${e.cat === 'officer_meeting' ? `<dt>Who</dt><dd>${meetingFor(e)}${session && can('officer') ? `<br><strong>${{ required: 'You’re required.', invited: 'You’re invited (optional).', '': 'You’re not expected at this one.' }[myMeetingStatus(e)]}</strong>` : ''}</dd>` : ''}${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : showRsvps(e) ? `<dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}` : isPast(e) ? `<dt>Seats</dt><dd>${e.cap || 'No limit'}` : `<dt>Availability</dt><dd>${seatTag(e)}`}${hasStarted(e) && showRsvps(e) ?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
     ${e.cap && !isCase(e) ? `<div class="meter"><span style="width:${Math.min(100,n/e.cap*100)}%"></span></div>` : ''}
     <p style="white-space:pre-wrap">${esc(e.desc)}</p>
     ${(e.speakers || []).length ? `<div class="stack" style="gap:10px"><h3 style="margin:0">${e.speakers.length === 1 ? 'Guest' : 'Guests'}</h3>${e.speakers.map(sp => `<div class="speaker-card"><strong>${esc(sp.name)}</strong>${sp.title || sp.company ? `<div class="hint">${esc([sp.title, sp.company].filter(Boolean).join(', '))}</div>` : ''}${sp.bio ? `<p style="white-space:pre-wrap;margin:6px 0 0">${esc(sp.bio)}</p>` : ''}</div>`).join('')}</div>` : ''}
