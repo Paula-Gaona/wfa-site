@@ -353,6 +353,24 @@ main{padding-block:36px 64px}
 .nf-table{width:100%;border-collapse:collapse}
 .nf-table th,.nf-table td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 .nf-table td.c,.nf-table th.c{text-align:center;width:6.5rem}
+.ck{position:fixed;inset:0;z-index:45;background:#0E2A1A;color:#fff;display:flex;flex-direction:column;gap:clamp(12px,3vh,32px);padding:clamp(16px,3vw,44px);overflow:auto}
+.ck a{color:inherit}
+.ck-top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.ck-brand{display:flex;align-items:center;gap:14px;min-width:0}
+.ck-brand img{width:clamp(48px,7vh,72px);height:auto;flex:none}
+.ck-title{font-family:"Barlow Condensed","Arial Narrow",Arial,sans-serif;font-weight:800;font-size:clamp(1.6rem,4.4vh,2.8rem);line-height:1.05;text-transform:uppercase}
+.ck-tools{display:flex;gap:8px;flex-wrap:wrap}
+.ck .ck-tools .btn{background:transparent;color:#fff;border-color:rgba(255,255,255,.55)}
+.ck .ck-tools .btn.armed{background:#B3261E;border-color:#B3261E;color:#fff}
+.ck-grid{flex:1;display:grid;grid-template-columns:1fr auto 1fr;gap:clamp(16px,3vw,56px);align-items:center}
+.ck-card{display:flex;flex-direction:column;align-items:center;gap:clamp(8px,1.6vh,16px);text-align:center}
+.ck-label{font-family:"Barlow Condensed","Arial Narrow",Arial,sans-serif;font-weight:800;font-size:clamp(1.5rem,4.2vh,2.6rem);line-height:1.05;text-transform:uppercase}
+.ck-sub{font-size:clamp(1rem,2.4vh,1.35rem);color:#E9DDBB;max-width:22em}
+.ck-qr{width:min(40vh,27vw);aspect-ratio:1;background:#fff;border-radius:14px;display:grid;place-items:center;overflow:hidden}
+.ck-qr img{width:100%;height:100%;display:block}
+.ck-code{font-family:var(--mono);font-weight:700;font-size:clamp(4rem,15vh,9rem);letter-spacing:.14em;line-height:1;color:#EBC45A;padding-left:.14em}
+.ck-count{font-family:var(--mono);font-size:clamp(1rem,2.4vh,1.3rem);letter-spacing:.08em;text-transform:uppercase;color:#E9DDBB}
+@media (max-width:760px){.ck-grid{grid-template-columns:1fr}.ck-qr{width:min(70vw,320px)}}
 .code-inline{font-family:var(--mono);font-size:1.4rem;font-weight:700;letter-spacing:.2em;padding:2px 10px;border:2px solid var(--ink);border-radius:var(--radius)}
 .event-page{border-top:4px solid var(--c)}
 .qr-stage{padding:16px;border-radius:var(--radius);border:1px solid var(--line);background:repeating-conic-gradient(#e9ecea 0 25%, #fff 0 50%) 0 0/20px 20px}
@@ -5582,7 +5600,7 @@ function viewOfficer(){
       <section class="stack">
         <div class="section-head"><h3>Today’s check-in</h3></div>
         ${today.length ? today.map(e => `<div class="today-bar"><div class="stack" style="gap:2px"><span class="live">${fmtTime(e.start)} · ${attended(e.id).length} checked in${(db.guests[e.id] || []).length ? ' · ' + db.guests[e.id].length + ' guest' + (db.guests[e.id].length === 1 ? '' : 's') : ''}</span><strong>${esc(e.title)}</strong></div>
-          <button class="btn small" data-act="show-code" data-id="${e.id}">${e.code ? 'Show code' : 'Start check-in'}</button></div>`).join('')
+          <div class="row" style="gap:6px"><button class="btn ghost small" data-act="ck-pdf" data-id="${e.id}">Check-in sheet (PDF)</button><button class="btn small" data-act="show-code" data-id="${e.id}">${e.code ? 'Check-in screen' : 'Start check-in'}</button></div></div>`).join('')
           : '<div class="empty">No events today. On the day of an event, start check-in here and put the code on the projector.</div>'}
       </section>
       <section class="stack">
@@ -6030,7 +6048,7 @@ function eventInner(id, page){
         ${!e.code ? `<button class="btn ghost small" data-act="show-code" data-id="${id}">Create a code</button>`
           : shown ? `<span class="row" style="gap:8px;align-items:center"><span class="code-inline">${esc(e.code)}</span><button class="btn ghost small" data-act="reveal-code" data-id="${id}">Hide</button></span>`
           : `<button class="btn ghost small" data-act="reveal-code" data-id="${id}">Show code</button>`}</div>
-      ${e.code ? `<div class="row" style="gap:6px"><button class="btn ghost small" data-act="show-code" data-id="${id}">Projector view</button><button class="btn ghost small" data-act="qr" data-id="${id}" data-kind="checkin">Check-in QR</button></div>` : ''}
+      <div class="row" style="gap:6px"><button class="btn ghost small" data-act="ck-pdf" data-id="${id}">Check-in sheet (PDF)</button>${e.code ? `<button class="btn ghost small" data-act="show-code" data-id="${id}">Check-in screen</button><button class="btn ghost small" data-act="qr" data-id="${id}" data-kind="checkin">Check-in QR</button>` : ''}</div>
       <span class="hint">${isToday(e) ? 'Check-in is open today.' : 'Members can check in on the day of the event.'}</span></div>`;
   }
   const soonBox = !(e.draft && can('officer')) ? '' : e.comingSoon
@@ -6999,6 +7017,116 @@ async function copyText(text, ok){
   try { await navigator.clipboard.writeText(text); toast(ok || 'Copied'); }
   catch(e){ window.prompt('Copy this:', text); }
 }
+// Check-in screen (#checkin/<event id>), for the projector: a check-in QR, the code, and a QR to join WFA.
+// Officers only, since it shows the code. The checked-in count updates every 15 seconds.
+function ckId(){ return decodeURIComponent(location.hash.split('/')[1] || ''); }
+function viewCheckin(){
+  const id = ckId(), e = evById(id);
+  if (!can('officer')) return `<div class="view"><div class="lock"><span>The check-in screen is for officers.</span><a class="btn small" href="#signin">Sign in</a></div></div>`;
+  if (!e) return `<div class="view"><div class="empty">Event not found. <a href="#calendar">Back to the calendar</a></div></div>`;
+  const back = `<a class="btn small" href="#event/${esc(id)}">Exit</a>`;
+  if (!e.code) return `<div class="ck"><div class="ck-top"><div class="ck-title">${esc(e.title)}</div><div class="ck-tools">${back}</div></div>
+    <div class="ck-card" style="flex:1;justify-content:center"><div class="ck-label">Check-in isn’t started yet</div><button class="btn" data-act="show-code" data-id="${esc(id)}">Start check-in</button></div></div>`;
+  const inUrl = eventLink(id, e.code), joinUrl = SITE_URL + '/#signup', qr = ui.ckQr || {};
+  setTimeout(() => ckFill(id), 0); ckTimer();
+  return `<div class="ck" role="region" aria-label="Check-in screen">
+    <div class="ck-top">
+      <div class="ck-brand"><img src="/crest-seal.png" alt="Wolverine Finance Association seal"><div><div class="ck-sub" style="max-width:none">Wolverine Finance Association · ${fmtTime(e.start)}${e.loc ? ' · ' + esc(e.loc) : ''}</div><div class="ck-title">${esc(e.title)}</div></div></div>
+      <div class="ck-tools"><button class="btn small" data-act="ck-pdf" data-id="${esc(id)}">PDF</button><button class="btn small" data-act="ck-full">Full screen</button>${armBtn('ck-new-' + id, 'New code', 'Click again for a new code', 'new-code', id)}${back}</div>
+    </div>
+    <div class="ck-grid">
+      <div class="ck-card"><div class="ck-label">Scan to check in</div><div class="ck-qr"><img id="ck-qr-in" alt="QR code to check in" ${qr[inUrl] ? `src="${qr[inUrl]}"` : ''}></div><div class="ck-sub">Members and guests</div></div>
+      <div class="ck-card"><div class="ck-label">Or enter the code</div><div class="ck-code" aria-label="Check-in code">${esc(e.code)}</div><div class="ck-sub">on the event page at wolverinefinanceassociation.org</div>
+        ${showRsvps(e) ? `<div class="ck-count" id="ck-count">${attended(id).length} checked in</div>` : ''}</div>
+      <div class="ck-card"><div class="ck-label">New? Join WFA</div><div class="ck-qr"><img id="ck-qr-join" alt="QR code to join WFA" ${qr[joinUrl] ? `src="${qr[joinUrl]}"` : ''}></div><div class="ck-sub">Free for every UVU student. Earn points for coming to events.</div></div>
+    </div>
+  </div>`;
+}
+// Draws the two QR codes (plain green squares on white, easiest to scan from across a room) and keeps them for redraws.
+async function ckFill(id){
+  const e = evById(id); if (!e || !e.code) return;
+  const want = [['ck-qr-in', eventLink(id, e.code)], ['ck-qr-join', SITE_URL + '/#signup']];
+  ui.ckQr = ui.ckQr || {};
+  for (const [el, url] of want){
+    if (!ui.ckQr[url]){
+      const keep = [ui.qrBg, ui.qrShape, ui.qrSeal];
+      ui.qrBg = 'white'; ui.qrShape = 'square'; ui.qrSeal = 'none';
+      try { ui.ckQr[url] = await qrPng(url, 'green:same', 1200); } catch(err){ toast(err.message); return; }
+      finally { [ui.qrBg, ui.qrShape, ui.qrSeal] = keep; }
+    }
+    const img = document.getElementById(el); if (img && img.getAttribute('src') !== ui.ckQr[url]) img.src = ui.ckQr[url];
+  }
+}
+// Check-in sheet: a one-page PDF (US Letter) to print or put on a screen, with the check-in QR, the code, and a QR to join.
+// Made in the browser, so it always has the event's current code. A new code means downloading a new sheet.
+let jsPdfLib = null;
+function loadJsPdf(){
+  return jsPdfLib || (jsPdfLib = new Promise((res, rej) => {
+    if (window.jspdf) return res(window.jspdf.jsPDF);
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    sc.onload = () => res(window.jspdf.jsPDF);
+    sc.onerror = () => { jsPdfLib = null; rej(new Error('The PDF tool didn’t load. Check your connection and try again.')); };
+    document.head.appendChild(sc);
+  }));
+}
+async function ckPdf(id){
+  let e = evById(id); if (!e) return;
+  if (!e.code){
+    const r = await sb.from('checkin_codes').upsert({ event_id: id, code: newCode() });
+    if (r.error) return toast(errMsg(r.error));
+    await logChange('Started check-in for “' + e.title + '”'); await load(); render(); e = evById(id);
+  }
+  toast('Making the check-in sheet…');
+  try {
+    const keep = [ui.qrBg, ui.qrShape, ui.qrSeal];
+    ui.qrBg = 'white'; ui.qrShape = 'square'; ui.qrSeal = 'none';
+    let inQr, joinQr;
+    try { inQr = await qrPng(eventLink(id, e.code), 'green:same', 800); joinQr = await qrPng(SITE_URL + '/#signup', 'green:same', 800); }
+    finally { [ui.qrBg, ui.qrShape, ui.qrSeal] = keep; }
+    const JsPDF = await loadJsPdf(), doc = new JsPDF({ unit: 'pt', format: 'letter' });
+    const W = 612, green = [31, 77, 46], gold = [184, 146, 58], ink = [40, 48, 42];
+    const center = (txt, y) => doc.text(txt, W / 2, y, { align: 'center' });
+    try { const img = await loadQrSeal(), cv = document.createElement('canvas'); cv.width = cv.height = 320; const g = cv.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, 320, 320);
+      doc.addImage(cv.toDataURL('image/png'), 'PNG', W / 2 - 38, 34, 76, 76, undefined, 'FAST'); } catch(err){}   // 320 px is plenty for a 1-inch seal
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...gold);
+    const spaced = (txt, y, cs) => { doc.setCharSpace(cs); doc.text(txt, W / 2 - (doc.getTextWidth(txt) + cs * (txt.length - 1)) / 2, y); doc.setCharSpace(0); };   // letter-spaced text, centered
+    spaced('WOLVERINE FINANCE ASSOCIATION', 132, 2);
+    doc.setFontSize(26); doc.setTextColor(...green);
+    const title = doc.splitTextToSize(e.title.toUpperCase(), 520).slice(0, 2);
+    title.forEach((t, i) => center(t, 166 + i * 30));
+    let y = 166 + (title.length - 1) * 30 + 26;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(13); doc.setTextColor(...ink);
+    center(`${fmtDay(e.date)} · ${fmtTime(e.start)}–${fmtTime(e.end)}${e.loc ? ' · ' + e.loc : ''}`, y);
+    y += 22; doc.setDrawColor(...gold); doc.setLineWidth(1.5); doc.line(66, y, W - 66, y);
+    // Two QR codes side by side.
+    const q = 214, gap = 52, lx = (W - 2 * q - gap) / 2, rx = lx + q + gap, qy = y + 58;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(19); doc.setTextColor(...green);
+    doc.text('SCAN TO CHECK IN', lx + q / 2, qy - 16, { align: 'center' });
+    doc.text('NEW? JOIN WFA', rx + q / 2, qy - 16, { align: 'center' });
+    doc.addImage(inQr, 'PNG', lx, qy, q, q, undefined, 'FAST'); doc.addImage(joinQr, 'PNG', rx, qy, q, q, undefined, 'FAST');
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(11.5); doc.setTextColor(...ink);
+    doc.text('Members and guests', lx + q / 2, qy + q + 18, { align: 'center' });
+    doc.text(doc.splitTextToSize('Free for every UVU student. Earn points for coming to events.', q), rx + q / 2, qy + q + 18, { align: 'center' });
+    // The code.
+    let cy = qy + q + 78;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...green); center('OR ENTER THE CHECK-IN CODE', cy);
+    doc.setFont('courier', 'bold'); doc.setFontSize(76); doc.setTextColor(...gold); spaced(e.code, cy + 74, 14);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(11.5); doc.setTextColor(...ink);
+    center('on the event page at wolverinefinanceassociation.org', cy + 104);
+    doc.save(qrFileName(e.title + '-check-in').replace(/-qr\.png$/, '.pdf'));
+  } catch(err){ toast(err.message || 'The check-in sheet didn’t work. Try again.'); }
+}
+// The live count: a light query every 15 seconds while the screen is open.
+function ckTimer(){
+  if (ui.ckTick) return;
+  ui.ckTick = setInterval(async () => {
+    if (route() !== 'checkin'){ clearInterval(ui.ckTick); ui.ckTick = null; return; }
+    const el = document.getElementById('ck-count'); if (!el) return;
+    const r = await sb.from('attendance').select('event_id', { count: 'exact', head: true }).eq('event_id', ckId());
+    if (!r.error && r.count != null) el.textContent = r.count + ' checked in';
+  }, 15000);
+}
 async function showCode(id, fresh){
   let e = evById(id); if (!e) return;
   if (!e.code || fresh){
@@ -7006,21 +7134,14 @@ async function showCode(id, fresh){
     if (r.error) return toast(errMsg(r.error));
     await logChange((fresh ? 'Changed the check-in code for “' : 'Started check-in for “') + e.title + '”');
   }
-  await load(); render(); e = evById(id);
-  showModal(`<div class="modal-in">
-    <div><button class="modal-x" data-act="close" aria-label="Close">×</button><span class="live">Check-in open · ${esc(e.title)}</span></div>
-    <p>Members: open the event on the WFA site and enter</p>
-    <div class="codebig" aria-label="Check-in code">${esc(e.code)}</div>
-    <div class="row" style="justify-content:space-between"><strong>${attended(id).length} checked in · ${going(id).length} RSVP’d</strong>
-      <div class="row" style="gap:6px"><button class="btn ghost small" data-act="refresh-code" data-id="${id}">Refresh count</button><button class="btn ghost small" data-act="new-code" data-id="${id}">New code</button></div></div>
-    <p class="hint">Put this on the projector. Use “New code” if the code gets shared outside the room.</p>
-  </div>`, null, 'wide');
+  await load();
+  if (location.hash !== '#checkin/' + id) location.hash = 'checkin/' + id; else render();
 }
 
 /* ---------- Render ---------- */
 const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources, jobs:viewJobs, programs:viewPrograms,
   archive:viewRecaps, leaderboard:viewLeaderboard, account:viewAccount, apply:viewApply, availability:viewAvailability,
-  contact:viewContact, partners:viewPartners, event:viewEvent, survey:viewSurvey, messages:viewMessages, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
+  contact:viewContact, partners:viewPartners, event:viewEvent, checkin:viewCheckin, survey:viewSurvey, messages:viewMessages, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
 function route(){ const r = location.hash.slice(1).split('/')[0]; return VIEWS[r] ? r : 'home'; }
 // Officer and admin tabs live in the address (#officer/stats, #admin/applications), so a refresh,
 // a bookmark, or the back button lands on the same tab.
@@ -7590,6 +7711,8 @@ document.addEventListener('click', async ev => {
       else await doOrPropose('event', 'delete', id, {}, 'Delete event “' + e.title + '”', 'Event deleted');
       break; }
     case 'show-code': await showCode(id); break;
+    case 'ck-pdf': await ckPdf(id); break;
+    case 'ck-full': if (document.fullscreenElement) document.exitFullscreen(); else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {}); break;
     case 'refresh-code': await showCode(id); break;
     case 'new-code': await showCode(id, true); break;
     case 'report-ev': ui.reportEvent = id; render(); break;
