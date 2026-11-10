@@ -7042,7 +7042,7 @@ function viewCheckin(){
     </div>
   </div>`;
 }
-// Draws the two QR codes (plain green squares on white, easiest to scan from across a room) and keeps them for redraws.
+// Draws the two QR codes (green squares with gold corner markers on white; a deeper gold than the site's, which scanned unreliably, easiest to scan from across a room) and keeps them for redraws.
 async function ckFill(id){
   const e = evById(id); if (!e || !e.code) return;
   const want = [['ck-qr-in', eventLink(id, e.code)], ['ck-qr-join', SITE_URL + '/#signup']];
@@ -7051,7 +7051,7 @@ async function ckFill(id){
     if (!ui.ckQr[url]){
       const keep = [ui.qrBg, ui.qrShape, ui.qrSeal];
       ui.qrBg = 'white'; ui.qrShape = 'square'; ui.qrSeal = 'none';
-      try { ui.ckQr[url] = await qrPng(url, 'green:same', 1200); } catch(err){ toast(err.message); return; }
+      try { ui.ckQr[url] = await qrPng(url, 'green:#94701F', 1200); } catch(err){ toast(err.message); return; }
       finally { [ui.qrBg, ui.qrShape, ui.qrSeal] = keep; }
     }
     const img = document.getElementById(el); if (img && img.getAttribute('src') !== ui.ckQr[url]) img.src = ui.ckQr[url];
@@ -7082,7 +7082,7 @@ async function ckPdf(id){
     const keep = [ui.qrBg, ui.qrShape, ui.qrSeal];
     ui.qrBg = 'white'; ui.qrShape = 'square'; ui.qrSeal = 'none';
     let inQr, joinQr;
-    try { inQr = await qrPng(eventLink(id, e.code), 'green:same', 800); joinQr = await qrPng(SITE_URL + '/#signup', 'green:same', 800); }
+    try { inQr = await qrPng(eventLink(id, e.code), 'green:#94701F', 800); joinQr = await qrPng(SITE_URL + '/#signup', 'green:#94701F', 800); }
     finally { [ui.qrBg, ui.qrShape, ui.qrSeal] = keep; }
     const JsPDF = await loadJsPdf(), doc = new JsPDF({ unit: 'pt', format: 'letter' });
     const W = 612, green = [31, 77, 46], gold = [184, 146, 58], ink = [40, 48, 42];
