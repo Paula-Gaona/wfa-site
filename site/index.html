@@ -845,7 +845,7 @@ async function load(){
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
-    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, showRsvps:e.show_rsvps !== false, checkinOpenedAt:e.checkin_opened_at || null, speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
+    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, showRsvps:e.show_rsvps !== false, checkinOpenedAt:e.checkin_opened_at || null, regMode:e.reg_mode || 'rsvp', regUrl:e.reg_url || '', speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -989,7 +989,11 @@ function going(id){ return db.rsvps[id] || []; }
 function attended(id){ return db.attendance[id] || []; }
 function rsvpCount(id){ return db.stats[id] ? db.stats[id].rsvps : going(id).length; }
 // Whether this viewer sees how many people RSVP'd. Officers always do; members and guests only if the event shows it.
-function showRsvps(e){ return can('officer') || e.showRsvps !== false; }
+// Registration: RSVP on this site, no button, or a link to another organization's page (82-simpler-event-approvals.sql).
+function takesRsvps(e){ return (e.regMode || 'rsvp') === 'rsvp'; }
+function showRsvps(e){ return takesRsvps(e) && (can('officer') || e.showRsvps !== false); }
+function regLinkBtn(e){ if (e.regMode !== 'link' || !e.regUrl) return ''; let host = ''; try { host = new URL(e.regUrl).hostname.replace(/^www\./, ''); } catch(x){}
+  return `<a class="btn" href="${esc(e.regUrl)}" target="_blank" rel="noopener">Register ↗</a><span class="hint">Registration is on ${esc(host || 'another site')}. This event is run by another organization.</span>`; }
 // What members and guests see instead of the count when it's hidden: Seats open, Few seats left (under 10), or Full.
 const SEATS_LOW = 10;
 function seatLeft(e){ return e.cap ? Math.max(0, e.cap - rsvpCount(e.id)) : Infinity; }
@@ -1117,7 +1121,7 @@ function evRow(e){
     <div style="min-width:0"><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</div>
       <div class="ev-title">${esc(e.title)} ${statusTag(e)}</div>
       <div class="ev-sub">${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc)}</div></div>
-    <div class="rsvp-count">${status}${showRsvps(e) ? `<span class="up">▲</span> ${n}${e.cap?` / ${e.cap}`:''}` : isPast(e) || e.cat === 'officer_meeting' ? '' : seatTag(e)}</div>
+    <div class="rsvp-count">${status}${showRsvps(e) ? `<span class="up">▲</span> ${n}${e.cap?` / ${e.cap}`:''}` : isPast(e) || e.cat === 'officer_meeting' || !takesRsvps(e) ? '' : seatTag(e)}</div>
   </button>`;
 }
 function todayBar(){
@@ -1264,7 +1268,7 @@ function featuredPanel(){
         <span class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</span>
         <strong>${esc(e.title)}</strong>
         <span class="ev-sub">${fmtDay(e.date)} · ${fmtTime(e.start)}${e.loc ? ' · ' + esc(e.loc) : ''}</span>
-        <span class="ev-sub">${ptsText(e.cat)}${showRsvps(e) ? ` · ${rsvpCount(e.id)} going` : ' · ' + seatNote(e)}</span>
+        <span class="ev-sub">${e.regMode === 'link' ? 'Hosted by another organization' : ptsText(e.cat)}${showRsvps(e) ? ` · ${rsvpCount(e.id)} going` : takesRsvps(e) ? ' · ' + seatNote(e) : ''}</span>
       </button>`).join('') || `<p class="muted" style="margin:0">Career fairs, case competitions, guest speakers, and excursions will show up here as they’re announced.</p>`}
   </aside>`;
 }
@@ -3774,6 +3778,7 @@ function mailAudiences(){
   return [
     ['General', [['all','All members'],['members','Members only (no officers)'],['staff','Officers and admins'], ...(DUES_ENABLED ? [['unpaid','Members with unpaid dues']] : []), ['custom','Specific people (type their emails)']]],
     ['RSVP’d to…', ev.map(e => ['rsvp:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
+    ['Hasn’t RSVP’d to…', ev.filter(e => !hasStarted(e) && takesRsvps(e) && !isCase(e) && e.cat !== 'officer_meeting').map(e => ['norsvp:'+e.id, e.title + ' (' + fmtDay(e.date) + ', ' + audienceAll('norsvp:' + e.id).length + ' people)'])],
     ['Attended…', ev.filter(hasStarted).map(e => ['att:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
     ['RSVP’d but missed…', ev.filter(isPast).map(e => ['noshow:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
     ['Case competition teams…', ev.filter(e => isCase(e) && teamsIn(e.id).length).map(e => ['teams:'+e.id, e.title + ' (' + fmtDay(e.date) + ')'])],
@@ -3816,6 +3821,7 @@ function audienceAll(key){
   if (k === 'staff') return staffEmails();
   if (k === 'unpaid') return db.users.filter(u => duesOf(u.email) === 'unpaid').map(u => u.email);
   if (k === 'rsvp') return [...going(id), ...((db.guestRsvps || {})[id] || []).filter(g => g.reminders).map(g => g.email)];
+  if (k === 'norsvp'){ const g = new Set(going(id)); return db.users.map(u => u.email).filter(x => !g.has(x)); }   // every account that hasn't RSVP'd
   if (k === 'att') return attended(id);
   if (k === 'nosurvey') return surveyPendingFor(id);
   if (k === 'teams') return teamsIn(id).flatMap(t => t.members.filter(m => m.email && m.joined).map(m => m.email));
@@ -4436,6 +4442,9 @@ const RQ_STATUS = { draft: ['Not sent yet', ''], branch: ['Waiting for the branc
   published: ['Published', 'ok'], vote: ['Approved', 'ok'], objection: ['Objected', 'warn'], branch_ok: ['Approved by branch leadership', 'ok'] };
 // Bigger events get every president's review before they go to UVU.
 const BIG_CATS = ['case_competition', 'excursion', 'guest_speaker', 'career_fair'];
+// Bigger events publish once every president approves (2 of 3 after 2 business days). Everything else publishes like
+// before the scheduling system: leadership publishes it, other officers send it to them. The scheduling form is optional.
+const needsSignoff = cat => BIG_CATS.includes(cat);
 const presidentsList = () => Object.keys(db.profiles || {}).filter(e => db.profiles[e].tier === 'president' && roleOf(e) !== 'member');
 const isPresident = () => isStaff() && presidentsList().includes(session);
 // A branch's president and vice president review its officers' drafts (every president if the branch has neither).
@@ -4447,7 +4456,7 @@ const rqSmall = r => r.status === 'signoff' && !BIG_CATS.includes((evById(r.even
 const rqPresSched = r => presidentsList().includes(r.status_by);
 const rqEscalated = r => rqSmall(r) && !rqPresSched(r) && Date.now() >= businessAdd(Date.parse(r.status_at), 36);
 const rqApprovers = r => rqSmall(r) ? [...presidentsList().filter(p => p !== r.status_by), ...(rqEscalated(r) ? vpsList() : [])] : presidentsList();
-const rqAuto = r => r.status === 'review' || rqPresSched(r);   // moves on by itself after 48 business hours
+const rqAuto = r => r.status === 'review' || (rqPresSched(r) && rqSmall(r));   // moves on by itself after 48 business hours
 const rqCanVote = r => ['review', 'signoff'].includes(r.status) && rqApprovers(r).includes(session) && !(session in (r.votes || {})) && !(session in (r.objections || {}));
 const rqReviewing = id => { const r = rqOf(id); return !!r && r.status === 'branch' && branchReviewers(r.branch).includes(session); };
 // Officers (not presidents, vice presidents, advisors, or admins) start with their branch president.
@@ -4470,7 +4479,8 @@ function rqWaitingOnMe(r){
 function rqSignoffText(r){
   const small = rqSmall(r);
   return (small ? `It needs one approval from a president${rqPresSched(r) ? ' other than the scheduler' : ''}${rqPresSched(r) ? '' : ' (or a vice president after 36 business hours)'}.` : 'Every president is signing off.')
-    + (rqAuto(r) ? ` If nobody requests changes, it publishes automatically ${rqDeadline(r)}.` : ' It isn’t published until someone approves it.');
+    + (rqAuto(r) ? ` If nobody requests changes, it publishes automatically ${rqDeadline(r)}.` : small ? ' It isn’t published until someone approves it.'
+      : ` If one president hasn’t answered by ${rqDeadline(r)}, 2 of the 3 is enough. Any president who sends it back stops it.`);
 }
 // The approval timers count business hours: weekends (Mountain Time) don't count.
 function businessAdd(ms, hours){
@@ -4486,7 +4496,7 @@ function businessAdd(ms, hours){
 }
 const rqDeadline = r => fmtMtStamp(businessAdd(Date.parse(r.status_at), 48));
 // A scheduler whose own event goes straight to the scheduler step handles it themselves.
-const rqSendLabel = cat => needsBranchReview(session) ? 'Send to your branch president or VP' : isScheduler() ? 'Continue to confirm it with UVU' : 'Send to the scheduler';
+const rqSendLabel = cat => isScheduler() ? 'Confirm the form with UVU' : 'Send the form to the scheduler';
 const rqOf = id => (db.requests || {})[id] || null;
 const rqTag = id => { const r = rqOf(id); if (!r) return ''; const [l, c] = RQ_STATUS[rqFixing(r) ? 'fixing' : r.status] || ['', '']; return ` <span class="tag ${c}">${l}</span>`; };
 const RQ_LOCATIONS = ['Auditorium', 'Ballroom', 'Event room', 'Classroom', 'Conference room', 'Bloomberg Lab', 'Computer lab', 'Table location (booth or hallway table)', 'Outdoor space (plaza or lawn)', 'Gym or fieldhouse', 'External location (off campus)'];
@@ -4519,8 +4529,8 @@ function rqState(){
   return ui.rq;
 }
 // A scheduler finalizing an approved draft: the only time the final date, times, location, and guest RSVP time are filled in.
-const rqFinalizing = id => !!id && isScheduler() && (rqOf(id) || {}).status === 'approved' && !!(evById(id) || {}).draft;
-const evHideFinal = (e, cat) => needsSched(cat) && !(e && !e.draft) && !rqFinalizing(e && e.id);
+const rqFinalizing = () => false;   // schedulers no longer finalize events (82-simpler-event-approvals.sql)
+const evHideFinal = () => false;    // the date, times, and location are always editable
 const RQ_GUEST = [['1', '1 day after members'], ['2', '2 days after members'], ['3', '3 days after members'], ['7', '1 week after members'], ['14', '2 weeks after members'], ['date', 'On a specific date and time']];
 const rqRsvpText = d => d.rsvpWhen === 'date' && d.rsvpAt ? 'On ' + fmtMtStamp(mtFromInputMs(d.rsvpAt)) : 'As soon as it’s published';
 const rqGuestText = d => !d.guestLater ? 'Same time as members' : d.guestMode === 'date' ? (d.guestAt ? 'On ' + fmtMtStamp(mtFromInputMs(d.guestAt)) : 'A specific date (not picked)') : (RQ_GUEST.find(x => x[0] === d.guestMode) || ['', ''])[1];
@@ -4689,13 +4699,13 @@ function rqPanel(e, cat, opts = {}){
   const est = !!opts.est;
   if (!est && !needsSched(cat)) return '';
   const r = est ? null : rqOf(e && e.id), st = r ? r.status : 'draft';
-  const head = `<div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">${est ? 'Rough estimates for the event' : 'Scheduling request'}</h3>${r ? rqTag(e.id) : ''}</div>`;
+  const head = `<div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">${est ? 'Rough estimates for the event' : 'Scheduling form <span class="hint" style="font-weight:400">Optional</span>'}</h3>${r ? rqTag(e.id) : ''}</div>`;
   if (!est && rqLocked(e && e.id)){
     const notice = rqShortNotice(r.form, cat);
     return `<div class="panel stack rq-panel" style="gap:12px">${head}
       <p class="hint" style="margin:0">${{ branch: 'Waiting for your branch president or vice president. They can edit it before approving it, or send it back to you.', review: `Every president is reviewing it before it goes to UVU. If nobody requests changes, it moves on ${rqDeadline(r)}.`,
         fixing: 'The presidents asked for changes, and your branch leadership is making them. You’ll be notified as it moves along.', sent: 'A scheduler is confirming this with UVU.', submitted: 'A scheduler is confirming this with UVU.',
-        approved: 'UVU confirmed this event. A scheduler is setting the final details, then the presidents sign off.', signoff: rqSignoffText(r), published: 'Published.' }[rqFixing(r) ? 'fixing' : st] || ''}</p>
+        approved: 'UVU confirmed this event.', signoff: rqSignoffText(r), published: 'Published.' }[rqFixing(r) ? 'fixing' : st] || ''}</p>
       ${notice ? `<div class="rq-warn">${notice}</div>` : ''}${rqLegacy(r) ? `<p class="hint" style="margin:0">${LEGACY_NOTE}</p>` : rqSummary(e, r)}</div>`;
   }
   const d = rqState().d, start = d.start || '18:00', capNow = (document.getElementById('ev-cap') || {}).value ?? ((e && e.cap) || 0);
@@ -4706,7 +4716,7 @@ function rqPanel(e, cat, opts = {}){
   d.sp = d.sp || {}; d.locs = d.locs || [];
   const seats = rqSeats(d), most = rqMaxPeople(d, est), short = seats && most && seats < most;
   const help = est ? () => '' : k => gh(d, k), src = est ? null : rqHelperSource(d);
-  return `<div class="panel stack rq-panel" style="gap:16px">${head}
+  return `<div class="panel stack rq-panel" style="gap:16px">${head}${est ? '' : '<p class="hint" style="margin:0">Only needed when UVU has to confirm a room, setup, food, or A/V. Fill it out and click “Send the form to the scheduler.” It doesn’t hold up publishing.</p>'}
     <datalist id="rq-cities">${UT_CITIES.map(c => `<option value="${c}">`).join('')}</datalist>
     <p class="hint" style="margin:0">${est ? 'Rough guesses are fine for all of these. The event’s own scheduling request will have the real details later.' : rqUvuEditable(e && e.id) ? 'A scheduler is confirming this with UVU. You can still change it here; save, and the scheduler sees the update.' : 'Events are confirmed with UVU before they’re advertised. Fill this out and send it on; a scheduler confirms it with UVU. Nothing here is shown on the website.'}</p>
     ${!est && st === 'returned' ? `<div class="rq-warn"><strong>This was sent back.</strong> What to fix:<div style="white-space:pre-wrap;margin-top:4px">${esc(r.note)}</div></div>` : ''}
@@ -4887,7 +4897,7 @@ function schedulingBody(){
   return `<div class="stack" style="gap:18px">
     ${quick && sw ? `<div class="rq-warn row" style="justify-content:space-between;align-items:center;gap:10px"><span><strong>Quick scheduling is on for admins.</strong> Events an admin sends skip the presidents’ sign-off: a scheduler confirms them with UVU and finalizes them, then the admin who sent it signs off. Everyone else’s events go through the usual steps.</span>${sw}</div>`
       : sw ? `<div class="row" style="justify-content:flex-end;align-items:center;gap:8px"><span class="hint">In a rush? Admins can sign off on their own events instead of the presidents (UVU confirmation stays).</span>${sw}</div>` : ''}
-    <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span class="hint">Every event except officer meetings is confirmed with UVU and signed off here before it’s published.</span><button type="button" class="btn ghost small" data-act="proc-tab" data-id="all">How scheduling works</button></div>
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span class="hint">Case competitions, excursions, guest speakers, and career fairs need all three presidents’ approval. Scheduling forms (optional) are confirmed with UVU here.</span><button type="button" class="btn ghost small" data-act="proc-tab" data-id="all">How scheduling works</button></div>
     ${group('Waiting on you', waiting, 'Nothing needs you right now.', gWait)}
     ${group('Your requests', yours, 'Requests you send show up here.', gYours)}
     ${others.length || gOthers.length ? group('Everything else in progress', others, '', gOthers) : ''}
@@ -4914,9 +4924,9 @@ function processBody(){
     <div class="policy-grid">${lead.map(([k, l]) => card(k, `At least <b>${l}</b> before the event.`)).join('')}</div>
     <span class="hint">The scheduling request warns you when the event date is sooner than this.</span>
     <section class="panel stack flow" style="gap:0;padding:18px" aria-label="Confirming with UVU">
-      ${step('1', 'Plan the event', 'Fill out the event and its scheduling request on this site.')}
+      ${step('1', 'Plan the event', 'Fill out the event, and the optional scheduling form if UVU needs to confirm a room, setup, food, or A/V.')}
       ${arrow()}${step('2', 'A scheduler confirms it with UVU', 'They check the date, room, and setup with UVU and mark it confirmed. You can still change the request while they do.', 'start')}
-      ${arrow()}${step('', 'Signed off: it can be advertised', 'After the presidents sign off, it’s published on the calendar and can be promoted.', 'end')}
+      ${arrow()}${step('', 'Confirmed', 'The form is optional and doesn’t hold up publishing. Publishing works the same either way (see The full process).', 'end')}
     </section>
     <h3 style="margin:0">What the scheduling request asks for</h3>
     <div class="policy-grid">
@@ -4937,19 +4947,19 @@ function processBody(){
     </div>`;
 
   if (tab === 'club') body = `
-    <p style="margin:0">The club adds its own checks, so no one person decides alone what goes out under the WFA name. Confirming with UVU is shown in gold.</p>
+    <p style="margin:0">Bigger events (a ${BIG}) need all three presidents’ approval before they’re published. Everything else is published by leadership.</p>
     <section class="panel stack flow" style="gap:0;padding:18px" aria-label="Club reviews">
-      ${ask('Did a regular officer make it?', step('A', 'Branch review', 'The branch president or vice president approves it, edits it and approves it, or sends it back.'), skip('Presidents, VPs, the faculty advisor, and admins skip this.'))}
-      ${arrow()}${step('', 'A scheduler confirms it with UVU', 'Then sets the final date, times, location, and RSVP timing.', 'start')}
-      ${arrow()}${ask(`Is it a ${BIG}?`, step('B', 'Every president signs off', 'On the final details the scheduler set.'), step('B', 'One president signs off', 'A president other than the scheduler (or a VP after 36 business hours, if the scheduler isn’t a president).'))}
+      ${ask(`Is it a ${BIG}?`, step('A', 'All three presidents approve', 'Any officer clicks <b>Send to the presidents</b>. If one hasn’t answered after <b>2 business days</b>, 2 of the 3 is enough.'), step('A', 'Leadership publishes it', 'Presidents, vice presidents, the faculty advisor, and admins publish it. Other officers click <b>Submit for approval</b> and one of them approves it.'))}
+      
+      
       ${arrow()}${step('', 'Published', '', 'end')}
     </section>
     <div class="policy-grid">
-      ${card('Sent back', 'A branch reviewer or scheduler can send it back with notes. When it’s fixed and sent again, it returns to the step that sent it back, not the beginning.')}
-      ${card('Changes along the way', 'While a scheduler is confirming it with UVU, the officer who sent it can still change the request. The scheduler always sees the latest version.')}
-      ${card('Suggested changes', 'At sign-off, presidents can edit the fields themselves when they request changes, with a reason for each. The scheduler sees the suggestions beside the form and can accept them one at a time or <b>implement all</b>. Any not made need a reason, which the president sees.')}
-      ${card('Automatic sign-off', 'Sign-off only publishes on its own, after <b>2 business days</b> with no objection, when the scheduler is a president. Otherwise someone has to approve it.')}
-      ${card('Majority rules', 'When every president has to sign off and it has gone <b>5 business days</b> or reached its <b>third round</b> of changes, it passes once a majority approve. Objections only send it back if most presidents object.')}
+      ${card('Sent back', 'A president can send a bigger event back with notes. That stops it until the officer fixes it and sends it to the presidents again. A scheduler can send the scheduling form back the same way.')}
+      ${card('The scheduling form', 'Optional. Send it to the schedulers when UVU needs to confirm a room, setup, food, or A/V. While they confirm it, you can still change it. It doesn’t hold up publishing a smaller event; a bigger event waits until the schedulers confirm the form or send it back.')}
+      ${card('Suggested changes', 'When presidents send an event back, they can edit fields themselves, with a reason for each. The officer sees the suggestions beside the form and can accept them one at a time or <b>implement all</b>.')}
+      ${card('Majority after 2 days', 'A bigger event waits for all three presidents. If one hasn’t answered after <b>2 business days</b> and nobody sent it back, 2 of the 3 is enough.')}
+      
       ${card('Business days only', 'Every timer skips weekends (Mountain Time). University holidays still count, so allow extra time around breaks.')}
       ${card('Nothing goes out early', 'No flyers, posts, or emails until the event is published. Before then, a scheduler can turn on a coming-soon page that shows only the title and a short teaser.')}
       ${card('RSVPs and Q&A', 'RSVPs open when the event is published or at a set date and time, and guests (non-members) can open later than members. <b>Officers can RSVP as soon as it’s posted.</b> When it fills up, people can join the waitlist. Q&A opens when RSVPs do.')}
@@ -4959,23 +4969,23 @@ function processBody(){
   if (tab === 'roles') body = `
     <p style="margin:0">Each step belongs to someone. If something is waiting on you, it shows under “Waiting on you” in Officer tools → Scheduling, and you’re notified.</p>
     <div class="policy-grid">
-      ${role('Officers', 'Anyone planning an event', ['Create the event and fill out its scheduling request: website details, dates, location, layout, guests, A/V, and the RSVP timing they’d like.', 'Plan ahead: 3 months for case competitions, 2 months for career fairs, 6 weeks for guest speakers, 3 weeks for workshops and everything else.', 'Send it on, change it if needed while it’s being confirmed with UVU, and fix it if it’s sent back.', 'Wait to promote anything until it’s published (a scheduler can put up a coming-soon page).'])}
-      ${role('Branch presidents and vice presidents', 'For their branch’s officers', ['Review their officers’ events: approve them, edit and approve them, or send them back with notes.', 'Vice presidents can also approve a workshop or social sign-off after 36 business hours, when the scheduler isn’t a president.'])}
-      ${role('Event schedulers', 'Chosen by admins; tagged in the <a href="#officer/directory">Officer directory</a>', ['Confirm events with UVU and mark them confirmed, or send them back with notes.', 'Finalize confirmed events: the date, times, location, and RSVP timing, then send them for sign-off.', 'Turn on coming-soon pages.'])}
-      ${role('Presidents', 'The final check and the semester plan', ['List next semester’s events, a semester ahead, with a description for each (Officer tools → Semester plan), with the vice presidents.', 'Sign off on the final details before anything is published: every president for big events, one president (not the scheduler) for workshops and socials.', 'Request changes by editing fields directly, with a reason for each.'])}
+      ${role('Officers', 'Anyone planning an event', ['Create the event: website details, registration (RSVP, no button, or a link to another organization’s page), and RSVP timing.', 'Plan ahead: 3 months for case competitions, 2 months for career fairs, 6 weeks for guest speakers, 3 weeks for workshops and everything else.', 'Optional: fill out the scheduling form and send it to the schedulers if UVU needs to confirm a room or setup.', 'Send bigger events to the presidents, or submit smaller ones for leadership to publish. Wait to promote anything until it’s published.'])}
+      ${role('Vice presidents and the faculty advisor', 'Publishing smaller events', ['Publish workshops, socials, and other smaller events, and approve the ones other officers submit.'])}
+      ${role('Event schedulers', 'Chosen by admins; tagged in the <a href="#officer/directory">Officer directory</a>', ['Confirm scheduling forms with UVU and mark them confirmed, or send them back with notes.', 'Turn on coming-soon pages.'])}
+      ${role('Presidents', 'The final check and the semester plan', ['List next semester’s events, a semester ahead, with a description for each (Officer tools → Semester plan), with the vice presidents.', 'Approve case competitions, excursions, guest speakers, and career fairs before they’re published. All three, or 2 of 3 after 2 business days.', 'Publish smaller events, and request changes by editing fields directly, with a reason for each.'])}
       ${role('Communications', 'Outreach', ['Reach out to industry professionals, firms, and faculty, claiming each contact in Contacts first.', 'Follow up once after a week, and hand confirmed guests to operations the way they like to be reached.', 'Send thank-yous after events and ask if they’d come back.'])}
       ${role('Operations', 'Guests, once they agree', ['Settle the date with confirmed guests, then start the event from their contact.', 'Handle the logistics for speakers, office visits, and career fairs.'])}
       ${role('Admins', 'Site settings', ['Choose who the event schedulers are.', 'Set officers’ positions and branches, which decide who reviews what.', 'Edit the officer application questions and the planning checklists.'])}
     </div>`;
 
   if (tab === 'all') body = `
-    <p style="margin:0">Everything together, from the first draft to the calendar. Every event except officer meetings follows these steps.</p>
+    <p style="margin:0">Everything together, from the first draft to the calendar.</p>
     <section class="panel stack flow" style="gap:0;padding:18px" aria-label="Approval steps">
-      ${step('', 'An officer creates the event', 'Fills in the website details and the scheduling request, ideally 3 weeks to 3 months ahead depending on the event.', 'start')}
-      ${arrow()}${ask('Did a regular officer make it?', step('1', 'Branch review', 'The branch’s president or vice president <b>approves it</b>, <b>edits it and approves it</b>, or <b>sends it back</b>. If the branch has neither, any president can review it.'), skip('Presidents, vice presidents, the faculty advisor, and admins skip this step.'))}
-      ${arrow()}${step('2', 'Scheduler confirms it with UVU', 'Marks it <b>confirmed</b> once UVU agrees on the date, room, and setup, or sends it back with notes. The officer can still change the request during this step.')}
-      ${arrow()}${step('3', 'Scheduler finalizes it', 'Sets the final date, times, location, and when RSVPs open (for members and for guests), starting from what the officer asked for.')}
-      ${arrow()}${ask(`Is it a ${BIG}?`, step('4', 'Every president signs off', 'Publishes when all approve. If the scheduler is a president, it also publishes <b>after 2 business days</b> with no objection.'), step('4', 'One president signs off', 'One approval from a president <b>other than the scheduler</b>. If the scheduler isn’t a president, vice presidents can approve too <b>after 36 business hours</b>.'))}
+      ${step('', 'An officer creates the event', 'Fills in the website details and picks how people register: RSVP on this site, no button, or a link to another organization’s page. Ideally 3 weeks to 3 months ahead, depending on the event.', 'start')}
+      ${arrow()}${step('', 'Optional: the scheduling form', 'If UVU needs to confirm a room, setup, food, or A/V, the officer fills out the form and a scheduler <b>confirms it with UVU</b>. Skip it otherwise.')}
+      
+      
+      ${arrow()}${ask(`Is it a ${BIG}?`, step('1', 'All three presidents approve', 'Any officer clicks <b>Send to the presidents</b>. It publishes when all three approve. If one hasn’t answered after <b>2 business days</b>, 2 of the 3 is enough. A president who sends it back stops it until it’s fixed and sent again.'), step('1', 'Leadership publishes it', 'Presidents, vice presidents, the faculty advisor, and admins publish it directly. Other officers click <b>Submit for approval</b> and one of them approves it.'))}
       ${arrow()}${step('', 'Published', 'It’s on the calendar and can be promoted. The officer who sent it is notified.', 'end')}
     </section>`;
 
@@ -5168,7 +5178,8 @@ function rqEditSummary(oldForm, newForm, oldEv, row){
   const list = [...new Set(changed)];
   return list.length ? 'Approved with edits: ' + list.join(', ') + '.' : '';
 }
-const rqMajority = r => (r.status === 'review' || !rqSmall(r)) && ((r.rounds || 0) >= 2 || (!!r.step_started_at && Date.now() >= businessAdd(Date.parse(r.step_started_at), 120)));
+const rqMajority = r => r.status === 'review' ? ((r.rounds || 0) >= 2 || (!!r.step_started_at && Date.now() >= businessAdd(Date.parse(r.step_started_at), 120)))
+  : r.status === 'signoff' && !rqSmall(r) && !!r.status_at && Date.now() >= businessAdd(Date.parse(r.status_at), 48) && !Object.keys(r.objections || {}).length;
 // What changed since a president asked for changes: each requested change (made or not), and anything else changed.
 function sugChecklist(e, r, s){
   if (s.state === 'open') return '';
@@ -5222,12 +5233,19 @@ function syncRsvpBox(){
 function evButtons(e, cat){
   const cancel = e ? '<button class="btn ghost" type="button" data-act="cancel-edit">Cancel</button>' : '';
   if (e && !e.draft) return `<button class="btn" type="submit" data-mode="save">Save changes</button>${cancel}`;
-  if (!needsSched(cat)) return `<button class="btn" type="submit" data-mode="publish">${canPublish() ? 'Publish to calendar' : 'Submit for approval'}</button><button class="btn ghost" type="submit" data-mode="draft">${e ? 'Save draft' : 'Save as draft'}</button>${cancel}`;
-  const st = (rqOf(e && e.id) || {}).status || 'draft';
-  if (rqReviewing(e && e.id)) return `<button class="btn" type="submit" data-mode="branchok">${rqFixing(rqOf(e.id)) ? 'Send it back to the presidents' : 'Approve and send it on'}</button><button class="btn ghost" type="submit" data-mode="draft">Save changes</button>${cancel}`;
-  return `${st === 'approved' && isScheduler() ? `<button class="btn" type="submit" data-mode="signoff">${rqQuickFor(e && e.id) ? 'Send to ' + esc(rqSignerName(e.id)) + ' for sign-off' : 'Send to the presidents for sign-off'}</button>` : ''}${['draft', 'returned'].includes(st) ? `<button class="btn" type="submit" data-mode="send">${st === 'returned' ? 'Send it again' : rqSendLabel(cat)}</button>` : ''}<button class="btn ghost" type="submit" data-mode="draft">${rqUvuEditable(e && e.id) ? 'Save changes' : e ? 'Save draft' : 'Save as draft'}</button>${cancel}`;
+  const draftBtn = `<button class="btn ghost" type="submit" data-mode="draft">${rqUvuEditable(e && e.id) ? 'Save changes' : e ? 'Save draft' : 'Save as draft'}</button>`;
+  const publishBtn = `<button class="btn" type="submit" data-mode="publish">${canPublish() ? 'Publish to calendar' : 'Submit for approval'}</button>`;
+  if (!needsSched(cat)) return publishBtn + draftBtn + cancel;
+  const r = rqOf(e && e.id) || {}, st = r.status || 'draft';
+  if (rqReviewing(e && e.id)) return `<button class="btn" type="submit" data-mode="branchok">Approve and send it on</button>${draftBtn}${cancel}`;
+  const fromPres = st === 'returned' && r.returned_from === 'signoff';
+  const main = !needsSignoff(cat) ? publishBtn
+    : ['signoff', 'sent', 'submitted'].includes(st) ? '' : `<button class="btn" type="submit" data-mode="signoff">${fromPres ? 'Send to the presidents again' : 'Send to the presidents'}</button>`;
+  const form = ['draft', 'returned'].includes(st) ? `<button class="btn ghost" type="submit" data-mode="send">${st === 'returned' && !fromPres ? 'Send the form again' : rqSendLabel(cat)}</button>` : '';
+  return main + draftBtn + form + cancel;
 }
-const RQ_ERR = { 'err:notscheduler': 'Only event schedulers can do that.', 'err:notyours': 'Only the officer who made it can change it.', 'err:window': 'The window has to be inside the semester.', 'err:notpresident': 'Only presidents can do that.', 'err:notreviewer': 'Only the branch president can do that.', 'err:state': 'This request changed since you opened it. Refresh and try again.', 'err:note': 'Write what needs to be fixed.', 'err:missing': 'That request doesn’t exist anymore.', 'err:notadmin': 'Only admins can do that.' };
+
+const RQ_ERR = { 'err:uvu': 'The scheduling form is with the schedulers. Wait for them to confirm it or send it back, then send the event to the presidents.', 'err:desc': 'Add a description first.', 'err:notscheduler': 'Only event schedulers can do that.', 'err:notyours': 'Only the officer who made it can change it.', 'err:window': 'The window has to be inside the semester.', 'err:notpresident': 'Only presidents can do that.', 'err:notreviewer': 'Only the branch president can do that.', 'err:state': 'This request changed since you opened it. Refresh and try again.', 'err:note': 'Write what needs to be fixed.', 'err:missing': 'That request doesn’t exist anymore.', 'err:notadmin': 'Only admins can do that.' };
 // Typing in the scheduling form keeps ui.rq up to date; some answers redraw the form (they show or hide questions).
 function rqSet(obj, path, val){
   const ks = path.split('.'); let o = obj;
@@ -5571,7 +5589,11 @@ function viewOfficer(){
         </div>
         <label class="ev-final" ${evHideFinal(e, e?.cat || ui.evNewCat || Object.keys(CATS)[0]) ? 'hidden' : ''}>Location<input id="ev-loc" required value="${esc(rqFinalizing(e?.id) && e?.loc === 'TBD' ? '' : e?.loc)}" placeholder="Building and room">
           <span class="hint">Need a room? <a href="https://www.uvu.edu/woodbury/current-students.html" target="_blank" rel="noopener">Reserve one through Woodbury ↗</a></span></label>
-        <label>Seat limit<input id="ev-cap" type="number" min="0" value="${esc(e?.cap || 0)}"><span id="ev-help-cap"></span><div id="ev-seat-warn"></div><span class="hint">0 means no limit. RSVPs close when the limit is reached. Guest RSVPs count too.</span></label>
+        <div class="stack" id="ev-reg-wrap" style="gap:6px" ${['officer_meeting', 'case_competition'].includes(e?.cat || ui.evNewCat || Object.keys(CATS)[0]) ? 'hidden' : ''}>
+          <label>Registration<select id="ev-reg">${[['rsvp', 'RSVP on this site'], ['none', 'No button (just show up)'], ['link', 'Link to another registration page']].map(([k, l]) => `<option value="${k}" ${(e?.regMode || 'rsvp') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+          <label id="ev-reg-url-wrap" ${e?.regMode === 'link' ? '' : 'hidden'}>Registration link<input id="ev-reg-url" type="url" placeholder="https://…" value="${esc(e?.regUrl || '')}"><span class="hint">For posting another organization’s event: people register there. It has no WFA check-in or points.</span></label>
+        </div>
+        <label id="ev-cap-wrap">Seat limit<input id="ev-cap" type="number" min="0" value="${esc(e?.cap || 0)}"><span id="ev-help-cap"></span><div id="ev-seat-warn"></div><span class="hint">0 means no limit. RSVPs close when the limit is reached. Guest RSVPs count too.</span></label>
         ${rsvpBox(e)}
         <label class="check" id="ev-sr-wrap" ${['officer_meeting', 'case_competition'].includes(e?.cat || ui.evNewCat || Object.keys(CATS)[0]) ? 'hidden' : ''}><input type="checkbox" id="ev-show-rsvps" ${e?.showRsvps === false ? '' : 'checked'}> Show how many people RSVP’d <span class="hint">Uncheck to hide the RSVP count from members and guests. Officers always see it.</span></label>
         <label class="check" id="ev-mo-wrap" ${e?.cat === 'officer_meeting' ? 'hidden' : ''}><input type="checkbox" id="ev-members-only" ${e?.membersOnly ? 'checked' : ''}> Members only <span class="hint">Everyone can see it, but only members can RSVP and check in (a reason to join).</span></label>
@@ -5593,8 +5615,8 @@ function viewOfficer(){
       <section class="stack" ${sugPanel(e) ? 'hidden' : ''}>
         ${(() => { const all = db.events.filter(x => x.draft).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
           // Two lists: drafts with a coming-soon page (their link already shows something), and plain drafts.
-          const row = ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)}${needsSched(ev.cat) ? (rqTag(ev.id) || ' <span class="tag">Not sent to scheduler</span>') : ''}${pendingFor('event', ev.id).length ? ' <span class="tag warn">Waiting for approval</span>' : ''}</div><div class="ev-sub">${fmtDay(ev.date)} · ${esc(catName(ev.cat))}</div></div>
-            <div class="row" style="gap:6px">${!needsSched(ev.cat) ? `<button class="btn small" data-act="publish-event" data-id="${ev.id}">${canPublish() ? 'Publish' : 'Submit for approval'}</button>` : (rqOf(ev.id) || {}).status === 'approved' && isScheduler() ? `<button class="btn small" data-act="edit-event" data-id="${ev.id}">Finalize</button>` : ''}<button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button>${ev.comingSoon ? `<a class="btn ghost small" href="#event/${ev.id}">View page</a>` : ''}<button class="btn ghost small" data-act="copy-link" data-id="${ev.id}">Copy link</button><button class="btn ghost small" data-act="qr" data-id="${ev.id}" data-kind="page">QR code</button>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${ev.id}">${ev.comingSoon ? 'Turn off coming soon' : 'Turn on coming soon'}</button>` : ''}${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`;
+          const row = ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)}${needsSched(ev.cat) ? (rqTag(ev.id) || (needsSignoff(ev.cat) ? ' <span class="tag">Not sent to the presidents</span>' : '')) : ''}${pendingFor('event', ev.id).length ? ' <span class="tag warn">Waiting for approval</span>' : ''}</div><div class="ev-sub">${fmtDay(ev.date)} · ${esc(catName(ev.cat))}</div></div>
+            <div class="row" style="gap:6px">${!needsSignoff(ev.cat) ? `<button class="btn small" data-act="publish-event" data-id="${ev.id}">${canPublish() ? 'Publish' : 'Submit for approval'}</button>` : !['signoff', 'sent', 'submitted', 'published'].includes((rqOf(ev.id) || {}).status) ? `<button class="btn small" data-act="signoff-send" data-id="${ev.id}">Send to the presidents</button>` : ''}<button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button>${ev.comingSoon ? `<a class="btn ghost small" href="#event/${ev.id}">View page</a>` : ''}<button class="btn ghost small" data-act="copy-link" data-id="${ev.id}">Copy link</button><button class="btn ghost small" data-act="qr" data-id="${ev.id}" data-kind="page">QR code</button>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${ev.id}">${ev.comingSoon ? 'Turn off coming soon' : 'Turn on coming soon'}</button>` : ''}${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`;
           const list = (title, evs, hint) => evs.length ? `<div class="section-head"><h3>${title}</h3><span class="muted">${evs.length}</span></div><div>${evs.map(row).join('')}<span class="hint">${hint}</span></div>` : '';
           return list('Coming soon', all.filter(x => x.comingSoon), 'Drafts with a coming-soon page: their link and QR code show the coming-soon page now, and the full event once it’s published.')
             + list('Drafts', all.filter(x => !x.comingSoon), 'Only officers can see these. A draft’s link and QR code are already final: they start working when it’s published.'); })()}
@@ -6034,6 +6056,7 @@ function eventInner(id, page){
   if (isPast(e)) action = `<span class="muted">This event has ended.${here ? ' You attended.' : mine ? ' You RSVP’d.' : ''}</span>`;
   else if (hasStarted(e)) action = `<span class="muted">${here ? 'You’re checked in.' : mine ? 'You RSVP’d. Check in with the code above.' : 'RSVPs closed when the event started. Here without an RSVP? Check in with the code above.'}</span>`;
   else if (isCase(e)) action = '';   // case competitions use team registration (caseSection) instead of RSVPs
+  else if (!takesRsvps(e)) action = regLinkBtn(e);   // no button, or a link to another organization's registration page
   else if (!session) action = '';   // visitors: guestRsvpBox (or the members-only note) below
   else if (mine) action = `<span class="going">You’re going.</span>${wl.promoted ? '<span class="hint">You got a seat from the waitlist.</span>' : ''}${armBtn('unrsvp-' + id, 'Cancel RSVP', 'Click again to cancel your RSVP', 'unrsvp', id)}`;
   else if (wl.my_place) action = `<span class="going" style="background:var(--tint);color:var(--ink)">You’re #${wl.my_place} on the waitlist.</span><span class="hint">If a seat opens, it’s yours automatically and we’ll let you know.</span>${armBtn('wl-leave-' + id, 'Leave the waitlist', 'Click again to leave the waitlist', 'wl-leave', id)}`;
@@ -6043,7 +6066,7 @@ function eventInner(id, page){
   else if (full || wl.waiting) action = `<span class="muted">All ${e.cap} seats are taken.</span><button class="btn" data-act="wl-join" data-id="${id}">Join the waitlist</button>${wl.waiting && showRsvps(e) ? `<span class="hint">${wl.waiting} ${wl.waiting === 1 ? 'person is' : 'people are'} waiting.</span>` : ''}`;
   else action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button>`;
   let checkin = '';
-  if ((isToday(e) || openedEarly(e)) && !e.draft){
+  if ((isToday(e) || openedEarly(e)) && !e.draft && e.regMode !== 'link'){
     const pre = page ? decodeURIComponent(location.hash.slice(1).split('/')[2] || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) : '';
     if (!session) checkin = guestCheckin(e, pre);
     else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e.cat)}.</div>`;
@@ -6061,7 +6084,7 @@ function eventInner(id, page){
   }
   // Officers: the check-in code, hidden until they click Show code, plus the projector view and a check-in QR.
   let codeBox = '';
-  if (can('officer') && !e.draft && !isPast(e)){
+  if (can('officer') && !e.draft && !isPast(e) && e.regMode !== 'link'){
     const shown = ui.codeShown === id;
     codeBox = `<div class="panel stack" style="gap:8px;padding:12px 14px">
       <div class="row" style="justify-content:space-between;align-items:center;gap:10px"><strong>Check-in code</strong>
@@ -6077,18 +6100,18 @@ function eventInner(id, page){
     ? `<div class="stack" style="gap:8px"><div class="row" style="gap:8px;align-items:center"><strong>Coming-soon page is on.</strong>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${id}">Turn off</button>` : ''}</div><span class="hint">Anyone who opens this link before it’s published sees only this:</span>${soonBlock(e.title, e.soonDesc)}</div>`
     : `<div class="row" style="gap:8px;align-items:center"><span class="hint">Coming-soon page is off: people who open this link before it’s published see “Event not found.”</span>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${id}">Turn on coming soon</button>` : ''}</div>`;
   const share = e.draft && !can('officer') ? '' : `${e.draft ? '<span class="hint">This link starts working when the event is published.</span>' : ''}<div class="row" style="gap:6px"><button class="btn ghost small" data-act="copy-link" data-id="${id}">Copy link</button>${can('officer') ? `<button class="btn ghost small" data-act="qr" data-id="${id}" data-kind="page">QR code</button>` : ''}${page ? '' : `<a class="btn ghost small" href="#event/${id}">Open event page</a>`}</div>`;
-  return `<div><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${PTS[e.cat] ? PTS[e.cat] + ' pts' : 'officers only'}${e.draft ? ' · <span class="tag">Draft</span>' : ''}${e.membersOnly ? ' · <span class="tag">Members only</span>' : ''}</div></div>
+  return `<div><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${e.regMode === 'link' ? 'Hosted by another organization' : PTS[e.cat] ? PTS[e.cat] + ' pts' : 'officers only'}${e.draft ? ' · <span class="tag">Draft</span>' : ''}${e.membersOnly ? ' · <span class="tag">Members only</span>' : ''}</div></div>
     <h2>${esc(e.title)}</h2>
     <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} <span class="hint">Mountain Time</span></dd>
       <dt>Status</dt><dd>${{ upcoming: 'Upcoming', live: '<strong>Happening now</strong>', over: 'Over' }[evStatus(e)]}</dd>
-      <dt>Where</dt><dd>${esc(e.loc)}</dd>${e.cat === 'officer_meeting' ? `<dt>Who</dt><dd>${meetingFor(e)}${session && can('officer') ? `<br><strong>${{ required: 'You’re required.', invited: 'You’re invited (optional).', '': 'You’re not expected at this one.' }[myMeetingStatus(e)]}</strong>` : ''}</dd>` : ''}${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : showRsvps(e) ? `<dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}` : isPast(e) ? `<dt>Seats</dt><dd>${e.cap || 'No limit'}` : `<dt>Availability</dt><dd>${seatTag(e)}`}${hasStarted(e) && showRsvps(e) ?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
+      <dt>Where</dt><dd>${esc(e.loc)}</dd>${e.cat === 'officer_meeting' ? `<dt>Who</dt><dd>${meetingFor(e)}${session && can('officer') ? `<br><strong>${{ required: 'You’re required.', invited: 'You’re invited (optional).', '': 'You’re not expected at this one.' }[myMeetingStatus(e)]}</strong>` : ''}</dd>` : ''}${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : showRsvps(e) ? `<dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}` : !takesRsvps(e) ? `<dt>Registration</dt><dd>${e.regMode === 'link' ? 'On the host’s site' : 'None needed'}` : isPast(e) ? `<dt>Seats</dt><dd>${e.cap || 'No limit'}` : `<dt>Availability</dt><dd>${seatTag(e)}`}${hasStarted(e) && showRsvps(e) ?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
     ${e.cap && !isCase(e) && showRsvps(e) ? `<div class="meter"><span style="width:${Math.min(100,n/e.cap*100)}%"></span></div>` : ''}
     <p style="white-space:pre-wrap">${esc(e.desc)}</p>
     ${(e.speakers || []).length ? `<div class="stack" style="gap:10px"><h3 style="margin:0">${e.speakers.length === 1 ? 'Guest' : 'Guests'}</h3>${e.speakers.map(sp => `<div class="speaker-card"><strong>${esc(sp.name)}</strong>${sp.title || sp.company ? `<div class="hint">${esc([sp.title, sp.company].filter(Boolean).join(', '))}</div>` : ''}${sp.bio ? `<p style="white-space:pre-wrap;margin:6px 0 0">${esc(sp.bio)}</p>` : ''}</div>`).join('')}</div>` : ''}
     ${isCase(e) && !e.draft ? caseSection(e) : ''}
     ${checkin}
     ${rsvpTimesNote(e)}
-    ${!session && !isCase(e) && !hasStarted(e) && !e.draft ? (e.membersOnly ? membersOnlyNote(e, 'RSVP') : guestRsvpBox(e)) : ''}
+    ${!session && !isCase(e) && takesRsvps(e) && !hasStarted(e) && !e.draft ? (e.membersOnly ? membersOnlyNote(e, 'RSVP') : guestRsvpBox(e)) : ''}
     ${e.qaEnabled && !isPast(e) && !e.draft ? (qaOpen(e) ? qaBox(e) : `<div class="panel"><span class="muted">Questions for the ${(e.speakers || []).length > 1 ? 'guests' : 'speaker'} open when RSVPs do.</span></div>`) : ''}
     <div class="row">${action}${can('officer') ? `<span style="margin-left:auto" class="row"><button class="btn ghost small" data-act="edit-event" data-id="${id}">Edit event</button></span>` : ''}</div>
     ${codeBox}
@@ -6111,7 +6134,7 @@ function membersOnlyNote(e, what){
 function guestRsvpDone(id){ try { return JSON.parse(localStorage.getItem('wfa-grsvp-' + id) || 'null'); } catch(e){ return null; } }
 // When RSVPs open, while they aren't open yet for members or for guests.
 function rsvpTimesNote(e){
-  if (e.draft || isCase(e) || hasStarted(e) || e.cat === 'officer_meeting') return '';
+  if (e.draft || isCase(e) || hasStarted(e) || e.cat === 'officer_meeting' || !takesRsvps(e)) return '';
   const now = Date.now(), m = e.rsvpOpens ? Date.parse(e.rsvpOpens) : 0;
   const base = m || (e.publishedAt ? Date.parse(e.publishedAt) : now);
   const g = e.guestDelay ? mtMs(shiftDay(mtDateIso(base), e.guestDelay), mtClock(base)) : e.guestOpens ? Date.parse(e.guestOpens) : m;   // calendar days, like the database
@@ -7194,14 +7217,18 @@ function syncCaseBox(){
   const b = document.getElementById('ev-case'), m = document.getElementById('ev-branches');
   if (b) b.hidden = c.value !== 'case_competition'; if (m) m.hidden = c.value !== 'officer_meeting';
   const mo = document.getElementById('ev-mo-wrap'), qa = document.getElementById('ev-qa-wrap');
-  if (mo) mo.hidden = c.value === 'officer_meeting'; if (qa) qa.hidden = c.value !== 'guest_speaker';
-  const sr = document.getElementById('ev-sr-wrap'); if (sr) sr.hidden = ['officer_meeting', 'case_competition'].includes(c.value);
-  const go = document.getElementById('ev-go-wrap'); if (go) go.hidden = c.value === 'officer_meeting' || c.value === 'case_competition';
+  if (mo) mo.hidden = c.value === 'officer_meeting' || (document.getElementById('ev-reg') || {}).value === 'link'; if (qa) qa.hidden = c.value !== 'guest_speaker';
+  const noRsvp = ['officer_meeting', 'case_competition'].includes(c.value), rg = document.getElementById('ev-reg'), reg = noRsvp || !rg ? 'rsvp' : rg.value;
+  const rw = document.getElementById('ev-reg-wrap'); if (rw) rw.hidden = noRsvp;
+  const ru = document.getElementById('ev-reg-url-wrap'); if (ru) ru.hidden = reg !== 'link';
+  const cw = document.getElementById('ev-cap-wrap'); if (cw) cw.hidden = reg !== 'rsvp';
+  const sr = document.getElementById('ev-sr-wrap'); if (sr) sr.hidden = noRsvp || reg !== 'rsvp';
+  const go = document.getElementById('ev-go-wrap'); if (go) go.hidden = c.value === 'officer_meeting' || c.value === 'case_competition' || reg !== 'rsvp';
   if (evHideFinal(ui.editEvent ? evById(ui.editEvent) : null, c.value)) document.querySelectorAll('.ev-final').forEach(el => { el.hidden = true; });
   else document.querySelectorAll('.ev-final').forEach(el => { if (el.id !== 'ev-go-wrap') el.hidden = false; });
   if (c.dataset.was !== c.value){ c.dataset.was = c.value; rqRedraw(); }
 }
-['input', 'change', 'click', 'keyup'].forEach(t => document.addEventListener(t, ev => { if (ev.target && ev.target.id === 'ev-cat') syncCaseBox(); }, true));
+['input', 'change', 'click', 'keyup'].forEach(t => document.addEventListener(t, ev => { if (ev.target && (ev.target.id === 'ev-cat' || ev.target.id === 'ev-reg')) syncCaseBox(); }, true));
 // Survey builder: Enter in a choice adds a new choice right after it.
 document.addEventListener('keydown', e => {
   if (e.key !== 'Enter' || !/:opt$/.test((e.target.dataset || {}).sq || '')) return;
@@ -7722,10 +7749,7 @@ document.addEventListener('click', async ev => {
     case 'publish-event': case 'unpublish-event': {
       const e = evById(id), pub = t.dataset.act === 'publish-event';
       if (pub && !(e.desc || '').trim()){ ui.editEvent = id; render(); window.scrollTo(0, 0); toast('Add a description first. It’s required to publish an event.'); break; }
-      if (pub && needsSched(e.cat)){
-        if (!((rqOf(id) || {}).status === 'approved' && isScheduler())){ toast('Only an event scheduler can publish this, once UVU approves it.'); break; }
-        ui.officerTab = 'events'; ui.editEvent = id; render(); window.scrollTo(0, 0); toast(rqQuickFor(id) ? 'Set the final details, then send it to ' + rqSignerName(id) + ' for sign-off.' : 'Set the final details, then send it to the presidents for sign-off.'); break;
-      }
+      if (pub && needsSignoff(e.cat)){ ui.officerTab = 'events'; ui.editEvent = id; render(); window.scrollTo(0, 0); toast('Case competitions, excursions, guest speakers, and career fairs go to the presidents. Use “Send to the presidents.”'); break; }
       await doOrPropose('event', pub ? 'publish' : 'unpublish', id, {}, (pub ? 'Publish “' : 'Move back to drafts: “') + e.title + '”',
         pub ? 'Published to the calendar' : 'Moved back to drafts. Members can’t see it now.'); break; }
     case 'del-event': { const e = evById(id); if (ui.editEvent === id) ui.editEvent = null;
@@ -7734,6 +7758,14 @@ document.addEventListener('click', async ev => {
       break; }
     case 'show-code': await showCode(id); break;
     case 'ck-pdf': await ckPdf(id); break;
+    case 'signoff-send': { const e = evById(id);
+      if (!(e.desc || '').trim()){ ui.officerTab = 'events'; ui.editEvent = id; render(); window.scrollTo(0, 0); toast('Add a description first.'); break; }
+      await act(async () => {
+        const r = await sb.rpc('send_for_signoff', { p_event: id });
+        if (r.error) throw /send_for_signoff/.test(r.error.message || '') ? new Error('The new approvals aren’t set up yet. An admin needs to run 82-simpler-event-approvals.sql.') : r.error;
+        if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
+        await logChange('Sent to the presidents: “' + e.title + '”');
+      }, 'Sent to the presidents. It’s published once they approve.'); break; }
     case 'ck-open-early': case 'ck-close-early': { const open = a === 'ck-open-early', e = evById(id);
       await act(async () => {
         if (open && !e.code) must(await sb.from('checkin_codes').upsert({ event_id: id, code: newCode() }));
@@ -8008,7 +8040,7 @@ document.addEventListener('change', async e => {
     if (svHasOptions(q.type) && !(q.options || []).length) q.options = ['', '']; render(); return; }
   const id = e.target.id;
   if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
-  if (['ml-aud','ml-ev'].includes(id)){ readMail(); if (id === 'ml-aud' && /^(nosurvey|att|noshow|rsvp|teams|agents):/.test(ui.mail.aud)) ui.mail.ev = ui.mail.aud.split(':')[1]; render(); }
+  if (['ml-aud','ml-ev'].includes(id)){ readMail(); if (id === 'ml-aud' && /^(nosurvey|att|noshow|rsvp|norsvp|teams|agents):/.test(ui.mail.aud)) ui.mail.ev = ui.mail.aud.split(':')[1]; render(); }
   if (id === 'qr-size'){ ui.qr.size = +e.target.value; drawQrTool(); }
   if (id === 'qr-pick' && e.target.value){
     const v = e.target.value;
@@ -8482,8 +8514,12 @@ async function handleSubmit(f, v, err){
     e.members_only = e.cat !== 'officer_meeting' && document.getElementById('ev-members-only').checked;
     e.qa_enabled = e.cat === 'guest_speaker' && document.getElementById('ev-qa').checked;
     e.show_rsvps = ['officer_meeting', 'case_competition'].includes(e.cat) || !document.getElementById('ev-show-rsvps') || document.getElementById('ev-show-rsvps').checked;
+    e.reg_mode = ['officer_meeting', 'case_competition'].includes(e.cat) ? 'rsvp' : (v('ev-reg') || 'rsvp');
+    e.reg_url = e.reg_mode === 'link' ? jobUrl(v('ev-reg-url')) : '';
+    if (e.reg_mode === 'link' && !e.reg_url) return err('ev-err', 'Paste the link to the registration page, like https://…');
+    if (e.reg_mode !== 'rsvp'){ e.cap = 0; if (e.reg_mode === 'link') e.members_only = false; }
     if (document.getElementById('ev-soon')){ e.coming_soon = document.getElementById('ev-soon').checked; e.soon_desc = v('ev-soon-desc'); }
-    if (['officer_meeting', 'case_competition'].includes(e.cat)){ e.rsvp_opens = null; e.guest_rsvp_opens = null; e.guest_rsvp_delay = null; }
+    if (['officer_meeting', 'case_competition'].includes(e.cat) || e.reg_mode !== 'rsvp'){ e.rsvp_opens = null; e.guest_rsvp_opens = null; e.guest_rsvp_delay = null; }
     else if (waitFinal){ e.rsvp_opens = cur0.rsvpOpens || null; e.guest_rsvp_opens = cur0.guestOpens || null; e.guest_rsvp_delay = cur0.guestDelay ?? null; }
     else {
       e.rsvp_opens = v('ev-rsvp-when') === 'date' ? mtFromInput(v('ev-rsvp-at')) : null;
@@ -8503,40 +8539,24 @@ async function handleSubmit(f, v, err){
     const code = v('ev-code').toUpperCase().replace(/\s+/g, '');
     if (code && !/^[A-Z0-9]{3,8}$/.test(code)) return err('ev-err', 'Check-in codes use 3–8 letters or numbers.');
     const editing = ui.editEvent, wasDraft = editing && (evById(editing) || {}).draft;
-    // draft = save as a draft, publish = put on the calendar, save = keep a published event published
-    const sched = needsSched(e.cat) && (!editing || wasDraft);
-    const mode = (f._submitter && f._submitter.dataset.mode) || (wasDraft || sched ? 'draft' : 'publish');
-    // Events that need scheduling: save as a draft with the scheduling request (sent if they chose Send to scheduler).
-    // The scheduler sends the finalized event to the presidents (it publishes once they sign off).
-    if (sched && ['send', 'branchok', 'signoff'].includes(mode)){ const x = evSeatInfo(), ok = (document.getElementById('ev-seat-ok') || {}).checked || (rqState().d || {}).seatOk;
+    // draft = save as a draft, publish = put on the calendar, save = keep a published event published,
+    // send = send the optional scheduling form to the schedulers, signoff = send a bigger event to the presidents
+    const formEv = needsSched(e.cat) && (!editing || wasDraft), big = needsSignoff(e.cat) && (!editing || wasDraft);
+    const mode = (f._submitter && f._submitter.dataset.mode) || (wasDraft || big ? 'draft' : 'publish');
+    if (big && mode === 'publish') return err('ev-err', 'Case competitions, excursions, guest speakers, and career fairs go to the presidents. Use “Send to the presidents.”');
+    if (formEv && mode === 'send'){ const x = evSeatInfo(), ok = (document.getElementById('ev-seat-ok') || {}).checked || (rqState().d || {}).seatOk;
       if (x && !ok){ evSeatCheck(); document.getElementById('ev-seat-warn').scrollIntoView({ block: 'center', behavior: 'smooth' }); return err('ev-err', `Available seats (${x.seats}) is less than the maximum attendance (${x.cap}). Add seats, or check “Ignore” under the seat limit.`); } }
-    if (sched && mode === 'signoff'){
-      if (!rqFinalizing(editing)) return err('ev-err', 'Only an event scheduler can do this, once UVU approves it.');
-      if (!e.descr) return err('ev-err', 'Add a description first.');
-      e.draft = true;
-      if (await act(async () => {
-        must(await sb.from('events').update(e).eq('id', editing));
-        if (code) must(await sb.from('checkin_codes').upsert({ event_id: editing, code }));
-        await sugSendReplies(editing);
-        const r = await sb.rpc('scheduler_update', { p_event: editing, p_status: 'signoff', p_note: '' }); if (r.error) throw r.error;
-        if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
-        const adm = r.data === 'ok:adminok', who = rqSignerName(editing);
-        await logChange((adm ? 'Sent to ' + who + ' for sign-off: “' : 'Sent for presidents’ sign-off: “') + e.title + '”');
-        ui.officerTab = 'scheduling'; ui.schedOpen = editing; ui.editEvent = null; ui.rq = null;
-        ui.schedMsg = adm ? 'Sent to ' + who + ' for sign-off.' : 'Sent for sign-off. You’ll be notified when it’s published.';
-      }, null)) toast(ui.schedMsg); ui.schedMsg = null;
-      return;
-    }
-    if (sched && mode !== 'publish'){
+    if (formEv && mode !== 'publish'){
       const rq = rqState();
       if (mode === 'send' || mode === 'branchok'){
         const probs = rqProblems(rq.d, e.cat); if (!e.descr) probs.unshift('Add the event description (it also goes on UVU’s form).');
         if (probs.length){
           const box = document.getElementById('ev-err');
-          box.innerHTML = `<div class="rq-warn" style="color:inherit;font-weight:400"><strong>Almost there. Before it can go to the scheduler:</strong><ul style="margin:6px 0 0;padding-left:1.2rem">${probs.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
+          box.innerHTML = `<div class="rq-warn" style="color:inherit;font-weight:400"><strong>Almost there. Before the form can go to the scheduler:</strong><ul style="margin:6px 0 0;padding-left:1.2rem">${probs.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
           box.scrollIntoView({ block: 'center', behavior: 'smooth' }); toast(probs.length === 1 ? '1 thing is missing' : probs.length + ' things are missing'); return;
         }
       }
+      if (mode === 'signoff' && !e.descr) return err('ev-err', 'Add a description before sending it to the presidents.');
       e.draft = true;
       const locked = rqLocked(editing), before = mode === 'branchok' ? rqEditSummary(rqOf(editing).form, rq.d, cur0, e) : '';
       await act(async () => {
@@ -8546,16 +8566,22 @@ async function handleSubmit(f, v, err){
         if (!editing && ui.ctLink){ await sb.from('contacts').update({ event_id: evId, updated_at: new Date().toISOString() }).eq('id', ui.ctLink); ui.ctLink = null; }   // started from Contacts
         ui.evNewCat = null;
         if (code) must(await sb.from('checkin_codes').upsert({ event_id: evId, code }));
-        if (!locked && mode === 'send' && editing) await sugSendReplies(evId);
+        if (!locked && (mode === 'send' || mode === 'signoff') && editing) await sugSendReplies(evId);
         if (!locked) await rqSave(evId, mode === 'send');
         if (mode === 'branchok'){ await sugSendReplies(evId); const r = await sb.rpc('branch_review', { p_event: evId, p_ok: true, p_note: before }); if (r.error) throw r.error; if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data); }
-        await logChange((mode === 'send' ? 'Sent for approval: “' : mode === 'branchok' ? 'Approved (branch): “' : editing ? 'Edited draft “' : 'Saved draft “') + e.title + '”');
+        if (mode === 'signoff'){
+          const r = await sb.rpc('send_for_signoff', { p_event: evId });
+          if (r.error) throw /send_for_signoff/.test(r.error.message || '') ? new Error('The new approvals aren’t set up yet. An admin needs to run 82-simpler-event-approvals.sql.') : r.error;
+          if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
+        }
+        await logChange((mode === 'send' ? 'Sent the scheduling form: “' : mode === 'signoff' ? 'Sent to the presidents: “' : mode === 'branchok' ? 'Approved (branch): “' : editing ? 'Edited draft “' : 'Saved draft “') + e.title + '”');
         ui.editEvent = null; ui.rq = null;
-        if (mode === 'send' || mode === 'branchok'){ ui.officerTab = 'scheduling'; ui.schedOpen = evId; }
-      }, mode === 'send' ? (isScheduler() && !needsBranchReview(session) && !BIG_CATS.includes(e.cat) ? 'Ready to confirm with UVU. Mark it confirmed once UVU says yes.' : 'Sent. You’ll be notified as it moves along.') : mode === 'branchok' ? 'Approved and sent on.' : 'Saved as a draft. Only officers can see it.');
+        if (mode === 'send' || mode === 'signoff' || mode === 'branchok'){ ui.officerTab = 'scheduling'; ui.schedOpen = evId; }
+      }, mode === 'send' ? (isScheduler() ? 'Ready to confirm with UVU. Mark it confirmed once UVU says yes.' : 'Sent to the scheduler. You’ll be notified when UVU confirms it.')
+        : mode === 'signoff' ? 'Sent to the presidents. It’s published once they approve, and you’ll be notified.' : mode === 'branchok' ? 'Approved and sent on.' : 'Saved as a draft. Only officers can see it.');
       return;
     }
-    if (sched) return err('ev-err', 'This event publishes after UVU approves it and the presidents sign off. Use Scheduling.');
+    const sched = false;
     if (mode !== 'draft' && !e.descr) return err('ev-err', 'Add a description before ' + (canPublish() ? 'publishing.' : 'submitting it for approval.') + ' Drafts can be saved without one.');
     if (!(sched ? isScheduler() : canPublish()) && mode !== 'draft'){
       // Not a publisher: edits to a published event go to the approval inbox. New events and drafts are saved as drafts, then sent for approval to publish.

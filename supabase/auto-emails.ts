@@ -445,7 +445,7 @@ ${lastNote}`
     let used = await sentToday();
     const cap = Math.max(0, Math.min(5000, Number(cfg.daily_cap ?? 500)));
 
-    const { data: events } = await db.from('events').select('id, title, cat, date, start_time, end_time, loc, descr, draft, test')
+    const { data: events } = await db.from('events').select('id, title, cat, date, start_time, end_time, loc, descr, draft, test, reg_mode')
       .eq('draft', false).eq('test', false).neq('cat', 'officer_meeting')
       .gte('date', isoDay(now - 2 * DAY)).lte('date', isoDay(now + 8 * DAY));
     if (!events?.length) return json({ ok: true, sent: 0, chat_alerts: chatAlerts });
@@ -468,6 +468,7 @@ ${lastNote}`
       html: (greeting: string) => string; text: (greeting: string) => string; push: { title: string; body: string; url: string } };
     const jobs: Job[] = [];
     for (const ev of events) {
+      if (ev.reg_mode === 'link') continue;   // another organization's event: no WFA reminders or check-in (82-simpler-event-approvals.sql)
       const start = mtMs(ev.date, ev.start_time), end = mtMs(ev.date, ev.end_time);
       const link = `${site}/#event/${ev.id}`, when = `${fmtDay(start)}, ${fmtTime(start)} to ${fmtTime(end)}`;
       const footer = `You're getting this because you're a Wolverine Finance Association member or asked for reminders about this event. Members can change which emails they get in Notification settings on the site, or turn club emails off in My account: <a href="${site}/#account" style="color:#1f4d2e">${site}/#account</a>`;
@@ -494,7 +495,7 @@ ${lastNote}`
         const toEveryone = !teamsOnly && r.to !== 'rsvp';
         const lead = teamsOnly ? `Just a reminder that ${ev.title}, which your team is competing in, ${phrase}.`
           : toEveryone ? `${ev.title} ${phrase}.` : `Just a reminder that ${ev.title}, which you signed up for, ${phrase}.`;
-        const label = toEveryone ? 'View the event and RSVP' : 'View the event';
+        const label = toEveryone && ev.reg_mode !== 'none' ? 'View the event and RSVP' : 'View the event';
         // Guests who RSVP'd without an account and asked for reminders about this event.
         let guestTo: string[] = [];
         if (ev.cat !== 'case_competition') {
