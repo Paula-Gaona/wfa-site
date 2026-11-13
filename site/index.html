@@ -4001,9 +4001,16 @@ function eventBlock(){
   // Seat-limited events say so (or that they're full, with the waitlist).
   const seats = e => !takesRsvps(e) || !e.cap ? '' : seatLeft(e) <= 0 ? '\n- Seats: Full. Join the waitlist on the event page.' : '\n- Seats: Limited, so RSVP early.';
   const link = e => e.regMode === 'link' ? 'Details & registration' : takesRsvps(e) ? 'Details & RSVP' : 'Details';
+  // Points: the check-in points, plus any bonus rules for this event that haven't passed (like RSVPing early).
+  const points = e => {
+    if (hostedElsewhere(e) || !PTS[e.cat]) return '';
+    const bonus = activeRules().filter(r => r.event_id === e.id && r.points > 0 && ['rsvp', 'checkin', 'survey'].includes(r.kind))
+      .map(r => `${r.points} more for ${{ rsvp: 'RSVPing' + (r.revoke_noshow ? ' (and coming)' : ''), checkin: 'checking in', survey: 'filling out the survey' }[r.kind]} by ${fmtMtStamp(Date.parse(r.deadline))}`);
+    return `\n- Points: ${PTS[e.cat]} for checking in${bonus.length ? ', plus ' + bonus.join(', plus ') : ''}`;
+  };
   return (list.length === 1 ? '\n' : '\n\n## Upcoming events\n') + list.map(e =>
     '\n### ' + e.title + '\n- When: ' + fmtDay(e.date) + (e.start ? ', ' + fmtTime(e.start) + (e.end ? ' to ' + fmtTime(e.end) : '') : '') +
-    (e.loc ? '\n- Where: ' + e.loc : '') + seats(e) + '\n- ' + link(e) + ': ' + eventLink(e.id) + (e.desc ? '\n' + e.desc.trim().split('\n').map(l => '> ' + l).join('\n') : '')).join('\n\n');
+    (e.loc ? '\n- Where: ' + e.loc : '') + seats(e) + points(e) + '\n- ' + link(e) + ': ' + eventLink(e.id) + (e.desc ? '\n' + e.desc.trim().split('\n').map(l => '> ' + l).join('\n') : '')).join('\n\n');
 }
 function mailText(){
   const closing = fillMerge(ui.mail.closing || '').trim();
