@@ -4018,12 +4018,29 @@ function eventBlock(){
     '\n### ' + e.title + '\n- When: ' + fmtDay(e.date) + (e.start ? ', ' + fmtTime(e.start) + (e.end ? ' to ' + fmtTime(e.end) : '') : '') +
     (e.loc ? '\n- Where: ' + e.loc : '') + seats(e) + points(e) + '\n- ' + link(e) + ': ' + eventLink(e.id) + (e.desc ? '\n' + e.desc.trim().split('\n').map(l => '> ' + l).join('\n') : '')).join('\n\n');
 }
+// Optional lines at the end of member emails, above the footer. Officer applications only show while they're open.
+const MAIL_EXTRAS = [
+  ['jobs', 'Job board', () => `Looking for an internship or job? Browse the WFA job board: ${SITE_URL}/#jobs`],
+  ['apply', 'Officer applications', () => `Want to help run the WFA? Officer applications are open${db.app.deadline ? ' until ' + fmtDay(db.app.deadline) : ''}: ${SITE_URL}/#apply`, () => appsOpen()],
+  ['resume', 'Resume book', () => `Add your resume to the WFA resume book, which we share with recruiters, in My account: ${SITE_URL}/#account`],
+  ['points', 'Leaderboard', () => `Every event earns points. See where you rank: ${SITE_URL}/#leaderboard`],
+  ['programs', 'Early programs', () => `Freshman or sophomore? Find early-career programs at top firms: ${SITE_URL}/#programs`],
+  ['calendar', 'Calendar', () => `See everything coming up on the WFA calendar: ${SITE_URL}/#calendar`]];
+const mailExtrasPicked = () => ui.mail.extras || ['jobs', 'apply'];
+const mailExtrasShown = () => MAIL_EXTRAS.filter(x => !x[3] || x[3]());
+function mailExtrasText(){
+  if (['staff', 'custom'].includes(ui.mail.aud)) return '';
+  const lines = mailExtrasShown().filter(x => mailExtrasPicked().includes(x[0])).map(x => '- ' + x[2]());
+  return lines.length ? '\n\n---\n' + lines.join('\n') : '';
+}
 function mailText(){
   const closing = fillMerge(ui.mail.closing || '').trim();
   // "---" is a spacer line, so the conclusion stands apart from the last event.
   // Member emails end with how to turn club emails off. Officer-team emails don't need it.
-  const footer = ['staff', 'custom'].includes(ui.mail.aud) ? '' : `\n\n---\n*You’re getting this because you’re a Wolverine Finance Association member. To stop club emails, turn them off in My account: ${SITE_URL}/#account*`;
-  return (fillMerge(ui.mail.body).trim() + eventBlock() + (closing ? '\n\n---\n' + closing : '') + footer).trim();
+  // The optional extra lines (job board, officer applications, ...) sit just above it, after the signature.
+  const extras = mailExtrasText();
+  const footer = ['staff', 'custom'].includes(ui.mail.aud) ? '' : `\n\n${extras ? '' : '---\n'}*You’re getting this because you’re a Wolverine Finance Association member. To stop club emails, turn them off in My account: ${SITE_URL}/#account*`;
+  return (fillMerge(ui.mail.body).trim() + eventBlock() + (closing ? '\n\n---\n' + closing : '') + extras + footer).trim();
 }
 // Formatting buttons for one of the email builder's text boxes.
 function fmtBar(target){
@@ -5821,6 +5838,7 @@ function viewOfficer(){
           <span class="hint">Added at the end of the email, after the events.</span></label>
         <div class="row" style="gap:6px"><button type="button" class="btn ghost small" data-act="sig-insert">Insert my signature</button><button type="button" class="btn ghost small" data-act="sig-edit">Edit my signature</button></div>
         ${ui.sigDraft != null ? sigEditor() : ''}
+        ${['staff', 'custom'].includes(ui.mail.aud) ? '' : `<fieldset class="rq-q"><legend>Add to the end <span class="hint">Short lines above the unsubscribe note</span></legend><div class="row" style="gap:6px 16px;flex-wrap:wrap">${mailExtrasShown().map(([k, l]) => `<label class="check"><input type="checkbox" class="ml-x" value="${k}" ${mailExtrasPicked().includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div>${appsOpen() ? '' : '<span class="hint">Officer applications show up here while they’re open.</span>'}</fieldset>`}
       </form>
       <section class="stack">
         <div class="section-head"><h3>Preview</h3><span class="muted"><span id="ml-count">${to.length} recipients</span>${optedOutCount(ui.mail.aud) ? ` · ${optedOutCount(ui.mail.aud)} opted out of club emails and won’t get it` : ''}</span></div>
@@ -8070,7 +8088,8 @@ async function sendMail(){
 
 /* ---------- Inputs ---------- */
 function rerenderKeepFocus(id){ const el = document.getElementById(id), pos = el.selectionStart; render(); const s = document.getElementById(id); s.focus(); try { s.setSelectionRange(pos, pos); } catch(e){} }
-function readMail(){ const g = id => document.getElementById(id); if (!g('ml-aud')) return; ui.mail = { aud: g('ml-aud').value, custom: g('ml-custom') ? g('ml-custom').value : ui.mail.custom, ev: g('ml-ev').value, subject: g('ml-subject').value, body: g('ml-body').value, closing: g('ml-closing').value, evs: [...document.querySelectorAll('.ml-evs:checked')].map(c => c.value) }; }
+function readMail(){ const g = id => document.getElementById(id); if (!g('ml-aud')) return; ui.mail = { aud: g('ml-aud').value, custom: g('ml-custom') ? g('ml-custom').value : ui.mail.custom, ev: g('ml-ev').value, subject: g('ml-subject').value, body: g('ml-body').value, closing: g('ml-closing').value, evs: [...document.querySelectorAll('.ml-evs:checked')].map(c => c.value),
+  extras: document.querySelector('.ml-x') ? [...document.querySelectorAll('.ml-x:checked')].map(c => c.value) : ui.mail.extras }; }
 function updateAnnPreview(){
   const v = id => document.getElementById(id);
   v('an-preview').innerHTML = annHtml({ title: v('an-title').value || 'Your headline', body: v('an-body').value || 'Your message will appear here.', aud: v('an-aud').value, pinned: v('an-pin').checked, date: todayIso(), author: session });
@@ -8157,7 +8176,7 @@ document.addEventListener('change', async e => {
     document.querySelectorAll('[data-ways]').forEach(d => d.hidden = d.dataset.ways !== (firm ? 'firm' : 'professional'));
     document.getElementById('p-type-hint').textContent = firm ? 'Recruiting, career fairs, office visits, sponsorships, or case competitions.' : 'Speaking, mentoring, or helping students one-on-one.';
   }
-  if (e.target.classList && e.target.classList.contains('ml-evs')){ readMail(); document.getElementById('ml-preview').innerHTML = mailPreview(); document.getElementById('ml-outlook').innerHTML = outlookButtons(audienceEmails(ui.mail.aud)); }
+  if (e.target.classList && (e.target.classList.contains('ml-evs') || e.target.classList.contains('ml-x'))){ readMail(); document.getElementById('ml-preview').innerHTML = mailPreview(); document.getElementById('ml-outlook').innerHTML = outlookButtons(audienceEmails(ui.mail.aud)); }
   if (id === 'avail-who'){ ui.availWho = e.target.value; ui.availPick = null; render(); }
   if (id === 'tk-mine'){ ui.tasksMine = e.target.checked; render(); }
   if (id === 'ct-mine'){ ui.ct.mine = e.target.checked; render(); }
