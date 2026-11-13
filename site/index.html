@@ -768,6 +768,7 @@ async function load(){
     wait: sb.rpc('waitlist_info'),
     surveys: t('surveys'),
     jobs: t('job_postings'),
+    firms: t('notable_firms'),
     programs: t('early_programs'),
     svResp: signed && t('survey_responses'),
     svCounts: sb.rpc('survey_counts'),
@@ -886,7 +887,8 @@ async function load(){
   db.pstats = R.pstats || null;
   db.surveys = (Array.isArray(R.surveys) ? R.surveys : []).sort((a, b) => b.created_at.localeCompare(a.created_at));   // survey builder (63-survey-builder.sql)
   db.programs = Array.isArray(R.programs) ? R.programs : [];   // Early programs page (77-early-programs.sql)
-  db.jobs = Array.isArray(R.jobs) ? R.jobs : [];   // Jobs page (75-job-postings.sql)
+  db.jobs = Array.isArray(R.jobs) ? R.jobs : [];
+  db.firms = Array.isArray(R.firms) ? R.firms : [];   // big-name firms for the newsletter (87-notable-firms.sql)   // Jobs page (75-job-postings.sql)
   db.svResp = Array.isArray(R.svResp) ? R.svResp : [];
   db.svRemLog = Array.isArray(R.svRemLog) ? R.svRemLog : [];   // what went out (74-survey-reminders.sql)
   db.svCounts = Object.fromEntries((Array.isArray(R.svCounts) ? R.svCounts : []).map(x => [x.survey_id, x.responses]));
@@ -4014,9 +4016,15 @@ function eventBlock(){
     const revoke = activeRules().some(r => r.event_id === e.id && r.points > 0 && r.kind === 'rsvp' && r.revoke_noshow);
     return `\n- Points: ${PTS[e.cat]} for checking in${bonus.length ? ', plus ' + bonus.join(', plus ') : ''}${revoke ? ' (Early RSVP points will be revoked for no-shows)' : ''}`;
   };
-  return (list.length === 1 ? '\n' : '\n\n## Upcoming events\n') + list.map(e =>
+  const one = e =>
     '\n### ' + e.title + '\n- When: ' + fmtDay(e.date) + (e.start ? ', ' + fmtTime(e.start) + (e.end ? ' to ' + fmtTime(e.end) : '') : '') +
-    (e.loc ? '\n- Where: ' + e.loc : '') + seats(e) + points(e) + '\n- ' + link(e) + ': ' + eventLink(e.id) + (e.desc ? '\n' + e.desc.trim().split('\n').map(l => '> ' + l).join('\n') : '')).join('\n\n');
+    (e.loc ? '\n- Where: ' + e.loc : '') + seats(e) + points(e) + '\n- ' + link(e) + ': ' + eventLink(e.id) + (e.desc ? '\n' + e.desc.trim().split('\n').map(l => '> ' + l).join('\n') : '');
+  // Two or more events: the bigger ones (case competitions, excursions, guest speakers, career fairs) go first under
+  // "Don't miss", then the rest under "Also coming up".
+  if (list.length === 1) return '\n' + one(list[0]);
+  const big = list.filter(e => BIG_CATS.includes(e.cat)), rest = list.filter(e => !BIG_CATS.includes(e.cat));
+  if (big.length && rest.length) return '\n\n## Don’t miss\n' + big.map(one).join('\n\n') + '\n\n## Also coming up\n' + rest.map(one).join('\n\n');
+  return '\n\n## Upcoming events\n' + list.map(one).join('\n\n');
 }
 // Optional lines at the end of member emails, above the footer. Officer applications only show while they're open.
 const MAIL_EXTRAS = [
@@ -4036,22 +4044,88 @@ function prizeLine(){
   return `${intro}${some ? (intro ? ' ' : '') + 'Prizes include ' + some + '.' : ''} See them all and where you rank: ${SITE_URL}/#leaderboard`;
 }
 const mailExtrasPicked = () => ui.mail.extras || ['jobs', 'apply'];
+const nlCovers = k => (k === 'jobs' && ui.mail.nlJobs !== false) || (['points', 'prize'].includes(k) && ui.mail.nlPoints !== false);
 const mailExtrasShown = () => MAIL_EXTRAS.filter(x => !x[3] || x[3]());
 function mailExtrasText(){
   if (['staff', 'custom'].includes(ui.mail.aud)) return '';
-  const picked = mailExtrasShown().filter(x => mailExtrasPicked().includes(x[0])).map(x => x[0]);
+  const picked = mailExtrasShown().filter(x => mailExtrasPicked().includes(x[0]) && !(isNewsletter() && nlCovers(x[0]))).map(x => x[0]);
   // The prize line already links the leaderboard, so it replaces the plain leaderboard line.
   const lines = mailExtrasShown().filter(x => picked.includes(x[0]) && !(x[0] === 'points' && picked.includes('prize'))).map(x => '- ' + x[2]());
   return lines.length ? '\n\n---\n' + lines.join('\n') : '';
 }
-function mailText(){
+/* ---------- Newsletter (email builder layout): personalized job picks, bonus points, big-name firms ---------- */
+// Big-name firms (87-notable-firms.sql). Postings from these firms are picked first for the newsletter.
+const FIRM_KINDS = { wall_street: 'Wall Street banks and boutiques', buy_side: 'Private equity, hedge funds, and asset managers', big4: 'Big 4 accounting', consulting: 'Consulting', big_company: 'Big companies (Fortune 500 and big private companies)', utah: 'Notable Utah employers' };
+const firmNorm = s => ' ' + String(s || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
+function firmOf(company){
+  const c = firmNorm(company);
+  return (db.firms || []).find(f => [f.name, ...(f.aliases || [])].some(n => n && c.includes(firmNorm(n))));
+}
+// Which postings someone gets: seniors full-time; grad students full-time, then internships; earlier years internships.
+// No year set: both. No career interests: a general mix (big names, Utah, newest).
+const NL_JOBS = 5;
+function nlJobKinds(year){
+  return year === 'Senior' ? ['full_time'] : year === 'Graduate student' ? ['full_time', 'internship']
+    : ['Freshman', 'Sophomore', 'Junior'].includes(year) ? ['internship'] : ['internship', 'full_time'];
+}
+function nlJobsFor(u){
+  const today = todayIso(), kinds = nlJobKinds(u && u.year), likes = new Set((u && u.interests) || []);
+  const open = (db.jobs || []).filter(j => j.kind !== 'employer' && kinds.includes(j.kind) && (!j.closes_on || j.closes_on >= today) && (!j.opens_on || j.opens_on <= today));
+  const score = j => (likes.size && (j.careers || []).some(c => likes.has(jobCareerName(c))) ? 100 : 0)
+    + (kinds.length > 1 && j.kind === kinds[0] ? 40 : 0) + ({ wall_street: 25, buy_side: 25, big4: 20, consulting: 20, big_company: 18 }[(firmOf(j.company) || {}).kind] || 0)
+    + ((j.states || []).includes('UT') || (firmOf(j.company) || {}).kind === 'utah' ? 10 : 0);
+  const sorted = open.sort((a, b) => score(b) - score(a) || String(b.created_at).localeCompare(String(a.created_at)));
+  const per = {}, out = [];
+  for (const j of sorted){ const k = j.company.toLowerCase(); if ((per[k] || 0) >= 2) continue; per[k] = (per[k] || 0) + 1; out.push(j); if (out.length >= NL_JOBS) break; }
+  return out;
+}
+// The line under "Opportunities for you" saying what the picks are based on.
+function nlJobsNote(u){
+  const kinds = nlJobKinds(u && u.year), what = kinds.length === 1 ? (kinds[0] === 'full_time' ? 'Full-time roles' : 'Internships') : kinds[0] === 'full_time' ? 'Full-time roles and internships' : 'Internships and full-time roles';
+  const likes = ((u && u.interests) || []).filter(x => x !== 'Not sure yet');
+  return `${what}${likes.length ? ' in ' + likes.slice(0, 2).join(' and ') + (likes.length > 2 ? ', and more' : '') : ' from top firms and Utah employers'}, picked for you.`;
+}
+function nlJobLine(j){
+  const where = [...(j.states || []), ...(j.remote ? ['Remote'] : [])].join(', ');
+  return `- **${j.company}** · [${j.title}](${j.url}) (${JOB_KINDS[j.kind]}${where ? ', ' + where : ''})${j.closes_on ? ' · apply by ' + fmtDay(j.closes_on) : ''}`;
+}
+// Bonus points still open: point rules with a deadline that hasn't passed, plus the leaderboard prize.
+function nlPointsBlock(){
+  const rules = activeRules().filter(r => r.points > 0 && (!r.event_id || evById(r.event_id)) && (r.kind !== 'form' || svById(r.survey_id))).slice(0, 6), lines = rules.map(r => {
+    const e = evById(r.event_id), sv = svById(r.survey_id), ev = e ? e.title : 'an event';
+    const what = { join: 'Join the WFA', rsvp: `RSVP to ${ev}`, checkin: `Check in at ${ev}`, survey: `Fill out the survey for ${ev}`, form: `Answer the survey ${sv ? sv.title : ''}` }[r.kind];
+    return `- **+${r.points}:** ${what} by ${fmtMtStamp(Date.parse(r.deadline))}${r.kind === 'rsvp' && r.revoke_noshow ? ' (revoked for no-shows)' : ''}`;
+  });
+  if ((db.settings.lbPrize || '').trim()) lines.push('', prizeLine());
+  return lines.length ? '\n\n## Bonus points\n' + lines.join('\n') : '';
+}
+const isNewsletter = () => ui.mail.layout === 'newsletter';
+// The member a newsletter is being written for (by email); people without an account get the general version.
+const nlUser = email => db.users.find(u => u.email === email) || null;
+// Big-name firms editor (admins): one firm per line, other names after a "|", like "J.P. Morgan | JPMorgan, Chase".
+function firmsEditor(){
+  const byKind = k => (db.firms || []).filter(f => f.kind === k).sort((a, b) => a.name.localeCompare(b.name));
+  if (!ui.firmsEdit) return `<div class="row" style="gap:8px;align-items:center"><span class="hint">${(db.firms || []).length} big-name firms are picked first.</span><button type="button" class="btn ghost small" data-act="firms-edit">${can('admin') ? 'See or edit the list' : 'See the list'}</button></div>`;
+  return `<div class="stack" style="gap:10px">
+    <span class="hint">One firm per line. Add other names a listing might use after a “|”, separated by commas, like “J.P. Morgan | JPMorgan, Chase”.</span>
+    ${Object.entries(FIRM_KINDS).map(([k, l]) => `<label>${l}<textarea class="firm-list" data-kind="${k}" rows="5" ${can('admin') ? '' : 'readonly'}>${esc(byKind(k).map(f => f.name + ((f.aliases || []).length ? ' | ' + f.aliases.join(', ') : '')).join('\n'))}</textarea></label>`).join('')}
+    <div class="row" style="gap:8px">${can('admin') ? '<button type="button" class="btn small" data-act="firms-save">Save the list</button>' : ''}<button type="button" class="btn ghost small" data-act="firms-close">Close</button></div></div>`;
+}
+function mailText(who){
   const closing = fillMerge(ui.mail.closing || '').trim();
   // "---" is a spacer line, so the conclusion stands apart from the last event.
   // Member emails end with how to turn club emails off. Officer-team emails don't need it.
   // The optional extra lines (job board, officer applications, ...) sit just above it, after the signature.
   const extras = mailExtrasText();
   const footer = ['staff', 'custom'].includes(ui.mail.aud) ? '' : `\n\n${extras ? '' : '---\n'}*You’re getting this because you’re a Wolverine Finance Association member. To stop club emails, turn them off in My account: ${SITE_URL}/#account*`;
-  return (fillMerge(ui.mail.body).trim() + eventBlock() + (closing ? '\n\n---\n' + closing : '') + extras + footer).trim();
+  // Newsletter: job picks for this person (their year and career interests), then bonus points.
+  let nl = '';
+  if (isNewsletter()){
+    const u = nlUser(who), jobs = ui.mail.nlJobs === false ? [] : nlJobsFor(u);
+    if (jobs.length) nl += `\n\n## Opportunities for you\n*${nlJobsNote(u)}*\n${jobs.map(nlJobLine).join('\n')}\n\nSee every opening on the job board: ${SITE_URL}/#jobs`;
+    if (ui.mail.nlPoints !== false) nl += nlPointsBlock();
+  }
+  return (fillMerge(ui.mail.body).trim() + eventBlock() + nl + (closing ? '\n\n---\n' + closing : '') + extras + footer).trim();
 }
 // Formatting buttons for one of the email builder's text boxes.
 function fmtBar(target){
@@ -4085,12 +4159,16 @@ function sigEditor(){
   </div>`;
 }
 function mailPreview(){
-  const to = audienceEmails(ui.mail.aud), personal = usesFirst(), name = to.length ? firstNameOf(to[0]) : 'Sam';
+  const to = audienceEmails(ui.mail.aud), personal = usesFirst() || isNewsletter();
+  const who = isNewsletter() && to.includes(ui.mail.previewAs) ? ui.mail.previewAs : to[0], name = who ? firstNameOf(who) : 'Sam', u = nlUser(who);
   return `<div class="stack" style="gap:10px">
     <dl class="facts"><dt>${personal ? 'To' : 'To (BCC)'}</dt><dd>${to.length} recipient${to.length===1?'':'s'}${to.length ? ': ' + esc(to.slice(0,3).join(', ')) + (to.length>3?` and ${to.length-3} more`:'') : ''}</dd>
     <dt>Subject</dt><dd><strong>${esc(withFirst(fillMerge(ui.mail.subject), name)) || '<span class="muted">No subject yet</span>'}</strong></dd></dl>
-    ${personal ? `<div class="notice" style="margin:0">Personalized: each person gets their own email with their first name. Showing how it looks for ${esc(name)}.</div>` : ''}
-    <div class="mail-html">${mdToHtml(withFirst(mailText(), name)) || '<span class="muted">Message preview appears here.</span>'}</div>
+    ${isNewsletter() ? `<div class="notice stack" style="margin:0;gap:6px">Newsletter: each person gets their own email, with jobs picked for their year and career interests.
+        <label>Preview as<select id="ml-as">${to.slice(0, 300).map(e => `<option value="${esc(e)}" ${e === who ? 'selected' : ''}>${esc(userName(e) || e)}</option>`).join('')}</select></label>
+        <span class="hint">${u ? esc([u.year || 'No year set', (u.interests || []).length ? (u.interests || []).join(', ') : 'no career interests'].join(' · ')) : 'No member profile, so they get the general picks.'}</span></div>`
+      : personal ? `<div class="notice" style="margin:0">Personalized: each person gets their own email with their first name. Showing how it looks for ${esc(name)}.</div>` : ''}
+    <div class="mail-html">${mdToHtml(withFirst(mailText(who), name)) || '<span class="muted">Message preview appears here.</span>'}</div>
   </div>`;
 }
 function thumbsHtml(){
@@ -5829,6 +5907,9 @@ function viewOfficer(){
       <form class="panel stack" id="f-mail">
         <h3>Email draft builder</h3>
         <div class="row" style="gap:6px"><span class="hint">Start from:</span>${Object.entries(MAIL_TEMPLATES).filter(([k]) => k !== 'dues' || DUES_ENABLED).map(([k,[l]]) => `<button type="button" class="btn ghost small" data-act="mail-tpl" data-tpl="${k}">${l}</button>`).join('')}</div>
+        <fieldset class="rq-q"><legend>Layout</legend><div class="row" style="gap:6px 18px;flex-wrap:wrap">
+          <label class="check"><input type="radio" name="ml-layout" value="regular" ${isNewsletter() ? '' : 'checked'}> Regular email</label>
+          <label class="check"><input type="radio" name="ml-layout" value="newsletter" ${isNewsletter() ? 'checked' : ''}> Newsletter <span class="hint">Personalized job picks and bonus points. Sent from the club address, one email per person.</span></label></div></fieldset>
         <label>Send to<select id="ml-aud">${mailAudiences().map(([g, opts]) => opts.length ? `<optgroup label="${esc(g)}">${opts.map(([k,l]) => `<option value="${k}" ${ui.mail.aud===k?'selected':''}>${esc(l)}</option>`).join('')}</optgroup>` : '').join('')}</select></label>
         ${ui.mail.aud === 'custom' ? `<label>Email addresses<textarea id="ml-custom" style="min-height:64px" placeholder="name@example.com, another@example.com">${esc(ui.mail.custom || '')}</textarea><span class="hint" id="ml-custom-hint">${mailCustomHint()}</span></label>` : ''}
         <label>Event <span class="hint">(optional)</span><select id="ml-ev">${eventOptions(sortedEvents(), ui.mail.ev, 'None')}</select><span class="hint">Only needed if the message uses {event}, {date}, {time}, {location}, or {link}.</span></label>
@@ -5849,12 +5930,17 @@ function viewOfficer(){
           <span class="hint">Added at the end of the email, after the events.</span></label>
         <div class="row" style="gap:6px"><button type="button" class="btn ghost small" data-act="sig-insert">Insert my signature</button><button type="button" class="btn ghost small" data-act="sig-edit">Edit my signature</button></div>
         ${ui.sigDraft != null ? sigEditor() : ''}
-        ${['staff', 'custom'].includes(ui.mail.aud) ? '' : `<fieldset class="rq-q"><legend>Add to the end <span class="hint">Short lines above the unsubscribe note</span></legend><div class="row" style="gap:6px 16px;flex-wrap:wrap">${mailExtrasShown().map(([k, l]) => `<label class="check"><input type="checkbox" class="ml-x" value="${k}" ${mailExtrasPicked().includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div>${appsOpen() ? '' : '<span class="hint">Officer applications show up here while they’re open.</span>'}</fieldset>`}
+        ${isNewsletter() ? `<fieldset class="stack" style="gap:8px"><legend>Newsletter sections</legend>
+          <label class="check"><input type="checkbox" id="ml-nl-jobs" ${ui.mail.nlJobs === false ? '' : 'checked'}> Opportunities for you <span class="hint">${NL_JOBS} openings each: full-time for seniors, full-time and internships for grad students, internships for everyone else, matched to their career interests. Big-name firms first, then Utah, then the newest.</span></label>
+          <label class="check"><input type="checkbox" id="ml-nl-points" ${ui.mail.nlPoints === false ? '' : 'checked'}> Bonus points <span class="hint">Open point rules and the leaderboard prize.</span></label>
+          ${firmsEditor()}</fieldset>` : ''}
+        ${['staff', 'custom'].includes(ui.mail.aud) ? '' : `<fieldset class="rq-q"><legend>Add to the end <span class="hint">Short lines above the unsubscribe note</span></legend><div class="row" style="gap:6px 16px;flex-wrap:wrap">${mailExtrasShown().filter(x => !(isNewsletter() && nlCovers(x[0]))).map(([k, l]) => `<label class="check"><input type="checkbox" class="ml-x" value="${k}" ${mailExtrasPicked().includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div>${appsOpen() ? '' : '<span class="hint">Officer applications show up here while they’re open.</span>'}</fieldset>`}
       </form>
       <section class="stack">
         <div class="section-head"><h3>Preview</h3><span class="muted"><span id="ml-count">${to.length} recipients</span>${optedOutCount(ui.mail.aud) ? ` · ${optedOutCount(ui.mail.aud)} opted out of club emails and won’t get it` : ''}</span></div>
         <div class="preview" id="ml-preview">${mailPreview()}</div>
-        <div class="panel stack" style="gap:8px">
+        ${isNewsletter() ? '<span class="hint">Newsletters are different for each person, so they send from the club address (below), not your own Outlook.</span>' : ''}
+        <div class="panel stack" style="gap:8px" ${isNewsletter() ? 'hidden' : ''}>
           <strong>Send from your own Outlook</strong>
           <span class="hint">Sends from your own account and doesn’t count toward the club’s daily email limit.</span>
           <div class="row" style="gap:6px" id="ml-outlook">${outlookButtons(to)}</div>
@@ -7944,6 +8030,17 @@ document.addEventListener('click', async ev => {
       ta.focus(); ta.dispatchEvent(new Event('input', { bubbles: true }));
       break; }
     case 'mail-send': await sendMail(); break;
+    case 'firms-edit': readMail(); ui.firmsEdit = true; render(); break;
+    case 'firms-close': readMail(); ui.firmsEdit = false; render(); break;
+    case 'firms-save': { readMail(); const rows = [];
+      document.querySelectorAll('.firm-list').forEach(ta => ta.value.split('\n').forEach(line => { const [n, al] = line.split('|'); const name = (n || '').trim();
+        if (name && !rows.some(r => r.name.toLowerCase() === name.toLowerCase())) rows.push({ name: name.slice(0, 120), kind: ta.dataset.kind, aliases: (al || '').split(',').map(x => x.trim()).filter(Boolean) }); }));
+      await act(async () => {
+        const d = await sb.from('notable_firms').delete().not('id', 'is', null);
+        if (d.error) throw new Error(/notable_firms/.test(d.error.message || '') ? 'The big-name firms list isn’t set up yet. Run 87-notable-firms.sql in Supabase.' : errMsg(d.error));
+        if (rows.length) must(await sb.from('notable_firms').insert(rows));
+        await logChange('Updated the big-name firms list (' + rows.length + ' firms)'); ui.firmsEdit = false;
+      }, 'Big-name firms saved'); break; }
     case 'pf-photo-rm': ui.profilePhoto = ''; document.getElementById('pf-photo-row').innerHTML = photoPreview(db.profiles[session] || {}); break;
     case 'change-status': ui.adminTab = 'access'; ui.editOfficer = id; if (route() !== 'admin') location.hash = 'admin'; else render(); window.scrollTo(0,0); break;
     case 'app-filter': ui.appFilter = t.dataset.f; render(); break;
@@ -8076,13 +8173,13 @@ async function sendMail(){
   if (!to.length) return toast('No one is in that group.');
   if (!subject || !text) return toast('Add a subject and a message.');
   if (/\{(event|date|time|location|link)\}/.test(subject + text)) return toast('Pick an event, or remove {event}, {date}, {time}, {location}, and {link} from the message.');
-  if (usesFirst()){
+  if (usesFirst() || isNewsletter()){
     // Personalized: one email per person, a little apart to stay under the email service's rate limit.
     let sent = 0, failed = 0, lastErr = '';
     for (let i = 0; i < to.length; i++){
-      const name = firstNameOf(to[i]);
+      const name = firstNameOf(to[i]), mdi = isNewsletter() ? mailText(to[i]) : md, texti = isNewsletter() ? mdToPlain(mdi) : text;
       toast(`Sending ${i + 1} of ${to.length}…`);
-      const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to: [to[i]], subject: withFirst(subject, name), text: withFirst(text, name), md: withFirst(md, name) } });
+      const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to: [to[i]], subject: withFirst(subject, name), text: withFirst(texti, name), md: withFirst(mdi, name) } });
       if (error || !data || !data.sent){ failed++; if (error){ try { lastErr = (await error.context.json()).error || error.message; } catch(_){ lastErr = error.message; } } }
       else sent++;
       if (i < to.length - 1) await new Promise(r => setTimeout(r, 600));
@@ -8100,7 +8197,9 @@ async function sendMail(){
 /* ---------- Inputs ---------- */
 function rerenderKeepFocus(id){ const el = document.getElementById(id), pos = el.selectionStart; render(); const s = document.getElementById(id); s.focus(); try { s.setSelectionRange(pos, pos); } catch(e){} }
 function readMail(){ const g = id => document.getElementById(id); if (!g('ml-aud')) return; ui.mail = { aud: g('ml-aud').value, custom: g('ml-custom') ? g('ml-custom').value : ui.mail.custom, ev: g('ml-ev').value, subject: g('ml-subject').value, body: g('ml-body').value, closing: g('ml-closing').value, evs: [...document.querySelectorAll('.ml-evs:checked')].map(c => c.value),
-  extras: document.querySelector('.ml-x') ? [...document.querySelectorAll('.ml-x:checked')].map(c => c.value) : ui.mail.extras }; }
+  extras: document.querySelector('.ml-x') ? [...document.querySelectorAll('.ml-x:checked')].map(c => c.value) : ui.mail.extras,
+  layout: document.querySelector('input[name="ml-layout"]:checked') ? document.querySelector('input[name="ml-layout"]:checked').value : ui.mail.layout,
+  nlJobs: g('ml-nl-jobs') ? g('ml-nl-jobs').checked : ui.mail.nlJobs, nlPoints: g('ml-nl-points') ? g('ml-nl-points').checked : ui.mail.nlPoints, previewAs: ui.mail.previewAs }; }
 function updateAnnPreview(){
   const v = id => document.getElementById(id);
   v('an-preview').innerHTML = annHtml({ title: v('an-title').value || 'Your headline', body: v('an-body').value || 'Your message will appear here.', aud: v('an-aud').value, pinned: v('an-pin').checked, date: todayIso(), author: session });
@@ -8127,6 +8226,9 @@ document.addEventListener('change', async e => {
     if (svHasOptions(q.type) && !(q.options || []).length) q.options = ['', '']; render(); return; }
   const id = e.target.id;
   if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
+  if (e.target.name === 'ml-layout'){ readMail(); render(); return; }
+  if (id === 'ml-as'){ ui.mail.previewAs = e.target.value; document.getElementById('ml-preview').innerHTML = mailPreview(); return; }
+  if (['ml-nl-jobs', 'ml-nl-points'].includes(id)){ readMail(); document.getElementById('ml-preview').innerHTML = mailPreview(); return; }
   if (['ml-aud','ml-ev'].includes(id)){ readMail(); if (id === 'ml-aud' && /^(nosurvey|att|noshow|rsvp|norsvp|teams|agents):/.test(ui.mail.aud)) ui.mail.ev = ui.mail.aud.split(':')[1]; render(); }
   if (id === 'qr-size'){ ui.qr.size = +e.target.value; drawQrTool(); }
   if (id === 'qr-pick' && e.target.value){
