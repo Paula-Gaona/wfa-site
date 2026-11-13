@@ -156,7 +156,7 @@ async function sendScheduled(db: any) {
     let ok = 0, fail = 0, last = '';
     for (let i = 0; i < go.length; i += 100) {
       const chunk = go.slice(i, i + 100);
-      const r = await resendBatch(chunk.map((m: { to_email: string; subject: string; text: string; html: string }) => ({ to: [m.to_email], subject: m.subject, text: m.text, html: m.html })));
+      const r = await resendBatch(chunk.map((m: { to_email: string; subject: string; text: string; html: string }) => ({ to: [m.to_email], subject: m.subject, text: m.text, html: m.html, tags: [{ name: 'campaign', value: d.id }] })));
       const ids = chunk.map((m: { id: number }) => m.id);
       if (r.ok) { ok += chunk.length; await db.from('email_outbox').update({ sent_at: new Date().toISOString() }).in('id', ids); }
       else { fail += chunk.length; last = r.detail; await db.from('email_outbox').update({ error: r.detail.slice(0, 500) }).in('id', ids); }

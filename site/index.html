@@ -779,6 +779,7 @@ async function load(){
     myRuleAwards: signed && sb.from('point_awards').select('rule_id').eq('email', session || '').not('rule_id', 'is', null),
     ruleAwards: myRole === 'admin' && sb.from('point_awards').select('rule_id').not('rule_id', 'is', null),
     ruleEarners: ['officer', 'admin'].includes(myRole) && sb.rpc('rule_earners'),
+    emailStats: ['officer', 'admin'].includes(myRole) && sb.rpc('email_stats'),
     emailDrafts: ['officer', 'admin'].includes(myRole) && sb.from('email_drafts').select('id, created_by, updated_at, updated_by, subject, data, status, send_at, sent_at, recipients, sent_count, detail').order('updated_at', { ascending: false }).limit(60),
     pending: off && sb.from('pending_changes').select('*').order('created_at', { ascending: false }).limit(200),
     questions: off && sb.from('questions').select('*').order('created_at', { ascending: false }),
@@ -832,7 +833,8 @@ async function load(){
   db.pointRules = Array.isArray(R.pointRules) ? R.pointRules : [];
   // Who has earned each automatic point rule (officers; 88-rule-earners.sql), for the newsletter's bonus points.
   db.ruleEarners = Array.isArray(R.ruleEarners) ? new Set(R.ruleEarners.map(a => a.rule_id + '|' + a.email)) : null;
-  db.emailDrafts = Array.isArray(R.emailDrafts) ? R.emailDrafts : [];   // email builder drafts and scheduled sends (89)
+  db.emailDrafts = Array.isArray(R.emailDrafts) ? R.emailDrafts : [];
+  db.emailStats = {}; (Array.isArray(R.emailStats) ? R.emailStats : []).forEach(x => db.emailStats[x.campaign] = x);   // 91-email-stats.sql   // email builder drafts and scheduled sends (89)
   db.myRules = new Set((Array.isArray(R.myRuleAwards) ? R.myRuleAwards : []).map(a => a.rule_id));
   db.ruleCounts = {}; (Array.isArray(R.ruleAwards) ? R.ruleAwards : []).forEach(a => db.ruleCounts[a.rule_id] = (db.ruleCounts[a.rule_id] || 0) + 1);
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
@@ -8434,7 +8436,10 @@ async function markDraftSent(n){
 function mailDraftsPanel(){
   const ds = db.emailDrafts || [];
   const sched = ds.filter(d => ['scheduled', 'sending'].includes(d.status)).sort((a, b) => String(a.send_at).localeCompare(String(b.send_at)));
-  const drafts = ds.filter(d => ['draft', 'failed'].includes(d.status)), sent = ds.filter(d => d.status === 'sent').sort((a, b) => String(b.sent_at).localeCompare(String(a.sent_at))).slice(0, 5);
+  const drafts = ds.filter(d => ['draft', 'failed'].includes(d.status)), sent = ds.filter(d => d.status === 'sent').sort((a, b) => String(b.sent_at).localeCompare(String(a.sent_at))).slice(0, 10);
+  // Delivered, opened, and clicked, from Resend's reports (91-email-stats.sql). Percentages are of the emails delivered.
+  const stats = d => { const x = (db.emailStats || {})[d.id]; if (!x || !x.delivered) return ''; const pct = n => Math.round(n / x.delivered * 100) + '%';
+    return ` · <strong>${x.delivered} delivered · ${x.opened} opened (${pct(x.opened)})${x.clicked ? ` · ${x.clicked} clicked (${pct(x.clicked)})` : ''}${x.bounced ? ` · ${x.bounced} bounced` : ''}</strong>`; };
   const who = d => esc(userName(d.updated_by || d.created_by) || d.updated_by || d.created_by || '');
   const title = d => esc(d.subject || '(No subject)') + (d.data && d.data.layout === 'newsletter' ? ' <span class="tag">Newsletter</span>' : '');
   const row = (d, info, btns) => `<div class="list-row"><div><div class="ev-title">${title(d)}</div><div class="ev-sub">${info}</div></div><div class="row" style="gap:6px">${btns}</div></div>`;
@@ -8445,7 +8450,7 @@ function mailDraftsPanel(){
       d.status === 'sending' ? '' : `<button class="btn ghost small" data-act="mdraft-edit" data-id="${d.id}">Edit</button>${armBtn('mds-' + d.id, 'Cancel send', 'Click again to cancel it', 'mdraft-cancel', d.id)}`)).join('')}` : ''}
     ${drafts.length ? `<strong>Drafts</strong>${drafts.map(d => row(d, `${d.status === 'failed' ? `<span class="tag warn">Didn’t send${d.detail ? ': ' + esc(d.detail) : ''}</span> · ` : ''}Saved ${fmtMtStamp(Date.parse(d.updated_at))} by ${who(d)}`,
       `<button class="btn ghost small" data-act="mdraft-open" data-id="${d.id}">${ui.mailDraftId === d.id ? 'Open (editing)' : 'Open'}</button>${delBtn('mdd-' + d.id, 'Delete', 'mdraft-del', d.id)}`)).join('')}` : ''}
-    ${sent.length ? `<strong>Recently sent</strong>${sent.map(d => row(d, `Sent ${fmtMtStamp(Date.parse(d.sent_at))} to ${d.sent_count} ${d.sent_count === 1 ? 'person' : 'people'}${d.detail ? ' · ' + esc(d.detail) : ''}`,
+    ${sent.length ? `<strong>Recently sent</strong>${sent.map(d => row(d, `Sent ${fmtMtStamp(Date.parse(d.sent_at))} to ${d.sent_count} ${d.sent_count === 1 ? 'person' : 'people'}${stats(d)}${d.detail ? ' · ' + esc(d.detail) : ''}`,
       `<button class="btn ghost small" data-act="mdraft-copy" data-id="${d.id}">Use as a new draft</button>`)).join('')}` : ''}
   </section>`;
 }
@@ -8454,13 +8459,16 @@ async function sendMail(){
   if (isNewsletter() && NL_SUBJECT_RE.test((ui.mail.subject || '').trim())) ui.mail.subject = nlSubjectFor(Date.now());
   const to = audienceEmails(ui.mail.aud), subject = fillMerge(ui.mail.subject).trim(), md = mailText(), text = mdToPlain(md);
   const bad = mailProblem(to, subject, text); if (bad) return toast(bad);
+  // Every send is saved in the drafts list (marked sent afterward), and its emails carry that id so Resend's reports
+  // (delivered, opened, clicked) can be counted for it.
+  const campaign = (await saveMailDraft(true)) ? ui.mailDraftId : '';
   if (usesFirst() || isNewsletter()){
     // Personalized: one email per person, a little apart to stay under the email service's rate limit.
     let sent = 0, failed = 0, lastErr = '';
     for (let i = 0; i < to.length; i++){
       const name = firstNameOf(to[i]), mdi = isNewsletter() ? mailText(to[i]) : md, texti = isNewsletter() ? mdToPlain(mdi) : text;
       toast(`Sending ${i + 1} of ${to.length}…`);
-      const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to: [to[i]], subject: withFirst(subject, name), text: withFirst(texti, name), md: withFirst(mdi, name), ...(isNewsletter() ? { html: withFirst(nlHtml(to[i]), name) } : {}) } });
+      const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to: [to[i]], subject: withFirst(subject, name), text: withFirst(texti, name), md: withFirst(mdi, name), campaign, ...(isNewsletter() ? { html: withFirst(nlHtml(to[i]), name) } : {}) } });
       if (error || !data || !data.sent){ failed++; if (error){ try { lastErr = (await error.context.json()).error || error.message; } catch(_){ lastErr = error.message; } } }
       else sent++;
       if (i < to.length - 1) await new Promise(r => setTimeout(r, 600));
@@ -8469,7 +8477,7 @@ async function sendMail(){
     await markDraftSent(sent); await load(); render(); return;
   }
   toast('Sending…');
-  const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to, subject, text, md } });
+  const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to, subject, text, md, campaign } });
   if (error){ let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch(_){} return toast('Not sent: ' + m); }
   toast(data.failed ? `Sent to ${data.sent}. ${data.failed} couldn’t be sent.` : `Sent to ${data.sent} ${data.sent === 1 ? 'person' : 'people'}`);
   await markDraftSent(data.sent); await load(); render();

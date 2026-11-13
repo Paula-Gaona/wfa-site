@@ -114,6 +114,9 @@ Deno.serve(async (req) => {
       const subject = String(b.subject || '').trim(), text = String(b.text || '').trim(), md = String(b.md || '').trim();
       // The designed newsletter sends its own full HTML (made in the email builder); everything else uses the standard look.
       const html = typeof b.html === 'string' && b.html.length < 300000 ? b.html : '';
+      // Which email-builder email it is (its draft id), so Resend's delivery/open/click reports can be counted for it
+      // (email-events function, 91-email-stats.sql).
+      const campaign = /^[A-Za-z0-9_-]{1,100}$/.test(String(b.campaign || '')) ? String(b.campaign) : '';
       const to = [...new Set((Array.isArray(b.to) ? b.to : []).map((e: unknown) => String(e).trim().toLowerCase()))]
         .filter((e) => EMAIL_RE.test(e as string)) as string[];
       if (!to.length) return json({ error: 'No valid recipients.' }, 400);
@@ -125,7 +128,7 @@ Deno.serve(async (req) => {
       let sent = 0, failed = 0, lastError = '';
       for (let i = 0; i < to.length; i += 45) {
         const chunk = to.slice(i, i + 45);
-        const r = await resend({ to: [fromAddr], bcc: chunk, subject, text, html: html || htmlEmail(text, undefined, md ? mdToHtml(md) : undefined) });
+        const r = await resend({ to: [fromAddr], bcc: chunk, subject, text, html: html || htmlEmail(text, undefined, md ? mdToHtml(md) : undefined), ...(campaign ? { tags: [{ name: 'campaign', value: campaign }] } : {}) });
         if (r.ok) sent += chunk.length; else { failed += chunk.length; lastError = r.detail; }
         if (i + 45 < to.length) await new Promise((res) => setTimeout(res, 600));   // stay under Resend's rate limit
       }
