@@ -4111,6 +4111,94 @@ function firmsEditor(){
     ${Object.entries(FIRM_KINDS).map(([k, l]) => `<label>${l}<textarea class="firm-list" data-kind="${k}" rows="5" ${can('admin') ? '' : 'readonly'}>${esc(byKind(k).map(f => f.name + ((f.aliases || []).length ? ' | ' + f.aliases.join(', ') : '')).join('\n'))}</textarea></label>`).join('')}
     <div class="row" style="gap:8px">${can('admin') ? '<button type="button" class="btn small" data-act="firms-save">Save the list</button>' : ''}<button type="button" class="btn ghost small" data-act="firms-close">Close</button></div></div>`;
 }
+// The designed newsletter: one email per person, built from tables with inline styles so it holds up in Outlook
+// (desktop included), Gmail, Apple Mail, and phones. A plain-text copy goes with it for inboxes that can't show it.
+const NLC = { green: '#1F4D2E', dark: '#123622', gold: '#B8923A', goldDeep: '#94701F', cream: '#F6F3EC', line: '#E4DED0', ink: '#1D2A20', gray: '#5E6B60', bg: '#EAE7DF' };
+const nlEsc = s => esc(String(s == null ? '' : s));
+function nlSection(label, title, inner){
+  return `<tr><td style="padding:28px 32px 4px"><div style="font:bold 11px/1.4 Arial,sans-serif;letter-spacing:2px;text-transform:uppercase;color:${NLC.goldDeep}">${label}</div>
+    <div style="font:bold 22px/1.3 Georgia,'Times New Roman',serif;color:${NLC.dark};margin:2px 0 12px">${title}</div>${inner}</td></tr>`;
+}
+function nlButton(label, url, gold){
+  return `<table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td bgcolor="${gold ? NLC.gold : NLC.green}" style="border-radius:4px">
+    <a href="${nlEsc(url)}" style="display:inline-block;padding:10px 18px;font:bold 14px Arial,sans-serif;color:#ffffff;text-decoration:none;border-radius:4px">${nlEsc(label)}</a></td></tr></table>`;
+}
+function nlEventCard(e, featured){
+  const d = new Date(e.date + 'T12:00:00'), mon = d.toLocaleString('en-US', { month: 'short' }).toUpperCase(), day = d.getDate();
+  const meta = [fmtDay(e.date) + (e.start ? ', ' + fmtTime(e.start) + (e.end ? ' to ' + fmtTime(e.end) : '') : ''), e.loc].filter(Boolean).map(nlEsc).join(' &middot; ');
+  const pts = hostedElsewhere(e) || !PTS[e.cat] ? '' : `${PTS[e.cat]} points for checking in`;
+  const seats = !takesRsvps(e) || !e.cap ? '' : seatLeft(e) <= 0 ? 'Full: join the waitlist' : 'Seats limited';
+  const tags = [hostLabel(e), seats, pts].filter(Boolean).map(t => `<span style="display:inline-block;margin:0 6px 4px 0;padding:2px 8px;border-radius:10px;background:${NLC.cream};border:1px solid ${NLC.line};font:12px Arial,sans-serif;color:${NLC.green}">${nlEsc(t)}</span>`).join('');
+  const desc = (e.desc || '').trim();
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 14px;border:1px solid ${NLC.line};${featured ? `border-left:4px solid ${NLC.gold};` : ''}border-radius:6px;background:#ffffff">
+    <tr><td width="64" valign="top" style="padding:14px 0 14px 14px"><table role="presentation" width="54" cellspacing="0" cellpadding="0" border="0"><tr><td bgcolor="${NLC.dark}" align="center" style="border-radius:4px;padding:6px 0">
+      <div style="font:bold 11px Arial,sans-serif;letter-spacing:1px;color:${NLC.gold}">${mon}</div><div style="font:bold 22px/1.1 Georgia,serif;color:#ffffff">${day}</div></td></tr></table></td>
+    <td valign="top" style="padding:14px 16px 14px 12px">
+      <div style="font:12px Arial,sans-serif;color:${NLC.gray};text-transform:uppercase;letter-spacing:1px">${nlEsc(catName(e.cat))}</div>
+      <div style="font:bold 17px/1.3 Georgia,serif;color:${NLC.ink};margin:2px 0 4px">${nlEsc(e.title)}</div>
+      <div style="font:14px/1.5 Arial,sans-serif;color:${NLC.gray};margin:0 0 6px">${meta}</div>
+      ${tags ? `<div style="margin:0 0 6px">${tags}</div>` : ''}
+      ${desc ? `<div style="font:14px/1.55 Arial,sans-serif;color:${NLC.ink};margin:0 0 10px">${nlEsc(desc.length > 320 ? desc.slice(0, 317).trim() + '…' : desc).replace(/\n/g, '<br>')}</div>` : ''}
+      ${nlButton(e.regMode === 'link' ? 'Details & registration' : takesRsvps(e) ? 'Details & RSVP' : 'Details', eventLink(e.id), featured)}</td></tr></table>`;
+}
+function nlJobCard(j){
+  const f = firmOf(j.company), where = [...(j.states || []), ...(j.remote ? ['Remote'] : [])].join(', ');
+  const chip = (t, c) => `<span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:9px;background:${c};font:bold 11px Arial,sans-serif;color:#ffffff;vertical-align:middle">${t}</span>`;
+  return `<tr><td style="padding:12px 0;border-bottom:1px solid ${NLC.line}">
+    <div style="font:bold 15px Arial,sans-serif;color:${NLC.ink}">${nlEsc(j.company)}${f && f.kind !== 'utah' ? chip('Big name', NLC.goldDeep) : ''}${(j.states || []).includes('UT') || (f && f.kind === 'utah') ? chip('Utah', NLC.green) : ''}</div>
+    <div style="font:15px/1.4 Arial,sans-serif;margin:2px 0"><a href="${nlEsc(j.url)}" style="color:${NLC.green};font-weight:bold;text-decoration:underline">${nlEsc(j.title)}</a></div>
+    <div style="font:13px Arial,sans-serif;color:${NLC.gray}">${nlEsc(JOB_KINDS[j.kind])}${where ? ' &middot; ' + nlEsc(where) : ''}${j.closes_on ? ' &middot; Apply by ' + nlEsc(fmtDay(j.closes_on)) : ''}</div></td></tr>`;
+}
+function nlHtml(who){
+  const u = nlUser(who), mdh = s => mdToHtml(s).replace(/color:#0f1511/g, 'color:' + NLC.ink);
+  const list = sortedEvents().filter(e => (ui.mail.evs || []).includes(e.id));
+  const big = list.filter(e => BIG_CATS.includes(e.cat)), rest = list.filter(e => !BIG_CATS.includes(e.cat));
+  const body = fillMerge(ui.mail.body || '').trim(), closing = fillMerge(ui.mail.closing || '').trim();
+  const rows = [];
+  if (body) rows.push(`<tr><td style="padding:28px 32px 0;font:16px/1.6 Arial,sans-serif;color:${NLC.ink}">${mdh(body)}</td></tr>`);
+  if (list.length === 1) rows.push(nlSection('Coming up', 'Save the date', nlEventCard(list[0], BIG_CATS.includes(list[0].cat))));
+  else if (big.length && rest.length){ rows.push(nlSection('Featured', 'Don’t miss', big.map(e => nlEventCard(e, true)).join(''))); rows.push(nlSection('Calendar', 'Also coming up', rest.map(e => nlEventCard(e, false)).join(''))); }
+  else if (list.length) rows.push(nlSection('Calendar', 'Upcoming events', list.map(e => nlEventCard(e, BIG_CATS.includes(e.cat))).join('')));
+  const jobs = ui.mail.nlJobs === false ? [] : nlJobsFor(u);
+  if (jobs.length) rows.push(nlSection('Careers', 'Opportunities for you', `<div style="font:italic 14px Arial,sans-serif;color:${NLC.gray};margin:0 0 4px">${nlEsc(nlJobsNote(u))}</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${jobs.map(nlJobCard).join('')}</table>
+    <div style="margin:16px 0 0">${nlButton('See every opening', SITE_URL + '/#jobs')}</div>`));
+  if (ui.mail.nlPoints !== false){
+    const rules = activeRules().filter(r => r.points > 0 && (!r.event_id || evById(r.event_id)) && (r.kind !== 'form' || svById(r.survey_id))).slice(0, 6);
+    const prize = (db.settings.lbPrize || '').trim();
+    if (rules.length || prize){
+      const ruleRows = rules.map(r => { const e = evById(r.event_id), sv = svById(r.survey_id), ev = e ? e.title : 'an event';
+        const what = { join: 'Join the WFA', rsvp: `RSVP to ${ev}`, checkin: `Check in at ${ev}`, survey: `Fill out the survey for ${ev}`, form: `Answer the survey ${sv ? sv.title : ''}` }[r.kind];
+        return `<tr><td width="56" valign="top" style="padding:6px 0"><span style="display:inline-block;min-width:40px;text-align:center;padding:3px 6px;border-radius:4px;background:${NLC.gold};font:bold 14px Arial,sans-serif;color:#ffffff">+${r.points}</span></td>
+          <td style="padding:6px 0;font:14px/1.45 Arial,sans-serif;color:${NLC.ink}">${nlEsc(what)} <span style="color:${NLC.gray}">by ${nlEsc(fmtMtStamp(Date.parse(r.deadline)))}${r.kind === 'rsvp' && r.revoke_noshow ? ' (revoked for no-shows)' : ''}</span></td></tr>`; }).join('');
+      rows.push(nlSection('Leaderboard', 'Bonus points', `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${NLC.cream};border:1px solid ${NLC.line};border-radius:6px"><tr><td style="padding:14px 16px">
+        ${ruleRows ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${ruleRows}</table>` : ''}
+        ${prize ? `<div style="font:14px/1.5 Arial,sans-serif;color:${NLC.ink};${ruleRows ? `margin-top:10px;padding-top:10px;border-top:1px solid ${NLC.line}` : ''}"><strong style="color:${NLC.goldDeep}">This season’s prize:</strong> ${nlEsc(prizeLine().replace(/ See them all and where you rank: \S+$/, ''))}</div>` : ''}
+        <div style="margin-top:12px">${nlButton('See where you rank', SITE_URL + '/#leaderboard', true)}</div></td></tr></table>`));
+    }
+  }
+  if (closing) rows.push(`<tr><td style="padding:24px 32px 0;font:15px/1.6 Arial,sans-serif;color:${NLC.ink}">${mdh(closing)}</td></tr>`);
+  const extras = mailExtrasText().replace(/^\s*---\s*/, '').trim();
+  if (extras) rows.push(`<tr><td style="padding:20px 32px 0"><div style="border-top:1px solid ${NLC.line};padding-top:14px;font:14px/1.55 Arial,sans-serif;color:${NLC.ink}">${mdh(extras)}</div></td></tr>`);
+  const sent = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Denver' });
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>${nlEsc(fillMerge(ui.mail.subject || 'WFA Newsletter'))}</title></head>
+<body style="margin:0;padding:0;background:${NLC.bg}">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${NLC.bg}"><tr><td align="center" style="padding:24px 10px">
+<!--[if mso]><table role="presentation" width="640" cellspacing="0" cellpadding="0" border="0"><tr><td><![endif]-->
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:640px;background:#ffffff;border-radius:8px;overflow:hidden">
+  <tr><td bgcolor="${NLC.dark}" align="center" style="padding:26px 24px 20px;border-bottom:4px solid ${NLC.gold}">
+    <img src="${SITE_URL}/qr-seal.png" width="64" height="64" alt="WFA" style="display:block;margin:0 auto 10px;border:0">
+    <div style="font:bold 12px Arial,sans-serif;letter-spacing:3px;color:${NLC.gold}">WOLVERINE FINANCE ASSOCIATION</div>
+    <div style="font:bold 28px/1.2 Georgia,'Times New Roman',serif;color:#ffffff;margin:6px 0 4px">The WFA Newsletter</div>
+    <div style="font:13px Arial,sans-serif;color:#C9D3CB">${nlEsc(sent)} &middot; Utah Valley University</div></td></tr>
+  ${rows.join('\n  ')}
+  <tr><td style="padding:28px 32px 26px"><div style="border-top:1px solid ${NLC.line};padding-top:14px;font:12px/1.6 Arial,sans-serif;color:${NLC.gray}">
+    You’re getting this because you’re a Wolverine Finance Association member. To stop club emails, turn them off in <a href="${SITE_URL}/#account" style="color:${NLC.green}">My account</a>.<br>
+    <a href="${SITE_URL}" style="color:${NLC.green}">wolverinefinanceassociation.org</a></div></td></tr>
+</table>
+<!--[if mso]></td></tr></table><![endif]-->
+</td></tr></table></body></html>`;
+}
 function mailText(who){
   const closing = fillMerge(ui.mail.closing || '').trim();
   // "---" is a spacer line, so the conclusion stands apart from the last event.
@@ -4168,7 +4256,8 @@ function mailPreview(){
         <label>Preview as<select id="ml-as">${to.slice(0, 300).map(e => `<option value="${esc(e)}" ${e === who ? 'selected' : ''}>${esc(userName(e) || e)}</option>`).join('')}</select></label>
         <span class="hint">${u ? esc([u.year || 'No year set', (u.interests || []).length ? (u.interests || []).join(', ') : 'no career interests'].join(' · ')) : 'No member profile, so they get the general picks.'}</span></div>`
       : personal ? `<div class="notice" style="margin:0">Personalized: each person gets their own email with their first name. Showing how it looks for ${esc(name)}.</div>` : ''}
-    <div class="mail-html">${mdToHtml(withFirst(mailText(who), name)) || '<span class="muted">Message preview appears here.</span>'}</div>
+    ${isNewsletter() ? `<iframe class="nl-frame" title="Newsletter preview" srcdoc="${esc(withFirst(nlHtml(who), name))}" style="width:100%;height:1400px;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>` : ''}
+    <div class="mail-html" ${isNewsletter() ? 'hidden' : ''}>${mdToHtml(withFirst(mailText(who), name)) || '<span class="muted">Message preview appears here.</span>'}</div>
   </div>`;
 }
 function thumbsHtml(){
@@ -8179,7 +8268,7 @@ async function sendMail(){
     for (let i = 0; i < to.length; i++){
       const name = firstNameOf(to[i]), mdi = isNewsletter() ? mailText(to[i]) : md, texti = isNewsletter() ? mdToPlain(mdi) : text;
       toast(`Sending ${i + 1} of ${to.length}…`);
-      const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to: [to[i]], subject: withFirst(subject, name), text: withFirst(texti, name), md: withFirst(mdi, name) } });
+      const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to: [to[i]], subject: withFirst(subject, name), text: withFirst(texti, name), md: withFirst(mdi, name), ...(isNewsletter() ? { html: withFirst(nlHtml(to[i]), name) } : {}) } });
       if (error || !data || !data.sent){ failed++; if (error){ try { lastErr = (await error.context.json()).error || error.message; } catch(_){ lastErr = error.message; } } }
       else sent++;
       if (i < to.length - 1) await new Promise(r => setTimeout(r, 600));

@@ -2,7 +2,8 @@
 // Two jobs, picked by `action` in the request body:
 //   "invite" (default): creates or updates an officer/admin account with a temporary
 //      password, puts them on the access list, and emails their login details.
-//   "send": sends an email from the officer email builder, with recipients in BCC.
+//   "send": sends an email from the officer email builder, with recipients in BCC. A newsletter from the builder
+//      includes its own designed HTML (html), which is sent as is.
 //
 // Needs these Edge Function secrets (Supabase -> Edge Functions -> Secrets):
 //   RESEND_API_KEY   your Resend API key
@@ -111,6 +112,8 @@ Deno.serve(async (req) => {
     if (b.action === 'send') {
       if (me?.role !== 'admin' && me?.role !== 'officer') return json({ error: 'Only officers can send club emails.' }, 403);
       const subject = String(b.subject || '').trim(), text = String(b.text || '').trim(), md = String(b.md || '').trim();
+      // The designed newsletter sends its own full HTML (made in the email builder); everything else uses the standard look.
+      const html = typeof b.html === 'string' && b.html.length < 300000 ? b.html : '';
       const to = [...new Set((Array.isArray(b.to) ? b.to : []).map((e: unknown) => String(e).trim().toLowerCase()))]
         .filter((e) => EMAIL_RE.test(e as string)) as string[];
       if (!to.length) return json({ error: 'No valid recipients.' }, 400);
@@ -122,7 +125,7 @@ Deno.serve(async (req) => {
       let sent = 0, failed = 0, lastError = '';
       for (let i = 0; i < to.length; i += 45) {
         const chunk = to.slice(i, i + 45);
-        const r = await resend({ to: [fromAddr], bcc: chunk, subject, text, html: htmlEmail(text, undefined, md ? mdToHtml(md) : undefined) });
+        const r = await resend({ to: [fromAddr], bcc: chunk, subject, text, html: html || htmlEmail(text, undefined, md ? mdToHtml(md) : undefined) });
         if (r.ok) sent += chunk.length; else { failed += chunk.length; lastError = r.detail; }
         if (i + 45 < to.length) await new Promise((res) => setTimeout(res, 600));   // stay under Resend's rate limit
       }
