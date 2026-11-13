@@ -4023,14 +4023,25 @@ const MAIL_EXTRAS = [
   ['jobs', 'Job board', () => `Looking for an internship or job? Browse the WFA job board: ${SITE_URL}/#jobs`],
   ['apply', 'Officer applications', () => `Want to help run the WFA? Officer applications are open${db.app.deadline ? ' until ' + fmtDay(db.app.deadline) : ''}: ${SITE_URL}/#apply`, () => appsOpen()],
   ['resume', 'Resume book', () => `Add your resume to the WFA resume book, which we share with recruiters, in My account: ${SITE_URL}/#account`],
+  ['prize', 'Leaderboard prizes', () => prizeLine(), () => !!(db.settings.lbPrize || '').trim()],
   ['points', 'Leaderboard', () => `Every event earns points. See where you rank: ${SITE_URL}/#leaderboard`],
   ['programs', 'Early programs', () => `Freshman or sophomore? Find early-career programs at top firms: ${SITE_URL}/#programs`],
   ['calendar', 'Calendar', () => `See everything coming up on the WFA calendar: ${SITE_URL}/#calendar`]];
+// The prize announcement in one line: its opening sentence, then the first few prizes from its list.
+function prizeLine(){
+  const lines = (db.settings.lbPrize || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const items = lines.filter(l => /^[•\-*]/.test(l)).map(l => l.replace(/^[•\-*]\s*/, '').replace(/\s*\([^)]*\)/g, '').replace(/\s+for (a|an|the|your)\b.*$/i, '').replace(/^(a|an|\d+)\s+/i, '').trim());
+  const intro = lines.filter(l => !/^[•\-*]/.test(l)).join(' ');
+  const some = items.slice(0, 3).join(', ') + (items.length > 3 ? ', and more' : '');
+  return `${intro}${some ? (intro ? ' ' : '') + 'Prizes include ' + some + '.' : ''} See them all and where you rank: ${SITE_URL}/#leaderboard`;
+}
 const mailExtrasPicked = () => ui.mail.extras || ['jobs', 'apply'];
 const mailExtrasShown = () => MAIL_EXTRAS.filter(x => !x[3] || x[3]());
 function mailExtrasText(){
   if (['staff', 'custom'].includes(ui.mail.aud)) return '';
-  const lines = mailExtrasShown().filter(x => mailExtrasPicked().includes(x[0])).map(x => '- ' + x[2]());
+  const picked = mailExtrasShown().filter(x => mailExtrasPicked().includes(x[0])).map(x => x[0]);
+  // The prize line already links the leaderboard, so it replaces the plain leaderboard line.
+  const lines = mailExtrasShown().filter(x => picked.includes(x[0]) && !(x[0] === 'points' && picked.includes('prize'))).map(x => '- ' + x[2]());
   return lines.length ? '\n\n---\n' + lines.join('\n') : '';
 }
 function mailText(){
