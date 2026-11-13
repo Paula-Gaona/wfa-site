@@ -83,6 +83,16 @@ function htmlEmail(text: string, button?: { label: string; url: string }, bodyHt
 // is a common phishing pattern, and university filters delete it.
 const fromAddress = () => ((Deno.env.get('MAIL_FROM') || '').match(/<([^>]+)>/)?.[1] || Deno.env.get('MAIL_FROM') || '').trim();
 
+// Up to 100 separate emails in one request (each person gets their own copy).
+async function resendBatch(emails: Record<string, unknown>[]) {
+  const r = await fetch('https://api.resend.com/emails/batch', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${Deno.env.get('RESEND_API_KEY')}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(emails.map((e) => ({ from: Deno.env.get('MAIL_FROM'), ...e }))),
+  });
+  return { ok: r.ok, detail: r.ok ? '' : await r.text() };
+}
+
 async function resend(payload: Record<string, unknown>) {
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -126,9 +136,20 @@ Deno.serve(async (req) => {
       const fromAddr = fromAddress();
 
       let sent = 0, failed = 0, lastError = '';
-      for (let i = 0; i < to.length; i += 45) {
+      const bodyHtml = html || htmlEmail(text, undefined, md ? mdToHtml(md) : undefined);
+      if (campaign) {
+        // Tracked emails (from the email builder): everyone gets their own copy, 100 per request, so Resend's
+        // delivered/opened/clicked reports count each person (email-events function, 91-email-stats.sql).
+        const tags = [{ name: 'campaign', value: campaign }];
+        for (let i = 0; i < to.length; i += 100) {
+          const chunk = to.slice(i, i + 100);
+          const r = await resendBatch(chunk.map((e) => ({ to: [e], subject, text, html: bodyHtml, tags })));
+          if (r.ok) sent += chunk.length; else { failed += chunk.length; lastError = r.detail; }
+          if (i + 100 < to.length) await new Promise((res) => setTimeout(res, 600));   // stay under Resend's rate limit
+        }
+      } else for (let i = 0; i < to.length; i += 45) {
         const chunk = to.slice(i, i + 45);
-        const r = await resend({ to: [fromAddr], bcc: chunk, subject, text, html: html || htmlEmail(text, undefined, md ? mdToHtml(md) : undefined), ...(campaign ? { tags: [{ name: 'campaign', value: campaign }] } : {}) });
+        const r = await resend({ to: [fromAddr], bcc: chunk, subject, text, html: bodyHtml });
         if (r.ok) sent += chunk.length; else { failed += chunk.length; lastError = r.detail; }
         if (i + 45 < to.length) await new Promise((res) => setTimeout(res, 600));   // stay under Resend's rate limit
       }
