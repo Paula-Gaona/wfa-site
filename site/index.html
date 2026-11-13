@@ -3997,9 +3997,13 @@ function outlookButtons(to){
 function eventBlock(){
   const list = sortedEvents().filter(e => (ui.mail.evs || []).includes(e.id));
   if (!list.length) return '';
-  return '\n\n## ' + (list.length === 1 ? 'Event' : 'Upcoming events') + '\n' + list.map(e =>
+  // One event goes straight in under its own title; several get an "Upcoming events" heading.
+  // Seat-limited events say so (or that they're full, with the waitlist).
+  const seats = e => !takesRsvps(e) || !e.cap ? '' : seatLeft(e) <= 0 ? '\n- Seats: Full. Join the waitlist on the event page.' : '\n- Seats: Limited, so RSVP early.';
+  const link = e => e.regMode === 'link' ? 'Details & registration' : takesRsvps(e) ? 'Details & RSVP' : 'Details';
+  return (list.length === 1 ? '\n' : '\n\n## Upcoming events\n') + list.map(e =>
     '\n### ' + e.title + '\n- When: ' + fmtDay(e.date) + (e.start ? ', ' + fmtTime(e.start) + (e.end ? ' to ' + fmtTime(e.end) : '') : '') +
-    (e.loc ? '\n- Where: ' + e.loc : '') + '\n- Details & RSVP: ' + eventLink(e.id) + (e.desc ? '\n' + e.desc.trim().split('\n').map(l => '> ' + l).join('\n') : '')).join('\n\n');
+    (e.loc ? '\n- Where: ' + e.loc : '') + seats(e) + '\n- ' + link(e) + ': ' + eventLink(e.id) + (e.desc ? '\n' + e.desc.trim().split('\n').map(l => '> ' + l).join('\n') : '')).join('\n\n');
 }
 function mailText(){
   const closing = fillMerge(ui.mail.closing || '').trim();
