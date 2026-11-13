@@ -247,6 +247,7 @@ main{padding-block:36px 64px}
 .helper.same{border-left-color:var(--brand)}
 .desc-preview{border:1px dashed var(--line);border-radius:var(--radius);padding:10px 12px;background:var(--surface,transparent)}
 .speaker-card{border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}
+.firm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
 .rsvp-times{border-left:4px solid var(--gold,#B8923A);padding:8px 12px;background:var(--tint,transparent);border-radius:2px}
 .sem-row{border-top:1px solid var(--line);padding-top:8px;display:flex;flex-direction:column;gap:6px}
 .role-list{margin:0;padding-left:1.2rem;display:flex;flex-direction:column;gap:6px}
@@ -4636,7 +4637,10 @@ function rqSeats(d){
 }
 // The most people expected: the seat limit, or the estimate when there's no limit.
 // Expected maximum attendance: with a seat limit, every RSVP plus the external guests (speakers, judges, panelists).
-const rqGuestCount = d => d.speaker === 'yes' ? Math.max(1, Math.min(10, +d.speakerCount || (d.speakers || []).length || 1)) : 0;
+// Career fairs list firms instead of people (up to 40); each firm's reps count toward attendance.
+const rqMaxGuests = d => d.fair ? 40 : 10;
+const rqGuestN = d => Math.max(1, Math.min(rqMaxGuests(d), +d.speakerCount || (d.speakers || []).length || 1));
+const rqGuestCount = d => d.speaker !== 'yes' ? 0 : d.fair ? (d.speakers || []).slice(0, rqGuestN(d)).reduce((t, f) => t + Math.max(1, +(f && f.reps) || 1), 0) + Math.max(0, rqGuestN(d) - (d.speakers || []).length) : rqGuestN(d);
 const rqWithGuests = (cap, d) => cap ? cap + rqGuestCount(d) : 0;
 const rqMaxPeople = (d, est) => est ? +d.estMax || 0 : (rqWithGuests(+((document.getElementById('ev-cap') || {}).value || 0), d) || +d.estMax || 0);
 // An approved guest's estimates, shown next to the matching fields when that guest is picked on an event.
@@ -4682,7 +4686,9 @@ function rqGuestsBox(e, cat){
   if (!needsSched(cat) || rqLocked(e && e.id)) return '';
   const d = rqState().d, src = rqHelperSource(d);
   if (GUEST_CATS.includes(cat)) d.speaker = 'yes';
-  const n = Math.max(1, Math.min(10, +d.speakerCount || (d.speakers || []).length || 1));
+  d.fair = cat === 'career_fair';
+  const n = rqGuestN(d);
+  if (d.fair) return rqFirmsBox(d, n);
   return `<div class="panel stack rq-guests" style="gap:10px;padding:12px">
       ${GUEST_CATS.includes(cat) ? '<div><strong>External guests</strong><div class="hint">Speakers, judges, recruiters, panelists, or anyone else from outside UVU.</div></div>'
         : `<label class="check"><input type="checkbox" data-rq="speaker" data-yesno="1" data-rr="1" ${d.speaker === 'yes' ? 'checked' : ''}> This event will have an external guest <span class="hint">A speaker, judge, recruiter, panelist, or anyone else from outside UVU.</span></label>`}
@@ -4695,6 +4701,17 @@ function rqGuestsBox(e, cat){
         <label>Speaking topic or role <span class="hint">Like “Building a fintech company” or “Judge”</span><input data-rq="speakers.${i}.topic" value="${esc(s.topic || '')}"></label><label>Bio<textarea rows="3" data-rq="speakers.${i}.bio">${esc(s.bio || '')}</textarea></label>
         <div class="grid2">${rqField(`speakers.${i}.email`, 'Email <span class="hint">Optional</span>', s.email, 'email', 'type="email" autocomplete="off"')}${rqField(`speakers.${i}.phone`, 'Phone <span class="hint">Optional</span>', s.phone, 'phone', 'type="tel" placeholder="(801) 555-0123"')}</div>
         <label class="check"><input type="checkbox" data-rq="speakers.${i}.show" ${s.show === false ? '' : 'checked'}> Show this guest on the event page <span class="hint">Name, job title, company, and bio. Contact info is never shown.</span></label></div>`; }).join('')}` : ''}</div>`;
+}
+// Career fairs: a list of firms instead of individual guests.
+function rqFirmsBox(d, n){
+  return `<div class="panel stack rq-guests" style="gap:10px;padding:12px">
+      <div><strong>Firms attending</strong><div class="hint">The companies coming to the fair. Only the firm name is required; the contact is for officers and is never shown.</div></div>
+      <label style="max-width:14rem">How many firms?<select data-rq="speakerCount" data-rr="1">${Array.from({ length: 40 }, (_, i) => i + 1).map(i => `<option ${n === i ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
+      ${Array.from({ length: n }, (_, i) => { const f = (d.speakers || [])[i] || {}; return `<div class="stack" style="gap:8px;border-top:1px solid var(--line);padding-top:10px"><strong>Firm ${i + 1}</strong>
+        <div class="grid2"><label>Firm name<input data-rq="speakers.${i}.name" value="${esc(f.name || '')}"></label><label>Website <span class="hint">Optional</span><input data-rq="speakers.${i}.url" value="${esc(f.url || '')}" placeholder="https://"></label></div>
+        <div class="grid2"><label>Hiring for <span class="hint">Optional, like “Internships, analysts”</span><input data-rq="speakers.${i}.topic" value="${esc(f.topic || '')}"></label><label>Reps coming <span class="hint">For the headcount</span><input type="number" min="1" max="20" data-rq="speakers.${i}.reps" value="${esc(f.reps || 1)}"></label></div>
+        <div class="grid2"><label>Contact name <span class="hint">Optional</span><input data-rq="speakers.${i}.contact" value="${esc(f.contact || '')}"></label>${rqField(`speakers.${i}.email`, 'Contact email <span class="hint">Optional</span>', f.email, 'email', 'type="email" autocomplete="off"')}</div>
+        <label class="check"><input type="checkbox" data-rq="speakers.${i}.show" ${f.show === false ? '' : 'checked'}> Show this firm on the event page <span class="hint">Uncheck it until they’ve confirmed.</span></label></div>`; }).join('')}</div>`;
 }
 // The form itself (inside the event editor). Locked while it's moving through approval. With est: the rough
 // estimates on an external guest request (same questions, no guests or RSVP timing).
@@ -4714,7 +4731,8 @@ function rqPanel(e, cat, opts = {}){
   const d = rqState().d, start = d.start || '18:00', capNow = (document.getElementById('ev-cap') || {}).value ?? ((e && e.cap) || 0);
   if (!est && GUEST_CATS.includes(cat)) d.speaker = 'yes';   // these always have external guests
   const notice = est ? '' : rqShortNotice(d, cat), lay = RQ_LAYOUTS.find(x => x[0] === d.layout);
-  const n = Math.max(1, Math.min(10, +d.speakerCount || (d.speakers || []).length || 1));
+  if (!est) d.fair = cat === 'career_fair';
+  const n = rqGuestN(d);
   const nLoc = Math.max(1, Math.min(5, +d.locCount || (d.locs || []).length || 1));
   d.sp = d.sp || {}; d.locs = d.locs || [];
   const seats = rqSeats(d), most = rqMaxPeople(d, est), short = seats && most && seats < most;
@@ -4808,9 +4826,9 @@ function rqProblems(d, cat, opts = {}){
     if (em) p.push('Sponsor email: ' + em[0]); if (ph) p.push('Sponsor phone: ' + ph[0]);
     addr(sp, 'the sponsoring organization');
   }
-  if (!est && d.speaker === 'yes' && (d.speakers || []).slice(0, +d.speakerCount || 1).filter(s => s && (s.name || '').trim()).length < (+d.speakerCount || 1)) p.push('Enter each external guest’s name (and their job title, company, topic, and bio if you have them).');
+  if (!est && d.speaker === 'yes' && (d.speakers || []).slice(0, +d.speakerCount || 1).filter(s => s && (s.name || '').trim()).length < (+d.speakerCount || 1)) p.push(d.fair ? 'Enter each firm’s name.' : 'Enter each external guest’s name (and their job title, company, topic, and bio if you have them).');
   if (!est && d.speaker === 'yes') (d.speakers || []).slice(0, +d.speakerCount || 1).forEach((s, i) => { if (!s) return;
-    const em = rqCheck('email', s.email), ph = rqCheck('phone', s.phone); if (em) p.push(`Guest ${i + 1} email: ${em[0]}`); if (ph) p.push(`Guest ${i + 1} phone: ${ph[0]}`); });
+    const em = rqCheck('email', s.email), ph = rqCheck('phone', s.phone); const who = d.fair ? 'Firm' : 'Guest'; if (em) p.push(`${who} ${i + 1} email: ${em[0]}`); if (ph) p.push(`${who} ${i + 1} phone: ${ph[0]}`); });
   if (d.av === 'yes' && !(d.avNeeds || '').trim()) p.push('Say what A/V equipment you need.');
   if (d.tech === 'yes'){ if ((+d.setup || 0) < 30) p.push('An AVSE technician needs at least 30 minutes of setup time.'); else if (!d.techTime) p.push('Choose when the AVSE technician should meet you.'); if (!['yes', 'no'].includes(d.techStay)) p.push('Answer: AVSE technician for the whole event?'); }
   if (!noLayout(d)){
@@ -4851,7 +4869,7 @@ function rqRows(e, r, est = false){
   const d = { ...rqDefaults(e), ...r.form }, yn = v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : '';
   const sp = d.sp || {}, lay = RQ_LAYOUTS.find(x => x[0] === d.layout);
   const speakers = (d.speakers || []).slice(0, +d.speakerCount || (d.speakers || []).length || 1).filter(Boolean)
-    .map((s, i) => `${i + 1}. ${s.name || ''}${[s.title || s.job, s.company].filter(Boolean).length ? ', ' + [s.title || s.job, s.company].filter(Boolean).join(', ') : ''}${s.guestId ? ' (already approved by UVU)' : ''}${s.topic ? '\nTopic or role: ' + s.topic : ''}${s.email || s.phone ? '\nContact: ' + [s.email, s.phone].filter(Boolean).join(' · ') : ''}${s.bio ? '\nBio: ' + s.bio : ''}`).join('\n\n');
+    .map((s, i) => d.fair ? `${i + 1}. ${s.name || ''}${s.reps > 1 ? ` (${s.reps} reps)` : ''}${s.topic ? '\nHiring for: ' + s.topic : ''}${s.url ? '\n' + s.url : ''}${s.contact || s.email ? '\nContact: ' + [s.contact, s.email].filter(Boolean).join(' · ') : ''}` : `${i + 1}. ${s.name || ''}${[s.title || s.job, s.company].filter(Boolean).length ? ', ' + [s.title || s.job, s.company].filter(Boolean).join(', ') : ''}${s.guestId ? ' (already approved by UVU)' : ''}${s.topic ? '\nTopic or role: ' + s.topic : ''}${s.email || s.phone ? '\nContact: ' + [s.email, s.phone].filter(Boolean).join(' · ') : ''}${s.bio ? '\nBio: ' + s.bio : ''}`).join('\n\n');
   const locs = offSite(d) ? (d.locs || []).slice(0, +d.locCount || 1).map((a, i) => `${i + 1}. ${a.name || ''}\n${addrLine(a)}`).join('\n\n') : '';
   const layout = noLayout(d) ? 'Not needed (' + (d.campus === 'off' ? 'off campus' : 'auditorium') + ')'
     : lay ? lay[1] + (lay[3] === 'chairs' ? `, ${d.chairs} chairs` : lay[3] === 'tables' ? `, ${d.tables} tables` : lay[3] === 'both' ? `, ${d.tables} tables, ${d.chairs} chairs` : '') : '';
@@ -4861,16 +4879,16 @@ function rqRows(e, r, est = false){
     ['Start and end times', `${fmtTime(d.start)} – ${fmtTime(d.end)}`], ['Setup time before', `${d.setup} minutes (from ${fmtTime(hhmmAdd(d.start, -(+d.setup || 0)))})`],
     ['Time needed after', `${d.after || 0} minutes (until ${fmtTime(hhmmAdd(d.end, +d.after || 0))})`],
     ...(d.campus === 'off' ? [] : [['Location type' + (d.campus === 'hybrid' ? ' (on-campus part)' : ''), d.locType], ['Ideal building', d.building], ['Specific room', d.room || 'No preference']]),
-    ['Event description', e.desc], ['Maximum attendees', e.cap ? String(rqWithGuests(e.cap, d)) + (rqGuestCount(d) ? ` (${e.cap} RSVPs + ${rqGuestCount(d)} external guest${rqGuestCount(d) === 1 ? '' : 's'})` : '') : `No RSVP limit; expecting up to ${d.estMax || '?'}`], ['Type of event', d.evType],
+    ['Event description', e.desc], ['Maximum attendees', e.cap ? String(rqWithGuests(e.cap, d)) + (rqGuestCount(d) ? ` (${e.cap} RSVPs + ${rqGuestCount(d)} ${d.fair ? 'firm rep' : 'external guest'}${rqGuestCount(d) === 1 ? '' : 's'})` : '') : `No RSVP limit; expecting up to ${d.estMax || '?'}`], ['Type of event', d.evType],
     ['External sponsor', d.sponsor === 'yes' ? `${sp.org || ''}\nContact: ${sp.name || ''}\n${sp.email || ''} · ${sp.phone || ''}\n${addrLine(sp)}` : yn(d.sponsor)],
-    ['Food, snacks, or beverages', yn(d.food)], ['Tablecloths', d.tablecloths === 'yes' ? 'Yes, ' + (d.clothColor || 'color not given') : yn(d.tablecloths)], ['External guests', d.speaker === 'yes' ? speakers : 'None'],
+    ['Food, snacks, or beverages', yn(d.food)], ['Tablecloths', d.tablecloths === 'yes' ? 'Yes, ' + (d.clothColor || 'color not given') : yn(d.tablecloths)], [d.fair ? 'Firms attending' : 'External guests', d.speaker === 'yes' ? speakers : 'None'],
     ['Additional A/V equipment', d.av === 'yes' ? 'Yes: ' + d.avNeeds : yn(d.av)],
     ['AVSE technician before the event', d.tech === 'yes' ? `Yes, at ${fmtTime(hhmmAdd(d.start, -(+d.techTime || 0)))} (${d.techTime} min before)` : yn(d.tech)],
     ...(d.tech === 'yes' ? [['AVSE technician for the whole event', yn(d.techStay)]] : []),
     ['Layout', layout, lay && lay[2] && !noLayout(d) ? lay[2] : '', d.layout === 'custom' ? d.layoutImg : null],
     ['Flyer or image', d.flyer ? d.flyer.name : 'None', '', d.flyer], ['Other details', d.other || 'None'],
     ...(est || e.cat === 'case_competition' ? [] : [['RSVPs open (for the website)', rqRsvpText(d)], ['Guest RSVPs (for the website)', rqGuestText(d)]])]
-    .filter(row => !(est && row[0] === 'External guests'));
+    .filter(row => !(est && ['External guests', 'Firms attending'].includes(row[0])));
 }
 function rqSummary(e, r, est = false){
   if (rqLegacy(r)) return `<p class="hint" style="margin:0">${LEGACY_NOTE}</p>`;
@@ -6110,7 +6128,8 @@ function eventInner(id, page){
       <dt>Where</dt><dd>${esc(e.loc)}</dd>${e.cat === 'officer_meeting' ? `<dt>Who</dt><dd>${meetingFor(e)}${session && can('officer') ? `<br><strong>${{ required: 'You’re required.', invited: 'You’re invited (optional).', '': 'You’re not expected at this one.' }[myMeetingStatus(e)]}</strong>` : ''}</dd>` : ''}${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : showRsvps(e) ? `<dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}` : !takesRsvps(e) ? `<dt>Registration</dt><dd>${e.regMode === 'link' ? 'On the host’s site' : 'None needed'}` : isPast(e) ? `<dt>Seats</dt><dd>${e.cap || 'No limit'}` : `<dt>Availability</dt><dd>${seatTag(e)}`}${hasStarted(e) && showRsvps(e) ?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
     ${e.cap && !isCase(e) && showRsvps(e) ? `<div class="meter"><span style="width:${Math.min(100,n/e.cap*100)}%"></span></div>` : ''}
     <p style="white-space:pre-wrap">${esc(e.desc)}</p>
-    ${(e.speakers || []).length ? `<div class="stack" style="gap:10px"><h3 style="margin:0">${e.speakers.length === 1 ? 'Guest' : 'Guests'}</h3>${e.speakers.map(sp => `<div class="speaker-card"><strong>${esc(sp.name)}</strong>${sp.title || sp.company ? `<div class="hint">${esc([sp.title, sp.company].filter(Boolean).join(', '))}</div>` : ''}${sp.bio ? `<p style="white-space:pre-wrap;margin:6px 0 0">${esc(sp.bio)}</p>` : ''}</div>`).join('')}</div>` : ''}
+    ${(e.speakers || []).some(sp => sp.firm) ? `<div class="stack" style="gap:10px"><h3 style="margin:0">Firms attending</h3><div class="firm-grid">${e.speakers.map(sp => `<div class="speaker-card">${sp.url ? `<a href="${esc(sp.url)}" target="_blank" rel="noopener"><strong>${esc(sp.name)}</strong> ↗</a>` : `<strong>${esc(sp.name)}</strong>`}${sp.bio ? `<div class="hint">Hiring for: ${esc(sp.bio)}</div>` : ''}</div>`).join('')}</div></div>`
+    : (e.speakers || []).length ? `<div class="stack" style="gap:10px"><h3 style="margin:0">${e.speakers.length === 1 ? 'Guest' : 'Guests'}</h3>${e.speakers.map(sp => `<div class="speaker-card"><strong>${esc(sp.name)}</strong>${sp.title || sp.company ? `<div class="hint">${esc([sp.title, sp.company].filter(Boolean).join(', '))}</div>` : ''}${sp.bio ? `<p style="white-space:pre-wrap;margin:6px 0 0">${esc(sp.bio)}</p>` : ''}</div>`).join('')}</div>` : ''}
     ${isCase(e) && !e.draft ? caseSection(e) : ''}
     ${checkin}
     ${rsvpTimesNote(e)}
@@ -8511,7 +8530,7 @@ async function handleSubmit(f, v, err){
     const waitFinal = evHideFinal(ui.editEvent ? evById(ui.editEvent) : null, e.cat), cur0 = evById(ui.editEvent) || {};
     // External guests shown on the event page: from the request (editable form, or the saved one once it's locked).
     if (needsSched(e.cat) && !ui.guestForm){ const rf = ui.rq && ui.rq.key === (ui.editEvent || 'new') && !rqLocked(ui.editEvent) ? ui.rq.d : (rqOf(ui.editEvent) || {}).form || {};
-      e.speakers = rf.speaker === 'yes' ? (rf.speakers || []).slice(0, +rf.speakerCount || 1).filter(x => x && (x.name || '').trim() && x.show !== false).map(x => ({ name: x.name.trim(), title: x.title || '', company: x.company || '', bio: x.bio || '' })) : []; }
+      e.speakers = rf.speaker === 'yes' ? (rf.speakers || []).slice(0, +rf.speakerCount || 1).filter(x => x && (x.name || '').trim() && x.show !== false).map(x => e.cat === 'career_fair' ? { name: x.name.trim(), firm: true, url: x.url ? jobUrl(x.url) : '', bio: x.topic || '' } : ({ name: x.name.trim(), title: x.title || '', company: x.company || '', bio: x.bio || '' })) : []; }
     if (waitFinal){ const d = rqState().d; e.date = [...(d.dates || [])].sort()[0] || cur0.date || dayOffset(21); e.start_time = d.start || cur0.start || '18:00'; e.end_time = d.end || cur0.end || '19:00'; e.loc = cur0.loc || 'TBD'; }
     if (!e.title || !e.date || !e.start_time || !e.end_time || !e.loc) return err('ev-err', 'Fill in the title, date, times, and location.');
     if (e.end_time <= e.start_time) return err('ev-err', 'End time must be after the start time.');
