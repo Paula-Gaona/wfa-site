@@ -778,6 +778,7 @@ async function load(){
     pointRules: sb.from('point_rules').select('*').order('created_at', { ascending: false }),
     myRuleAwards: signed && sb.from('point_awards').select('rule_id').eq('email', session || '').not('rule_id', 'is', null),
     ruleAwards: myRole === 'admin' && sb.from('point_awards').select('rule_id').not('rule_id', 'is', null),
+    ruleEarners: ['officer', 'admin'].includes(myRole) && sb.rpc('rule_earners'),
     pending: off && sb.from('pending_changes').select('*').order('created_at', { ascending: false }).limit(200),
     questions: off && sb.from('questions').select('*').order('created_at', { ascending: false }),
     contacts: off && sb.from('contacts').select('*').order('updated_at', { ascending: false }),
@@ -828,6 +829,8 @@ async function load(){
   db.lbHistory = Array.isArray(R.lbHistory) ? R.lbHistory : [];
   db.awards = R.awards || [];
   db.pointRules = Array.isArray(R.pointRules) ? R.pointRules : [];
+  // Who has earned each automatic point rule (officers; 88-rule-earners.sql), for the newsletter's bonus points.
+  db.ruleEarners = Array.isArray(R.ruleEarners) ? new Set(R.ruleEarners.map(a => a.rule_id + '|' + a.email)) : null;
   db.myRules = new Set((Array.isArray(R.myRuleAwards) ? R.myRuleAwards : []).map(a => a.rule_id));
   db.ruleCounts = {}; (Array.isArray(R.ruleAwards) ? R.ruleAwards : []).forEach(a => db.ruleCounts[a.rule_id] = (db.ruleCounts[a.rule_id] || 0) + 1);
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
@@ -4094,8 +4097,18 @@ function nlJobLine(j){
   return `- **${j.company}** · [${j.title}](${j.url}) (${JOB_KINDS[j.kind]}${where ? ', ' + where : ''})${j.closes_on ? ' · apply by ' + fmtDay(j.closes_on) : ''}`;
 }
 // Bonus points still open: point rules with a deadline that hasn't passed, plus the leaderboard prize.
-function nlPointsBlock(){
-  const rules = activeRules().filter(r => r.points > 0 && (!r.event_id || evById(r.event_id)) && (r.kind !== 'form' || svById(r.survey_id))).slice(0, 6), lines = rules.map(r => {
+// The bonus points someone can still earn: rules they haven't earned yet. Members skip "join" rules, and event
+// survey rules only show to people who checked in (only they can fill it out). People without a member profile,
+// or before 88-rule-earners.sql is run, see every open rule.
+function nlRulesFor(who){
+  const u = nlUser(who), earned = db.ruleEarners;
+  return activeRules().filter(r => r.points > 0 && (!r.event_id || evById(r.event_id)) && (r.kind !== 'form' || svById(r.survey_id))
+    && !(u && earned && earned.has(r.id + '|' + who))
+    && !(u && r.kind === 'join')
+    && !(u && r.kind === 'survey' && !attended(r.event_id).includes(who))).slice(0, 6);
+}
+function nlPointsBlock(who){
+  const rules = nlRulesFor(who), lines = rules.map(r => {
     const e = evById(r.event_id), sv = svById(r.survey_id), ev = e ? e.title : 'an event';
     const what = { join: 'Join the WFA', rsvp: `RSVP to ${ev}`, checkin: `Check in at ${ev}`, survey: `Fill out the survey for ${ev}`, form: `Answer the survey ${sv ? sv.title : ''}` }[r.kind];
     return `- **+${r.points}:** ${what} by ${fmtMtStamp(Date.parse(r.deadline))}${r.kind === 'rsvp' && r.revoke_noshow ? ' (revoked for no-shows)' : ''}`;
@@ -4168,7 +4181,7 @@ function nlHtml(who){
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${jobs.map(nlJobCard).join('')}</table>
     <div style="margin:16px 0 0">${nlButton('See every opening', SITE_URL + '/#jobs')}</div>`));
   if (ui.mail.nlPoints !== false){
-    const rules = activeRules().filter(r => r.points > 0 && (!r.event_id || evById(r.event_id)) && (r.kind !== 'form' || svById(r.survey_id))).slice(0, 6);
+    const rules = nlRulesFor(who);
     const prize = (db.settings.lbPrize || '').trim();
     if (rules.length || prize){
       const ruleRows = rules.map(r => { const e = evById(r.event_id), sv = svById(r.survey_id), ev = e ? e.title : 'an event';
@@ -4215,7 +4228,7 @@ function mailText(who){
   if (isNewsletter()){
     const u = nlUser(who), jobs = ui.mail.nlJobs === false ? [] : nlJobsFor(u);
     if (jobs.length) nl += `\n\n## Opportunities for you\n*${nlJobsNote(u)}*\n${jobs.map(nlJobLine).join('\n')}\n\nSee every opening on the job board: ${SITE_URL}/#jobs`;
-    if (ui.mail.nlPoints !== false) nl += nlPointsBlock();
+    if (ui.mail.nlPoints !== false) nl += nlPointsBlock(who);
   }
   return (fillMerge(ui.mail.body).trim() + eventBlock() + nl + (closing ? '\n\n---\n' + closing : '') + extras + footer).trim();
 }
@@ -6043,7 +6056,7 @@ function viewOfficer(){
         ${ui.sigDraft != null ? sigEditor() : ''}
         ${isNewsletter() ? `<fieldset class="stack" style="gap:8px"><legend>Newsletter sections</legend>
           <label class="check"><input type="checkbox" id="ml-nl-jobs" ${ui.mail.nlJobs === false ? '' : 'checked'}> Opportunities for you <span class="hint">${NL_JOBS} openings each: full-time for seniors, full-time and internships for grad students, internships for everyone else, matched to their career interests. Big-name firms first, then Utah, then the newest.</span></label>
-          <label class="check"><input type="checkbox" id="ml-nl-points" ${ui.mail.nlPoints === false ? '' : 'checked'}> Bonus points <span class="hint">Open point rules and the leaderboard prize.</span></label>
+          <label class="check"><input type="checkbox" id="ml-nl-points" ${ui.mail.nlPoints === false ? '' : 'checked'}> Bonus points <span class="hint">The open point rules each person hasn’t earned yet, and the leaderboard prize.</span></label>
           ${firmsEditor()}</fieldset>` : ''}
         ${['staff', 'custom'].includes(ui.mail.aud) ? '' : `<fieldset class="rq-q"><legend>Add to the end <span class="hint">Short lines above the unsubscribe note</span></legend><div class="row" style="gap:6px 16px;flex-wrap:wrap">${mailExtrasShown().filter(x => !(isNewsletter() && nlCovers(x[0]))).map(([k, l]) => `<label class="check"><input type="checkbox" class="ml-x" value="${k}" ${mailExtrasPicked().includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div>${appsOpen() ? '' : '<span class="hint">Officer applications show up here while they’re open.</span>'}</fieldset>`}
       </form>
