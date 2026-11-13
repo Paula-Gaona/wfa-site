@@ -779,6 +779,7 @@ async function load(){
     myRuleAwards: signed && sb.from('point_awards').select('rule_id').eq('email', session || '').not('rule_id', 'is', null),
     ruleAwards: myRole === 'admin' && sb.from('point_awards').select('rule_id').not('rule_id', 'is', null),
     ruleEarners: ['officer', 'admin'].includes(myRole) && sb.rpc('rule_earners'),
+    emailDrafts: ['officer', 'admin'].includes(myRole) && sb.from('email_drafts').select('id, created_by, updated_at, updated_by, subject, data, status, send_at, sent_at, recipients, sent_count, detail').order('updated_at', { ascending: false }).limit(60),
     pending: off && sb.from('pending_changes').select('*').order('created_at', { ascending: false }).limit(200),
     questions: off && sb.from('questions').select('*').order('created_at', { ascending: false }),
     contacts: off && sb.from('contacts').select('*').order('updated_at', { ascending: false }),
@@ -831,6 +832,7 @@ async function load(){
   db.pointRules = Array.isArray(R.pointRules) ? R.pointRules : [];
   // Who has earned each automatic point rule (officers; 88-rule-earners.sql), for the newsletter's bonus points.
   db.ruleEarners = Array.isArray(R.ruleEarners) ? new Set(R.ruleEarners.map(a => a.rule_id + '|' + a.email)) : null;
+  db.emailDrafts = Array.isArray(R.emailDrafts) ? R.emailDrafts : [];   // email builder drafts and scheduled sends (89)
   db.myRules = new Set((Array.isArray(R.myRuleAwards) ? R.myRuleAwards : []).map(a => a.rule_id));
   db.ruleCounts = {}; (Array.isArray(R.ruleAwards) ? R.ruleAwards : []).forEach(a => db.ruleCounts[a.rule_id] = (db.ruleCounts[a.rule_id] || 0) + 1);
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
@@ -6027,9 +6029,9 @@ function viewOfficer(){
 
   else if (T === 'email'){
     const to = audienceEmails(ui.mail.aud);
-    body = `<div class="split">
+    body = `${mailDraftsPanel()}<div class="split">
       <form class="panel stack" id="f-mail">
-        <h3>Email draft builder</h3>
+        <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">Email draft builder</h3>${ui.mailDraftId ? '<span class="row" style="gap:6px;align-items:center"><span class="tag">Editing a saved draft</span><button type="button" class="btn ghost small" data-act="mail-new">Start a new email</button></span>' : ''}</div>
         <div class="row" style="gap:6px"><span class="hint">Start from:</span>${Object.entries(MAIL_TEMPLATES).filter(([k]) => k !== 'dues' || DUES_ENABLED).map(([k,[l]]) => `<button type="button" class="btn ghost small" data-act="mail-tpl" data-tpl="${k}">${l}</button>`).join('')}</div>
         <fieldset class="rq-q"><legend>Layout</legend><div class="row" style="gap:6px 18px;flex-wrap:wrap">
           <label class="check"><input type="radio" name="ml-layout" value="regular" ${isNewsletter() ? '' : 'checked'}> Regular email</label>
@@ -6077,7 +6079,15 @@ function viewOfficer(){
           <button class="btn ghost" data-act="mail-copy" data-what="subject">Copy subject</button>
           <button class="btn ghost" data-act="mail-copy" data-what="body">Copy message</button>
         </div>
-        <p class="hint">“Send from the club address” sends from noreply@wolverinefinanceassociation.org with everyone in BCC. It reaches Gmail and other personal addresses, but UVU currently deletes it from @uvu.edu inboxes.</p>
+        <div class="panel stack" style="gap:8px">
+          <strong>Save or send later</strong>
+          <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap">
+            <button class="btn ghost" data-act="mail-save">${ui.mailDraftId ? 'Save changes to the draft' : 'Save as a draft'}</button>
+            <label style="margin:0">Send at <span class="hint">Mountain Time</span><input id="ml-when" type="datetime-local"></label>
+            <button class="btn" data-act="mail-schedule" ${to.length ? '' : 'disabled'}>Schedule</button></div>
+          <span class="hint">Scheduled emails go out from the club address within about 10 minutes of the time you pick. Until then, cancel or edit them in “Drafts and scheduled emails” above. Each person’s email is prepared when you schedule it.</span>
+        </div>
+        <p class="hint">“Send from the club address” sends from noreply@wolverinefinanceassociation.org. Send yourself a test first to make sure it reaches your inbox.</p>
       </section></div>`;
   }
 
@@ -8154,6 +8164,15 @@ document.addEventListener('click', async ev => {
       ta.focus(); ta.dispatchEvent(new Event('input', { bubbles: true }));
       break; }
     case 'mail-send': await sendMail(); break;
+    case 'mail-save': await saveMailDraft(); break;
+    case 'mail-schedule': await scheduleMail(); break;
+    case 'mail-new': ui.mailDraftId = null; ui.mail = MAIL_BLANK(); render(); break;
+    case 'mdraft-open': case 'mdraft-copy': { const d = (db.emailDrafts || []).find(x => x.id === id); if (d) openMailDraft(d, a === 'mdraft-copy'); break; }
+    case 'mdraft-edit': { const d = (db.emailDrafts || []).find(x => x.id === id); if (!d || !(await unscheduleMail(id))) break;
+      await logChange('Unscheduled the email “' + (d.subject || '') + '” to edit it'); await load(); openMailDraft(d); toast('It’s a draft again (not scheduled). Make your changes, then schedule it again.'); break; }
+    case 'mdraft-cancel': { const d = (db.emailDrafts || []).find(x => x.id === id); if (!(await unscheduleMail(id))) break;
+      await logChange('Canceled the scheduled email “' + ((d && d.subject) || '') + '”'); await load(); render(); toast('Canceled. It’s saved as a draft.'); break; }
+    case 'mdraft-del': await act(async () => { must(await sb.from('email_drafts').delete().eq('id', id)); if (ui.mailDraftId === id) ui.mailDraftId = null; }, 'Draft deleted'); break;
     case 'firms-edit': readMail(); ui.firmsEdit = true; render(); break;
     case 'firms-close': readMail(); ui.firmsEdit = false; render(); break;
     case 'firms-save': { readMail(); const rows = [];
@@ -8290,13 +8309,103 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape'){ closeModal(); closeNavMenu(); }
   if (e.key === 'Enter' && /-major-in$/.test(e.target.id || '')){ e.preventDefault(); addMajor(e.target.id.split('-')[0]); }
 });
+/* ---------- Email drafts and scheduled sends (89-email-drafts-and-scheduling.sql) ---------- */
+// Officers share one list of saved drafts and scheduled emails. A scheduled email is prepared when it's scheduled
+// (one email per person, so newsletters keep each person's picks); the auto-emails function sends it when it's due
+// (it runs every 10 minutes). Until then it can be canceled or edited.
+const MAIL_BLANK = () => ({ aud: 'all', ev: '', subject: '', body: '', closing: '', evs: [] });
+// The standard look of club-address emails (the same as invite-officer's htmlEmail), for scheduled regular emails.
+function stdEmailHtml(md){
+  return `<div style="font-family:Arial,Helvetica,sans-serif;width:100%;color:#0f1511">
+  <div style="background:#275D38;color:#ffffff;padding:14px 20px;font-weight:bold;letter-spacing:.04em;text-align:center">WOLVERINE FINANCE ASSOCIATION</div>
+  <div style="padding:20px;font-size:15px;line-height:1.55">${mdToHtml(md)}</div>
+  <div style="padding:0 20px 20px;font-size:12px;color:#56655a">Wolverine Finance Association &middot; Utah Valley University</div></div>`;
+}
+const draftsMissing = err => /email_drafts|email_outbox/.test((err && err.message) || '') ? 'Drafts and scheduling aren’t set up yet. Run 89-email-drafts-and-scheduling.sql in Supabase.' : errMsg(err);
+// Problems that stop an email from going out (the same checks as sending now). Empty when it's ready.
+function mailProblem(to, subject, text){
+  if (ui.mail.aud === 'custom' && mailCustom().bad.length) return 'Fix the email addresses that don’t look right first.';
+  if (!to.length) return 'No one is in that group.';
+  if (!subject || !text) return 'Add a subject and a message.';
+  if (/\{(event|date|time|location|link)\}/.test(subject + text)) return 'Pick an event, or remove {event}, {date}, {time}, {location}, and {link} from the message.';
+  return '';
+}
+async function saveMailDraft(quiet){
+  readMail();
+  const { previewAs, ...data } = ui.mail, row = { subject: (ui.mail.subject || '').trim().slice(0, 300), data, updated_at: new Date().toISOString(), updated_by: session };
+  let r = null;
+  if (ui.mailDraftId){
+    r = await sb.from('email_drafts').update(row).eq('id', ui.mailDraftId).in('status', ['draft', 'failed']).select('id');
+    if (!r.error && !(r.data || []).length) ui.mailDraftId = null;   // it was sent or scheduled meanwhile: save a new copy
+  }
+  if (!ui.mailDraftId){ r = await sb.from('email_drafts').insert({ ...row, status: 'draft' }).select('id').single(); if (!r.error) ui.mailDraftId = r.data.id; }
+  if (r.error){ toast(draftsMissing(r.error)); return false; }
+  if (!quiet){ toast('Draft saved'); await load(); render(); }
+  return true;
+}
+async function scheduleMail(){
+  readMail();
+  const at = mtFromInput((document.getElementById('ml-when') || {}).value || '');
+  if (!at) return toast('Pick the day and time to send it (Mountain Time).');
+  if (Date.parse(at) < Date.now() + 5 * 60e3) return toast('Pick a time at least 5 minutes from now, or send it now instead.');
+  const to = audienceEmails(ui.mail.aud), subject = fillMerge(ui.mail.subject).trim(), md = mailText(), text = mdToPlain(md);
+  const bad = mailProblem(to, subject, text); if (bad) return toast(bad);
+  toast(`Preparing ${to.length} email${to.length === 1 ? '' : 's'}…`);
+  const rows = to.map(e => { const name = firstNameOf(e), mdi = isNewsletter() ? mailText(e) : md;
+    return { to_email: e, subject: withFirst(subject, name), text: withFirst(mdToPlain(mdi), name), html: withFirst(isNewsletter() ? nlHtml(e) : stdEmailHtml(mdi), name), check_opt_out: ui.mail.aud !== 'staff' }; });
+  if (!(await saveMailDraft(true))) return;
+  const id = ui.mailDraftId;
+  await sb.from('email_outbox').delete().eq('draft_id', id);
+  for (let i = 0; i < rows.length; i += 100){
+    const r = await sb.from('email_outbox').insert(rows.slice(i, i + 100).map(x => ({ ...x, draft_id: id })));
+    if (r.error){ await sb.from('email_outbox').delete().eq('draft_id', id); return toast(draftsMissing(r.error)); }
+  }
+  const u = await sb.from('email_drafts').update({ status: 'scheduled', send_at: at, recipients: rows.length, detail: '' }).eq('id', id);
+  if (u.error){ await sb.from('email_outbox').delete().eq('draft_id', id); return toast(draftsMissing(u.error)); }
+  await logChange(`Scheduled the email “${subject}” to ${rows.length} ${rows.length === 1 ? 'person' : 'people'} for ${fmtMtStamp(Date.parse(at))}`);
+  ui.mailDraftId = null; ui.mail = MAIL_BLANK(); await load(); render();
+  toast(`Scheduled for ${fmtMtStamp(Date.parse(at))}. You can cancel or edit it until then.`);
+}
+// Stops a scheduled email (it goes back to being a draft). False if it already started sending.
+async function unscheduleMail(id){
+  const r = await sb.from('email_drafts').update({ status: 'draft', send_at: null }).eq('id', id).eq('status', 'scheduled').select('id');
+  if (r.error){ toast(draftsMissing(r.error)); return false; }
+  if (!(r.data || []).length){ toast('Too late: it’s already sending or sent.'); await load(); render(); return false; }
+  await sb.from('email_outbox').delete().eq('draft_id', id);
+  return true;
+}
+function openMailDraft(d, asCopy){
+  ui.mail = { ...MAIL_BLANK(), ...(d.data || {}) }; ui.mailDraftId = asCopy ? null : d.id;
+  ui.officerTab = 'email'; render(); document.getElementById('f-mail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+async function markDraftSent(n){
+  if (!ui.mailDraftId || !n) return;
+  await sb.from('email_drafts').update({ status: 'sent', sent_at: new Date().toISOString(), sent_count: n, recipients: n }).eq('id', ui.mailDraftId);
+  ui.mailDraftId = null;
+}
+// The list above the builder: scheduled emails (cancel or edit), saved drafts, and the last few sent.
+function mailDraftsPanel(){
+  const ds = db.emailDrafts || [];
+  const sched = ds.filter(d => ['scheduled', 'sending'].includes(d.status)).sort((a, b) => String(a.send_at).localeCompare(String(b.send_at)));
+  const drafts = ds.filter(d => ['draft', 'failed'].includes(d.status)), sent = ds.filter(d => d.status === 'sent').sort((a, b) => String(b.sent_at).localeCompare(String(a.sent_at))).slice(0, 5);
+  const who = d => esc(userName(d.updated_by || d.created_by) || d.updated_by || d.created_by || '');
+  const title = d => esc(d.subject || '(No subject)') + (d.data && d.data.layout === 'newsletter' ? ' <span class="tag">Newsletter</span>' : '');
+  const row = (d, info, btns) => `<div class="list-row"><div><div class="ev-title">${title(d)}</div><div class="ev-sub">${info}</div></div><div class="row" style="gap:6px">${btns}</div></div>`;
+  if (!ds.length) return '';
+  return `<section class="panel stack" style="gap:10px;margin-bottom:18px">
+    <div class="section-head"><h3 style="margin:0">Drafts and scheduled emails</h3><span class="muted">Shared with all officers</span></div>
+    ${sched.length ? `<strong>Scheduled</strong>${sched.map(d => row(d, d.status === 'sending' ? '<span class="tag warn">Sending now</span>' : `Sends ${fmtMtStamp(Date.parse(d.send_at))} to ${d.recipients} ${d.recipients === 1 ? 'person' : 'people'} · scheduled by ${who(d)}`,
+      d.status === 'sending' ? '' : `<button class="btn ghost small" data-act="mdraft-edit" data-id="${d.id}">Edit</button>${armBtn('mds-' + d.id, 'Cancel send', 'Click again to cancel it', 'mdraft-cancel', d.id)}`)).join('')}` : ''}
+    ${drafts.length ? `<strong>Drafts</strong>${drafts.map(d => row(d, `${d.status === 'failed' ? `<span class="tag warn">Didn’t send${d.detail ? ': ' + esc(d.detail) : ''}</span> · ` : ''}Saved ${fmtMtStamp(Date.parse(d.updated_at))} by ${who(d)}`,
+      `<button class="btn ghost small" data-act="mdraft-open" data-id="${d.id}">${ui.mailDraftId === d.id ? 'Open (editing)' : 'Open'}</button>${delBtn('mdd-' + d.id, 'Delete', 'mdraft-del', d.id)}`)).join('')}` : ''}
+    ${sent.length ? `<strong>Recently sent</strong>${sent.map(d => row(d, `Sent ${fmtMtStamp(Date.parse(d.sent_at))} to ${d.sent_count} ${d.sent_count === 1 ? 'person' : 'people'}${d.detail ? ' · ' + esc(d.detail) : ''}`,
+      `<button class="btn ghost small" data-act="mdraft-copy" data-id="${d.id}">Use as a new draft</button>`)).join('')}` : ''}
+  </section>`;
+}
 async function sendMail(){
   readMail();
   const to = audienceEmails(ui.mail.aud), subject = fillMerge(ui.mail.subject).trim(), md = mailText(), text = mdToPlain(md);
-  if (ui.mail.aud === 'custom' && mailCustom().bad.length) return toast('Fix the email addresses that don’t look right first.');
-  if (!to.length) return toast('No one is in that group.');
-  if (!subject || !text) return toast('Add a subject and a message.');
-  if (/\{(event|date|time|location|link)\}/.test(subject + text)) return toast('Pick an event, or remove {event}, {date}, {time}, {location}, and {link} from the message.');
+  const bad = mailProblem(to, subject, text); if (bad) return toast(bad);
   if (usesFirst() || isNewsletter()){
     // Personalized: one email per person, a little apart to stay under the email service's rate limit.
     let sent = 0, failed = 0, lastErr = '';
@@ -8309,13 +8418,13 @@ async function sendMail(){
       if (i < to.length - 1) await new Promise(r => setTimeout(r, 600));
     }
     toast(failed ? `Sent to ${sent}. ${failed} couldn’t be sent${lastErr ? ': ' + lastErr : '.'}` : `Sent ${sent} personalized email${sent === 1 ? '' : 's'}`);
-    await load(); render(); return;
+    await markDraftSent(sent); await load(); render(); return;
   }
   toast('Sending…');
   const { data, error } = await sb.functions.invoke('invite-officer', { body: { action: 'send', to, subject, text, md } });
   if (error){ let m = error.message; try { const j = await error.context.json(); m = j.error || m; } catch(_){} return toast('Not sent: ' + m); }
   toast(data.failed ? `Sent to ${data.sent}. ${data.failed} couldn’t be sent.` : `Sent to ${data.sent} ${data.sent === 1 ? 'person' : 'people'}`);
-  await load(); render();
+  await markDraftSent(data.sent); await load(); render();
 }
 
 /* ---------- Inputs ---------- */

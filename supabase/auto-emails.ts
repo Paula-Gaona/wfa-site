@@ -14,6 +14,7 @@
 //   * survey reminders at the times an officer picked in the survey builder, to members who haven't answered, with the
 //     points they can earn (see 74-survey-reminders.sql)
 //   * (not an email) applies the automatic leaderboard point rules each run (see 56-point-rules.sql)
+//   * emails officers scheduled in the email builder, once their time comes (see 89-email-drafts-and-scheduling.sql)
 //   * a summary email when chat messages sit unread for over an hour (see 42-chats.sql; works even when the
 //     event emails are off)
 // Each member chooses email and/or notification per kind in Notification settings (members.notify). By default,
@@ -137,12 +138,48 @@ async function sendPush(db: any, to: string[], title: string, body: string, url:
   return reached;
 }
 
+// Scheduled emails from the email builder (89-email-drafts-and-scheduling.sql): each one's emails were prepared when
+// it was scheduled (one per person). Sends any that are due, 100 at a time, skipping anyone who has since turned off
+// club emails. Claiming a draft ("scheduled" -> "sending") first means it can't go out twice, and an officer who
+// cancels it before then stops it.
+// deno-lint-ignore no-explicit-any
+async function sendScheduled(db: any) {
+  const { data: due } = await db.from('email_drafts').update({ status: 'sending' }).eq('status', 'scheduled')
+    .lte('send_at', new Date().toISOString()).select('id, subject');
+  let total = 0;
+  for (const d of due || []) {
+    const { data: rows } = await db.from('email_outbox').select('id, to_email, subject, text, html, check_opt_out').eq('draft_id', d.id).is('sent_at', null);
+    const list = rows || [];
+    const { data: off } = await db.from('members').select('email').eq('email_opt_in', false).in('email', list.map((r: { to_email: string }) => r.to_email));
+    const offSet = new Set((off || []).map((m: { email: string }) => m.email));
+    const go = list.filter((r: { to_email: string; check_opt_out: boolean }) => !(r.check_opt_out && offSet.has(r.to_email)));
+    let ok = 0, fail = 0, last = '';
+    for (let i = 0; i < go.length; i += 100) {
+      const chunk = go.slice(i, i + 100);
+      const r = await resendBatch(chunk.map((m: { to_email: string; subject: string; text: string; html: string }) => ({ to: [m.to_email], subject: m.subject, text: m.text, html: m.html })));
+      const ids = chunk.map((m: { id: number }) => m.id);
+      if (r.ok) { ok += chunk.length; await db.from('email_outbox').update({ sent_at: new Date().toISOString() }).in('id', ids); }
+      else { fail += chunk.length; last = r.detail; await db.from('email_outbox').update({ error: r.detail.slice(0, 500) }).in('id', ids); }
+      if (i + 100 < go.length) await new Promise((res) => setTimeout(res, 600));
+    }
+    const skipped = list.length - go.length;
+    const detail = [skipped ? `${skipped} turned off club emails` : '', fail ? `${fail} failed: ${last}` : ''].filter(Boolean).join('; ').slice(0, 500);
+    await db.from('email_drafts').update({ status: ok || !go.length ? 'sent' : 'failed', sent_at: new Date().toISOString(), sent_count: ok, detail }).eq('id', d.id);
+    await db.from('change_log').insert({ who: 'scheduled email', text: `Sent the scheduled email "${d.subject}" to ${ok} ${ok === 1 ? 'person' : 'people'}${fail ? ` (${fail} failed)` : ''}` });
+    total += ok;
+  }
+  return total;
+}
+
 Deno.serve(async () => {
   try {
     const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
     const site = (Deno.env.get('SITE_URL') || '').replace(/\/+$/, '');
     const { data: st } = await db.from('settings').select('auto_email').eq('id', 1).single();
     const cfg = st?.auto_email;
+    // Scheduled emails from the email builder go out first, whether or not the automatic emails are on.
+    let scheduled = 0;
+    try { scheduled = await sendScheduled(db); } catch (_) { /* not set up yet (89-email-drafts-and-scheduling.sql) */ }
 
     // Members, their choices, and who has a device signed up for notifications.
     const { data: members } = await db.from('members').select('email, email_opt_in, first, notify, year');
@@ -571,7 +608,7 @@ ${lastNote}`
       await db.from('change_log').insert({ who: 'automatic emails', text: `Sent "${j.subject}" to ${j.emailTo.length} ${j.emailTo.length === 1 ? 'person' : 'people'}${fail ? ' (some failed)' : ''}` });
       results.push(j.kind);
     }
-    return json({ ok: true, sent: results.length, chat_alerts: chatAlerts });
+    return json({ ok: true, sent: results.length, chat_alerts: chatAlerts, scheduled });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
