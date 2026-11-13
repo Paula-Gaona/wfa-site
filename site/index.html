@@ -4057,9 +4057,12 @@ function mailExtrasText(){
 // Big-name firms (87-notable-firms.sql). Postings from these firms are picked first for the newsletter.
 const FIRM_KINDS = { wall_street: 'Wall Street banks and boutiques', buy_side: 'Private equity, hedge funds, and asset managers', big4: 'Big 4 accounting', consulting: 'Consulting', big_company: 'Big companies (Fortune 500 and big private companies)', utah: 'Notable Utah employers' };
 const firmNorm = s => ' ' + String(s || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
+let firmCache = { src: null, list: [], hits: new Map() };
 function firmOf(company){
-  const c = firmNorm(company);
-  return (db.firms || []).find(f => [f.name, ...(f.aliases || [])].some(n => n && c.includes(firmNorm(n))));
+  if (firmCache.src !== db.firms) firmCache = { src: db.firms, list: (db.firms || []).map(f => ({ f, names: [f.name, ...(f.aliases || [])].filter(Boolean).map(firmNorm) })), hits: new Map() };
+  const key = String(company || '');
+  if (!firmCache.hits.has(key)){ const c = firmNorm(key); firmCache.hits.set(key, (firmCache.list.find(x => x.names.some(n => c.includes(n))) || {}).f || null); }
+  return firmCache.hits.get(key);
 }
 // Which postings someone gets: seniors full-time; grad students full-time, then internships; earlier years internships.
 // No year set: both. No career interests: a general mix (big names, Utah, newest).
@@ -4074,7 +4077,8 @@ function nlJobsFor(u){
   const score = j => (likes.size && (j.careers || []).some(c => likes.has(jobCareerName(c))) ? 100 : 0)
     + (kinds.length > 1 && j.kind === kinds[0] ? 40 : 0) + ({ wall_street: 25, buy_side: 25, big4: 20, consulting: 20, big_company: 18 }[(firmOf(j.company) || {}).kind] || 0)
     + ((j.states || []).includes('UT') || (firmOf(j.company) || {}).kind === 'utah' ? 10 : 0);
-  const sorted = open.sort((a, b) => score(b) - score(a) || String(b.created_at).localeCompare(String(a.created_at)));
+  const sc = new Map(open.map(j => [j, score(j)]));
+  const sorted = open.sort((a, b) => sc.get(b) - sc.get(a) || String(b.created_at).localeCompare(String(a.created_at)));
   const per = {}, out = [];
   for (const j of sorted){ const k = j.company.toLowerCase(); if ((per[k] || 0) >= 2) continue; per[k] = (per[k] || 0) + 1; out.push(j); if (out.length >= NL_JOBS) break; }
   return out;
@@ -4246,6 +4250,24 @@ function sigEditor(){
     <div class="row" style="gap:6px"><button type="button" class="btn small" data-act="sig-save">Save signature</button><button type="button" class="btn ghost small" data-act="sig-default">Use the built-in one</button><button type="button" class="btn ghost small" data-act="sig-cancel">Cancel</button></div>
   </div>`;
 }
+// Redraws the preview (and the Outlook buttons) once typing pauses, instead of on every keystroke.
+let mailPrevTimer = null;
+function refreshMailPreview(now){
+  clearTimeout(mailPrevTimer);
+  const go = () => {
+    const box = document.getElementById('ml-preview'); if (!box) return;
+    if (isNewsletter()){
+      const old = box.querySelector('.nl-frame'), tmp = document.createElement('div'); tmp.innerHTML = mailPreview();
+      const fresh = tmp.querySelector('.nl-frame');
+      if (old && fresh){ if (old.getAttribute('srcdoc') !== fresh.getAttribute('srcdoc')) old.setAttribute('srcdoc', fresh.getAttribute('srcdoc')); fresh.replaceWith(old); }
+      box.replaceChildren(...tmp.childNodes);
+    } else {
+      box.innerHTML = mailPreview();
+      const ob = document.getElementById('ml-outlook'); if (ob) ob.innerHTML = outlookButtons(audienceEmails(ui.mail.aud));
+    }
+  };
+  if (now) go(); else mailPrevTimer = setTimeout(go, isNewsletter() ? 500 : 200);
+}
 function mailPreview(){
   const to = audienceEmails(ui.mail.aud), personal = usesFirst() || isNewsletter();
   const who = isNewsletter() && to.includes(ui.mail.previewAs) ? ui.mail.previewAs : to[0], name = who ? firstNameOf(who) : 'Sam', u = nlUser(who);
@@ -4257,7 +4279,7 @@ function mailPreview(){
         <span class="hint">${u ? esc([u.year || 'No year set', (u.interests || []).length ? (u.interests || []).join(', ') : 'no career interests'].join(' · ')) : 'No member profile, so they get the general picks.'}</span></div>`
       : personal ? `<div class="notice" style="margin:0">Personalized: each person gets their own email with their first name. Showing how it looks for ${esc(name)}.</div>` : ''}
     ${isNewsletter() ? `<iframe class="nl-frame" title="Newsletter preview" srcdoc="${esc(withFirst(nlHtml(who), name))}" style="width:100%;height:1400px;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>` : ''}
-    <div class="mail-html" ${isNewsletter() ? 'hidden' : ''}>${mdToHtml(withFirst(mailText(who), name)) || '<span class="muted">Message preview appears here.</span>'}</div>
+    <div class="mail-html" ${isNewsletter() ? 'hidden' : ''}>${isNewsletter() ? '' : mdToHtml(withFirst(mailText(who), name)) || '<span class="muted">Message preview appears here.</span>'}</div>
   </div>`;
 }
 function thumbsHtml(){
@@ -8303,9 +8325,9 @@ document.addEventListener('input', e => {
   if (id === 'aw-search'){ ui.awPts = document.getElementById('aw-pts').value; ui.awReason = document.getElementById('aw-reason').value; ui.awSearch = e.target.value; rerenderKeepFocus(id); }
   if (id === 'log-search'){ ui.logSearch = e.target.value; rerenderKeepFocus(id); }
   if (['an-title','an-body'].includes(id)) updateAnnPreview();
-  if (id === 'ml-custom'){ readMail(); mailCountSync(); document.getElementById('ml-preview').innerHTML = mailPreview(); document.getElementById('ml-outlook').innerHTML = outlookButtons(audienceEmails(ui.mail.aud)); }
+  if (id === 'ml-custom'){ readMail(); mailCountSync(); refreshMailPreview(); }
   if (id === 'ml-sig'){ ui.sigDraft = e.target.value; document.getElementById('ml-sig-prev').innerHTML = mdToHtml(sigFill(ui.sigDraft)); }
-  if (['ml-subject','ml-body','ml-closing'].includes(id)){ readMail(); document.getElementById('ml-preview').innerHTML = mailPreview(); document.getElementById('ml-outlook').innerHTML = outlookButtons(audienceEmails(ui.mail.aud)); }
+  if (['ml-subject','ml-body','ml-closing'].includes(id)){ readMail(); refreshMailPreview(); }
   if (['qr-text', 'qr-name'].includes(id)){ ui.qr[id === 'qr-text' ? 'text' : 'name'] = e.target.value; clearTimeout(drawQrTool.t); drawQrTool.t = setTimeout(drawQrTool, 250); }
   if (id === 'dc-body'){ const x = db.apps.find(a => a.id === (ui.declineList || [])[0]); if (x) document.getElementById('dc-preview').textContent = fillDecline(e.target.value, x); }
 });
@@ -8316,8 +8338,8 @@ document.addEventListener('change', async e => {
   const id = e.target.id;
   if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
   if (e.target.name === 'ml-layout'){ readMail(); render(); return; }
-  if (id === 'ml-as'){ ui.mail.previewAs = e.target.value; document.getElementById('ml-preview').innerHTML = mailPreview(); return; }
-  if (['ml-nl-jobs', 'ml-nl-points'].includes(id)){ readMail(); document.getElementById('ml-preview').innerHTML = mailPreview(); return; }
+  if (id === 'ml-as'){ ui.mail.previewAs = e.target.value; refreshMailPreview(true); return; }
+  if (['ml-nl-jobs', 'ml-nl-points'].includes(id)){ readMail(); refreshMailPreview(true); return; }
   if (['ml-aud','ml-ev'].includes(id)){ readMail(); if (id === 'ml-aud' && /^(nosurvey|att|noshow|rsvp|norsvp|teams|agents):/.test(ui.mail.aud)) ui.mail.ev = ui.mail.aud.split(':')[1]; render(); }
   if (id === 'qr-size'){ ui.qr.size = +e.target.value; drawQrTool(); }
   if (id === 'qr-pick' && e.target.value){
@@ -8378,7 +8400,7 @@ document.addEventListener('change', async e => {
     document.querySelectorAll('[data-ways]').forEach(d => d.hidden = d.dataset.ways !== (firm ? 'firm' : 'professional'));
     document.getElementById('p-type-hint').textContent = firm ? 'Recruiting, career fairs, office visits, sponsorships, or case competitions.' : 'Speaking, mentoring, or helping students one-on-one.';
   }
-  if (e.target.classList && (e.target.classList.contains('ml-evs') || e.target.classList.contains('ml-x'))){ readMail(); document.getElementById('ml-preview').innerHTML = mailPreview(); document.getElementById('ml-outlook').innerHTML = outlookButtons(audienceEmails(ui.mail.aud)); }
+  if (e.target.classList && (e.target.classList.contains('ml-evs') || e.target.classList.contains('ml-x'))){ readMail(); refreshMailPreview(true); }
   if (id === 'avail-who'){ ui.availWho = e.target.value; ui.availPick = null; render(); }
   if (id === 'tk-mine'){ ui.tasksMine = e.target.checked; render(); }
   if (id === 'ct-mine'){ ui.ct.mine = e.target.checked; render(); }
