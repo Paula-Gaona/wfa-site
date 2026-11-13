@@ -846,7 +846,7 @@ async function load(){
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
-    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, showRsvps:e.show_rsvps !== false, checkinOpenedAt:e.checkin_opened_at || null, regMode:e.reg_mode || 'rsvp', regUrl:e.reg_url || '', speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
+    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, showRsvps:e.show_rsvps !== false, checkinOpenedAt:e.checkin_opened_at || null, regMode:e.reg_mode || 'rsvp', regUrl:e.reg_url || '', host:e.host || '', speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -993,8 +993,10 @@ function rsvpCount(id){ return db.stats[id] ? db.stats[id].rsvps : going(id).len
 // Registration: RSVP on this site, no button, or a link to another organization's page (82-simpler-event-approvals.sql).
 function takesRsvps(e){ return (e.regMode || 'rsvp') === 'rsvp'; }
 function showRsvps(e){ return takesRsvps(e) && (can('officer') || e.showRsvps !== false); }
+// Another organization's event that WFA is advertising (84-event-host.sql): "Hosted by …".
+function hostLabel(e){ return e.host ? 'Hosted by ' + e.host : e.regMode === 'link' ? 'Hosted by another organization' : ''; }
 function regLinkBtn(e){ if (e.regMode !== 'link' || !e.regUrl) return ''; let host = ''; try { host = new URL(e.regUrl).hostname.replace(/^www\./, ''); } catch(x){}
-  return `<a class="btn" href="${esc(e.regUrl)}" target="_blank" rel="noopener">Register ↗</a><span class="hint">Registration is on ${esc(host || 'another site')}. This event is run by another organization.</span>`; }
+  return `<a class="btn" href="${esc(e.regUrl)}" target="_blank" rel="noopener">Register ↗</a><span class="hint">Registration is on ${esc(host || 'another site')}. This event is run by ${esc(e.host || 'another organization')}.</span>`; }
 // What members and guests see instead of the count when it's hidden: Seats open, Few seats left (under 10), or Full.
 const SEATS_LOW = 10;
 function seatLeft(e){ return e.cap ? Math.max(0, e.cap - rsvpCount(e.id)) : Infinity; }
@@ -1121,7 +1123,7 @@ function evRow(e){
     ${datebox(e.date)}
     <div style="min-width:0"><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</div>
       <div class="ev-title">${esc(e.title)} ${statusTag(e)}</div>
-      <div class="ev-sub">${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc)}</div></div>
+      <div class="ev-sub">${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc)}${hostLabel(e) ? ' · ' + esc(hostLabel(e)) : ''}</div></div>
     <div class="rsvp-count">${status}${showRsvps(e) ? `<span class="up">▲</span> ${n}${e.cap?` / ${e.cap}`:''}` : isPast(e) || e.cat === 'officer_meeting' || !takesRsvps(e) ? '' : seatTag(e)}</div>
   </button>`;
 }
@@ -1269,7 +1271,7 @@ function featuredPanel(){
         <span class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</span>
         <strong>${esc(e.title)}</strong>
         <span class="ev-sub">${fmtDay(e.date)} · ${fmtTime(e.start)}${e.loc ? ' · ' + esc(e.loc) : ''}</span>
-        <span class="ev-sub">${e.regMode === 'link' ? 'Hosted by another organization' : ptsText(e.cat)}${showRsvps(e) ? ` · ${rsvpCount(e.id)} going` : takesRsvps(e) ? ' · ' + seatNote(e) : ''}</span>
+        <span class="ev-sub">${hostLabel(e) ? esc(hostLabel(e)) + (e.regMode === 'link' ? '' : ' · ' + ptsText(e.cat)) : ptsText(e.cat)}${showRsvps(e) ? ` · ${rsvpCount(e.id)} going` : takesRsvps(e) ? ' · ' + seatNote(e) : ''}</span>
       </button>`).join('') || `<p class="muted" style="margin:0">Career fairs, case competitions, guest speakers, and excursions will show up here as they’re announced.</p>`}
   </aside>`;
 }
@@ -5610,6 +5612,10 @@ function viewOfficer(){
         </div>
         <label class="ev-final" ${evHideFinal(e, e?.cat || ui.evNewCat || Object.keys(CATS)[0]) ? 'hidden' : ''}>Location<input id="ev-loc" required value="${esc(rqFinalizing(e?.id) && e?.loc === 'TBD' ? '' : e?.loc)}" placeholder="Building and room">
           <span class="hint">Need a room? <a href="https://www.uvu.edu/woodbury/current-students.html" target="_blank" rel="noopener">Reserve one through Woodbury ↗</a></span></label>
+        <div class="stack" id="ev-host-wrap" style="gap:6px" ${(e?.cat || ui.evNewCat || Object.keys(CATS)[0]) === 'officer_meeting' ? 'hidden' : ''}>
+          <label class="check"><input type="checkbox" id="ev-host-on" ${e?.host ? 'checked' : ''} onchange="document.getElementById('ev-host-name-wrap').hidden = !this.checked"> Hosted by another organization <span class="hint">We’re advertising someone else’s event.</span></label>
+          <label id="ev-host-name-wrap" ${e?.host ? '' : 'hidden'}>Host<input id="ev-host" maxlength="120" placeholder="Like UVU Real Estate Club" value="${esc(e?.host || '')}"><span class="hint">Shows as “Hosted by …” on the event.</span></label>
+        </div>
         <div class="stack" id="ev-reg-wrap" style="gap:6px" ${['officer_meeting', 'case_competition'].includes(e?.cat || ui.evNewCat || Object.keys(CATS)[0]) ? 'hidden' : ''}>
           <label>Registration<select id="ev-reg">${[['rsvp', 'RSVP on this site'], ['none', 'No button (just show up)'], ['link', 'Link to another registration page']].map(([k, l]) => `<option value="${k}" ${(e?.regMode || 'rsvp') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
           <label id="ev-reg-url-wrap" ${e?.regMode === 'link' ? '' : 'hidden'}>Registration link<input id="ev-reg-url" type="url" placeholder="https://…" value="${esc(e?.regUrl || '')}"><span class="hint">For posting another organization’s event: people register there. It has no WFA check-in or points.</span></label>
@@ -6121,7 +6127,7 @@ function eventInner(id, page){
     ? `<div class="stack" style="gap:8px"><div class="row" style="gap:8px;align-items:center"><strong>Coming-soon page is on.</strong>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${id}">Turn off</button>` : ''}</div><span class="hint">Anyone who opens this link before it’s published sees only this:</span>${soonBlock(e.title, e.soonDesc)}</div>`
     : `<div class="row" style="gap:8px;align-items:center"><span class="hint">Coming-soon page is off: people who open this link before it’s published see “Event not found.”</span>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${id}">Turn on coming soon</button>` : ''}</div>`;
   const share = e.draft && !can('officer') ? '' : `${e.draft ? '<span class="hint">This link starts working when the event is published.</span>' : ''}<div class="row" style="gap:6px"><button class="btn ghost small" data-act="copy-link" data-id="${id}">Copy link</button>${can('officer') ? `<button class="btn ghost small" data-act="qr" data-id="${id}" data-kind="page">QR code</button>` : ''}${page ? '' : `<a class="btn ghost small" href="#event/${id}">Open event page</a>`}</div>`;
-  return `<div><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${e.regMode === 'link' ? 'Hosted by another organization' : PTS[e.cat] ? PTS[e.cat] + ' pts' : 'officers only'}${e.draft ? ' · <span class="tag">Draft</span>' : ''}${e.membersOnly ? ' · <span class="tag">Members only</span>' : ''}</div></div>
+  return `<div><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${hostLabel(e) ? esc(hostLabel(e)) + (e.regMode !== 'link' && PTS[e.cat] ? ' · ' + PTS[e.cat] + ' pts' : '') : PTS[e.cat] ? PTS[e.cat] + ' pts' : 'officers only'}${e.draft ? ' · <span class="tag">Draft</span>' : ''}${e.membersOnly ? ' · <span class="tag">Members only</span>' : ''}</div></div>
     <h2>${esc(e.title)}</h2>
     <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} <span class="hint">Mountain Time</span></dd>
       <dt>Status</dt><dd>${{ upcoming: 'Upcoming', live: '<strong>Happening now</strong>', over: 'Over' }[evStatus(e)]}</dd>
@@ -7242,6 +7248,7 @@ function syncCaseBox(){
   if (mo) mo.hidden = c.value === 'officer_meeting' || (document.getElementById('ev-reg') || {}).value === 'link'; if (qa) qa.hidden = c.value !== 'guest_speaker';
   const noRsvp = ['officer_meeting', 'case_competition'].includes(c.value), rg = document.getElementById('ev-reg'), reg = noRsvp || !rg ? 'rsvp' : rg.value;
   const rw = document.getElementById('ev-reg-wrap'); if (rw) rw.hidden = noRsvp;
+  const hw = document.getElementById('ev-host-wrap'); if (hw) hw.hidden = document.getElementById('ev-cat')?.value === 'officer_meeting';
   const ru = document.getElementById('ev-reg-url-wrap'); if (ru) ru.hidden = reg !== 'link';
   const cw = document.getElementById('ev-cap-wrap'); if (cw) cw.hidden = reg !== 'rsvp';
   const sr = document.getElementById('ev-sr-wrap'); if (sr) sr.hidden = noRsvp || reg !== 'rsvp';
@@ -8539,6 +8546,8 @@ async function handleSubmit(f, v, err){
     e.show_rsvps = ['officer_meeting', 'case_competition'].includes(e.cat) || !document.getElementById('ev-show-rsvps') || document.getElementById('ev-show-rsvps').checked;
     e.reg_mode = ['officer_meeting', 'case_competition'].includes(e.cat) ? 'rsvp' : (v('ev-reg') || 'rsvp');
     e.reg_url = e.reg_mode === 'link' ? jobUrl(v('ev-reg-url')) : '';
+    e.host = e.cat !== 'officer_meeting' && document.getElementById('ev-host-on')?.checked ? v('ev-host').trim().slice(0, 120) : '';
+    if (e.cat !== 'officer_meeting' && document.getElementById('ev-host-on')?.checked && !e.host) return err('ev-err', 'Enter who’s hosting it, like UVU Real Estate Club.');
     if (e.reg_mode === 'link' && !e.reg_url) return err('ev-err', 'Paste the link to the registration page, like https://…');
     if (e.reg_mode !== 'rsvp'){ e.cap = 0; if (e.reg_mode === 'link') e.members_only = false; }
     if (document.getElementById('ev-soon')){ e.coming_soon = document.getElementById('ev-soon').checked; e.soon_desc = v('ev-soon-desc'); }
