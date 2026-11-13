@@ -4131,7 +4131,9 @@ const mailBody = () => { const b = fillMerge(ui.mail.body || '').trim(); return 
 // Newsletters (sent weekly) sort events by time: everything in the next 7 days, then bigger events further out, then
 // the rest. Each group: [small label, heading, events].
 function nlEventGroups(list){
-  const soon = dayOffset(7), week = list.filter(e => e.date <= soon), later = list.filter(e => e.date > soon);
+  // Bigger events (guest speakers, case competitions, career fairs, excursions) lead the week, then the rest by date.
+  const soon = dayOffset(7), inWeek = list.filter(e => e.date <= soon), later = list.filter(e => e.date > soon);
+  const week = [...inWeek.filter(e => BIG_CATS.includes(e.cat)), ...inWeek.filter(e => !BIG_CATS.includes(e.cat))];
   const big = later.filter(e => BIG_CATS.includes(e.cat)), rest = later.filter(e => !BIG_CATS.includes(e.cat));
   if (!week.length && (!big.length || !rest.length)) return later.length ? [['Calendar', big.length === later.length ? 'Don\u2019t miss' : 'Coming up', later]] : [];
   return [week.length && ['This week', 'This week at the WFA', week], big.length && ['Plan ahead', 'Don\u2019t miss', big], rest.length && ['Calendar', 'Also coming up', rest]].filter(Boolean);
