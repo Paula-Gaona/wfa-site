@@ -914,7 +914,7 @@ function errMsg(e){
 }
 // Run a change, reload everything, re-render. Errors show as a toast.
 async function act(fn, ok){
-  try { await fn(); await load(); if (ok) toast(ok); render(); return true; }
+  try { await fn(); await load(); if (typeof ok === 'function') ok = ok(); if (ok) toast(ok); render(); return true; }
   catch(e){ toast(errMsg(e)); return false; }
 }
 async function logChange(text){ try { await sb.from('change_log').insert({ text }); } catch(e){} }
@@ -4462,6 +4462,9 @@ const rqReviewing = id => { const r = rqOf(id); return !!r && r.status === 'bran
 // Officers (not presidents, vice presidents, advisors, or admins) start with their branch president.
 // Quick scheduling (an admin switch, 71-quick-scheduling.sql): events an admin sends skip the presidents' sign-off.
 const rqQuick = () => !!db.settings.quick;
+// With quick scheduling on, an admin's bigger event publishes right away instead of going to the presidents (83-quick-scheduling-publishes.sql).
+const quickPub = () => rqQuick() && myRole === 'admin';
+const signoffLabel = again => quickPub() ? 'Publish to calendar' : again ? 'Send to the presidents again' : 'Send to the presidents';
 // Older requests don't record who sent them; any admin can sign those off.
 const rqQuickFor = id => { const by = (rqOf(id) || {}).sent_by; return rqQuick() && (!by || roleOf(by) === 'admin'); };
 const rqSignerName = id => { const by = (rqOf(id) || {}).sent_by; return by ? userName(by) : 'an admin'; };
@@ -4895,8 +4898,8 @@ function schedulingBody(){
   const names = (db.schedulers || []).map(userName).join(', ');
   const quick = rqQuick(), sw = myRole === 'admin' ? `<button type="button" class="btn ${quick ? '' : 'ghost '}small" data-act="rq-quick" data-v="${quick ? '' : '1'}">${quick ? 'Turn quick scheduling off' : 'Turn on quick scheduling for admins'}</button>` : '';
   return `<div class="stack" style="gap:18px">
-    ${quick && sw ? `<div class="rq-warn row" style="justify-content:space-between;align-items:center;gap:10px"><span><strong>Quick scheduling is on for admins.</strong> Events an admin sends skip the presidents’ sign-off: a scheduler confirms them with UVU and finalizes them, then the admin who sent it signs off. Everyone else’s events go through the usual steps.</span>${sw}</div>`
-      : sw ? `<div class="row" style="justify-content:flex-end;align-items:center;gap:8px"><span class="hint">In a rush? Admins can sign off on their own events instead of the presidents (UVU confirmation stays).</span>${sw}</div>` : ''}
+    ${quick && sw ? `<div class="rq-warn row" style="justify-content:space-between;align-items:center;gap:10px"><span><strong>Quick scheduling is on for admins.</strong> Case competitions, excursions, guest speakers, and career fairs that an admin publishes skip the presidents’ approval. Everyone else’s still go to the presidents.</span>${sw}</div>`
+      : sw ? `<div class="row" style="justify-content:flex-end;align-items:center;gap:8px"><span class="hint">In a rush? Admins can publish their own bigger events without the presidents’ approval.</span>${sw}</div>` : ''}
     <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><span class="hint">Case competitions, excursions, guest speakers, and career fairs need all three presidents’ approval. Scheduling forms (optional) are confirmed with UVU here.</span><button type="button" class="btn ghost small" data-act="proc-tab" data-id="all">How scheduling works</button></div>
     ${group('Waiting on you', waiting, 'Nothing needs you right now.', gWait)}
     ${group('Your requests', yours, 'Requests you send show up here.', gYours)}
@@ -5240,7 +5243,7 @@ function evButtons(e, cat){
   if (rqReviewing(e && e.id)) return `<button class="btn" type="submit" data-mode="branchok">Approve and send it on</button>${draftBtn}${cancel}`;
   const fromPres = st === 'returned' && r.returned_from === 'signoff';
   const main = !needsSignoff(cat) ? publishBtn
-    : ['signoff', 'sent', 'submitted'].includes(st) ? '' : `<button class="btn" type="submit" data-mode="signoff">${fromPres ? 'Send to the presidents again' : 'Send to the presidents'}</button>`;
+    : ['signoff', 'sent', 'submitted'].includes(st) ? '' : `<button class="btn" type="submit" data-mode="signoff">${signoffLabel(fromPres)}</button>`;
   const form = ['draft', 'returned'].includes(st) ? `<button class="btn ghost" type="submit" data-mode="send">${st === 'returned' && !fromPres ? 'Send the form again' : rqSendLabel(cat)}</button>` : '';
   return main + draftBtn + form + cancel;
 }
@@ -5616,7 +5619,7 @@ function viewOfficer(){
         ${(() => { const all = db.events.filter(x => x.draft).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
           // Two lists: drafts with a coming-soon page (their link already shows something), and plain drafts.
           const row = ev => `<div class="list-row"><div><div class="ev-title">${esc(ev.title)}${needsSched(ev.cat) ? (rqTag(ev.id) || (needsSignoff(ev.cat) ? ' <span class="tag">Not sent to the presidents</span>' : '')) : ''}${pendingFor('event', ev.id).length ? ' <span class="tag warn">Waiting for approval</span>' : ''}</div><div class="ev-sub">${fmtDay(ev.date)} · ${esc(catName(ev.cat))}</div></div>
-            <div class="row" style="gap:6px">${!needsSignoff(ev.cat) ? `<button class="btn small" data-act="publish-event" data-id="${ev.id}">${canPublish() ? 'Publish' : 'Submit for approval'}</button>` : !['signoff', 'sent', 'submitted', 'published'].includes((rqOf(ev.id) || {}).status) ? `<button class="btn small" data-act="signoff-send" data-id="${ev.id}">Send to the presidents</button>` : ''}<button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button>${ev.comingSoon ? `<a class="btn ghost small" href="#event/${ev.id}">View page</a>` : ''}<button class="btn ghost small" data-act="copy-link" data-id="${ev.id}">Copy link</button><button class="btn ghost small" data-act="qr" data-id="${ev.id}" data-kind="page">QR code</button>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${ev.id}">${ev.comingSoon ? 'Turn off coming soon' : 'Turn on coming soon'}</button>` : ''}${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`;
+            <div class="row" style="gap:6px">${!needsSignoff(ev.cat) ? `<button class="btn small" data-act="publish-event" data-id="${ev.id}">${canPublish() ? 'Publish' : 'Submit for approval'}</button>` : !['signoff', 'sent', 'submitted', 'published'].includes((rqOf(ev.id) || {}).status) ? `<button class="btn small" data-act="signoff-send" data-id="${ev.id}">${signoffLabel()}</button>` : ''}<button class="btn ghost small" data-act="edit-event" data-id="${ev.id}">Edit</button>${ev.comingSoon ? `<a class="btn ghost small" href="#event/${ev.id}">View page</a>` : ''}<button class="btn ghost small" data-act="copy-link" data-id="${ev.id}">Copy link</button><button class="btn ghost small" data-act="qr" data-id="${ev.id}" data-kind="page">QR code</button>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${ev.id}">${ev.comingSoon ? 'Turn off coming soon' : 'Turn on coming soon'}</button>` : ''}${delBtn('ev-'+ev.id,'Delete','del-event',ev.id)}</div></div>`;
           const list = (title, evs, hint) => evs.length ? `<div class="section-head"><h3>${title}</h3><span class="muted">${evs.length}</span></div><div>${evs.map(row).join('')}<span class="hint">${hint}</span></div>` : '';
           return list('Coming soon', all.filter(x => x.comingSoon), 'Drafts with a coming-soon page: their link and QR code show the coming-soon page now, and the full event once it’s published.')
             + list('Drafts', all.filter(x => !x.comingSoon), 'Only officers can see these. A draft’s link and QR code are already final: they start working when it’s published.'); })()}
@@ -7658,7 +7661,7 @@ document.addEventListener('click', async ev => {
       await act(async () => { const r = await sb.rpc('admin_signoff', { p_event: id, p_ok: true, p_note: '' }); if (r.error) throw r.error;
         if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data); await logChange('Signed off and published “' + e.title + '”'); }, 'Published. It’s on the calendar now.'); break; }
     case 'rq-quick': { const on = !!t.dataset.v;
-      if (on && !confirm('Turn on quick scheduling for admins?\n\nEvents an admin sends skip the presidents’ sign-off: once a scheduler confirms one with UVU and finalizes it, the admin who sent it signs off. Other officers’ events go through the usual steps.')) break;
+      if (on && !confirm('Turn on quick scheduling for admins?\n\nCase competitions, excursions, guest speakers, and career fairs that an admin publishes skip the presidents’ approval. Other officers’ events still go to the presidents.')) break;
       const r = await sb.rpc('set_quick_scheduling', { p_on: on });
       if (r.error) { toast(/set_quick_scheduling/.test(r.error.message || '') ? 'Run 71-quick-scheduling.sql in Supabase first.' : errMsg(r.error)); break; }
       if (String(r.data).startsWith('err:')) { toast('Only admins can do that.'); break; }
@@ -7758,14 +7761,15 @@ document.addEventListener('click', async ev => {
       break; }
     case 'show-code': await showCode(id); break;
     case 'ck-pdf': await ckPdf(id); break;
-    case 'signoff-send': { const e = evById(id);
+    case 'signoff-send': { const e = evById(id); let pubNow = false;
       if (!(e.desc || '').trim()){ ui.officerTab = 'events'; ui.editEvent = id; render(); window.scrollTo(0, 0); toast('Add a description first.'); break; }
       await act(async () => {
         const r = await sb.rpc('send_for_signoff', { p_event: id });
         if (r.error) throw /send_for_signoff/.test(r.error.message || '') ? new Error('The new approvals aren’t set up yet. An admin needs to run 82-simpler-event-approvals.sql.') : r.error;
         if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
-        await logChange('Sent to the presidents: “' + e.title + '”');
-      }, 'Sent to the presidents. It’s published once they approve.'); break; }
+        pubNow = r.data === 'ok:published';
+        await logChange((pubNow ? 'Published (quick scheduling): “' : 'Sent to the presidents: “') + e.title + '”');
+      }, () => pubNow ? 'Published. Quick scheduling is on, so it skipped the presidents.' : 'Sent to the presidents. It’s published once they approve.'); break; }
     case 'ck-open-early': case 'ck-close-early': { const open = a === 'ck-open-early', e = evById(id);
       await act(async () => {
         if (open && !e.code) must(await sb.from('checkin_codes').upsert({ event_id: id, code: newCode() }));
@@ -8573,12 +8577,13 @@ async function handleSubmit(f, v, err){
           const r = await sb.rpc('send_for_signoff', { p_event: evId });
           if (r.error) throw /send_for_signoff/.test(r.error.message || '') ? new Error('The new approvals aren’t set up yet. An admin needs to run 82-simpler-event-approvals.sql.') : r.error;
           if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
+          pubNow = r.data === 'ok:published';
         }
-        await logChange((mode === 'send' ? 'Sent the scheduling form: “' : mode === 'signoff' ? 'Sent to the presidents: “' : mode === 'branchok' ? 'Approved (branch): “' : editing ? 'Edited draft “' : 'Saved draft “') + e.title + '”');
+        await logChange((mode === 'send' ? 'Sent the scheduling form: “' : mode === 'signoff' ? (pubNow ? 'Published (quick scheduling): “' : 'Sent to the presidents: “') : mode === 'branchok' ? 'Approved (branch): “' : editing ? 'Edited draft “' : 'Saved draft “') + e.title + '”');
         ui.editEvent = null; ui.rq = null;
-        if (mode === 'send' || mode === 'signoff' || mode === 'branchok'){ ui.officerTab = 'scheduling'; ui.schedOpen = evId; }
-      }, mode === 'send' ? (isScheduler() ? 'Ready to confirm with UVU. Mark it confirmed once UVU says yes.' : 'Sent to the scheduler. You’ll be notified when UVU confirms it.')
-        : mode === 'signoff' ? 'Sent to the presidents. It’s published once they approve, and you’ll be notified.' : mode === 'branchok' ? 'Approved and sent on.' : 'Saved as a draft. Only officers can see it.');
+        if (pubNow) ui.officerTab = 'events'; else if (mode === 'send' || mode === 'signoff' || mode === 'branchok'){ ui.officerTab = 'scheduling'; ui.schedOpen = evId; }
+      }, () => mode === 'send' ? (isScheduler() ? 'Ready to confirm with UVU. Mark it confirmed once UVU says yes.' : 'Sent to the scheduler. You’ll be notified when UVU confirms it.')
+        : mode === 'signoff' ? (pubNow ? 'Published. Quick scheduling is on, so it skipped the presidents.' : 'Sent to the presidents. It’s published once they approve, and you’ll be notified.') : mode === 'branchok' ? 'Approved and sent on.' : 'Saved as a draft. Only officers can see it.');
       return;
     }
     const sched = false;
