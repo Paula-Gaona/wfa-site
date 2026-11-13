@@ -3850,7 +3850,8 @@ function audienceAll(key){
 }
 // {first} personalizes an email with each recipient's first name. Club-address emails that use it go out one per person;
 // Outlook can't personalize, so there it reads "there" ("Hi there,").
-function firstNameOf(email){ const u = db.users.find(x => x.email === email); return (u && u.first) || (userName(email) || '').split(/[\s@]/)[0] || 'there'; }
+// A person's first name, or 'there' (never part of an email address, like 'paula.gaona11235').
+function firstNameOf(email){ const u = db.users.find(x => x.email === email), n = String(userName(email) || ''); return (u && u.first) || (n.includes('@') || n === String(email || '').split('@')[0] ? '' : n.split(/\s/)[0]) || 'there'; }
 function withFirst(s, name){ return String(s).replace(/\{first\}/g, name); }
 function usesFirst(){ return /\{first\}/.test((ui.mail.subject || '') + (ui.mail.body || '') + (ui.mail.closing || '')); }
 // Placeholder buttons above the message. They insert at the cursor in whichever box was used last.
@@ -4006,7 +4007,7 @@ function outlookButtons(to){
       Prefer Outlook in the browser with formatting kept? ${Array.from({ length: web }, (_, i) => `<button type="button" data-act="mail-outlook" data-i="${i}" style="background:none;border:0;padding:0;font:inherit;color:var(--brand-text);text-decoration:underline;cursor:pointer">${web === 1 ? 'Use Outlook on the web' : 'Outlook on the web, part ' + (i + 1)}</button>`).join(' · ')}</div>`;
 }
 // Event details appended to the message for the events picked under "Add events to this email".
-function eventBlock(){
+function eventBlock(who){
   const list = sortedEvents().filter(e => (ui.mail.evs || []).includes(e.id));
   if (!list.length) return '';
   // One event goes straight in under its own title; several get an "Upcoming events" heading.
@@ -4016,9 +4017,10 @@ function eventBlock(){
   // Points: the check-in points, plus any bonus rules for this event that haven't passed (like RSVPing early).
   const points = e => {
     if (hostedElsewhere(e) || !PTS[e.cat]) return '';
-    const bonus = activeRules().filter(r => r.event_id === e.id && r.points > 0 && ['rsvp', 'checkin', 'survey'].includes(r.kind))
+    const rules = isNewsletter() ? nlEventRules(who, e) : activeRules();
+    const bonus = rules.filter(r => r.event_id === e.id && r.points > 0 && ['rsvp', 'checkin', 'survey'].includes(r.kind))
       .map(r => `${r.points} more for ${{ rsvp: 'RSVPing', checkin: 'checking in', survey: 'filling out the survey' }[r.kind]} by ${fmtMtStamp(Date.parse(r.deadline))}`);
-    const revoke = activeRules().some(r => r.event_id === e.id && r.points > 0 && r.kind === 'rsvp' && r.revoke_noshow);
+    const revoke = rules.some(r => r.event_id === e.id && r.points > 0 && r.kind === 'rsvp' && r.revoke_noshow);
     return `\n- Points: ${PTS[e.cat]} for checking in${bonus.length ? ', plus ' + bonus.join(', plus ') : ''}${revoke ? ' (Early RSVP points will be revoked for no-shows)' : ''}`;
   };
   const one = e =>
@@ -4107,14 +4109,25 @@ function nlJobLine(j){
 // survey rules only show to people who checked in (only they can fill it out). People without a member profile,
 // or before 88-rule-earners.sql is run, see every open rule.
 function nlRulesFor(who){
+  if (['officer', 'admin'].includes(roleOf(who))) return [];   // officers aren't on the leaderboard
   const u = nlUser(who), earned = db.ruleEarners;
+  const did = r => (r.kind === 'rsvp' && going(r.event_id).includes(who)) || (r.kind === 'checkin' && attended(r.event_id).includes(who));
   return activeRules().filter(r => r.points > 0 && (!r.event_id || evById(r.event_id)) && (r.kind !== 'form' || svById(r.survey_id))
-    && !(u && earned && earned.has(r.id + '|' + who))
+    && !(u && earned && earned.has(r.id + '|' + who)) && !(u && did(r))
     && !(u && r.kind === 'join')
-    && !(u && r.kind === 'survey' && !attended(r.event_id).includes(who))).slice(0, 6);
+    && !(u && r.kind === 'survey' && !attended(r.event_id).includes(who)));
 }
+// Bonus points tied to one of the email's events show on that event's card; the "Bonus points" box lists the rest.
+const nlEventRules = (who, e) => nlRulesFor(who).filter(r => r.event_id === e.id && ['rsvp', 'checkin', 'survey'].includes(r.kind));
+const nlOtherRules = who => nlRulesFor(who).filter(r => !(r.event_id && (ui.mail.evs || []).includes(r.event_id))).slice(0, 6);
+const nlRuleTag = r => `+${r.points} for ${{ rsvp: 'RSVPing', checkin: 'checking in', survey: 'the survey' }[r.kind]} by ${fmtMtStamp(Date.parse(r.deadline))}${r.kind === 'rsvp' && r.revoke_noshow ? ' (no-shows lose it)' : ''}`;
+// "WFA Newsletter - November 16", dated the day it goes out (the scheduled day, for a scheduled newsletter).
+let nlSendAt = null;
+const nlDateLabel = ms => new Date(ms).toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'America/Denver' });
+const nlSubjectFor = ms => 'WFA Newsletter - ' + nlDateLabel(ms);
+const NL_SUBJECT_RE = /^WFA Newsletter - [A-Z][a-z]+ \d{1,2}$/;
 function nlPointsBlock(who){
-  const rules = nlRulesFor(who), lines = rules.map(r => {
+  const rules = nlOtherRules(who), lines = rules.map(r => {
     const e = evById(r.event_id), sv = svById(r.survey_id), ev = e ? e.title : 'an event';
     const what = { join: 'Join the WFA', rsvp: `RSVP to ${ev}`, checkin: `Check in at ${ev}`, survey: `Fill out the survey for ${ev}`, form: `Answer the survey ${sv ? sv.title : ''}` }[r.kind];
     return `- **+${r.points}:** ${what} by ${fmtMtStamp(Date.parse(r.deadline))}${r.kind === 'rsvp' && r.revoke_noshow ? ' (revoked for no-shows)' : ''}`;
@@ -4161,12 +4174,13 @@ function nlButton(label, url, gold){
   return `<table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td bgcolor="${gold ? NLC.gold : NLC.green}" style="border-radius:4px">
     <a href="${nlEsc(url)}" style="display:inline-block;padding:10px 18px;font:bold 14px Arial,sans-serif;color:#ffffff;text-decoration:none;border-radius:4px">${nlEsc(label)}</a></td></tr></table>`;
 }
-function nlEventCard(e, featured){
+function nlEventCard(e, featured, who){
   const d = new Date(e.date + 'T12:00:00'), mon = d.toLocaleString('en-US', { month: 'short' }).toUpperCase(), day = d.getDate();
   const meta = [fmtDay(e.date) + (e.start ? ', ' + fmtTime(e.start) + (e.end ? ' to ' + fmtTime(e.end) : '') : ''), e.loc].filter(Boolean).map(nlEsc).join(' &middot; ');
   const pts = hostedElsewhere(e) || !PTS[e.cat] ? '' : `${PTS[e.cat]} points for checking in`;
   const seats = !takesRsvps(e) || !e.cap ? '' : seatLeft(e) <= 0 ? 'Full: join the waitlist' : 'Seats limited';
-  const tags = [hostLabel(e), seats, pts].filter(Boolean).map(t => `<span style="display:inline-block;margin:0 6px 4px 0;padding:2px 8px;border-radius:10px;background:${NLC.cream};border:1px solid ${NLC.line};font:12px Arial,sans-serif;color:${NLC.green}">${nlEsc(t)}</span>`).join('');
+  const tags = [hostLabel(e), seats, pts].filter(Boolean).map(t => `<span style="display:inline-block;margin:0 6px 4px 0;padding:2px 8px;border-radius:10px;background:${NLC.cream};border:1px solid ${NLC.line};font:12px Arial,sans-serif;color:${NLC.green}">${nlEsc(t)}</span>`).join('')
+    + (hostedElsewhere(e) ? '' : nlEventRules(who, e).map(r => `<span style="display:inline-block;margin:0 6px 4px 0;padding:2px 8px;border-radius:10px;background:#F6ECD2;border:1px solid ${NLC.gold};font:bold 12px Arial,sans-serif;color:${NLC.goldDeep}">${nlEsc(nlRuleTag(r))}</span>`).join(''));
   const desc = (e.desc || '').trim();
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 14px;border:1px solid ${NLC.line};${featured ? `border-left:4px solid ${NLC.gold};` : ''}border-radius:6px;background:#ffffff">
     <tr><td width="64" valign="top" style="padding:14px 0 14px 14px"><table role="presentation" width="54" cellspacing="0" cellpadding="0" border="0"><tr><td bgcolor="${NLC.dark}" align="center" style="border-radius:4px;padding:6px 0">
@@ -4194,13 +4208,13 @@ function nlHtml(who){
   const body = mailBody(), closing = fillMerge(ui.mail.closing || '').trim();
   const rows = [];
   if (body) rows.push(`<tr><td style="padding:28px 32px 0;font:16px/1.6 Arial,sans-serif;color:${NLC.ink}">${mdh(body)}</td></tr>`);
-  nlEventGroups(list).forEach(([label, head, evs]) => rows.push(nlSection(label, head, evs.map(e => nlEventCard(e, BIG_CATS.includes(e.cat))).join(''))));
+  nlEventGroups(list).forEach(([label, head, evs]) => rows.push(nlSection(label, head, evs.map(e => nlEventCard(e, BIG_CATS.includes(e.cat), who)).join(''))));
   const jobs = ui.mail.nlJobs === false ? [] : nlJobsFor(u);
   if (jobs.length) rows.push(nlSection('Careers', 'Opportunities for you', `<div style="font:italic 14px Arial,sans-serif;color:${NLC.gray};margin:0 0 4px">${nlEsc(nlJobsNote(u))}</div>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${jobs.map(nlJobCard).join('')}</table>
     <div style="margin:16px 0 0">${nlButton('See every opening', SITE_URL + '/#jobs')}</div>`));
   if (ui.mail.nlPoints !== false){
-    const rules = nlRulesFor(who);
+    const rules = nlOtherRules(who);
     const prize = (db.settings.lbPrize || '').trim();
     if (rules.length || prize){
       const ruleRows = rules.map(r => { const e = evById(r.event_id), sv = svById(r.survey_id), ev = e ? e.title : 'an event';
@@ -4216,7 +4230,7 @@ function nlHtml(who){
   if (closing) rows.push(`<tr><td style="padding:24px 32px 0;font:15px/1.6 Arial,sans-serif;color:${NLC.ink}">${mdh(closing)}</td></tr>`);
   const extras = mailExtrasText().replace(/^\s*---\s*/, '').trim();
   if (extras) rows.push(`<tr><td style="padding:20px 32px 0"><div style="border-top:1px solid ${NLC.line};padding-top:14px;font:14px/1.55 Arial,sans-serif;color:${NLC.ink}">${mdh(extras)}</div></td></tr>`);
-  const sent = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Denver' });
+  const sent = new Date(nlSendAt || Date.now()).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Denver' });
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>${nlEsc(fillMerge(ui.mail.subject || 'WFA Newsletter'))}</title></head>
 <body style="margin:0;padding:0;background:${NLC.bg}">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${NLC.bg}"><tr><td align="center" style="padding:24px 10px">
@@ -4249,7 +4263,7 @@ function mailText(who){
     if (jobs.length) nl += `\n\n## Opportunities for you\n*${nlJobsNote(u)}*\n${jobs.map(nlJobLine).join('\n')}\n\nSee every opening on the job board: ${SITE_URL}/#jobs`;
     if (ui.mail.nlPoints !== false) nl += nlPointsBlock(who);
   }
-  return (mailBody() + eventBlock() + nl + (closing ? '\n\n---\n' + closing : '') + extras + footer).trim();
+  return (mailBody() + eventBlock(who) + nl + (closing ? '\n\n---\n' + closing : '') + extras + footer).trim();
 }
 // Formatting buttons for one of the email builder's text boxes.
 function fmtBar(target){
@@ -8376,6 +8390,11 @@ async function scheduleMail(){
   const at = mtFromInput((document.getElementById('ml-when') || {}).value || '');
   if (!at) return toast('Pick the day and time to send it (Mountain Time).');
   if (Date.parse(at) < Date.now() + 5 * 60e3) return toast('Pick a time at least 5 minutes from now, or send it now instead.');
+  if (isNewsletter() && NL_SUBJECT_RE.test((ui.mail.subject || '').trim())) ui.mail.subject = nlSubjectFor(Date.parse(at));
+  nlSendAt = Date.parse(at);
+  try { await scheduleMailAt(at); } finally { nlSendAt = null; }
+}
+async function scheduleMailAt(at){
   const to = audienceEmails(ui.mail.aud), subject = fillMerge(ui.mail.subject).trim(), md = mailText(), text = mdToPlain(md);
   const bad = mailProblem(to, subject, text); if (bad) return toast(bad);
   toast(`Preparing ${to.length} email${to.length === 1 ? '' : 's'}…`);
@@ -8432,6 +8451,7 @@ function mailDraftsPanel(){
 }
 async function sendMail(){
   readMail();
+  if (isNewsletter() && NL_SUBJECT_RE.test((ui.mail.subject || '').trim())) ui.mail.subject = nlSubjectFor(Date.now());
   const to = audienceEmails(ui.mail.aud), subject = fillMerge(ui.mail.subject).trim(), md = mailText(), text = mdToPlain(md);
   const bad = mailProblem(to, subject, text); if (bad) return toast(bad);
   if (usesFirst() || isNewsletter()){
@@ -8487,7 +8507,8 @@ document.addEventListener('change', async e => {
     if (svHasOptions(q.type) && !(q.options || []).length) q.options = ['', '']; render(); return; }
   const id = e.target.id;
   if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
-  if (e.target.name === 'ml-layout'){ readMail(); if (isNewsletter() && !(ui.mail.body || '').trim()) ui.mail.body = nlIntro(); render(); return; }
+  if (e.target.name === 'ml-layout'){ readMail(); if (isNewsletter() && !(ui.mail.body || '').trim()) ui.mail.body = nlIntro();
+    if (isNewsletter() && !(ui.mail.subject || '').trim()) ui.mail.subject = nlSubjectFor(Date.now()); render(); return; }
   if (id === 'ml-as'){ ui.mail.previewAs = e.target.value; refreshMailPreview(true); return; }
   if (['ml-nl-jobs', 'ml-nl-points'].includes(id)){ readMail(); refreshMailPreview(true); return; }
   if (['ml-aud','ml-ev'].includes(id)){ readMail(); if (id === 'ml-aud' && /^(nosurvey|att|noshow|rsvp|norsvp|teams|agents):/.test(ui.mail.aud)) ui.mail.ev = ui.mail.aud.split(':')[1]; render(); }
