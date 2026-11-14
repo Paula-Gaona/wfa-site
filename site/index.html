@@ -1364,7 +1364,7 @@ function photoPreview(p){
   if (ui.crop){ setTimeout(cropPlace); return cropperHtml(); }   // still choosing the crop
   const src = ui.profilePhoto === null ? (p.photo || '') : ui.profilePhoto;
   return src
-    ? `<img class="avatar" src="${esc(src)}" alt="Profile picture"><button type="button" class="btn ghost small" data-act="pf-photo-rm">Remove picture</button>`
+    ? `<img class="avatar" src="${esc(src)}" alt="Profile picture"><button type="button" class="btn ghost small" data-act="crop-adjust">Adjust crop</button><button type="button" class="btn ghost small" data-act="pf-photo-rm">Remove picture</button>`
     : `<div class="avatar">${esc(initials(p.name || userName(session)))}</div><span class="hint">No picture yet.</span>`;
 }
 // dir: the officer-only directory, which also lists honorary officers and tags schedulers.
@@ -4730,7 +4730,7 @@ function officerProfileSection(){
           <span style="font-weight:600;font-size:.92rem">Profile picture</span>
           <div class="row" id="pf-photo-row">${photoPreview(p)}</div>
           <input id="pf-photo" type="file" accept="image/*" aria-label="Choose a profile picture">
-          <span class="hint">After you choose a photo, drag it and zoom to pick the square that shows. Saved when you click Save profile.</span>
+          <span class="hint">After you choose a photo (or click Adjust crop), drag it and zoom to pick what shows in the circle. Saved when you click Save profile.</span>
         </div>
         <label>Contact email<input id="pf-contact" type="email" value="${esc(p.contact || session)}"></label>
         <label>Office hours<input id="pf-hours" value="${esc(p.hours || '')}" placeholder="e.g. Wed 2:00–3:00 PM, library 2nd floor"></label>
@@ -8256,6 +8256,7 @@ document.addEventListener('click', async ev => {
         await logChange('Updated the big-name firms list (' + rows.length + ' firms)'); ui.firmsEdit = false;
       }, 'Big-name firms saved'); break; }
     case 'crop-done': cropFinish(true); break;
+    case 'crop-adjust': { const p = db.profiles[session] || {}, src = ui.profilePhoto === null ? (p.photo || '') : ui.profilePhoto; if (src) openCropperFrom(src); break; }
     case 'pf-go': location.hash = '#account'; setTimeout(() => { const f = document.getElementById('pf-name'); if (f){ f.closest('.panel, form, section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, 250); break;
     case 'pf-later': try { localStorage.setItem('wfa-pf-later', String(Date.now() + 7 * 864e5)); } catch(e){} render(); break;
     case 'bio-more': { const b = t.previousElementSibling, open = !b.classList.contains('open'); b.classList.toggle('open', open); t.textContent = open ? 'See less' : 'See more'; break; }
@@ -8693,20 +8694,22 @@ function cropPlace(){
 function cropperHtml(){
   return `<div class="stack" style="gap:8px;width:${CROP_BOX}px;max-width:100%">
     <div class="crop-box" style="width:${CROP_BOX}px;height:${CROP_BOX}px;position:relative;overflow:hidden;touch-action:none;cursor:grab;background:#111;border:2px solid var(--brand)">
-      <img id="crop-img" src="${esc(ui.crop.src)}" alt="" draggable="false" style="position:absolute;max-width:none;user-select:none;pointer-events:none">
+      <img id="crop-img" src="${esc(ui.crop.src)}" ${/^(blob|data):/.test(ui.crop.src) ? '' : 'crossorigin="anonymous"'} alt="" draggable="false" style="position:absolute;max-width:none;user-select:none;pointer-events:none">
       <div style="position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 400px rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.85);pointer-events:none"></div></div>
     <span class="hint">Drag the photo to move it. Zoom with the slider. The circle is what shows on the Officers page.</span>
     <label class="row" style="gap:8px;align-items:center;margin:0">Zoom<input id="crop-zoom" type="range" min="1" max="4" step="0.01" value="${ui.crop.zoom}" style="flex:1"></label>
     <div class="row" style="gap:6px"><button type="button" class="btn small" data-act="crop-done">Use this crop</button><button type="button" class="btn ghost small" data-act="crop-cancel">Cancel</button></div></div>`;
 }
-function openCropper(file){
-  const src = URL.createObjectURL(file), img = new Image();
+function openCropper(file){ openCropperFrom(URL.createObjectURL(file)); }
+// Also used for "Adjust crop" on the picture someone already has (a saved one, or one just chosen).
+function openCropperFrom(src){
+  const img = new Image(); if (!/^(blob|data):/.test(src)) img.crossOrigin = 'anonymous';
   img.onload = () => {
     ui.crop = { src, w: img.naturalWidth, h: img.naturalHeight, zoom: 1, x: 0, y: 0 };
     const row = document.getElementById('pf-photo-row'); if (!row) return;
     row.innerHTML = cropperHtml(); cropPlace();
   };
-  img.onerror = () => { URL.revokeObjectURL(src); toast('Couldn’t read that image.'); };
+  img.onerror = () => { if (src.startsWith('blob:')) URL.revokeObjectURL(src); toast('Couldn’t open that picture to crop. Choose the photo again instead.'); };
   img.src = src;
 }
 function cropFinish(keep){
@@ -8717,7 +8720,7 @@ function cropFinish(keep){
     cv.getContext('2d').drawImage(img, -f.left / f.s, -f.top / f.s, CROP_BOX / f.s, CROP_BOX / f.s, 0, 0, cv.width, cv.height);
     ui.profilePhoto = cv.toDataURL('image/jpeg', 0.88);
   }
-  URL.revokeObjectURL(c.src); ui.crop = null;
+  if (c.src.startsWith('blob:')) URL.revokeObjectURL(c.src); ui.crop = null;
   const row = document.getElementById('pf-photo-row'); if (row) row.innerHTML = photoPreview(db.profiles[session] || {});
 }
 // Dragging (mouse or finger) and zooming.
