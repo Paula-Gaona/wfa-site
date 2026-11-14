@@ -9586,7 +9586,8 @@ async function handleSubmit(f, v, err){
         }
         if (old) await sb.storage.from('officer-photos').remove([old]);
       }
-      const saved = await sb.from('officer_profiles').upsert({ email: session, photo, photo_original: photoOriginal, photo_crop: photoCrop, title: p.rawTitle || '', tier: p.tier || 'officer', branch: p.branch || '', name: v('pf-name'), contact, hours: v('pf-hours'), linkedin, bio: v('pf-bio') });
+      // The original and crop are only written when the picture changed, so saving other details never erases them.
+      const saved = await sb.from('officer_profiles').upsert({ email: session, photo, ...(ui.photoOrig != null ? { photo_original: photoOriginal, photo_crop: photoCrop } : {}), title: p.rawTitle || '', tier: p.tier || 'officer', branch: p.branch || '', name: v('pf-name'), contact, hours: v('pf-hours'), linkedin, bio: v('pf-bio') });
       if (saved.error) throw new Error(/photo_original|photo_crop/.test(saved.error.message || '') ? 'Saving the original photo isn\u2019t set up yet. Run 92-profile-photo-originals.sql in Supabase.' : errMsg(saved.error));
       ui.profilePhoto = null; ui.photoOrig = null; ui.photoCropNew = null;
       await logChange('Updated their officer profile');
