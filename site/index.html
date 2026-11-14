@@ -1347,8 +1347,9 @@ function markLongBios(){
   document.querySelectorAll('.officer .bio:not(.open)').forEach(b => { const btn = b.nextElementSibling; if (btn) btn.hidden = b.scrollHeight <= b.clientHeight + 2; });
 }
 window.addEventListener('resize', () => { clearTimeout(markLongBios.t); markLongBios.t = setTimeout(markLongBios, 150); });
-function officerCard(email, tags = ''){
-  const p = db.profiles[email] || {}, n = userName(email), contact = p.contact || email;
+// photo: a picture to show instead of the saved one (the My account preview, before Save profile).
+function officerCard(email, tags = '', photo){
+  const p = { ...(db.profiles[email] || {}), ...(photo != null ? { photo } : {}) }, n = userName(email), contact = p.contact || email;
   return `<article class="officer">
     <div class="officer-top">${p.photo ? `<img class="avatar" src="${esc(p.photo)}" alt="${esc(n)}">` : `<div class="avatar">${esc(initials(n))}</div>`}<div style="min-width:0"><div class="title">${esc(p.title || (roleOf(email)==='admin'?'Admin':'Officer'))}</div><h3>${esc(n)}</h3>${studyLine(p)}${tags ? `<div class="row" style="gap:6px;margin-top:6px">${tags}</div>` : ''}</div></div>
     ${p.bio ? `<div class="bio-wrap"><p class="muted bio">${esc(p.bio)}</p><button type="button" class="bio-more" data-act="bio-more" hidden>See more</button></div>` : ''}
@@ -1364,7 +1365,7 @@ function photoPreview(p){
   if (ui.crop){ setTimeout(cropPlace); return cropperHtml(); }   // still choosing the crop
   const src = ui.profilePhoto === null ? (p.photo || '') : ui.profilePhoto;
   return src
-    ? `<img class="avatar" src="${esc(src)}" alt="Profile picture"><button type="button" class="btn ghost small" data-act="crop-adjust">Adjust crop</button><button type="button" class="btn ghost small" data-act="pf-photo-rm">Remove picture</button>`
+    ? `<img class="avatar" src="${esc(src)}" alt="Profile picture"><button type="button" class="btn ghost small" data-act="crop-adjust">Adjust crop</button><button type="button" class="btn ghost small" data-act="pf-photo-rm">Remove picture</button>${ui.profilePhoto !== null ? '<span class="tag warn">Not saved yet: click Save profile below</span>' : ''}`
     : `<div class="avatar">${esc(initials(p.name || userName(session)))}</div><span class="hint">No picture yet.</span>`;
 }
 // dir: the officer-only directory, which also lists honorary officers and tags schedulers.
@@ -4739,7 +4740,7 @@ function officerProfileSection(){
         <div class="err" id="pf-err"></div>
         <div class="row"><button class="btn" type="submit">Save profile</button></div>
       </form>
-      <section class="stack"><div class="eyebrow">How it looks</div>${officerCard(session)}</section>
+      <section class="stack" id="pf-look"><div class="eyebrow">How it looks</div>${officerCard(session, '', ui.profilePhoto)}</section>
     </div>`;
 }
 
@@ -8265,7 +8266,7 @@ document.addEventListener('click', async ev => {
     case 'pf-later': try { localStorage.setItem('wfa-pf-later', String(Date.now() + 7 * 864e5)); } catch(e){} render(); break;
     case 'bio-more': { const b = t.previousElementSibling, open = !b.classList.contains('open'); b.classList.toggle('open', open); t.textContent = open ? 'See less' : 'See more'; break; }
     case 'crop-cancel': cropFinish(false); break;
-    case 'pf-photo-rm': ui.profilePhoto = ''; ui.photoOrig = ''; ui.photoCropNew = {}; document.getElementById('pf-photo-row').innerHTML = photoPreview(db.profiles[session] || {}); break;
+    case 'pf-photo-rm': ui.profilePhoto = ''; ui.photoOrig = ''; ui.photoCropNew = {}; refreshProfileLook(); document.getElementById('pf-photo-row').innerHTML = photoPreview(db.profiles[session] || {}); break;
     case 'change-status': ui.adminTab = 'access'; ui.editOfficer = id; if (route() !== 'admin') location.hash = 'admin'; else render(); window.scrollTo(0,0); break;
     case 'app-filter': ui.appFilter = t.dataset.f; render(); break;
     case 'decline-email': openDeclineModal(id); break;
@@ -8721,6 +8722,10 @@ function openCropperFrom(src, params, fresh){
   img.onerror = () => { if (src.startsWith('blob:')) URL.revokeObjectURL(src); toast('Couldn’t open that picture to crop. Choose the photo again instead.'); };
   img.src = src;
 }
+function refreshProfileLook(){
+  const box = document.getElementById('pf-look'); if (!box) return;
+  box.innerHTML = '<div class="eyebrow">How it looks</div>' + officerCard(session, '', ui.profilePhoto); requestAnimationFrame(markLongBios);
+}
 function cropFinish(keep){
   const c = ui.crop; if (!c) return;
   if (keep){
@@ -8732,6 +8737,7 @@ function cropFinish(keep){
     ui.photoOrig = c.src; ui.photoCropNew = { zoom: +c.zoom.toFixed(3), x: +(c.x / CROP_BOX).toFixed(4), y: +(c.y / CROP_BOX).toFixed(4) };
   }
   if (c.src.startsWith('blob:')) URL.revokeObjectURL(c.src); ui.crop = null;
+  refreshProfileLook();
   const row = document.getElementById('pf-photo-row'); if (row) row.innerHTML = photoPreview(db.profiles[session] || {});
 }
 // Dragging (mouse or finger) and zooming.
