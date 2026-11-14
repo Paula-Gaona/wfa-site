@@ -502,7 +502,9 @@ table.bulk input,table.bulk select{padding:6px 8px;min-width:120px}
 /* About, officers, resources, recaps */
 .pillars{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:24px}
 .pillar{border-top:4px solid var(--brand);padding-top:14px;display:flex;flex-direction:column;gap:8px}
-.officers{display:grid;grid-template-columns:repeat(auto-fill,minmax(16.25rem,1fr));gap:20px}
+/* Officer cards: centered rows of equal-width cards (a short row, like 3 presidents, sits in the middle). */
+.officers{display:flex;flex-wrap:wrap;justify-content:center;gap:20px}
+.officers>*{flex:0 1 16.25rem;min-width:0}
 .officer{display:flex;flex-direction:column;gap:10px;padding:20px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
 /* Officer bios show 5 lines, with "See more" for longer ones, so the cards line up. */
 .officer .bio{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:4px}
@@ -511,7 +513,7 @@ table.bulk input,table.bulk select{padding:6px 8px;min-width:120px}
 .officer-top{display:flex;gap:14px;align-items:flex-start}   /* photos line up at the top, however long the title and majors are */
 /* Officer cards: a large round photo on top, with the title, name, and majors centered under it. */
 .officer .officer-top{flex-direction:column;align-items:center;text-align:center}
-.officer .officer-top>div{width:100%}
+.officer .officer-top>div:not(.avatar){width:100%}
 .officer .officer-top .row{justify-content:center}
 .officer .avatar{width:8rem;height:8rem;font-size:2.6rem;border-radius:50%}
 .avatar{width:4rem;height:4rem;flex:none;background:var(--brand);color:var(--on-brand);display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.5rem}
