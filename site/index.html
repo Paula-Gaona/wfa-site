@@ -849,7 +849,7 @@ async function load(){
   db.profiles = {}; db.adminEmails = []; db.officerEmails = [];
   (R.profiles || []).forEach(p => {
     const auto = buildTitle(p.tier, p.branch), custom = p.title && p.title !== auto ? p.title : '';   // older profiles saved the automatic title
-    db.profiles[p.email] = { name:p.name, title:custom || auto, customTitle:custom, rawTitle:p.title || '', bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, signature:p.signature || '', tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '', majors:p.majors || [], minor:p.minor || '', canPublish:!!p.can_publish };
+    db.profiles[p.email] = { name:p.name, title:custom || auto, customTitle:custom, rawTitle:p.title || '', bio:p.bio, contact:p.contact, hours:p.hours, linkedin:p.linkedin, signature:p.signature || '', tier:p.tier || 'officer', branch:p.branch || '', photo:p.photo || '', photoOriginal:p.photo_original || '', photoCrop:p.photo_crop || {}, majors:p.majors || [], minor:p.minor || '', canPublish:!!p.can_publish };
     (p.role === 'admin' ? db.adminEmails : db.officerEmails).push(p.email);
   });
   if (R.access){
@@ -4730,7 +4730,7 @@ function officerProfileSection(){
           <span style="font-weight:600;font-size:.92rem">Profile picture</span>
           <div class="row" id="pf-photo-row">${photoPreview(p)}</div>
           <input id="pf-photo" type="file" accept="image/*" aria-label="Choose a profile picture">
-          <span class="hint">After you choose a photo (or click Adjust crop), drag it and zoom to pick what shows in the circle. Saved when you click Save profile.</span>
+          <span class="hint">After you choose a photo (or click Adjust crop), drag it and zoom to pick what shows in the circle. Your original photo is kept, so you can adjust it again anytime. Saved when you click Save profile.</span>
         </div>
         <label>Contact email<input id="pf-contact" type="email" value="${esc(p.contact || session)}"></label>
         <label>Office hours<input id="pf-hours" value="${esc(p.hours || '')}" placeholder="e.g. Wed 2:00–3:00 PM, library 2nd floor"></label>
@@ -8256,12 +8256,16 @@ document.addEventListener('click', async ev => {
         await logChange('Updated the big-name firms list (' + rows.length + ' firms)'); ui.firmsEdit = false;
       }, 'Big-name firms saved'); break; }
     case 'crop-done': cropFinish(true); break;
-    case 'crop-adjust': { const p = db.profiles[session] || {}, src = ui.profilePhoto === null ? (p.photo || '') : ui.profilePhoto; if (src) openCropperFrom(src); break; }
+    case 'crop-adjust': { const p = db.profiles[session] || {};
+      // The full original if there is one (just chosen, or saved), at the last crop; otherwise the current picture.
+      const orig = ui.photoOrig != null ? ui.photoOrig : p.photoOriginal, params = ui.photoOrig != null ? ui.photoCropNew : p.photoCrop;
+      const src = orig || (ui.profilePhoto === null ? (p.photo || '') : ui.profilePhoto);
+      if (src) openCropperFrom(src, orig ? params : null); break; }
     case 'pf-go': location.hash = '#account'; setTimeout(() => { const f = document.getElementById('pf-name'); if (f){ f.closest('.panel, form, section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, 250); break;
     case 'pf-later': try { localStorage.setItem('wfa-pf-later', String(Date.now() + 7 * 864e5)); } catch(e){} render(); break;
     case 'bio-more': { const b = t.previousElementSibling, open = !b.classList.contains('open'); b.classList.toggle('open', open); t.textContent = open ? 'See less' : 'See more'; break; }
     case 'crop-cancel': cropFinish(false); break;
-    case 'pf-photo-rm': ui.profilePhoto = ''; document.getElementById('pf-photo-row').innerHTML = photoPreview(db.profiles[session] || {}); break;
+    case 'pf-photo-rm': ui.profilePhoto = ''; ui.photoOrig = ''; ui.photoCropNew = {}; document.getElementById('pf-photo-row').innerHTML = photoPreview(db.profiles[session] || {}); break;
     case 'change-status': ui.adminTab = 'access'; ui.editOfficer = id; if (route() !== 'admin') location.hash = 'admin'; else render(); window.scrollTo(0,0); break;
     case 'app-filter': ui.appFilter = t.dataset.f; render(); break;
     case 'decline-email': openDeclineModal(id); break;
@@ -8700,12 +8704,17 @@ function cropperHtml(){
     <label class="row" style="gap:8px;align-items:center;margin:0">Zoom<input id="crop-zoom" type="range" min="1" max="4" step="0.01" value="${ui.crop.zoom}" style="flex:1"></label>
     <div class="row" style="gap:6px"><button type="button" class="btn small" data-act="crop-done">Use this crop</button><button type="button" class="btn ghost small" data-act="crop-cancel">Cancel</button></div></div>`;
 }
-function openCropper(file){ openCropperFrom(URL.createObjectURL(file)); }
+async function openCropper(file){
+  let orig; try { orig = await shrink(file); } catch(e){ return toast('Couldn’t read that image.'); }
+  openCropperFrom(orig, null, true);
+}
 // Also used for "Adjust crop" on the picture someone already has (a saved one, or one just chosen).
-function openCropperFrom(src){
+// params: the last crop ({ zoom, x, y }, x and y as fractions of the frame) to start from. fresh: a newly chosen photo.
+function openCropperFrom(src, params, fresh){
   const img = new Image(); if (!/^(blob|data):/.test(src)) img.crossOrigin = 'anonymous';
   img.onload = () => {
-    ui.crop = { src, w: img.naturalWidth, h: img.naturalHeight, zoom: 1, x: 0, y: 0 };
+    const pr = params || {};
+    ui.crop = { src, fresh: !!fresh, w: img.naturalWidth, h: img.naturalHeight, zoom: Math.min(4, Math.max(1, +pr.zoom || 1)), x: (+pr.x || 0) * CROP_BOX, y: (+pr.y || 0) * CROP_BOX };
     const row = document.getElementById('pf-photo-row'); if (!row) return;
     row.innerHTML = cropperHtml(); cropPlace();
   };
@@ -8719,6 +8728,8 @@ function cropFinish(keep){
     cv.width = cv.height = Math.max(size, 200);
     cv.getContext('2d').drawImage(img, -f.left / f.s, -f.top / f.s, CROP_BOX / f.s, CROP_BOX / f.s, 0, 0, cv.width, cv.height);
     ui.profilePhoto = cv.toDataURL('image/jpeg', 0.88);
+    // Remember the original and this position, so the next "Adjust crop" starts from the full photo.
+    ui.photoOrig = c.src; ui.photoCropNew = { zoom: +c.zoom.toFixed(3), x: +(c.x / CROP_BOX).toFixed(4), y: +(c.y / CROP_BOX).toFixed(4) };
   }
   if (c.src.startsWith('blob:')) URL.revokeObjectURL(c.src); ui.crop = null;
   const row = document.getElementById('pf-photo-row'); if (row) row.innerHTML = photoPreview(db.profiles[session] || {});
@@ -9546,7 +9557,17 @@ async function handleSubmit(f, v, err){
     if (linkedin && !/^https?:\/\//i.test(linkedin)) return err('pf-err', 'LinkedIn link must start with https://');
     const p = db.profiles[session] || {};
     await act(async () => {
-      let photo = p.photo || '';
+      let photo = p.photo || '', photoOriginal = p.photoOriginal || '', photoCrop = p.photoCrop || {};
+      if (ui.photoOrig != null){
+        const oldOrig = photoOriginal.split('/officer-photos/')[1];
+        if (ui.photoOrig.startsWith('data:')){   // a newly chosen photo: keep its original
+          const path = crypto.randomUUID() + '-original.jpg';
+          must(await sb.storage.from('officer-photos').upload(path, await (await fetch(ui.photoOrig)).blob(), { contentType: 'image/jpeg' }));
+          photoOriginal = sb.storage.from('officer-photos').getPublicUrl(path).data.publicUrl;
+          if (oldOrig) await sb.storage.from('officer-photos').remove([oldOrig]);
+        } else if (!ui.photoOrig){ photoOriginal = ''; if (oldOrig) await sb.storage.from('officer-photos').remove([oldOrig]); }
+        photoCrop = ui.photoCropNew || {};
+      }
       if (ui.profilePhoto !== null){
         const old = photo.split('/officer-photos/')[1];
         photo = '';
@@ -9557,8 +9578,9 @@ async function handleSubmit(f, v, err){
         }
         if (old) await sb.storage.from('officer-photos').remove([old]);
       }
-      must(await sb.from('officer_profiles').upsert({ email: session, photo, title: p.rawTitle || '', tier: p.tier || 'officer', branch: p.branch || '', name: v('pf-name'), contact, hours: v('pf-hours'), linkedin, bio: v('pf-bio') }));
-      ui.profilePhoto = null;
+      const saved = await sb.from('officer_profiles').upsert({ email: session, photo, photo_original: photoOriginal, photo_crop: photoCrop, title: p.rawTitle || '', tier: p.tier || 'officer', branch: p.branch || '', name: v('pf-name'), contact, hours: v('pf-hours'), linkedin, bio: v('pf-bio') });
+      if (saved.error) throw new Error(/photo_original|photo_crop/.test(saved.error.message || '') ? 'Saving the original photo isn\u2019t set up yet. Run 92-profile-photo-originals.sql in Supabase.' : errMsg(saved.error));
+      ui.profilePhoto = null; ui.photoOrig = null; ui.photoCropNew = null;
       await logChange('Updated their officer profile');
     }, 'Profile saved');
   }
