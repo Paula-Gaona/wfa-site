@@ -504,7 +504,11 @@ table.bulk input,table.bulk select{padding:6px 8px;min-width:120px}
 .pillar{border-top:4px solid var(--brand);padding-top:14px;display:flex;flex-direction:column;gap:8px}
 .officers{display:grid;grid-template-columns:repeat(auto-fill,minmax(16.25rem,1fr));gap:20px}
 .officer{display:flex;flex-direction:column;gap:10px;padding:20px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
-.officer-top{display:flex;gap:14px;align-items:center}
+/* Officer bios show 5 lines, with "See more" for longer ones, so the cards line up. */
+.officer .bio{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:4px}
+.officer .bio.open{display:block;-webkit-line-clamp:unset}
+.bio-more{background:none;border:0;padding:0;font:inherit;font-size:.9rem;font-weight:600;color:var(--brand-text);text-decoration:underline;cursor:pointer}
+.officer-top{display:flex;gap:14px;align-items:flex-start}   /* photos line up at the top, however long the title and majors are */
 .avatar{width:4rem;height:4rem;flex:none;background:var(--brand);color:var(--on-brand);display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.5rem}
 img.avatar{object-fit:cover;display:block}
 .officer .title{font-family:var(--mono);font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--brand-text)}
@@ -1322,11 +1326,15 @@ function studyLine(p){
   const text = [majors, minor].filter(Boolean).join(' · ');
   return text ? `<div class="ev-sub">${esc(text)}</div>` : '';
 }
+function markLongBios(){
+  document.querySelectorAll('.officer .bio:not(.open)').forEach(b => { const btn = b.nextElementSibling; if (btn) btn.hidden = b.scrollHeight <= b.clientHeight + 2; });
+}
+window.addEventListener('resize', () => { clearTimeout(markLongBios.t); markLongBios.t = setTimeout(markLongBios, 150); });
 function officerCard(email, tags = ''){
   const p = db.profiles[email] || {}, n = userName(email), contact = p.contact || email;
   return `<article class="officer">
     <div class="officer-top">${p.photo ? `<img class="avatar" src="${esc(p.photo)}" alt="${esc(n)}">` : `<div class="avatar">${esc(initials(n))}</div>`}<div style="min-width:0"><div class="title">${esc(p.title || (roleOf(email)==='admin'?'Admin':'Officer'))}</div><h3>${esc(n)}</h3>${studyLine(p)}${tags ? `<div class="row" style="gap:6px;margin-top:6px">${tags}</div>` : ''}</div></div>
-    ${p.bio ? `<p class="muted">${esc(p.bio)}</p>` : ''}
+    ${p.bio ? `<div class="bio-wrap"><p class="muted bio">${esc(p.bio)}</p><button type="button" class="bio-more" data-act="bio-more" hidden>See more</button></div>` : ''}
     <div class="contact">
       <div class="line"><span>${esc(contact)}</span><button class="btn ghost small" data-act="copy" data-text="${esc(contact)}" data-label="email">Copy</button></div>
       ${p.hours ? `<div class="line"><span class="muted">Office hours</span><span>${esc(p.hours)}</span></div>` : ''}
@@ -1336,6 +1344,7 @@ function officerCard(email, tags = ''){
 }
 // The profile picture shown in the My profile form: a newly chosen one, a removal, or the saved one.
 function photoPreview(p){
+  if (ui.crop){ setTimeout(cropPlace); return cropperHtml(); }   // still choosing the crop
   const src = ui.profilePhoto === null ? (p.photo || '') : ui.profilePhoto;
   return src
     ? `<img class="avatar" src="${esc(src)}" alt="Profile picture"><button type="button" class="btn ghost small" data-act="pf-photo-rm">Remove picture</button>`
@@ -4704,7 +4713,7 @@ function officerProfileSection(){
           <span style="font-weight:600;font-size:.92rem">Profile picture</span>
           <div class="row" id="pf-photo-row">${photoPreview(p)}</div>
           <input id="pf-photo" type="file" accept="image/*" aria-label="Choose a profile picture">
-          <span class="hint">Cropped to a square and resized. Saved when you click Save profile.</span>
+          <span class="hint">After you choose a photo, drag it and zoom to pick the square that shows. Saved when you click Save profile.</span>
         </div>
         <label>Contact email<input id="pf-contact" type="email" value="${esc(p.contact || session)}"></label>
         <label>Office hours<input id="pf-hours" value="${esc(p.hours || '')}" placeholder="e.g. Wed 2:00–3:00 PM, library 2nd floor"></label>
@@ -7542,6 +7551,7 @@ function render(){
   if (session && (needsPassword() || needsProfile())) r = 'setup';   // finish the account before anything else
   syncTabHash(r);
   renderChrome(r); document.getElementById('app').innerHTML = VIEWS[r]();
+  requestAnimationFrame(markLongBios);   // officer cards: show 'See more' on bios that are cut off
   addPasswordToggles(); syncCaseBox(); afterChatRender(); updateTabBadge();
   if (!ui.welcomed){ ui.welcomed = true; setTimeout(maybeWelcome, 800); }
 }
@@ -8228,6 +8238,9 @@ document.addEventListener('click', async ev => {
         if (rows.length) must(await sb.from('notable_firms').insert(rows));
         await logChange('Updated the big-name firms list (' + rows.length + ' firms)'); ui.firmsEdit = false;
       }, 'Big-name firms saved'); break; }
+    case 'crop-done': cropFinish(true); break;
+    case 'bio-more': { const b = t.previousElementSibling, open = !b.classList.contains('open'); b.classList.toggle('open', open); t.textContent = open ? 'See less' : 'See more'; break; }
+    case 'crop-cancel': cropFinish(false); break;
     case 'pf-photo-rm': ui.profilePhoto = ''; document.getElementById('pf-photo-row').innerHTML = photoPreview(db.profiles[session] || {}); break;
     case 'change-status': ui.adminTab = 'access'; ui.editOfficer = id; if (route() !== 'admin') location.hash = 'admin'; else render(); window.scrollTo(0,0); break;
     case 'app-filter': ui.appFilter = t.dataset.f; render(); break;
@@ -8621,9 +8634,9 @@ document.addEventListener('change', async e => {
     await act(async () => { must(await sb.from('dues').upsert({ email: em, status: s, updated: todayIso() })); await logChange('Marked ' + userName(em) + '’s dues ' + s); }, userName(em) + ': ' + s);
   }
   if (id === 'pf-photo' && e.target.files[0]){
-    try { ui.profilePhoto = await shrinkSquare(e.target.files[0], 400); } catch(err){ toast('Couldn’t read that image.'); }
+    if (ui.crop) cropFinish(false);
+    openCropper(e.target.files[0]);   // pick the crop before it's used
     e.target.value = '';
-    document.getElementById('pf-photo-row').innerHTML = photoPreview(db.profiles[session] || {});
   }
   if (id === 'rc-photos'){
     const files = [...e.target.files].slice(0, 6 - ui.recapPhotos.length);
@@ -8645,6 +8658,64 @@ function shrinkSquare(file, size){
     img.onerror = rej; img.src = url;
   });
 }
+// Profile picture cropper: the chosen photo fills a square frame. Drag it to move it (higher, lower, sideways) and use
+// the slider to zoom; "Use this crop" saves exactly what's in the frame as a 400 x 400 picture.
+const CROP_BOX = 260;
+function cropFit(){
+  const c = ui.crop, base = CROP_BOX / Math.min(c.w, c.h), s = base * c.zoom, dw = c.w * s, dh = c.h * s;
+  c.x = Math.max(-(dw - CROP_BOX) / 2, Math.min((dw - CROP_BOX) / 2, c.x));   // the photo always covers the frame
+  c.y = Math.max(-(dh - CROP_BOX) / 2, Math.min((dh - CROP_BOX) / 2, c.y));
+  return { s, dw, dh, left: (CROP_BOX - dw) / 2 + c.x, top: (CROP_BOX - dh) / 2 + c.y };
+}
+function cropPlace(){
+  const img = document.getElementById('crop-img'); if (!img || !ui.crop) return;
+  const f = cropFit(); Object.assign(img.style, { width: f.dw + 'px', height: f.dh + 'px', left: f.left + 'px', top: f.top + 'px' });
+}
+function cropperHtml(){
+  return `<div class="stack" style="gap:8px;width:${CROP_BOX}px;max-width:100%">
+    <div class="crop-box" style="width:${CROP_BOX}px;height:${CROP_BOX}px;position:relative;overflow:hidden;touch-action:none;cursor:grab;background:#111;border:2px solid var(--brand)">
+      <img id="crop-img" src="${esc(ui.crop.src)}" alt="" draggable="false" style="position:absolute;max-width:none;user-select:none;pointer-events:none"></div>
+    <span class="hint">Drag the photo to move it. Zoom with the slider.</span>
+    <label class="row" style="gap:8px;align-items:center;margin:0">Zoom<input id="crop-zoom" type="range" min="1" max="4" step="0.01" value="${ui.crop.zoom}" style="flex:1"></label>
+    <div class="row" style="gap:6px"><button type="button" class="btn small" data-act="crop-done">Use this crop</button><button type="button" class="btn ghost small" data-act="crop-cancel">Cancel</button></div></div>`;
+}
+function openCropper(file){
+  const src = URL.createObjectURL(file), img = new Image();
+  img.onload = () => {
+    ui.crop = { src, w: img.naturalWidth, h: img.naturalHeight, zoom: 1, x: 0, y: 0 };
+    const row = document.getElementById('pf-photo-row'); if (!row) return;
+    row.innerHTML = cropperHtml(); cropPlace();
+  };
+  img.onerror = () => { URL.revokeObjectURL(src); toast('Couldn’t read that image.'); };
+  img.src = src;
+}
+function cropFinish(keep){
+  const c = ui.crop; if (!c) return;
+  if (keep){
+    const f = cropFit(), img = document.getElementById('crop-img'), cv = document.createElement('canvas'), size = Math.min(400, Math.round(CROP_BOX / f.s));
+    cv.width = cv.height = Math.max(size, 200);
+    cv.getContext('2d').drawImage(img, -f.left / f.s, -f.top / f.s, CROP_BOX / f.s, CROP_BOX / f.s, 0, 0, cv.width, cv.height);
+    ui.profilePhoto = cv.toDataURL('image/jpeg', 0.88);
+  }
+  URL.revokeObjectURL(c.src); ui.crop = null;
+  const row = document.getElementById('pf-photo-row'); if (row) row.innerHTML = photoPreview(db.profiles[session] || {});
+}
+// Dragging (mouse or finger) and zooming.
+let cropDrag = null;
+document.addEventListener('pointerdown', e => {
+  const box = e.target.closest && e.target.closest('.crop-box'); if (!box || !ui.crop) return;
+  cropDrag = { px: e.clientX, py: e.clientY, x: ui.crop.x, y: ui.crop.y }; box.setPointerCapture(e.pointerId); box.style.cursor = 'grabbing'; e.preventDefault();
+});
+document.addEventListener('pointermove', e => {
+  if (!cropDrag || !ui.crop) return;
+  ui.crop.x = cropDrag.x + e.clientX - cropDrag.px; ui.crop.y = cropDrag.y + e.clientY - cropDrag.py; cropPlace();
+});
+document.addEventListener('pointerup', () => { if (!cropDrag) return; cropDrag = null; const b = document.querySelector('.crop-box'); if (b) b.style.cursor = 'grab'; });
+document.addEventListener('input', e => {
+  if (e.target.id !== 'crop-zoom' || !ui.crop) return;
+  const old = cropFit().s; ui.crop.zoom = +e.target.value; const now = cropFit().s;
+  ui.crop.x *= now / old; ui.crop.y *= now / old; cropPlace();   // zoom around the middle of the frame
+});
 function shrink(file){
   return new Promise((res, rej) => {
     const img = new Image(), url = URL.createObjectURL(file);
