@@ -1025,9 +1025,13 @@ function countsInStats(e){ return e.inStats !== false && !hostedElsewhere(e); }
 const DRESS = {
   casual: ['Casual', 'Everyday clothes are fine.', [
     ['Anyone', ['Jeans, T-shirts, hoodies, and sneakers are all fine', 'Come as you are']]]],
-  smart_casual: ['Smart casual', 'A step up from everyday: no athletic wear or graphic tees.', [
-    ['Men', ['Clean dark jeans or chinos', 'A polo, button-down, or nice sweater', 'Loafers, boots, or plain leather sneakers']],
-    ['Women', ['Clean dark jeans or nice pants, or a casual dress', 'A blouse, sweater, or nice top', 'Flats, boots, or clean sneakers']],
+  neat_casual: ['Neat casual', 'Casual but put-together: no hoodies, sweats, or graphic tees.', [
+    ['Men', ['Jeans without rips, or chinos', 'A plain T-shirt, henley, crewneck, or quarter-zip', 'Clean sneakers or boots']],
+    ['Women', ['Jeans without rips, or casual pants or a skirt', 'A plain T-shirt, nice top, or sweater', 'Clean sneakers, flats, or boots']],
+    ['Skip', ['Hoodies and sweatpants', 'Graphic tees', 'Athletic wear', 'Ripped jeans']]]],
+  smart_casual: ['Smart casual', 'A collared shirt or a nice top, with dark jeans or chinos.', [
+    ['Men', ['Clean dark jeans or chinos', 'A polo or button-down, or a sweater over a collared shirt', 'Loafers, boots, or plain leather sneakers']],
+    ['Women', ['Clean dark jeans or nice pants, or a casual dress', 'A blouse, a nice sweater, or a dressy top', 'Flats, boots, or clean leather sneakers']],
     ['Skip', ['Athletic wear', 'Graphic tees', 'Ripped jeans', 'Flip-flops']]]],
   business_casual: ['Business casual', 'Slacks or chinos with a collared shirt or blouse; no jeans or sneakers.', [
     ['Men', ['Slacks or chinos with a belt', 'A button-down or polo, tucked in', 'Optional: a sweater or blazer (no tie needed)', 'Loafers or dress shoes']],
