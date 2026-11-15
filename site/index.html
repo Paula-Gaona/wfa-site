@@ -504,10 +504,10 @@ table.bulk input,table.bulk select{padding:6px 8px;min-width:120px}
 .pillar{border-top:4px solid var(--brand);padding-top:14px;display:flex;flex-direction:column;gap:8px}
 /* Officer cards: centered rows of equal-width cards (a short row, like 3 presidents, sits in the middle). */
 .officers{display:flex;flex-wrap:wrap;justify-content:center;gap:20px}
-.officers>*{flex:0 1 16.25rem;min-width:0}
+.officers>*{flex:0 1 20rem;min-width:0}
 .officer{display:flex;flex-direction:column;gap:10px;padding:20px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
-/* Officer bios show 5 lines, with "See more" for longer ones, so the cards line up. */
-.officer .bio{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:4px}
+/* Officer bios show 4 lines, with "See more" for longer ones, so the cards line up. */
+.officer .bio{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:4px}
 .officer .bio.open{display:block;-webkit-line-clamp:unset}
 .bio-more{background:none;border:0;padding:0;font:inherit;font-size:.9rem;font-weight:600;color:var(--brand-text);text-decoration:underline;cursor:pointer}
 .officer-top{display:flex;gap:14px;align-items:flex-start}   /* photos line up at the top, however long the title and majors are */
