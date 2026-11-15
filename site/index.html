@@ -319,6 +319,9 @@ main{padding-block:36px 64px}
 .facts{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:.95rem}
 .facts dt{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding-top:3px}
 .facts dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.dress-more summary{cursor:pointer;margin-top:4px}
+.dress-list{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin:6px 0 0;font-size:.9rem}
+.dress-list dt{font-weight:600;color:var(--muted)}.dress-list dd{margin:0}
 .meter{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
 .meter span{display:block;height:100%;background:var(--up)}
 .chat-wrap{display:grid;grid-template-columns:minmax(15rem,20rem) 1fr;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);height:min(74vh,48rem);overflow:hidden}
@@ -865,7 +868,7 @@ async function load(){
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
-    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, showRsvps:e.show_rsvps !== false, checkinOpenedAt:e.checkin_opened_at || null, regMode:e.reg_mode || 'rsvp', regUrl:e.reg_url || '', host:e.host || '', inStats:e.in_stats !== false, speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
+    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, showRsvps:e.show_rsvps !== false, checkinOpenedAt:e.checkin_opened_at || null, regMode:e.reg_mode || 'rsvp', regUrl:e.reg_url || '', host:e.host || '', dress:DRESS[e.dress_code] ? e.dress_code : '', dressNote:e.dress_note || '', inStats:e.in_stats !== false, speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -1018,6 +1021,50 @@ function showRsvps(e){ return takesRsvps(e) && (can('officer') || e.showRsvps !=
 function hostedElsewhere(e){ return !!e.host || e.regMode === 'link'; }
 // Counts in attendance statistics: not hosted elsewhere, and "Count this event in statistics" is on.
 function countsInStats(e){ return e.inStats !== false && !hostedElsewhere(e); }
+// Dress codes: [name, one-line summary (emails, event cards), what to wear in more detail (event page)].
+const DRESS = {
+  casual: ['Casual', 'Everyday clothes are fine.', [
+    ['Anyone', 'Jeans, T-shirts, hoodies, and sneakers are all fine. Come as you are.']]],
+  wfa_shirt: ['WFA shirt', 'Wear your WFA shirt if you have one.', [
+    ['Anyone', 'Wear your WFA shirt or other WFA gear if you have one, with jeans or whatever’s comfortable. No WFA shirt yet? Casual clothes are fine.']]],
+  smart_casual: ['Smart casual', 'A step up from everyday: no athletic wear or graphic tees.', [
+    ['Men', 'Clean dark jeans or chinos with a polo, a button-down, or a nice sweater. Clean shoes, like loafers, boots, or plain leather sneakers.'],
+    ['Women', 'Clean dark jeans or nice pants with a blouse, a sweater, or a casual dress. Flats, boots, or clean sneakers.'],
+    ['Skip', 'Athletic wear, graphic tees, ripped jeans, and flip-flops.']]],
+  business_casual: ['Business casual', 'Slacks or chinos with a collared shirt or blouse; no jeans or sneakers.', [
+    ['Men', 'Slacks or chinos with a button-down or polo, tucked in, and a belt. A sweater or blazer is a nice touch. No tie needed. Loafers or dress shoes.'],
+    ['Women', 'Slacks, or a skirt or dress at about knee length, with a blouse, a sweater, or a nice top. A blazer or cardigan is optional. Flats, loafers, or low heels.'],
+    ['Skip', 'Jeans, sneakers, T-shirts, hoodies, and athletic wear.']]],
+  business_professional: ['Business professional', 'A suit, or a suit-level outfit; what you’d wear to an interview.', [
+    ['Men', 'A suit in navy, charcoal, gray, or black, with a pressed dress shirt and a tie. Dress shoes with a matching belt and dark socks.'],
+    ['Women', 'A pantsuit or skirt suit, or a conservative dress or skirt with a blazer. A blouse or shell under the jacket. Closed-toe flats or modest heels.'],
+    ['Tips', 'Think interview-ready: neutral colors, clothes that fit and are pressed, and simple accessories. No suit yet? A blazer with dress pants or a skirt is close enough.']]],
+  semi_formal: ['Semi-formal', 'Dressy evening wear: a suit, a cocktail dress, or dressy separates.', [
+    ['Men', 'A suit, or a blazer with dress pants. A tie is a good idea but optional. Dress shoes.'],
+    ['Women', 'A cocktail dress or a dressy jumpsuit, or a nice skirt or dress pants with a dressy top. Heels or dressy flats.'],
+    ['Skip', 'Floor-length gowns and tuxedos (that’s black tie), and anything casual.']]],
+  outdoor: ['Outdoor / active', 'Comfortable clothes and shoes for walking or being outside.', [
+    ['Anyone', 'Comfortable clothes you can move in, and closed-toe shoes for walking. Check the weather and bring layers, water, and sun protection if you’ll be outside.']]],
+};
+// What new events start with, by type (officers can change it).
+const DRESS_DEFAULT = { case_competition: 'business_professional', career_fair: 'business_professional', guest_speaker: 'business_casual', excursion: 'business_casual', workshop: 'casual', social: 'casual' };
+const dressName = e => DRESS[e.dress] ? DRESS[e.dress][0] : '';
+// One line for emails: "Business casual (slacks or chinos ...). Note"
+function dressLine(e){
+  if (!DRESS[e.dress] && !e.dressNote) return '';
+  const [n, sum] = DRESS[e.dress] || [];
+  return [n ? n + ' (' + sum.charAt(0).toLowerCase() + sum.slice(1).replace(/\.$/, '') + ')' : '', e.dressNote].filter(Boolean).join('. ');
+}
+// The event page: the name, the note, and what to wear, folded away.
+function dressFacts(e){
+  if (!DRESS[e.dress] && !e.dressNote) return '';
+  const d = DRESS[e.dress];
+  return `<dt>Dress</dt><dd>${d ? `<strong>${esc(d[0])}</strong>` : ''}${e.dressNote ? `${d ? '<br>' : ''}${esc(e.dressNote)}` : ''}${d ? `<details class="dress-more"><summary class="hint">What to wear</summary><dl class="dress-list">${d[2].map(([who, what]) => `<dt>${esc(who)}</dt><dd>${esc(what)}</dd>`).join('')}</dl></details>` : ''}</dd>`;
+}
+function dressHint(){
+  const sel = document.getElementById('ev-dress'), h = document.getElementById('ev-dress-hint'); if (!sel || !h) return;
+  const d = DRESS[sel.value]; h.textContent = d ? d[1] : 'No dress code shown on the event.';
+}
 function hostLabel(e){ return e.host ? 'Hosted by ' + e.host : e.regMode === 'link' ? 'Hosted by another organization' : ''; }
 function regLinkBtn(e){ if (e.regMode !== 'link' || !e.regUrl) return ''; let host = ''; try { host = new URL(e.regUrl).hostname.replace(/^www\./, ''); } catch(x){}
   return `<a class="btn" href="${esc(e.regUrl)}" target="_blank" rel="noopener">Register ↗</a><span class="hint">Registration is on ${esc(host || 'another site')}. This event is run by ${esc(e.host || 'another organization')}.</span>`; }
@@ -4057,7 +4104,7 @@ function eventBlock(who){
   };
   const one = e =>
     '\n### ' + e.title + '\n- When: ' + fmtDay(e.date) + (e.start ? ', ' + fmtTime(e.start) + (e.end ? ' to ' + fmtTime(e.end) : '') : '') +
-    (e.loc ? '\n- Where: ' + e.loc : '') + seats(e) + points(e) + '\n- ' + link(e) + ': ' + eventLink(e.id) + (e.desc ? '\n' + e.desc.trim().split('\n').map(l => '> ' + l).join('\n') : '');
+    (e.loc ? '\n- Where: ' + e.loc : '') + (dressLine(e) ? '\n- Dress: ' + dressLine(e) : '') + seats(e) + points(e) + '\n- ' + link(e) + ': ' + eventLink(e.id) + (e.desc ? '\n' + e.desc.trim().split('\n').map(l => '> ' + l).join('\n') : '');
   // Two or more events: the bigger ones (case competitions, excursions, guest speakers, career fairs) go first under
   // "Don't miss", then the rest under "Also coming up".
   if (isNewsletter()) return nlEventGroups(list).map(([, head, evs]) => '\n\n## ' + head + '\n' + evs.map(one).join('\n\n')).join('');
@@ -4211,7 +4258,7 @@ function nlEventCard(e, featured, who){
   const meta = [fmtDay(e.date) + (e.start ? ', ' + fmtTime(e.start) + (e.end ? ' to ' + fmtTime(e.end) : '') : ''), e.loc].filter(Boolean).map(nlEsc).join(' &middot; ');
   const pts = hostedElsewhere(e) || !PTS[e.cat] ? '' : `${PTS[e.cat]} points for checking in`;
   const seats = !takesRsvps(e) || !e.cap ? '' : seatLeft(e) <= 0 ? 'Full: join the waitlist' : 'Seats limited';
-  const tags = [hostLabel(e), seats, pts].filter(Boolean).map(t => `<span style="display:inline-block;margin:0 6px 4px 0;padding:2px 8px;border-radius:10px;background:${NLC.cream};border:1px solid ${NLC.line};font:12px Arial,sans-serif;color:${NLC.green}">${nlEsc(t)}</span>`).join('')
+  const tags = [hostLabel(e), dressName(e) && 'Dress: ' + dressName(e), seats, pts].filter(Boolean).map(t => `<span style="display:inline-block;margin:0 6px 4px 0;padding:2px 8px;border-radius:10px;background:${NLC.cream};border:1px solid ${NLC.line};font:12px Arial,sans-serif;color:${NLC.green}">${nlEsc(t)}</span>`).join('')
     + (hostedElsewhere(e) ? '' : nlEventRules(who, e).map(r => `<span style="display:inline-block;margin:0 6px 4px 0;padding:2px 8px;border-radius:10px;background:#F6ECD2;border:1px solid ${NLC.gold};font:bold 12px Arial,sans-serif;color:${NLC.goldDeep}">${nlEsc(nlRuleTag(r))}</span>`).join(''));
   const desc = (e.desc || '').trim();
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 14px;border:1px solid ${NLC.line};${featured ? `border-left:4px solid ${NLC.gold};` : ''}border-radius:6px;background:#ffffff">
@@ -5932,6 +5979,12 @@ function viewOfficer(){
           <label class="check"><input type="checkbox" id="ev-host-on" ${e?.host ? 'checked' : ''} onchange="document.getElementById('ev-host-name-wrap').hidden = !this.checked"> Hosted by another organization <span class="hint">We’re advertising someone else’s event: no WFA check-in, points, or statistics.</span></label>
           <label id="ev-host-name-wrap" ${e?.host ? '' : 'hidden'}>Host<input id="ev-host" maxlength="120" placeholder="Like UVU Real Estate Club" value="${esc(e?.host || '')}"><span class="hint">Shows as “Hosted by …” on the event.</span></label>
         </div>
+        <div class="stack" id="ev-dress-wrap" style="gap:6px" ${(e?.cat || ui.evNewCat || Object.keys(CATS)[0]) === 'officer_meeting' ? 'hidden' : ''}>
+          ${(() => { const cur = e ? e.dress : (DRESS_DEFAULT[e?.cat || ui.evNewCat || Object.keys(CATS)[0]] || '');
+            return `<label>Dress code<select id="ev-dress" onchange="this.dataset.touched = 1; dressHint()"><option value="">None</option>${Object.entries(DRESS).map(([k, [n]]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+            <span class="hint" id="ev-dress-hint">${cur ? esc(DRESS[cur][1]) : 'No dress code shown on the event.'}</span></label>`; })()}
+          <label>Dress code note <span class="hint">(optional)</span><input id="ev-dress-note" maxlength="200" placeholder="Like: Wear your WFA shirt for the group photo" value="${esc(e?.dressNote || '')}"><span class="hint">The event page explains what each dress code means for men and women.</span></label>
+        </div>
         <div class="stack" id="ev-reg-wrap" style="gap:6px" ${['officer_meeting', 'case_competition'].includes(e?.cat || ui.evNewCat || Object.keys(CATS)[0]) ? 'hidden' : ''}>
           <label>Registration<select id="ev-reg">${[['rsvp', 'RSVP on this site'], ['none', 'No button (just show up)'], ['link', 'Link to another registration page']].map(([k, l]) => `<option value="${k}" ${(e?.regMode || 'rsvp') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
           <label id="ev-reg-url-wrap" ${e?.regMode === 'link' ? '' : 'hidden'}>Registration link<input id="ev-reg-url" type="url" placeholder="https://…" value="${esc(e?.regUrl || '')}"><span class="hint">For posting another organization’s event: people register there. It has no WFA check-in or points.</span></label>
@@ -6467,7 +6520,7 @@ function eventInner(id, page){
     <h2>${esc(e.title)}</h2>
     <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} <span class="hint">Mountain Time</span></dd>
       <dt>Status</dt><dd>${{ upcoming: 'Upcoming', live: '<strong>Happening now</strong>', over: 'Over' }[evStatus(e)]}</dd>
-      <dt>Where</dt><dd>${esc(e.loc)}</dd>${e.cat === 'officer_meeting' ? `<dt>Who</dt><dd>${meetingFor(e)}${session && can('officer') ? `<br><strong>${{ required: 'You’re required.', invited: 'You’re invited (optional).', '': 'You’re not expected at this one.' }[myMeetingStatus(e)]}</strong>` : ''}</dd>` : ''}${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : showRsvps(e) ? `<dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}` : !takesRsvps(e) ? `<dt>Registration</dt><dd>${e.regMode === 'link' ? 'On the host’s site' : 'None needed'}` : isPast(e) ? `<dt>Seats</dt><dd>${e.cap || 'No limit'}` : `<dt>Availability</dt><dd>${seatTag(e)}`}${hasStarted(e) && showRsvps(e) ?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
+      <dt>Where</dt><dd>${esc(e.loc)}</dd>${dressFacts(e)}${e.cat === 'officer_meeting' ? `<dt>Who</dt><dd>${meetingFor(e)}${session && can('officer') ? `<br><strong>${{ required: 'You’re required.', invited: 'You’re invited (optional).', '': 'You’re not expected at this one.' }[myMeetingStatus(e)]}</strong>` : ''}</dd>` : ''}${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : showRsvps(e) ? `<dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}` : !takesRsvps(e) ? `<dt>Registration</dt><dd>${e.regMode === 'link' ? 'On the host’s site' : 'None needed'}` : isPast(e) ? `<dt>Seats</dt><dd>${e.cap || 'No limit'}` : `<dt>Availability</dt><dd>${seatTag(e)}`}${hasStarted(e) && showRsvps(e) ?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
     ${e.cap && !isCase(e) && showRsvps(e) ? `<div class="meter"><span style="width:${Math.min(100,n/e.cap*100)}%"></span></div>` : ''}
     <p style="white-space:pre-wrap">${esc(e.desc)}</p>
     ${(e.speakers || []).some(sp => sp.firm) ? `<div class="stack" style="gap:10px"><h3 style="margin:0">Firms attending</h3><div class="firm-grid">${e.speakers.map(sp => `<div class="speaker-card">${sp.url ? `<a href="${esc(sp.url)}" target="_blank" rel="noopener"><strong>${esc(sp.name)}</strong> ↗</a>` : `<strong>${esc(sp.name)}</strong>`}${sp.bio ? `<div class="hint">Hiring for: ${esc(sp.bio)}</div>` : ''}</div>`).join('')}</div></div>`
@@ -7587,6 +7640,9 @@ function syncCaseBox(){
   const rw = document.getElementById('ev-reg-wrap'); if (rw) rw.hidden = noRsvp;
   const hw = document.getElementById('ev-host-wrap'); if (hw) hw.hidden = document.getElementById('ev-cat')?.value === 'officer_meeting';
   const sw2 = document.getElementById('ev-stats-wrap'); if (sw2) sw2.hidden = document.getElementById('ev-cat')?.value === 'officer_meeting';
+  const dw = document.getElementById('ev-dress-wrap'); if (dw) dw.hidden = c.value === 'officer_meeting';
+  const ds = document.getElementById('ev-dress');
+  if (ds && !ui.editEvent && !ds.dataset.touched && ds.value !== (DRESS_DEFAULT[c.value] || '')){ ds.value = DRESS_DEFAULT[c.value] || ''; dressHint(); }
   const ru = document.getElementById('ev-reg-url-wrap'); if (ru) ru.hidden = reg !== 'link';
   const cw = document.getElementById('ev-cap-wrap'); if (cw) cw.hidden = reg !== 'rsvp';
   const sr = document.getElementById('ev-sr-wrap'); if (sr) sr.hidden = noRsvp || reg !== 'rsvp';
@@ -9110,6 +9166,8 @@ async function handleSubmit(f, v, err){
     e.show_rsvps = ['officer_meeting', 'case_competition'].includes(e.cat) || !document.getElementById('ev-show-rsvps') || document.getElementById('ev-show-rsvps').checked;
     e.reg_mode = ['officer_meeting', 'case_competition'].includes(e.cat) ? 'rsvp' : (v('ev-reg') || 'rsvp');
     e.reg_url = e.reg_mode === 'link' ? jobUrl(v('ev-reg-url')) : '';
+    e.dress_code = e.cat === 'officer_meeting' ? '' : (DRESS[v('ev-dress')] ? v('ev-dress') : '');
+    e.dress_note = e.cat === 'officer_meeting' ? '' : v('ev-dress-note').trim().slice(0, 200);
     e.host = e.cat !== 'officer_meeting' && document.getElementById('ev-host-on')?.checked ? v('ev-host').trim().slice(0, 120) : '';
     if (e.cat !== 'officer_meeting' && document.getElementById('ev-host-on')?.checked && !e.host) return err('ev-err', 'Enter who’s hosting it, like UVU Real Estate Club.');
     if (e.reg_mode === 'link' && !e.reg_url) return err('ev-err', 'Paste the link to the registration page, like https://…');
