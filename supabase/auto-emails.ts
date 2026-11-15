@@ -122,7 +122,7 @@ const PREP: Record<string, string[]> = {
     'Connect on LinkedIn within a day or two, with a short note mentioning something from the talk.',
   ],
   career_fair: [
-    'Bring printed copies of your resume (10 or more) in a folder, and a pen.',
+    'Bring printed copies of your resume (10 or more) in a padfolio if you have one (a folder works too), and a pen.',
     'Check which firms are coming on the event page, and pick the ones you most want to meet.',
     'Practice a 30-second intro: your name, year, major, and what kind of role you want.',
     'Ask about internships, timelines, and how they recruit at UVU, and get each recruiter\'s name.',
