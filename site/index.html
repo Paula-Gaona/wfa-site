@@ -320,8 +320,8 @@ main{padding-block:36px 64px}
 .facts dt{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding-top:3px}
 .facts dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .dress-more summary{cursor:pointer;margin-top:4px}
-.dress-list{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin:6px 0 0;font-size:.9rem}
-.dress-list dt{font-weight:600;color:var(--muted)}.dress-list dd{margin:0}
+.dress-list{display:grid;gap:8px;margin:6px 0 0;font-size:.9rem}
+.dress-list ul{margin:2px 0 0;padding-left:1.2em}.dress-list li{margin:1px 0}
 .meter{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
 .meter span{display:block;height:100%;background:var(--up)}
 .chat-wrap{display:grid;grid-template-columns:minmax(15rem,20rem) 1fr;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);height:min(74vh,48rem);overflow:hidden}
@@ -1021,30 +1021,28 @@ function showRsvps(e){ return takesRsvps(e) && (can('officer') || e.showRsvps !=
 function hostedElsewhere(e){ return !!e.host || e.regMode === 'link'; }
 // Counts in attendance statistics: not hosted elsewhere, and "Count this event in statistics" is on.
 function countsInStats(e){ return e.inStats !== false && !hostedElsewhere(e); }
-// Dress codes: [name, one-line summary (emails, event cards), what to wear in more detail (event page)].
+// Dress codes: [name, one-line summary (emails, event cards), what to wear as lists by group (event page)].
 const DRESS = {
   casual: ['Casual', 'Everyday clothes are fine.', [
-    ['Anyone', 'Jeans, T-shirts, hoodies, and sneakers are all fine. Come as you are.']]],
-  wfa_shirt: ['WFA shirt', 'Wear your WFA shirt if you have one.', [
-    ['Anyone', 'Wear your WFA shirt or other WFA gear if you have one, with jeans or whatever’s comfortable. No WFA shirt yet? Casual clothes are fine.']]],
+    ['Anyone', ['Jeans, T-shirts, hoodies, and sneakers are all fine', 'Come as you are']]]],
   smart_casual: ['Smart casual', 'A step up from everyday: no athletic wear or graphic tees.', [
-    ['Men', 'Clean dark jeans or chinos with a polo, a button-down, or a nice sweater. Clean shoes, like loafers, boots, or plain leather sneakers.'],
-    ['Women', 'Clean dark jeans or nice pants with a blouse, a sweater, or a casual dress. Flats, boots, or clean sneakers.'],
-    ['Skip', 'Athletic wear, graphic tees, ripped jeans, and flip-flops.']]],
+    ['Men', ['Clean dark jeans or chinos', 'A polo, button-down, or nice sweater', 'Loafers, boots, or plain leather sneakers']],
+    ['Women', ['Clean dark jeans or nice pants, or a casual dress', 'A blouse, sweater, or nice top', 'Flats, boots, or clean sneakers']],
+    ['Skip', ['Athletic wear', 'Graphic tees', 'Ripped jeans', 'Flip-flops']]]],
   business_casual: ['Business casual', 'Slacks or chinos with a collared shirt or blouse; no jeans or sneakers.', [
-    ['Men', 'Slacks or chinos with a button-down or polo, tucked in, and a belt. A sweater or blazer is a nice touch. No tie needed. Loafers or dress shoes.'],
-    ['Women', 'Slacks, or a skirt or dress at about knee length, with a blouse, a sweater, or a nice top. A blazer or cardigan is optional. Flats, loafers, or low heels.'],
-    ['Skip', 'Jeans, sneakers, T-shirts, hoodies, and athletic wear.']]],
+    ['Men', ['Slacks or chinos with a belt', 'A button-down or polo, tucked in', 'Optional: a sweater or blazer (no tie needed)', 'Loafers or dress shoes']],
+    ['Women', ['Slacks, or a skirt or dress at about knee length', 'A blouse, sweater, or nice top', 'Optional: a blazer or cardigan', 'Flats, loafers, or low heels']],
+    ['Skip', ['Jeans', 'Sneakers', 'T-shirts and hoodies', 'Athletic wear']]]],
   business_professional: ['Business professional', 'A suit, or a suit-level outfit; what you’d wear to an interview.', [
-    ['Men', 'A suit in navy, charcoal, gray, or black, with a pressed dress shirt and a tie. Dress shoes with a matching belt and dark socks.'],
-    ['Women', 'A pantsuit or skirt suit, or a conservative dress or skirt with a blazer. A blouse or shell under the jacket. Closed-toe flats or modest heels.'],
-    ['Tips', 'Think interview-ready: neutral colors, clothes that fit and are pressed, and simple accessories. No suit yet? A blazer with dress pants or a skirt is close enough.']]],
+    ['Men', ['A suit in navy, charcoal, gray, or black', 'A pressed dress shirt and a tie', 'Dress shoes, a matching belt, and dark socks']],
+    ['Women', ['A pantsuit or skirt suit, or a conservative dress or skirt with a blazer', 'A blouse or shell under the jacket', 'Closed-toe flats or modest heels']],
+    ['Tips', ['Neutral colors, clothes that fit and are pressed, and simple accessories', 'No suit yet? A blazer with dress pants or a skirt is close enough']]]],
   semi_formal: ['Semi-formal', 'Dressy evening wear: a suit, a cocktail dress, or dressy separates.', [
-    ['Men', 'A suit, or a blazer with dress pants. A tie is a good idea but optional. Dress shoes.'],
-    ['Women', 'A cocktail dress or a dressy jumpsuit, or a nice skirt or dress pants with a dressy top. Heels or dressy flats.'],
-    ['Skip', 'Floor-length gowns and tuxedos (that’s black tie), and anything casual.']]],
+    ['Men', ['A suit, or a blazer with dress pants', 'A tie is a good idea but optional', 'Dress shoes']],
+    ['Women', ['A cocktail dress or dressy jumpsuit', 'Or a nice skirt or dress pants with a dressy top', 'Heels or dressy flats']],
+    ['Skip', ['Floor-length gowns and tuxedos (that’s black tie)', 'Anything casual']]]],
   outdoor: ['Outdoor / active', 'Comfortable clothes and shoes for walking or being outside.', [
-    ['Anyone', 'Comfortable clothes you can move in, and closed-toe shoes for walking. Check the weather and bring layers, water, and sun protection if you’ll be outside.']]],
+    ['Anyone', ['Comfortable clothes you can move in', 'Closed-toe shoes for walking', 'Check the weather: bring layers, water, and sun protection if you’ll be outside']]]],
 };
 // What new events start with, by type (officers can change it).
 const DRESS_DEFAULT = { case_competition: 'business_professional', career_fair: 'business_professional', guest_speaker: 'business_casual', excursion: 'business_casual', workshop: 'casual', social: 'casual' };
@@ -1059,7 +1057,7 @@ function dressLine(e){
 function dressFacts(e){
   if (!DRESS[e.dress] && !e.dressNote) return '';
   const d = DRESS[e.dress];
-  return `<dt>Dress</dt><dd>${d ? `<strong>${esc(d[0])}</strong>` : ''}${e.dressNote ? `${d ? '<br>' : ''}${esc(e.dressNote)}` : ''}${d ? `<details class="dress-more"><summary class="hint">What to wear</summary><dl class="dress-list">${d[2].map(([who, what]) => `<dt>${esc(who)}</dt><dd>${esc(what)}</dd>`).join('')}</dl></details>` : ''}</dd>`;
+  return `<dt>Dress</dt><dd>${d ? `<strong>${esc(d[0])}</strong>` : ''}${e.dressNote ? `${d ? '<br>' : ''}${esc(e.dressNote)}` : ''}${d ? `<details class="dress-more"><summary class="hint">What to wear</summary><div class="dress-list">${d[2].map(([who, items]) => `<div><strong>${esc(who)}</strong><ul>${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('')}</div></details>` : ''}</dd>`;
 }
 function dressHint(){
   const sel = document.getElementById('ev-dress'), h = document.getElementById('ev-dress-hint'); if (!sel || !h) return;
@@ -5983,7 +5981,7 @@ function viewOfficer(){
           ${(() => { const cur = e ? e.dress : (DRESS_DEFAULT[e?.cat || ui.evNewCat || Object.keys(CATS)[0]] || '');
             return `<label>Dress code<select id="ev-dress" onchange="this.dataset.touched = 1; dressHint()"><option value="">None</option>${Object.entries(DRESS).map(([k, [n]]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
             <span class="hint" id="ev-dress-hint">${cur ? esc(DRESS[cur][1]) : 'No dress code shown on the event.'}</span></label>`; })()}
-          <label>Dress code note <span class="hint">(optional)</span><input id="ev-dress-note" maxlength="200" placeholder="Like: Wear your WFA shirt for the group photo" value="${esc(e?.dressNote || '')}"><span class="hint">The event page explains what each dress code means for men and women.</span></label>
+          <label>Dress code note <span class="hint">(optional)</span><input id="ev-dress-note" maxlength="200" placeholder="Like: Bring a jacket; part of the tour is outside" value="${esc(e?.dressNote || '')}"><span class="hint">The event page explains what each dress code means for men and women.</span></label>
         </div>
         <div class="stack" id="ev-reg-wrap" style="gap:6px" ${['officer_meeting', 'case_competition'].includes(e?.cat || ui.evNewCat || Object.keys(CATS)[0]) ? 'hidden' : ''}>
           <label>Registration<select id="ev-reg">${[['rsvp', 'RSVP on this site'], ['none', 'No button (just show up)'], ['link', 'Link to another registration page']].map(([k, l]) => `<option value="${k}" ${(e?.regMode || 'rsvp') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
