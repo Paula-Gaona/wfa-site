@@ -1340,9 +1340,9 @@ function viewCalendar(){
 }
 
 // "Finance, B.S. · Minor: Accounting" for an officer card, or nothing if neither is set.
+// Officer cards show majors only (no minor).
 function studyLine(p){
-  const majors = (p.majors || []).join(' & '), minor = p.minor ? 'Minor: ' + p.minor : '';
-  const text = [majors, minor].filter(Boolean).join(' · ');
+  const text = (p.majors || []).join(' & ');
   return text ? `<div class="ev-sub">${esc(text)}</div>` : '';
 }
 function markLongBios(){
@@ -4728,7 +4728,7 @@ function officerProfileSection(){
   return `<div class="split">
       <form class="panel stack" id="f-profile">
         <h3>My officer profile</h3>
-        <p class="hint">Shown on the public Officers page. Your title (${esc(p.title || 'Officer')}) comes from the rank and branch an admin sets. Your majors and minor come from “Edit majors and minor” above.</p>
+        <p class="hint">Shown on the public Officers page. Your title (${esc(p.title || 'Officer')}) comes from the rank and branch an admin sets. Your majors come from “Edit majors and minor” above.</p>
         <label>Display name<input id="pf-name" value="${esc(p.name || userName(session))}"></label>
         <div class="stack" style="gap:8px">
           <span style="font-weight:600;font-size:.92rem">Profile picture</span>
