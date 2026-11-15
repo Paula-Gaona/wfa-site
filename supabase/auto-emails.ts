@@ -91,6 +91,57 @@ function surveyReminderCopy(sv: { title: string; closes_at: string | null; quest
 }
 
 // ---------- Email ----------
+// Dress codes (the same ones as the site, 94-event-dress-code.sql): name, summary, and what to wear.
+const DRESS: Record<string, [string, string, [string, string][]]> = {
+  casual: ['Casual', 'Everyday clothes are fine.', []],
+  neat_casual: ['Neat casual', 'Casual but put-together: no hoodies, sweats, or graphic tees.', [
+    ['Men', 'jeans without rips or chinos, a plain T-shirt, henley, crewneck, or quarter-zip, and clean sneakers or boots'],
+    ['Women', 'jeans without rips, casual pants, or a skirt, a plain T-shirt, nice top, or sweater, and clean sneakers, flats, or boots']]],
+  smart_casual: ['Smart casual', 'A collared shirt or a nice top, with dark jeans or chinos.', [
+    ['Men', 'dark jeans or chinos, a polo or button-down (or a sweater over a collared shirt), and loafers, boots, or leather sneakers'],
+    ['Women', 'dark jeans or nice pants (or a casual dress), a blouse, nice sweater, or dressy top, and flats, boots, or leather sneakers']]],
+  business_casual: ['Business casual', 'Slacks or chinos with a collared shirt or blouse; no jeans or sneakers.', [
+    ['Men', 'slacks or chinos with a belt, a button-down or polo tucked in, an optional sweater or blazer (no tie needed), and loafers or dress shoes'],
+    ['Women', 'slacks or a knee-length skirt or dress, a blouse, sweater, or nice top, an optional blazer or cardigan, and flats, loafers, or low heels']]],
+  business_professional: ['Business professional', "A suit, or a suit-level outfit; what you'd wear to an interview.", [
+    ['Men', 'a navy, charcoal, gray, or black suit, a pressed dress shirt and tie, and dress shoes with a matching belt'],
+    ['Women', 'a pantsuit or skirt suit, or a conservative dress or skirt with a blazer, and closed-toe flats or modest heels'],
+    ['No suit yet', 'a blazer with dress pants or a skirt is close enough.']]],
+  semi_formal: ['Semi-formal', 'Dressy evening wear: a suit, a cocktail dress, or dressy separates.', [
+    ['Men', 'a suit, or a blazer with dress pants, a tie if you like, and dress shoes'],
+    ['Women', 'a cocktail dress or dressy jumpsuit, or dressy separates, with heels or dressy flats']]],
+  outdoor: ['Outdoor / active', 'Comfortable clothes and closed-toe shoes for walking.', [
+    ['Tip', 'Check the weather, and bring layers, water, and sun protection if you will be outside.']]],
+};
+// Networking tips for the day-before reminder of bigger events.
+const PREP: Record<string, string[]> = {
+  guest_speaker: [
+    'Look up the speaker and their firm on LinkedIn, and come with one or two questions.',
+    'Arrive a few minutes early and sit near the front.',
+    'Stay after to thank the speaker: a handshake, your name, and one thing you took away.',
+    'Connect on LinkedIn within a day or two, with a short note mentioning something from the talk.',
+  ],
+  career_fair: [
+    'Bring printed copies of your resume (10 or more) in a folder, and a pen.',
+    'Check which firms are coming on the event page, and pick the ones you most want to meet.',
+    'Practice a 30-second intro: your name, year, major, and what kind of role you want.',
+    'Ask about internships, timelines, and how they recruit at UVU, and get each recruiter\'s name.',
+    'Follow up within 24 hours with a short thank-you email or LinkedIn note.',
+  ],
+  excursion: [
+    'Read up on the firm you are visiting: what it does, and recent news.',
+    'Have two or three questions ready about the roles, the culture, and how students get hired.',
+    'Be on time to the meeting spot, and put your phone away during the visit.',
+    'Introduce yourself to the people you meet, and send a thank-you note afterward.',
+  ],
+  case_competition: [
+    'Get there early, and have your slides and files ready to go.',
+    'Introduce your team to the judges before or after you present.',
+    'Ask the judges for feedback after the round; it is the best networking you will get.',
+    'Connect with the judges on LinkedIn afterward, mentioning your team and case.',
+  ],
+};
+
 function htmlEmail(bodyHtml: string, button: { label: string; url: string }, footer: string) {
   return `<div style="font-family:Arial,Helvetica,sans-serif;width:100%;color:#14231a">
   <div style="background:#123622;color:#ffffff;padding:14px 20px;font-weight:bold;letter-spacing:.08em;text-align:center;border-bottom:2px solid #b8923a">WOLVERINE FINANCE ASSOCIATION</div>
@@ -482,7 +533,7 @@ ${lastNote}`
     let used = await sentToday();
     const cap = Math.max(0, Math.min(5000, Number(cfg.daily_cap ?? 500)));
 
-    const { data: events } = await db.from('events').select('id, title, cat, date, start_time, end_time, loc, descr, draft, test, reg_mode')
+    const { data: events } = await db.from('events').select('id, title, cat, date, start_time, end_time, loc, descr, draft, test, reg_mode, dress_code, dress_note')
       .eq('draft', false).eq('test', false).neq('cat', 'officer_meeting')
       .gte('date', isoDay(now - 2 * DAY)).lte('date', isoDay(now + 8 * DAY));
     if (!events?.length) return json({ ok: true, sent: 0, chat_alerts: chatAlerts });
@@ -512,6 +563,26 @@ ${lastNote}`
       const details = `<p style="margin:0 0 4px"><strong>${escHtml(ev.title)}</strong></p><p style="margin:0 0 4px">${escHtml(when)}</p>` +
         (ev.loc ? `<p style="margin:0 0 12px">${escHtml(ev.loc)}</p>` : '') +
         (ev.descr ? `<div style="margin:0 0 6px 18px;color:#3d4a40;white-space:pre-wrap">${escHtml(ev.descr)}</div>` : '');
+      // Dress code: one line in every reminder; the day before also gets what to wear and, for bigger events, networking tips.
+      const dc = DRESS[ev.dress_code || ''], dnote = String(ev.dress_note || '').trim();
+      const dressShort = dc || dnote ? [dc ? dc[0] : '', dnote].filter(Boolean).join('. ') : '';
+      const prepHtml = () => {
+        let h = '';
+        if (dc || dnote) h += `<p style="margin:16px 0 4px"><strong>What to wear${dc ? ': ' + escHtml(dc[0]) : ''}</strong></p>` +
+          (dc ? `<p style="margin:0 0 6px">${escHtml(dc[1])}</p>` : '') +
+          (dc && dc[2].length ? `<ul style="margin:0 0 6px;padding-left:20px">${dc[2].map(([w, x]) => `<li><strong>${escHtml(w)}:</strong> ${escHtml(x)}</li>`).join('')}</ul>` : '') +
+          (dnote ? `<p style="margin:0 0 6px">${escHtml(dnote)}</p>` : '');
+        const tips = PREP[ev.cat];
+        if (tips) h += `<p style="margin:16px 0 4px"><strong>Networking tips</strong></p><ul style="margin:0 0 6px;padding-left:20px">${tips.map((x) => `<li>${escHtml(x)}</li>`).join('')}</ul>`;
+        return h;
+      };
+      const prepText = () => {
+        let s = '';
+        if (dc || dnote) s += `\n\nWHAT TO WEAR${dc ? ': ' + dc[0] + '. ' + dc[1] : ''}` + (dc ? dc[2].map(([w, x]) => `\n- ${w}: ${x}`).join('') : '') + (dnote ? `\n${dnote}` : '');
+        const tips = PREP[ev.cat];
+        if (tips) s += `\n\nNETWORKING TIPS` + tips.map((x) => `\n- ${x}`).join('');
+        return s;
+      };
 
       for (const r0 of (cfg.reminders || [])) {
         const r = r0.key === '2h' ? { ...r0, key: 'same', at: '2h' } : r0;   // older settings called the day-of reminder "2h"
@@ -541,8 +612,10 @@ ${lastNote}`
           guestTo = [...new Set(guestTo)];
         }
         jobs.push({ ev, kind, subject, emailTo: [...base.filter((e) => getsEmail(e, 'events')), ...guestTo], pushTo: base.filter((e) => getsPush(e, 'events')),
-          html: (g) => htmlEmail(`<p style="margin:0 0 12px">${escHtml(g)}</p><p style="margin:0 0 16px">${escHtml(lead)}</p>${details}`, { label, url: link }, footer),
-          text: (g) => `${g}\n\n${lead}\n\n${when}\n${ev.loc || ''}\n\n${ev.descr || ''}\n\n${label}: ${link}`,
+          html: (g) => htmlEmail(`<p style="margin:0 0 12px">${escHtml(g)}</p><p style="margin:0 0 16px">${escHtml(lead)}</p>${details}` +
+            (r.key === '1d' ? prepHtml() : dressShort ? `<p style="margin:0 0 6px"><strong>Dress:</strong> ${escHtml(dressShort)}</p>` : ''), { label, url: link }, footer),
+          text: (g) => `${g}\n\n${lead}\n\n${when}\n${ev.loc || ''}\n\n${ev.descr || ''}` +
+            (r.key === '1d' ? prepText() : dressShort ? `\n\nDress: ${dressShort}` : '') + `\n\n${label}: ${link}`,
           push: { title: subject, body: `${fmtTime(start)}${ev.loc ? ' - ' + ev.loc : ''}`, url: link } });
       }
 
