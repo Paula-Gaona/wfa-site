@@ -1350,7 +1350,7 @@ function markLongBios(){
 }
 window.addEventListener('resize', () => { clearTimeout(markLongBios.t); markLongBios.t = setTimeout(markLongBios, 150); });
 // photo: a picture to show instead of the saved one (the My account preview, before Save profile).
-function officerCard(email, tags = '', photo){
+function officerCard(email, tags = '', photo, preview = false){
   const p = { ...(db.profiles[email] || {}), ...(photo != null ? { photo } : {}) }, n = userName(email), contact = p.contact || email;
   return `<article class="officer">
     <div class="officer-top">${p.photo ? `<img class="avatar" src="${esc(p.photo)}" alt="${esc(n)}">` : `<div class="avatar">${esc(initials(n))}</div>`}<div style="min-width:0"><div class="title">${esc(p.title || (roleOf(email)==='admin'?'Admin':'Officer'))}</div><h3>${esc(n)}</h3>${studyLine(p)}${tags ? `<div class="row" style="gap:6px;margin-top:6px">${tags}</div>` : ''}</div></div>
@@ -1360,6 +1360,7 @@ function officerCard(email, tags = '', photo){
       ${p.hours ? `<div class="line"><span class="muted">Office hours</span><span>${esc(p.hours)}</span></div>` : ''}
       ${p.linkedin ? `<div class="line"><a href="${esc(p.linkedin)}" target="_blank" rel="noopener">LinkedIn profile ↗</a></div>` : ''}
     </div>
+    ${email === session && isStaff() && !preview ? '<div><button class="btn ghost small" data-act="pf-go">Edit my profile</button></div>' : ''}
   </article>`;
 }
 // The profile picture shown in the My profile form: a newly chosen one, a removal, or the saved one.
@@ -4742,7 +4743,7 @@ function officerProfileSection(){
         <div class="err" id="pf-err"></div>
         <div class="row"><button class="btn" type="submit">Save profile</button></div>
       </form>
-      <section class="stack" id="pf-look"><div class="eyebrow">How it looks</div>${officerCard(session, '', ui.profilePhoto)}</section>
+      <section class="stack" id="pf-look"><div class="eyebrow">How it looks</div>${officerCard(session, '', ui.profilePhoto, true)}</section>
     </div>`;
 }
 
@@ -8726,7 +8727,7 @@ function openCropperFrom(src, params, fresh){
 }
 function refreshProfileLook(){
   const box = document.getElementById('pf-look'); if (!box) return;
-  box.innerHTML = '<div class="eyebrow">How it looks</div>' + officerCard(session, '', ui.profilePhoto); requestAnimationFrame(markLongBios);
+  box.innerHTML = '<div class="eyebrow">How it looks</div>' + officerCard(session, '', ui.profilePhoto, true); requestAnimationFrame(markLongBios);
 }
 function cropFinish(keep){
   const c = ui.crop; if (!c) return;
