@@ -3033,6 +3033,7 @@ function viewAuth(mode){
       <label>Email<input id="si-email" type="email" autocomplete="email" required value="${esc(ui.prefillEmail)}"></label>
       <label>Password<input id="si-pw" type="password" autocomplete="current-password" required></label>
       <a href="#reset" style="align-self:flex-start;font-size:.92rem">Forgot your password?</a>
+      <button type="button" class="btn ghost small" data-act="resend-confirm" style="align-self:flex-start">Confirmation link expired or never came? Send a new one</button>
       <div class="err" id="si-err"></div>
       <div class="row"><button class="btn" type="submit">Sign in</button><span class="muted">New here? <a href="#signup">Create an account</a></span></div>
     </form></div></div>`;
@@ -8064,6 +8065,14 @@ document.addEventListener('click', async ev => {
       m.querySelector('a').focus();
       break; }
     case 'open-event': openEvent(id); break;
+    case 'resend-confirm': {
+      // A new sign-up confirmation link, for links that expired or never arrived.
+      const email = ((document.getElementById('si-email') || {}).value || '').trim().toLowerCase();
+      if (!EMAIL_RE.test(email)){ document.getElementById('si-err').textContent = 'Enter the email you signed up with, then click “Send a new one.”'; document.getElementById('si-email')?.focus(); break; }
+      const { error } = await sb.auth.resend({ type: 'signup', email, options: { emailRedirectTo: location.origin + location.pathname } });
+      if (error){ document.getElementById('si-err').textContent = /rate|seconds|too many/i.test(error.message || '') ? 'A link was just sent. Wait a minute, then try again.' : errMsg(error); break; }
+      ui.prefillEmail = email; ui.notice = `We sent a new confirmation link to ${email}. Click it, then sign in. If it’s not there, check spam.`; render(); break;
+    }
     case 'event-auth': {
       const code = (document.getElementById('gc-code') || {}).value || '';
       setReturnTo('event/' + id + (code ? '/' + encodeURIComponent(code.toUpperCase()) : ''));
@@ -9110,7 +9119,7 @@ async function handleSubmit(f, v, err){
     const email = v('si-email').toLowerCase(), pw = document.getElementById('si-pw').value;
     if (!email || !pw) return err('si-err', 'Enter your email and password.');
     const { error } = await sb.auth.signInWithPassword({ email, password: pw });
-    if (error) return err('si-err', /not confirmed/i.test(error.message) ? 'Confirm your email first. Click the link we sent when you signed up.' : /invalid login/i.test(error.message) ? 'Email or password is incorrect.' : errMsg(error));
+    if (error) return err('si-err', /not confirmed/i.test(error.message) ? 'Confirm your email first. Click the link we sent when you signed up, or use “Send a new one” below if it expired.' : /invalid login/i.test(error.message) ? 'Email or password is incorrect.' : errMsg(error));
     ui.notice = ''; await afterLogin(); toast('Signed in as ' + myRole);
   }
 
@@ -9992,9 +10001,11 @@ sb.auth.onAuthStateChange(event => { if (event === 'PASSWORD_RECOVERY'){ ui.reco
   try { await load(); }
   catch(e){ clearTimeout(slow); console.error(e); bootMsg('Events and announcements didn’t load just now.' + retryBtn); return; }
   clearTimeout(slow);
-  if (/access_token|error_description/.test(initialHash)) history.replaceState(null, '', location.pathname + '#home');
+  const expired = m && /otp_expired|expired|invalid/i.test(initialHash) && !ui.recovery;
+  if (/access_token|error_description/.test(initialHash)) history.replaceState(null, '', location.pathname + (expired ? '#signin' : '#home'));
+  if (expired) ui.notice = 'That confirmation link expired or was already used. Enter your email below and click “Send a new one” to get a fresh link. If you already confirmed, just sign in.';
   loaded = true; render();
-  if (m) toast(decodeURIComponent(m[1].replace(/\+/g, ' ')));
+  if (m && !expired) toast(decodeURIComponent(m[1].replace(/\+/g, ' ')));
 })();
 </script>
 </body>
