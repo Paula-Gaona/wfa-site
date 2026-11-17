@@ -6218,7 +6218,7 @@ function viewOfficer(){
           <label class="check"><input type="radio" name="ml-layout" value="newsletter" ${isNewsletter() ? 'checked' : ''}> Newsletter <span class="hint">Personalized job picks and bonus points. Sent from the club address, one email per person.</span></label></div></fieldset>
         <label>Send to<select id="ml-aud">${mailAudiences().map(([g, opts]) => opts.length ? `<optgroup label="${esc(g)}">${opts.map(([k,l]) => `<option value="${k}" ${ui.mail.aud===k?'selected':''}>${esc(l)}</option>`).join('')}</optgroup>` : '').join('')}</select></label>
         ${ui.mail.aud === 'custom' ? `<label>Email addresses<textarea id="ml-custom" style="min-height:64px" placeholder="name@example.com, another@example.com">${esc(ui.mail.custom || '')}</textarea><span class="hint" id="ml-custom-hint">${mailCustomHint()}</span></label>` : ''}
-        <label>Event <span class="hint">(optional)</span><select id="ml-ev">${eventOptions(sortedEvents(), ui.mail.ev, 'None')}</select><span class="hint">Only needed if the message uses {event}, {date}, {time}, {location}, or {link}.</span></label>
+        <label>Event <span class="hint">(optional)</span><select id="ml-ev">${eventOptions((l => ui.mail.ev && evById(ui.mail.ev) && !l.some(x => x.id === ui.mail.ev) ? [evById(ui.mail.ev), ...l] : l)(sortedEvents()), ui.mail.ev, 'None')}</select><span class="hint">Only needed if the message uses {event}, {date}, {time}, {location}, or {link}.</span></label>
         <label>Subject<input id="ml-subject" value="${esc(ui.mail.subject)}"></label>
         <label for="ml-body">Message</label>
         ${fmtBar('ml-body')}
