@@ -704,7 +704,7 @@ ${lastNote}`
       let ok = 0, fail = 0, last = '';
       for (let i = 0; i < j.emailTo.length; i += 100) {
         const chunk = j.emailTo.slice(i, i + 100);
-        const r = await resendBatch(chunk.map((email) => ({ to: [email], subject: j.subject, html: j.html(hi(email), email), text: j.text(hi(email), email) })));
+        const r = await resendBatch(chunk.map((email) => ({ to: [email], subject: j.subject, html: j.html(hi(email), email), text: j.text(hi(email), email), tags: [{ name: 'campaign', value: 'auto-' + id }] })));
         if (r.ok) ok += chunk.length; else { fail += chunk.length; last = r.detail; }
         await new Promise((res) => setTimeout(res, 600));   // stay under Resend's rate limit
       }
