@@ -4261,8 +4261,21 @@ function nlJobsFor(u){
     + (focus === 'big' && nlBigName(j) ? 60 : focus === 'utah' && nlUtah(j) ? 60 : 0);
   const sc = new Map(open.map(j => [j, score(j)]));
   const sorted = open.sort((a, b) => sc.get(b) - sc.get(a) || String(b.created_at).localeCompare(String(a.created_at)));
-  const per = {}, out = [];
-  for (const j of sorted){ const k = j.company.toLowerCase(); if ((per[k] || 0) >= 2) continue; per[k] = (per[k] || 0) + 1; out.push(j); if (out.length >= max) break; }
+  return nlSpread(sorted, j => (j.careers || []).map(jobCareerName).filter(Boolean), likes, max);
+}
+// Picks an even spread across career paths: one from each of the person's career interests in turn (or from every
+// career path, for someone without interests), best-scored first, then fills any open spots in score order.
+// At most 2 per company.
+function nlSpread(sorted, careersOf, likes, max){
+  const keys = likes.size ? [...likes] : [...new Set(sorted.flatMap(careersOf))];
+  const buckets = keys.map(k => sorted.filter(j => careersOf(j).includes(k))), at = buckets.map(() => 0);
+  const per = {}, out = [], seen = new Set();
+  const take = j => { const k = j.company.toLowerCase(); if (seen.has(j) || (per[k] || 0) >= 2) return false; per[k] = (per[k] || 0) + 1; seen.add(j); out.push(j); return true; };
+  for (let more = true; more && out.length < max;){
+    more = false;
+    buckets.forEach((b, i) => { if (out.length >= max) return; while (at[i] < b.length) if (take(b[at[i]++])){ more = true; break; } });
+  }
+  for (const j of sorted){ if (out.length >= max) break; take(j); }
   return out;
 }
 // The line under "Opportunities for you" saying what the picks are based on.

@@ -562,8 +562,18 @@ ${lastNote}`
               + (utah(j) ? 10 : 0) + (focus === 'big' && bigName(j) ? 60 : focus === 'utah' && utah(j) ? 60 : 0));
             const list = open.filter((j) => kinds.includes(j.kind)).map((j) => [j, score(j)] as [JobRow, number])
               .sort((a, b) => b[1] - a[1] || String(b[0].created_at).localeCompare(String(a[0].created_at)));
-            const per: Record<string, number> = {}, out: JobRow[] = [];
-            for (const [j] of list) { const k = j.company.toLowerCase(); if ((per[k] || 0) >= 2) continue; per[k] = (per[k] || 0) + 1; out.push(j); if (out.length >= 12) break; }
+            // An even spread across career paths: one from each of their career interests in turn (or every career
+            // path, if they have none), best-scored first, then any open spots in score order. At most 2 per company.
+            const sorted = list.map(([j]) => j), careersOf = (j: JobRow) => (j.careers || []).map((c) => careerName.get(c) || '').filter(Boolean);
+            const keys = likes.size ? [...likes] : [...new Set(sorted.flatMap(careersOf))];
+            const buckets = keys.map((k) => sorted.filter((j) => careersOf(j).includes(k))), at = buckets.map(() => 0);
+            const per: Record<string, number> = {}, out: JobRow[] = [], seen = new Set<string>();
+            const take = (j: JobRow) => { const k = j.company.toLowerCase(); if (seen.has(j.id) || (per[k] || 0) >= 2) return false; per[k] = (per[k] || 0) + 1; seen.add(j.id); out.push(j); return true; };
+            for (let more = true; more && out.length < 12;) {
+              more = false;
+              buckets.forEach((b, i) => { if (out.length >= 12) return; while (at[i] < b.length) if (take(b[at[i]++])) { more = true; break; } });
+            }
+            for (const j of sorted) { if (out.length >= 12) break; take(j); }
             return out;
           };
           const people = real((members || []).filter((m) => m.email_opt_in !== false).map((m) => m.email))
