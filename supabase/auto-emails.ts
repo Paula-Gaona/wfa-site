@@ -540,6 +540,13 @@ ${lastNote}`
     const ids = events.map((e) => e.id);
     const { data: done } = await db.from('auto_email_log').select('event_id, kind').in('event_id', ids);
     const already = new Set((done || []).map((r) => r.event_id + '|' + r.kind));
+    type Role = { phase: string; name: string; arrive: number; qty: number; duties: string; officers: string[] };
+    const { data: roleRows } = await db.from('event_roles').select('event_id, roles').in('event_id', ids);
+    const rolesBy = new Map<string, Role[]>((roleRows || []).map((x) => [x.event_id, (Array.isArray(x.roles) ? x.roles : []).filter((r: Role) => r && r.name)] as [string, Role[]]));
+    const crewAll = [...new Set([...rolesBy.values()].flat().flatMap((r) => r.officers || []))];
+    const { data: crewPeople } = crewAll.length ? await db.from('members').select('email, first, last').in('email', crewAll) : { data: [] };
+    const crewName = new Map((crewPeople || []).map((p) => [p.email, `${p.first || ''} ${p.last || ''}`.trim()]));
+    const nameOf = (email: string) => crewName.get(email) || email.split('@')[0];
 
     // People signed up for an event: RSVPs, or confirmed teammates on accepted teams for case competitions.
     async function signedUp(ev: { id: string; cat: string }) {
@@ -553,7 +560,7 @@ ${lastNote}`
 
     // Work out everything that's due. Each job has an email list and a notification list.
     type Job = { ev: typeof events[number]; kind: string; emailTo: string[]; pushTo: string[]; subject: string;
-      html: (greeting: string) => string; text: (greeting: string) => string; push: { title: string; body: string; url: string } };
+      html: (greeting: string, email: string) => string; text: (greeting: string, email: string) => string; push: { title: string; body: string; url: string } };
     const jobs: Job[] = [];
     for (const ev of events) {
       if (ev.reg_mode === 'link') continue;   // another organization's event: no WFA reminders or check-in (82-simpler-event-approvals.sql)
@@ -566,23 +573,49 @@ ${lastNote}`
       // Dress code: one line in every reminder; the day before also gets what to wear and, for bigger events, networking tips.
       const dc = DRESS[ev.dress_code || ''], dnote = String(ev.dress_note || '').trim();
       const dressShort = dc || dnote ? [dc ? dc[0] : '', dnote].filter(Boolean).join('. ') : '';
-      const prepHtml = () => {
+      const prepHtml = () => dressHtml() + tipsHtml();
+      const tipsHtml = () => { const tips = PREP[ev.cat];
+        return tips ? `<p style="margin:16px 0 4px"><strong>Networking tips</strong></p><ul style="margin:0 0 6px;padding-left:20px">${tips.map((x) => `<li>${escHtml(x)}</li>`).join('')}</ul>` : ''; };
+      const dressHtml = () => {
         let h = '';
         if (dc || dnote) h += `<p style="margin:16px 0 4px"><strong>What to wear${dc ? ': ' + escHtml(dc[0]) : ''}</strong></p>` +
           (dc ? `<p style="margin:0 0 6px">${escHtml(dc[1])}</p>` : '') +
           (dc && dc[2].length ? `<ul style="margin:0 0 6px;padding-left:20px">${dc[2].map(([w, x]) => `<li><strong>${escHtml(w)}:</strong> ${escHtml(x)}</li>`).join('')}</ul>` : '') +
           (dnote ? `<p style="margin:0 0 6px">${escHtml(dnote)}</p>` : '');
-        const tips = PREP[ev.cat];
-        if (tips) h += `<p style="margin:16px 0 4px"><strong>Networking tips</strong></p><ul style="margin:0 0 6px;padding-left:20px">${tips.map((x) => `<li>${escHtml(x)}</li>`).join('')}</ul>`;
         return h;
       };
-      const prepText = () => {
-        let s = '';
-        if (dc || dnote) s += `\n\nWHAT TO WEAR${dc ? ': ' + dc[0] + '. ' + dc[1] : ''}` + (dc ? dc[2].map(([w, x]) => `\n- ${w}: ${x}`).join('') : '') + (dnote ? `\n${dnote}` : '');
-        const tips = PREP[ev.cat];
-        if (tips) s += `\n\nNETWORKING TIPS` + tips.map((x) => `\n- ${x}`).join('');
-        return s;
-      };
+      const prepText = () => dressText() + tipsText();
+      const dressText = () => (dc || dnote) ? `\n\nWHAT TO WEAR${dc ? ': ' + dc[0] + '. ' + dc[1] : ''}` + (dc ? dc[2].map(([w, x]) => `\n- ${w}: ${x}`).join('') : '') + (dnote ? `\n${dnote}` : '') : '';
+      const tipsText = () => { const tips = PREP[ev.cat]; return tips ? `\n\nNETWORKING TIPS` + tips.map((x) => `\n- ${x}`).join('') : ''; };
+
+      // Officer roles: each officer on one gets their own email the day before (instead of the regular day-before
+      // reminder), with what to do, when to arrive, and who's doing what. Roles saved later that day still go out,
+      // up to 3 hours before the start.
+      const roles = rolesBy.get(ev.id) || [];
+      const crew = [...new Set(roles.flatMap((r) => r.officers || []))].filter((e) => !testSet.has(e));
+      let crewOut = crew.length > 0 && already.has(ev.id + '|crew_1d');
+      if (crew.length && !crewOut && now >= start - DAY && now < start - 3 * HOUR) {
+        crewOut = true;
+        const PHASES: [string, string][] = [['before', 'Before people arrive'], ['during', 'During the event'], ['after', 'After the event']];
+        const at = (r: Role) => fmtTime(start - (Number(r.arrive) || 0) * 60000);
+        const early = (r: Role) => Number(r.arrive) ? `${at(r)}, ${r.arrive} minutes early` : `${at(r)}, when it starts`;
+        const mine = (email: string) => roles.filter((r) => (r.officers || []).includes(email));
+        const arriveBy = (email: string) => fmtTime(start - Math.max(0, ...mine(email).map((r) => Number(r.arrive) || 0)) * 60000);
+        const who = (r: Role) => { const n = (r.officers || []).map(nameOf), open = Math.max(0, (Number(r.qty) || 1) - n.length);
+          return [n.join(', '), open ? `${open} open` : ''].filter(Boolean).join(', '); };
+        const crewHtml = PHASES.map(([p, label]) => { const l = roles.filter((r) => r.phase === p); return l.length ? `<p style="margin:10px 0 2px;color:#3d4a40"><em>${label}</em></p><ul style="margin:0 0 6px;padding-left:20px">${l.map((r) => `<li><strong>${escHtml(r.name)}</strong> (${escHtml(at(r))}): ${escHtml(who(r))}</li>`).join('')}</ul>` : ''; }).join('');
+        const crewText = PHASES.map(([p, label]) => { const l = roles.filter((r) => r.phase === p); return l.length ? `\n\n${label}:` + l.map((r) => `\n- ${r.name} (${at(r)}): ${who(r)}`).join('') : ''; }).join('');
+        const crewFooter = `You're getting this because you're on an officer role for this event. See or change the roles on the event page: <a href="${link}" style="color:#1f4d2e">${link}</a>`;
+        jobs.push({ ev, kind: 'crew_1d', subject: `Tomorrow: your role at ${ev.title}`, emailTo: crew, pushTo: [],
+          html: (g, email) => htmlEmail(`<p style="margin:0 0 12px">${escHtml(g)}</p><p style="margin:0 0 12px">Thanks for helping with ${escHtml(ev.title)} tomorrow! Please arrive by <strong>${escHtml(arriveBy(email))}</strong>.</p>` +
+            mine(email).map((r) => `<p style="margin:12px 0 4px"><strong>Your role: ${escHtml(r.name)}</strong> (arrive by ${escHtml(early(r))})</p>` + (r.duties ? `<p style="margin:0 0 6px;white-space:pre-wrap">${escHtml(r.duties)}</p>` : '')).join('') +
+            `<p style="margin:16px 0 4px"><strong>Who's doing what</strong></p>${crewHtml}<p style="margin:16px 0 8px"><strong>The event</strong></p>${details}${dressHtml()}`, { label: 'View the event', url: link }, crewFooter),
+          text: (g, email) => `${g}\n\nThanks for helping with ${ev.title} tomorrow! Please arrive by ${arriveBy(email)}.` +
+            mine(email).map((r) => `\n\nYOUR ROLE: ${r.name} (arrive by ${early(r)})` + (r.duties ? `\n${r.duties}` : '')).join('') +
+            `\n\nWHO'S DOING WHAT${crewText}\n\nTHE EVENT\n${when}\n${ev.loc || ''}` + dressText() + `\n\nView the event: ${link}`,
+          push: { title: '', body: '', url: link } });
+      }
+      const crewSet = new Set(crewOut ? crew : []);
 
       for (const r0 of (cfg.reminders || [])) {
         const r = r0.key === '2h' ? { ...r0, key: 'same', at: '2h' } : r0;   // older settings called the day-of reminder "2h"
@@ -611,7 +644,7 @@ ${lastNote}`
           (gr || []).forEach((g) => { if (!byEmail.has(g.email)) { guestTo.push(g.email); firstName.set(g.email, String(g.first || '').trim()); } });
           guestTo = [...new Set(guestTo)];
         }
-        jobs.push({ ev, kind, subject, emailTo: [...base.filter((e) => getsEmail(e, 'events')), ...guestTo], pushTo: base.filter((e) => getsPush(e, 'events')),
+        jobs.push({ ev, kind, subject, emailTo: [...base.filter((e) => getsEmail(e, 'events') && !(r.key === '1d' && crewSet.has(e))), ...guestTo], pushTo: base.filter((e) => getsPush(e, 'events')),
           html: (g) => htmlEmail(`<p style="margin:0 0 12px">${escHtml(g)}</p><p style="margin:0 0 16px">${escHtml(lead)}</p>${details}` +
             (r.key === '1d' ? prepHtml() : dressShort ? `<p style="margin:0 0 6px"><strong>Dress:</strong> ${escHtml(dressShort)}</p>` : ''), { label, url: link }, footer),
           text: (g) => `${g}\n\n${lead}\n\n${when}\n${ev.loc || ''}\n\n${ev.descr || ''}` +
@@ -671,7 +704,7 @@ ${lastNote}`
       let ok = 0, fail = 0, last = '';
       for (let i = 0; i < j.emailTo.length; i += 100) {
         const chunk = j.emailTo.slice(i, i + 100);
-        const r = await resendBatch(chunk.map((email) => ({ to: [email], subject: j.subject, html: j.html(hi(email)), text: j.text(hi(email)) })));
+        const r = await resendBatch(chunk.map((email) => ({ to: [email], subject: j.subject, html: j.html(hi(email), email), text: j.text(hi(email), email) })));
         if (r.ok) ok += chunk.length; else { fail += chunk.length; last = r.detail; }
         await new Promise((res) => setTimeout(res, 600));   // stay under Resend's rate limit
       }
