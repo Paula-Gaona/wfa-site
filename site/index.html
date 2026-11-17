@@ -2991,7 +2991,8 @@ function viewAccount(){
           <dt>Minor</dt><dd>${esc(u.minor) || '—'}</dd>
           <dt>Year in school</dt><dd>${esc(u.year) || '<span class="muted">Not set</span>'}</dd>
           <dt>Career interests</dt><dd>${(u.interests || []).length ? esc(u.interests.join(', ')) : '<span class="muted">None picked yet</span>'}</dd>
-          <dt>Job picks</dt><dd>${esc(JOB_FOCUS[u.jobFocus || 'both'][0])}${u.jobFocus && u.jobFocus !== 'both' ? ' first' : ''} <span class="hint">(change with your career interests)</span></dd>
+          <dt>Job picks</dt><dd>${esc(JOB_FOCUS[u.jobFocus || 'both'][0])}${u.jobFocus && u.jobFocus !== 'both' ? ' first' : ''} <button class="btn ghost small" data-act="edit-interests" data-id="focus" style="margin-left:6px">Edit</button>
+            <div class="hint">Which job openings the newsletter shows you first: big-name firms, Utah, or both.</div></dd>
           <dt>Club emails</dt><dd>${u.emailOptIn === false ? 'Off' : 'On'} <button class="btn ghost small" data-act="mail-optin" style="margin-left:6px">${u.emailOptIn === false ? 'Turn on' : 'Turn off'}</button>
             <div class="hint">Events and announcements. Account emails like password resets always send.</div></dd>
           ${installHtml() ? `<dt>App</dt><dd>${installHtml()}<div class="hint">Opens in its own window with the WFA icon, and gets message pop-ups.</div></dd>` : ''}
@@ -3173,7 +3174,7 @@ function yearSelect(p, val){
 // Which openings the newsletter shows someone first (97-job-focus.sql).
 const JOB_FOCUS = { both: ['Both', 'A mix of big-name firms and Utah'], big: ['Big names', 'Wall Street, Fortune 500, and other top firms'], utah: ['Utah', 'Jobs in Utah and at Utah employers'] };
 function jobFocusPick(p, val){
-  return `<fieldset class="stack" style="gap:6px"><legend>Which openings should we send you first? <span class="hint">(for the newsletter's job picks)</span></legend>
+  return `<fieldset class="stack" style="gap:6px"><legend>Job picks: which openings should we send you first? <span class="hint">(for the newsletter's job picks)</span></legend>
     ${Object.entries(JOB_FOCUS).map(([k, [l, h]]) => `<label class="check"><input type="radio" name="${p}-focus" value="${k}" ${(val || 'both') === k ? 'checked' : ''}> ${l} <span class="hint">${h}</span></label>`).join('')}</fieldset>`;
 }
 function readInterests(p){ return [...document.querySelectorAll('.' + p + '-int:checked')].map(c => c.value); }
@@ -8614,7 +8615,7 @@ document.addEventListener('click', async ev => {
     case 'edit-name': ui.editName = true; render(); document.getElementById('nm-first')?.focus(); break;
     case 'cancel-name': ui.editName = false; render(); break;
     case 'cancel-majors': ui.editMajors = false; render(); break;
-    case 'edit-interests': ui.editInterests = true; ui.editMajors = false; render(); break;
+    case 'edit-interests': ui.editInterests = true; ui.editMajors = false; render(); if (id === 'focus') document.querySelector('input[name="ci-focus"]')?.closest('fieldset')?.scrollIntoView({ block: 'center', behavior: 'smooth' }); break;
     case 'cancel-interests': ui.editInterests = false; render(); break;
     case 'stats-range': ui.statsRange = t.dataset.r; render(); break;
     case 'stats-who': ui.statsWho = t.dataset.w; render(); break;
