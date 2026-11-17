@@ -3868,6 +3868,7 @@ function memberTable(rows){
 
 const SURVEY_POINTS = 2, SURVEY_DAYS = 7;
 const MAIL_TEMPLATES = {
+  arrival: ['Guest parking & arrival', 'Parking and arrival for {event} on {date}', 'Hi {first},\n\nThank you for joining us for {event} on {date}! Here’s how to park and get to the event.\n\n## When to arrive\nPlease arrive 15 to 20 minutes early (about {arrive}), so we have time to get you set up.\n\n## Parking\n- Park in **lot M26**. It’s labeled employee parking, but visitors are approved to park there: [Lot M26 on Google Maps](https://www.google.com/maps/search/?api=1&query=40.276012%2C-111.710602)\n- Use a stall that has a **Passport Parking** sign. Photos for reference: [the parking stalls]({site}/guest-parking/parking-stalls.webp) and [the Passport Parking sign]({site}/guest-parking/passport-sign.jpg)\n- You don’t have to pay for parking. We’ll handle that.\n- Once you’re parked, text your **license plate number** and the **zone number** (on the Passport Parking sign) to **(385) 287-9799**, and we’ll get you approved.\n\n## Getting to the event\nOne of our club officers can meet you at your parking spot or inside the UVU Keller Building ([Keller Building on Google Maps](https://www.google.com/maps/place/Scott+C.+Keller+Business+Building/@40.2766513,-111.7125493,17z)), whichever you prefer, and take you up to the event space. Just tell us which when you text.\n\nSee you soon,\nWolverine Finance Association'],
   reminder: ['Event reminder', 'Reminder: {event} on {date}', 'Hi everyone,\n\nQuick reminder that {event} is on {date} at {time} in {location}.\n\nDetails and RSVP: {link}\n\nSee you there,\nWolverine Finance Association'],
   dues: ['Dues reminder', '{semester} WFA dues reminder', 'Hi,\n\nOur records show your {semester} dues (${dues}) are still outstanding. You can pay any officer at the next meeting.\n\nThanks,\nWolverine Finance Association'],
   survey: ['Survey reminder', 'How was {event}? Quick survey', 'Hi {first},\n\nThanks for coming to {event} on {date}! We’d love to hear what you thought. The survey is one star rating and an optional comment, it earns you ' + SURVEY_POINTS + ' leaderboard points, and you can answer anonymously.\n\nFill it out in My account: ' + SITE_URL + '/#account\n\nIt closes 7 days after the event.\n\nThanks,\nWolverine Finance Association'],
@@ -3932,11 +3933,12 @@ function audienceAll(key){
 // {first} personalizes an email with each recipient's first name. Club-address emails that use it go out one per person;
 // Outlook can't personalize, so there it reads "there" ("Hi there,").
 // A person's first name, or 'there' (never part of an email address, like 'paula.gaona11235').
-function firstNameOf(email){ const u = db.users.find(x => x.email === email), n = String(userName(email) || ''); return (u && u.first) || (n.includes('@') || n === String(email || '').split('@')[0] ? '' : n.split(/\s/)[0]) || 'there'; }
+function firstNameOf(email){ const u = db.users.find(x => x.email === email), n = String(userName(email) || '');
+  if (!u){ const gs = Object.keys(db.requests || {}).flatMap(eventGuests).find(x => x.email === String(email || '').toLowerCase() && x.name); if (gs) return gs.name.split(/\s/)[0]; } return (u && u.first) || (n.includes('@') || n === String(email || '').split('@')[0] ? '' : n.split(/\s/)[0]) || 'there'; }
 function withFirst(s, name){ return String(s).replace(/\{first\}/g, name); }
 function usesFirst(){ return /\{first\}/.test((ui.mail.subject || '') + (ui.mail.body || '') + (ui.mail.closing || '')); }
 // Placeholder buttons above the message. They insert at the cursor in whichever box was used last.
-const PLACEHOLDERS = [['{first}', 'First name'], ['{event}', 'Event name'], ['{date}', 'Event date'], ['{time}', 'Event time'], ['{location}', 'Location'], ['{link}', 'Event link'], ['{semester}', 'Semester']];
+const PLACEHOLDERS = [['{first}', 'First name'], ['{event}', 'Event name'], ['{date}', 'Event date'], ['{time}', 'Event time'], ['{arrive}', 'Arrive by (15–20 min early)'], ['{location}', 'Location'], ['{link}', 'Event link'], ['{semester}', 'Semester']];
 function insertBar(){
   return `<div class="row" style="gap:4px;align-items:center" role="toolbar" aria-label="Insert"><span class="hint">Insert:</span>${PLACEHOLDERS.map(([p, l]) => `<button type="button" class="btn ghost small" data-act="ins" data-ph="${p}" title="Inserts ${p}">${l}</button>`).join('')}</div>`;
 }
@@ -3989,10 +3991,24 @@ async function mailMergeExport(){
     ${copied ? '' : `<label>Your message (copy it)<textarea readonly style="min-height:160px">${esc(mdToPlain(md))}</textarea></label>`}
     <div class="row"><button class="btn" data-act="close">Done</button></div></div>`, null, 'wide');
 }
+// When external guests should get there: 20 to 15 minutes before the start, like "11:10 to 11:15 AM".
+function arriveWindow(e){
+  const [h, m] = String(e.start || '00:00').split(':').map(Number), at = d => { const t = h * 60 + m - d; return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); };
+  const a = fmtTime(at(20)), b = fmtTime(at(15)), ap = x => x.slice(-2);
+  return (ap(a) === ap(b) ? a.slice(0, -3) : a) + ' to ' + b;
+}
+// External guests on an event's planning request (speakers, firm contacts, judges) who have an email address.
+function eventGuests(id){
+  const f = (rqOf(id) || {}).form || {};
+  if (f.speaker !== 'yes') return [];
+  return (f.speakers || []).slice(0, +f.speakerCount || (f.speakers || []).length || 1).filter(x => x && EMAIL_RE.test(String(x.email || '').trim()))
+    .map(x => ({ email: String(x.email).trim().toLowerCase(), name: String(x.contact || x.name || '').trim() }));
+}
 function fillMerge(s){
   const [, id] = ui.mail.aud.split(':');
   const e = evById(ui.mail.ev || (id || ''));
   return s.replace(/\{event\}/g, e ? e.title : '{event}').replace(/\{date\}/g, e ? fmtDay(e.date) : '{date}').replace(/\{time\}/g, e ? fmtTime(e.start) : '{time}')
+    .replace(/\{arrive\}/g, e ? arriveWindow(e) : '{arrive}').replace(/\{site\}/g, SITE_URL)
     .replace(/\{location\}/g, e ? e.loc : '{location}').replace(/\{link\}/g, e ? eventLink(e.id) : '{link}').replace(/\{semester\}/g, db.settings.semester).replace(/\{dues\}/g, db.settings.dues);
 }
 /* ---------- Email formatting: **bold**, *italic*, {green:colors}, "- " bullets, "## " headings, links, [text](link) ---------- */
@@ -6620,6 +6636,13 @@ function eventOfficerExtras(e){
         <span class="row" style="gap:6px"><button class="btn ghost small" data-act="qa-star" data-id="${q.id}" aria-pressed="${q.starred}" title="Star to ask">${q.starred ? '★ Starred' : '☆ Star'}</button>${delBtn('qd-' + q.id, 'Delete', 'qa-del', q.id)}</span></div>`).join('') || '<div class="empty">No questions yet.</div>'}
       <span class="hint">Star the ones to ask. “Copy all” puts starred questions first, ready to send to the speaker.</span></div>`;
   }
+  // Parking and arrival directions for external guests (speakers, firms, judges), ready to edit and send.
+  if (!hostedElsewhere(e) && !isPast(e) && e.cat !== 'officer_meeting'){
+    const gs = eventGuests(e.id);
+    h += `<div class="panel stack" style="gap:6px;padding:12px 14px"><strong>Guest parking & arrival email</strong>
+      <span class="hint">${gs.length ? `Opens the email builder with parking and arrival directions for ${gs.length === 1 ? esc(gs[0].name || gs[0].email) : gs.length + ' external guests'}, ready to edit and send.` : 'Opens the email builder with parking and arrival directions. Add the guests’ emails there (none are on this event’s planning request).'}</span>
+      <div><button class="btn ghost small" data-act="arrival-mail" data-id="${e.id}">Prep the email</button></div></div>`;
+  }
   return h;
 }
 function guestDone(id){ try { return JSON.parse(localStorage.getItem('wfa-guest-' + id) || 'null'); } catch(e){ return null; } }
@@ -8235,6 +8258,8 @@ document.addEventListener('click', async ev => {
       const p = db.profiles[session] || {}, text = document.getElementById('ml-sig').value.trim();
       if (await act(async () => must(await sb.from('officer_profiles').upsert({ email: session, signature: text === SIG_DEFAULT ? '' : text, name: p.name || userName(session), title: p.rawTitle || '', tier: p.tier || 'officer', branch: p.branch || '' })), 'Signature saved')){ ui.sigDraft = null; render(); }
       break; }
+    case 'arrival-mail': { closeModal(); ui.mailDraftId = null; ui.mail = { ...MAIL_BLANK(), aud: 'custom', custom: eventGuests(id).map(x => x.email).join(', '), ev: id }; useTemplate('arrival');
+      ui.officerTab = 'email'; if (route() !== 'officer') location.hash = 'officer/email'; else { history.pushState(null, '', ui._hash = '#officer/email'); render(); } window.scrollTo(0, 0); break; }
     case 'mail-tpl': readMail(); useTemplate(t.dataset.tpl); render(); break;
     case 'mail-to': ui.mail.aud = t.dataset.aud; ui.mail.ev = ''; ui.mail.evs = []; useTemplate(t.dataset.tpl); ui.officerTab = 'email'; render(); window.scrollTo(0,0); break;
     case 'mail-copy': {
@@ -8470,7 +8495,7 @@ function mailProblem(to, subject, text){
   if (ui.mail.aud === 'custom' && mailCustom().bad.length) return 'Fix the email addresses that don’t look right first.';
   if (!to.length) return 'No one is in that group.';
   if (!subject || !text) return 'Add a subject and a message.';
-  if (/\{(event|date|time|location|link)\}/.test(subject + text)) return 'Pick an event, or remove {event}, {date}, {time}, {location}, and {link} from the message.';
+  if (/\{(event|date|time|arrive|location|link)\}/.test(subject + text)) return 'Pick an event, or remove {event}, {date}, {time}, {arrive}, {location}, and {link} from the message.';
   return '';
 }
 async function saveMailDraft(quiet){
