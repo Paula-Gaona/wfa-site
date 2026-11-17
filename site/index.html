@@ -869,7 +869,7 @@ async function load(){
   }
   db.users = (R.members || []).map(m => {
     const majors = (m.majors && m.majors.length) ? m.majors : (m.major ? [m.major] : []);
-    return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(' & '), email:m.email, joined:m.joined, interests:m.interests || [], year:m.year || '', lbPublic:m.lb_public !== false,
+    return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(' & '), email:m.email, joined:m.joined, interests:m.interests || [], year:m.year || '', jobFocus:m.job_focus || 'both', lbPublic:m.lb_public !== false,
       resumePath:m.resume_path || '', resumeBook:!!m.resume_book, resumeUpdated:m.resume_updated || null, emailOptIn:m.email_opt_in !== false, chatEmails:m.chat_emails !== false, notify:m.notify || {} };
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
@@ -2991,6 +2991,7 @@ function viewAccount(){
           <dt>Minor</dt><dd>${esc(u.minor) || '—'}</dd>
           <dt>Year in school</dt><dd>${esc(u.year) || '<span class="muted">Not set</span>'}</dd>
           <dt>Career interests</dt><dd>${(u.interests || []).length ? esc(u.interests.join(', ')) : '<span class="muted">None picked yet</span>'}</dd>
+          <dt>Job picks</dt><dd>${esc(JOB_FOCUS[u.jobFocus || 'both'][0])}${u.jobFocus && u.jobFocus !== 'both' ? ' first' : ''} <span class="hint">(change with your career interests)</span></dd>
           <dt>Club emails</dt><dd>${u.emailOptIn === false ? 'Off' : 'On'} <button class="btn ghost small" data-act="mail-optin" style="margin-left:6px">${u.emailOptIn === false ? 'Turn on' : 'Turn off'}</button>
             <div class="hint">Events and announcements. Account emails like password resets always send.</div></dd>
           ${installHtml() ? `<dt>App</dt><dd>${installHtml()}<div class="hint">Opens in its own window with the WFA icon, and gets message pop-ups.</div></dd>` : ''}
@@ -3169,11 +3170,18 @@ function careerChecklist(p, selected){
 function yearSelect(p, val){
   return `<label>Year in school<select id="${p}-year"><option value="">Choose one</option>${YEARS.map(y => `<option ${y === val ? 'selected' : ''}>${y}</option>`).join('')}</select></label>`;
 }
+// Which openings the newsletter shows someone first (97-job-focus.sql).
+const JOB_FOCUS = { both: ['Both', 'A mix of big-name firms and Utah'], big: ['Big names', 'Wall Street, Fortune 500, and other top firms'], utah: ['Utah', 'Jobs in Utah and at Utah employers'] };
+function jobFocusPick(p, val){
+  return `<fieldset class="stack" style="gap:6px"><legend>Which openings should we send you first? <span class="hint">(for the newsletter's job picks)</span></legend>
+    ${Object.entries(JOB_FOCUS).map(([k, [l, h]]) => `<label class="check"><input type="radio" name="${p}-focus" value="${k}" ${(val || 'both') === k ? 'checked' : ''}> ${l} <span class="hint">${h}</span></label>`).join('')}</fieldset>`;
+}
 function readInterests(p){ return [...document.querySelectorAll('.' + p + '-int:checked')].map(c => c.value); }
 function interestsForm(u){
   return `<form class="stack" id="f-interests" style="gap:12px;border-top:1px solid var(--line);padding-top:14px" novalidate>
     ${yearSelect('ci', u.year)}
     ${careerChecklist('ci', u.interests)}
+    ${jobFocusPick('ci', u.jobFocus)}
     <div class="err" id="ci-err"></div>
     <div class="row"><button class="btn small" type="submit">Save</button><button class="btn ghost small" type="button" data-act="cancel-interests">Cancel</button></div>
   </form>`;
@@ -4232,16 +4240,19 @@ function firmOf(company){
 // Which postings someone gets: seniors full-time; grad students full-time, then internships; earlier years internships.
 // No year set: both. No career interests: a general mix (big names, Utah, newest).
 const NL_JOBS = 5;
+const nlBigName = j => ['wall_street', 'buy_side', 'big4', 'consulting', 'big_company'].includes((firmOf(j.company) || {}).kind);
+const nlUtah = j => (j.states || []).includes('UT') || (firmOf(j.company) || {}).kind === 'utah';
 function nlJobKinds(year){
   return year === 'Senior' ? ['full_time'] : year === 'Graduate student' ? ['full_time', 'internship']
     : ['Freshman', 'Sophomore', 'Junior'].includes(year) ? ['internship'] : ['internship', 'full_time'];
 }
 function nlJobsFor(u){
-  const today = todayIso(), kinds = nlJobKinds(u && u.year), likes = new Set((u && u.interests) || []);
+  const today = todayIso(), kinds = nlJobKinds(u && u.year), likes = new Set((u && u.interests) || []), focus = (u && u.jobFocus) || 'both';
   const open = (db.jobs || []).filter(j => j.kind !== 'employer' && kinds.includes(j.kind) && (!j.closes_on || j.closes_on >= today) && (!j.opens_on || j.opens_on <= today));
   const score = j => (likes.size && (j.careers || []).some(c => likes.has(jobCareerName(c))) ? 100 : 0)
     + (kinds.length > 1 && j.kind === kinds[0] ? 40 : 0) + ({ wall_street: 25, buy_side: 25, big4: 20, consulting: 20, big_company: 18 }[(firmOf(j.company) || {}).kind] || 0)
-    + ((j.states || []).includes('UT') || (firmOf(j.company) || {}).kind === 'utah' ? 10 : 0);
+    + ((j.states || []).includes('UT') || (firmOf(j.company) || {}).kind === 'utah' ? 10 : 0)
+    + (focus === 'big' && nlBigName(j) ? 60 : focus === 'utah' && nlUtah(j) ? 60 : 0);
   const sc = new Map(open.map(j => [j, score(j)]));
   const sorted = open.sort((a, b) => sc.get(b) - sc.get(a) || String(b.created_at).localeCompare(String(a.created_at)));
   const per = {}, out = [];
@@ -4252,7 +4263,7 @@ function nlJobsFor(u){
 function nlJobsNote(u){
   const kinds = nlJobKinds(u && u.year), what = kinds.length === 1 ? (kinds[0] === 'full_time' ? 'Full-time roles' : 'Internships') : kinds[0] === 'full_time' ? 'Full-time roles and internships' : 'Internships and full-time roles';
   const likes = ((u && u.interests) || []).filter(x => x !== 'Not sure yet');
-  return `${what}${likes.length ? ' in ' + likes.slice(0, 2).join(' and ') + (likes.length > 2 ? ', and more' : '') : ' from top firms and Utah employers'}, picked for you.`;
+  return `${what}${likes.length ? ' in ' + likes.slice(0, 2).join(' and ') + (likes.length > 2 ? ', and more' : '') : ' from top firms and Utah employers'}, picked for you.${u && u.jobFocus === 'big' ? ' Big-name firms first.' : u && u.jobFocus === 'utah' ? ' Utah first.' : ''}`;
 }
 function nlJobLine(j){
   const where = [...(j.states || []), ...(j.remote ? ['Remote'] : [])].join(', ');
@@ -4476,7 +4487,7 @@ function mailPreview(){
     <dt>Subject</dt><dd><strong>${esc(withFirst(fillMerge(ui.mail.subject), name)) || '<span class="muted">No subject yet</span>'}</strong></dd></dl>
     ${isNewsletter() ? `<div class="notice stack" style="margin:0;gap:6px">Newsletter: each person gets their own email, with jobs picked for their year and career interests.
         <label>Preview as<select id="ml-as">${to.slice(0, 300).map(e => `<option value="${esc(e)}" ${e === who ? 'selected' : ''}>${esc(userName(e) || e)}</option>`).join('')}</select></label>
-        <span class="hint">${u ? esc([u.year || 'No year set', (u.interests || []).length ? (u.interests || []).join(', ') : 'no career interests'].join(' · ')) : 'No member profile, so they get the general picks.'}</span></div>`
+        <span class="hint">${u ? esc([u.year || 'No year set', (u.interests || []).length ? (u.interests || []).join(', ') : 'no career interests', u.jobFocus && u.jobFocus !== 'both' ? JOB_FOCUS[u.jobFocus][0] + ' first' : ''].filter(Boolean).join(' · ')) : 'No member profile, so they get the general picks.'}</span></div>`
       : personal ? `<div class="notice" style="margin:0">Personalized: each person gets their own email with their first name. Showing how it looks for ${esc(name)}.</div>` : ''}
     ${isNewsletter() ? `<iframe class="nl-frame" title="Newsletter preview" srcdoc="${esc(withFirst(nlHtml(who), name))}" style="width:100%;height:1400px;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>` : ''}
     <div class="mail-html" ${isNewsletter() ? 'hidden' : ''}>${isNewsletter() ? '' : mdToHtml(withFirst(mailText(who), name)) || '<span class="muted">Message preview appears here.</span>'}</div>
@@ -6250,7 +6261,7 @@ function viewOfficer(){
         <div class="row" style="gap:6px"><button type="button" class="btn ghost small" data-act="sig-insert">Insert my signature</button><button type="button" class="btn ghost small" data-act="sig-edit">Edit my signature</button></div>
         ${ui.sigDraft != null ? sigEditor() : ''}
         ${isNewsletter() ? `<fieldset class="stack" style="gap:8px"><legend>Newsletter sections</legend>
-          <label class="check"><input type="checkbox" id="ml-nl-jobs" ${ui.mail.nlJobs === false ? '' : 'checked'}> Opportunities for you <span class="hint">${NL_JOBS} openings each: full-time for seniors, full-time and internships for grad students, internships for everyone else, matched to their career interests. Big-name firms first, then Utah, then the newest.</span></label>
+          <label class="check"><input type="checkbox" id="ml-nl-jobs" ${ui.mail.nlJobs === false ? '' : 'checked'}> Opportunities for you <span class="hint">${NL_JOBS} openings each: full-time for seniors, full-time and internships for grad students, internships for everyone else, matched to their career interests and whether they want big-name firms or Utah first (from their profile). Otherwise big-name firms first, then Utah, then the newest.</span></label>
           <label class="check"><input type="checkbox" id="ml-nl-points" ${ui.mail.nlPoints === false ? '' : 'checked'}> Bonus points <span class="hint">The open point rules each person hasn’t earned yet, and the leaderboard prize.</span></label>
           ${firmsEditor()}</fieldset>` : ''}
         ${mailPlain() ? '' : `<fieldset class="rq-q"><legend>Add to the end <span class="hint">Short lines above the unsubscribe note</span></legend><div class="row" style="gap:6px 16px;flex-wrap:wrap">${mailExtrasShown().filter(x => !(isNewsletter() && nlCovers(x[0]))).map(([k, l]) => `<label class="check"><input type="checkbox" class="ml-x" value="${k}" ${mailExtrasPicked().includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div>${appsOpen() ? '' : '<span class="hint">Officer applications show up here while they’re open.</span>'}</fieldset>`}
@@ -9147,8 +9158,8 @@ async function handleSubmit(f, v, err){
   }
 
   if (f.id === 'f-interests'){
-    const r = await sb.from('members').update({ interests: readInterests('ci'), year: v('ci-year') }).eq('id', authUser.id);
-    if (r.error) return err('ci-err', /interests|year/.test(r.error.message || '') ? 'This isn’t set up yet. An admin needs to run the 15-profile-updates.sql update.' : errMsg(r.error));
+    const r = await sb.from('members').update({ interests: readInterests('ci'), year: v('ci-year'), job_focus: (document.querySelector('input[name="ci-focus"]:checked') || {}).value || 'both' }).eq('id', authUser.id);
+    if (r.error) return err('ci-err', /job_focus/.test(r.error.message || '') ? 'This isn’t set up yet. An admin needs to run the 97-job-focus.sql update.' : /interests|year/.test(r.error.message || '') ? 'This isn’t set up yet. An admin needs to run the 15-profile-updates.sql update.' : errMsg(r.error));
     ui.editInterests = false; await load(); toast('Profile saved'); render();
   }
 
