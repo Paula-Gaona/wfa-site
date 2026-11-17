@@ -823,6 +823,7 @@ async function load(){
     guestRsvps: off && t('guest_rsvps'),
     evQuestions: signed && sb.from('event_questions').select('*').order('created_at'),
     eventRoles: off && t('event_roles'),
+    rolePresets: off && sb.from('role_presets').select('roles').eq('id', 1).maybeSingle(),
     caseBoard: signed && sb.rpc('case_board'),
     chats: signed && sb.rpc('my_chats'),
     ruleChats: myRole === 'admin' && sb.rpc('rule_chats'),
@@ -897,6 +898,7 @@ async function load(){
   db.caseTeams = (R.caseBoard && R.caseBoard.teams) || []; db.caseAgents = (R.caseBoard && R.caseBoard.agents) || [];
   db.caseNotes = {}; (Array.isArray(R.caseNotes) ? R.caseNotes : []).forEach(n => db.caseNotes[n.id] = { rating: n.officer_rating || null, note: n.officer_note || '' });
   db.memberPts = {}; (Array.isArray(R.memberPts) ? R.memberPts : []).forEach(x => db.memberPts[x.email] = x.points);
+  db.rolePresets = R.rolePresets && Array.isArray(R.rolePresets.roles) ? R.rolePresets.roles : null;
   db.roles = {}; (Array.isArray(R.eventRoles) ? R.eventRoles : []).forEach(x => db.roles[x.event_id] = Array.isArray(x.roles) ? x.roles : []);
   db.guestRsvps = {}; (Array.isArray(R.guestRsvps) ? R.guestRsvps : []).forEach(g => (db.guestRsvps[g.event_id] = db.guestRsvps[g.event_id] || []).push(g));
   db.evQuestions = Array.isArray(R.evQuestions) ? R.evQuestions : [];
@@ -6689,6 +6691,8 @@ const ROLE_PRESETS = [
   ['during', 'Photographer / social', 10, 1, 'Take photos of the event for Instagram and LinkedIn.'],
   ['after', 'Cleanup crew', 0, 2, 'Stay after to clear trash and leftover food, take down the signs, and reset the room.'],
 ];
+// The usual roles officers have saved (role_presets), or the built-in list above.
+function usualRoles(){ return db.rolePresets || ROLE_PRESETS.map(([phase, name, arrive, qty, duties, guest]) => ({ phase, name, arrive, qty, duties, guest: !!guest })); }
 function rolesOf(id){ return (db.roles || {})[id] || []; }
 function roleArriveAt(e, mins){
   const [h, m] = String(e.start || '00:00').split(':').map(Number), t = Math.max(0, h * 60 + m - (+mins || 0));
@@ -6712,26 +6716,30 @@ function rolesPanel(e){
 }
 // The editor: ui.roleEd = { id, roles }. Structural changes (add, remove, move, how many) read the inputs, then redraw.
 function rolesModal(keep){
-  const { id, roles } = ui.roleEd, e = evById(id); if (!e) return;
+  const { id, roles, preset } = ui.roleEd, e = preset ? null : evById(id); if (!preset && !e) return;
+  const back = preset && ui.roleEdBack ? 'ro-back' : 'close';
   const staff = staffEmails().map(x => [x, userName(x)]).sort((a, b) => a[1].localeCompare(b[1]));
   const who = sel => '<option value="">Open</option>' + staff.map(([em, n]) => `<option value="${esc(em)}" ${em === sel ? 'selected' : ''}>${esc(n)}</option>`).join('');
-  const have = new Set(roles.map(r => String(r.name || '').trim().toLowerCase())), more = ROLE_PRESETS.some(p => !have.has(p[1].toLowerCase()) && (!p[5] || GUEST_CATS.includes(e.cat)));
+  const have = new Set(roles.map(r => String(r.name || '').trim().toLowerCase())), more = !preset && usualRoles().some(p => !have.has(String(p.name).toLowerCase()) && (!p.guest || GUEST_CATS.includes(e.cat)));
   const box = document.querySelector('#modal .modal'), top = keep && box ? box.scrollTop : 0;
-  showModal(`<div class="modal-in stack" style="gap:14px"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3 style="margin:0">Officer roles</h3><div class="hint">${esc(e.title)} · ${fmtDay(e.date)} at ${fmtTime(e.start)}</div></div>
-    ${roles.length ? '' : '<div class="hint">No roles yet. Start from the usual ones and remove what this event doesn’t need, or add your own.</div>'}
+  showModal(`<div class="modal-in stack" style="gap:14px"><div><button class="modal-x" data-act="${back}" aria-label="Close">×</button>${preset
+      ? '<h3 style="margin:0">The usual roles</h3><div class="hint">What “Add the usual roles” fills in on an event. Changing this list doesn’t change events that already have roles.</div>'
+      : `<h3 style="margin:0">Officer roles</h3><div class="hint">${esc(e.title)} · ${fmtDay(e.date)} at ${fmtTime(e.start)}</div>`}</div>
+    ${roles.length ? '' : preset ? '<div class="hint">The list is empty. Add roles, or put back the original list.</div>' : '<div class="hint">No roles yet. Start from the usual ones and remove what this event doesn’t need, or add your own.</div>'}
     <div class="stack" style="gap:10px">${roles.map((r, i) => `<div class="role-ed" data-i="${i}">
       <div class="row" style="gap:6px;flex-wrap:wrap">
         <input class="ro-name" placeholder="Role, like Setup" aria-label="Role" maxlength="60" value="${esc(r.name || '')}" style="flex:2 1 10rem;min-width:0">
         <select class="ro-phase" aria-label="When" style="flex:1 1 9rem;min-width:0">${ROLE_PHASES.map(([p, l]) => `<option value="${p}" ${p === r.phase ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="row" style="gap:6px;flex-wrap:wrap;align-items:end">
-        <label style="display:flex;flex-direction:column;gap:2px;flex:1 1 12rem;min-width:0">Arrive<select class="ro-arrive" style="min-width:0">${ROLE_ARRIVE.map(m => `<option value="${m}" ${m === +r.arrive ? 'selected' : ''}>${m ? `${m} min early (${roleArriveAt(e, m)})` : `At the start (${fmtTime(e.start)})`}</option>`).join('')}</select></label>
+        <label style="display:flex;flex-direction:column;gap:2px;flex:1 1 12rem;min-width:0">Arrive<select class="ro-arrive" style="min-width:0">${ROLE_ARRIVE.map(m => `<option value="${m}" ${m === +r.arrive ? 'selected' : ''}>${m ? `${m} min early${e ? ` (${roleArriveAt(e, m)})` : ''}` : `At the start${e ? ` (${fmtTime(e.start)})` : ''}`}</option>`).join('')}</select></label>
         <label style="display:flex;flex-direction:column;gap:2px;flex:0 0 auto">People<input class="ro-qty" type="number" min="1" max="20" value="${+r.qty || 1}" style="width:4.5rem"></label></div>
       <textarea class="ro-duties" placeholder="What they do" aria-label="What they do" maxlength="600" style="min-height:64px">${esc(r.duties || '')}</textarea>
-      <div class="row" style="gap:6px;flex-wrap:wrap">${Array.from({ length: Math.min(20, +r.qty || 1) }, (_, k) => `<select class="ro-who" aria-label="Officer ${k + 1}" style="flex:1 1 10rem;min-width:0">${who((r.officers || [])[k])}</select>`).join('')}</div>
+      ${preset ? `<label class="check"><input type="checkbox" class="ro-guest" ${r.guest ? 'checked' : ''}> Only for events with outside guests (guest speakers, case competitions, career fairs)</label>`
+        : `<div class="row" style="gap:6px;flex-wrap:wrap">${Array.from({ length: Math.min(20, +r.qty || 1) }, (_, k) => `<select class="ro-who" aria-label="Officer ${k + 1}" style="flex:1 1 10rem;min-width:0">${who((r.officers || [])[k])}</select>`).join('')}</div>`}
       <div class="row" style="gap:6px;justify-content:flex-end">${i ? `<button type="button" class="btn ghost small" data-act="ro-move" data-i="${i}" data-d="-1" aria-label="Move up">↑</button>` : ''}${i < roles.length - 1 ? `<button type="button" class="btn ghost small" data-act="ro-move" data-i="${i}" data-d="1" aria-label="Move down">↓</button>` : ''}<button type="button" class="btn ghost small" data-act="ro-rm" data-i="${i}">Remove</button></div></div>`).join('')}</div>
-    <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn ghost small" data-act="ro-add">+ Add a role</button>${more ? '<button type="button" class="btn ghost small" data-act="ro-presets">Add the usual roles</button>' : ''}</div>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn ghost small" data-act="ro-add">+ Add a role</button>${more ? '<button type="button" class="btn ghost small" data-act="ro-presets">Add the usual roles</button>' : ''}${preset ? (db.rolePresets ? '<button type="button" class="btn ghost small" data-act="ro-reset">Put back the original list</button>' : '') : '<button type="button" class="btn ghost small" data-act="ro-usual">Edit the usual roles</button>'}</div>
     <div class="err" id="ro-err"></div>
-    <div class="row" style="gap:8px"><button class="btn" data-act="ro-save">Save roles</button><button class="btn ghost" data-act="close">Cancel</button></div></div>`);
+    <div class="row" style="gap:8px"><button class="btn" data-act="ro-save">${preset ? 'Save the usual roles' : 'Save roles'}</button><button class="btn ghost" data-act="${back}">${back === 'ro-back' ? 'Back to the event' : 'Cancel'}</button></div></div>`);
   const nb = document.querySelector('#modal .modal'); if (nb) nb.scrollTop = top;
 }
 function readRoles(){
@@ -6739,7 +6747,7 @@ function readRoles(){
     const r = ui.roleEd.roles[+el.dataset.i]; if (!r) return;
     r.name = el.querySelector('.ro-name').value; r.phase = el.querySelector('.ro-phase').value; r.arrive = +el.querySelector('.ro-arrive').value;
     r.qty = Math.min(20, Math.max(1, Math.round(+el.querySelector('.ro-qty').value) || 1)); r.duties = el.querySelector('.ro-duties').value;
-    r.officers = [...el.querySelectorAll('.ro-who')].map(x => x.value);
+    if (el.querySelector('.ro-guest')) r.guest = el.querySelector('.ro-guest').checked; else r.officers = [...el.querySelectorAll('.ro-who')].map(x => x.value);
   });
 }
 function cleanRoles(roles){
@@ -6748,6 +6756,10 @@ function cleanRoles(roles){
       return { phase: order.includes(r.phase) ? r.phase : 'during', name: String(r.name || '').trim().slice(0, 60), arrive: Math.max(0, Math.min(180, +r.arrive || 0)), qty,
         duties: String(r.duties || '').trim().slice(0, 600), officers: [...new Set((r.officers || []).filter(Boolean))].slice(0, qty) }; })
     .filter(r => r.name).sort((a, b) => order.indexOf(a.phase) - order.indexOf(b.phase));
+}
+async function savePresets(roles){
+  const clean = cleanRoles(roles).map(({ officers, ...r }) => ({ ...r, guest: !!(roles.find(x => String(x.name || '').trim() === r.name) || {}).guest }));
+  return act(async () => must(await sb.from('role_presets').upsert({ id: 1, roles: clean, updated_by: session || '', updated_at: new Date().toISOString() })), 'Usual roles saved');
 }
 async function saveRoles(id, roles, msg){
   return act(async () => must(await sb.from('event_roles').upsert({ event_id: id, roles: cleanRoles(roles), updated_by: session || '', updated_at: new Date().toISOString() })), msg);
@@ -8398,16 +8410,20 @@ document.addEventListener('click', async ev => {
       if (await act(async () => must(await sb.from('officer_profiles').upsert({ email: session, signature: text === SIG_DEFAULT ? '' : text, name: p.name || userName(session), title: p.rawTitle || '', tier: p.tier || 'officer', branch: p.branch || '' })), 'Signature saved')){ ui.sigDraft = null; render(); }
       break; }
     case 'arrival-mail': arrivalModal(id); break;
-    case 'roles-edit': ui.roleEd = { id, roles: JSON.parse(JSON.stringify(rolesOf(id))) }; rolesModal(); break;
+    case 'roles-edit': ui.roleEdBack = null; ui.roleEd = { id, roles: JSON.parse(JSON.stringify(rolesOf(id))) }; rolesModal(); break;
     case 'ro-add': readRoles(); ui.roleEd.roles.push({ phase: 'during', name: '', arrive: 15, qty: 1, duties: '', officers: [] }); rolesModal(true);
       { const l = document.querySelectorAll('#modal .ro-name'); if (l.length){ l[l.length - 1].focus(); l[l.length - 1].scrollIntoView({ block: 'center' }); } } break;
     case 'ro-rm': readRoles(); ui.roleEd.roles.splice(+t.dataset.i, 1); rolesModal(true); break;
     case 'ro-move': { readRoles(); const l = ui.roleEd.roles, i = +t.dataset.i, j = i + +t.dataset.d; if (l[j]) [l[i], l[j]] = [l[j], l[i]]; rolesModal(true); break; }
     case 'ro-presets': { readRoles(); const e = evById(ui.roleEd.id), have = new Set(ui.roleEd.roles.map(r => String(r.name || '').trim().toLowerCase()));
-      ROLE_PRESETS.filter(p => !have.has(p[1].toLowerCase()) && (!p[5] || GUEST_CATS.includes(e.cat))).forEach(([phase, name, arrive, qty, duties]) => ui.roleEd.roles.push({ phase, name, arrive, qty, duties, officers: [] }));
+      usualRoles().filter(p => !have.has(String(p.name).toLowerCase()) && (!p.guest || GUEST_CATS.includes(e.cat))).forEach(({ phase, name, arrive, qty, duties }) => ui.roleEd.roles.push({ phase, name, arrive, qty, duties, officers: [] }));
       const order = ROLE_PHASES.map(p => p[0]); ui.roleEd.roles.sort((a, b) => order.indexOf(a.phase) - order.indexOf(b.phase)); rolesModal(true); break; }
-    case 'ro-save': { readRoles(); const { id: eid, roles } = ui.roleEd;
+    case 'ro-usual': readRoles(); ui.roleEdBack = ui.roleEd; ui.roleEd = { preset: true, roles: JSON.parse(JSON.stringify(usualRoles())) }; rolesModal(); break;
+    case 'ro-back': ui.roleEd = ui.roleEdBack; ui.roleEdBack = null; rolesModal(); break;
+    case 'ro-reset': readRoles(); ui.roleEd.roles = ROLE_PRESETS.map(([phase, name, arrive, qty, duties, guest]) => ({ phase, name, arrive, qty, duties, guest: !!guest })); rolesModal(true); break;
+    case 'ro-save': { readRoles(); const { id: eid, roles, preset } = ui.roleEd;
       if (roles.some(r => !String(r.name || '').trim() && (String(r.duties || '').trim() || (r.officers || []).some(Boolean)))) { document.getElementById('ro-err').textContent = 'Give each role a name, or remove it.'; break; }
+      if (preset){ if (await savePresets(roles)){ await logChange('Updated the usual officer roles'); if (ui.roleEdBack){ ui.roleEd = ui.roleEdBack; ui.roleEdBack = null; rolesModal(); } else { closeModal(); ui.roleEd = null; } } break; }
       if (await saveRoles(eid, roles, 'Roles saved')){ closeModal(); ui.roleEd = null; await logChange(`Updated the officer roles for “${(evById(eid) || {}).title}”`); } break; }
     case 'role-take': case 'role-drop': { const roles = JSON.parse(JSON.stringify(rolesOf(id))), r = roles[+t.dataset.i]; if (!r) break;
       r.officers = (r.officers || []).filter(x => x && x !== session); if (a === 'role-take') r.officers.push(session);
