@@ -828,6 +828,7 @@ async function load(){
     chats: signed && sb.rpc('my_chats'),
     ruleChats: myRole === 'admin' && sb.rpc('rule_chats'),
     autoLog: myRole === 'admin' && sb.from('auto_email_log').select('*').order('sent_at', { ascending: false }).limit(60),
+    jobDigests: myRole === 'admin' && sb.from('job_digest_log').select('*').order('sent_at', { ascending: false }).limit(10),
     caseNotes: off && sb.from('case_teams').select('id, officer_rating, officer_note'),
     memberPts: off && sb.rpc('member_points'),
     access: off && t('access_list'),
@@ -845,6 +846,7 @@ async function load(){
 
   db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0), about: R.settings?.about || {}, lbSince: R.settings?.lb_since || null, autoEmail: R.settings?.auto_email || null, pushKey: R.settings?.push_public_key || '', lbPrize: R.settings?.lb_prize ?? null, quick: !!R.settings?.quick_scheduling, nlIntro: R.settings?.newsletter_intro || '' };
   db.autoLog = Array.isArray(R.autoLog) ? R.autoLog : [];
+  db.jobDigests = Array.isArray(R.jobDigests) ? R.jobDigests : [];   // Monday Job openings emails (98-job-openings-email.sql)
   db.schedulers = (R.schedulers || []).map(x => x.email);
   db.requests = Object.fromEntries((R.requests || []).map(r => [r.event_id, r]));
   db.guestReqs = [];   // external guest approvals were retired (61-department-scheduling.sql); the guest form is a download now
@@ -2910,7 +2912,9 @@ function adminAutoBody(){
           </div></details></div>
       <div class="stack" style="gap:6px"><strong>Messages</strong>
         <label class="check"><input type="checkbox" id="au-chat" ${c.chat_alerts !== false ? 'checked' : ''}> Email people when their messages sit unread for an hour (one summary; works even when the emails above are off)</label>
-        <label class="check"><input type="checkbox" id="au-profile" ${c.profile_reminders !== false ? 'checked' : ''}> Remind members to update their profile each semester (Jan 8, May 8, and Aug 8 at 10 AM: year, majors, career interests, and resume; works even when the emails above are off)</label></div>
+        <label class="check"><input type="checkbox" id="au-profile" ${c.profile_reminders !== false ? 'checked' : ''}> Remind members to update their profile each semester (Jan 8, May 8, and Aug 8 at 10 AM: year, majors, career interests, and resume; works even when the emails above are off)</label>
+        <label class="check"><input type="checkbox" id="au-jobs" ${c.jobs_weekly !== false ? 'checked' : ''}> Send the Job openings email every Monday at 9 AM (up to 12 new listings per person, only ones never emailed before; skipped when there’s nothing new; works even when the emails above are off)</label>
+        ${(db.jobDigests || []).length ? `<span class="hint">Last Job openings email: ${(d => `${fmtStamp(d.sent_at)} · ${d.status === 'sent' ? `${d.jobs} listings to ${d.recipients} ${d.recipients === 1 ? 'person' : 'people'}` : d.status === 'skipped' ? 'not sent: ' + esc(d.detail) : d.status === 'failed' ? 'failed: ' + esc(d.detail) : 'sending'}`)(db.jobDigests[0])}</span>` : ''}</div>
       <label style="max-width:24rem">Daily limit for automatic emails<input id="au-cap" type="number" min="1" max="5000" value="${esc(Math.max(c.daily_cap ?? 500, 500))}">
         <span class="hint">A safety net so a mistake can’t send a flood of email. Each person gets their own email that greets them by first name, so a reminder to 100 people uses 100. The club’s email plan (Resend Pro) allows 50,000 emails a month.</span></label>
       <span class="hint">Each email greets the person by first name (“Hi Sam,”). Never sent to members who turned off club emails, test accounts, test events, drafts, or officer meetings. Each email goes out once.</span>
@@ -8766,7 +8770,8 @@ function mailDraftsPanel(){
   const ds = db.emailDrafts || [];
   const sched = ds.filter(d => ['scheduled', 'sending'].includes(d.status)).sort((a, b) => String(a.send_at).localeCompare(String(b.send_at)));
   // Automatic emails (admins only) show here too, with the same stats (their campaign label is auto-<log id>).
-  const autos = (db.autoLog || []).filter(l => l.status === 'sent' && l.emails > 0).map(l => ({ auto: l, id: 'auto-' + l.id, sent_at: l.sent_at }));
+  const autos = [...(db.autoLog || []).filter(l => l.status === 'sent' && l.emails > 0).map(l => ({ auto: l, id: 'auto-' + l.id, sent_at: l.sent_at })),
+    ...(db.jobDigests || []).filter(l => l.status === 'sent').map(l => ({ auto: { ...l, jobsWeek: true }, id: 'jobs-' + l.week, sent_at: l.sent_at }))];
   const drafts = ds.filter(d => ['draft', 'failed'].includes(d.status)), sent = [...ds.filter(d => d.status === 'sent'), ...autos].sort((a, b) => String(b.sent_at).localeCompare(String(a.sent_at))).slice(0, 10);
   // Delivered, opened, and clicked, from Resend's reports (91-email-stats.sql). Percentages are of the emails delivered.
   const stats = d => { const x = (db.emailStats || {})[d.id]; if (!x || !x.delivered) return ''; const pct = n => Math.round(n / x.delivered * 100) + '%';
@@ -8776,7 +8781,7 @@ function mailDraftsPanel(){
   const row = (d, info, btns) => `<div class="list-row"><div><div class="ev-title">${title(d)}</div><div class="ev-sub">${info}</div></div><div class="row" style="gap:6px">${btns}</div></div>`;
   if (!ds.length && !autos.length) return '';
   const autoRow = d => { const l = d.auto, e = evById(l.event_id) || { title: 'Deleted event' };
-    return `<div class="list-row"><div><div class="ev-title">${esc(AUTO_KINDS[l.kind] || l.kind)} · ${esc(e.title)} <span class="tag">Automatic</span></div><div class="ev-sub">Sent ${fmtMtStamp(Date.parse(l.sent_at))} to ${l.recipients} ${l.recipients === 1 ? 'person' : 'people'}${stats(d)}</div></div></div>`; };
+    return `<div class="list-row"><div><div class="ev-title">${l.jobsWeek ? `Job openings · ${l.jobs} listings` : `${esc(AUTO_KINDS[l.kind] || l.kind)} · ${esc(e.title)}`} <span class="tag">Automatic</span></div><div class="ev-sub">Sent ${fmtMtStamp(Date.parse(l.sent_at))} to ${l.recipients} ${l.recipients === 1 ? 'person' : 'people'}${stats(d)}</div></div></div>`; };
   return `<section class="panel stack" style="gap:10px;margin-bottom:18px">
     <div class="section-head"><h3 style="margin:0">Drafts and scheduled emails</h3><span class="muted">Shared with all officers</span></div>
     ${sched.length ? `<strong>Scheduled</strong>${sched.map(d => row(d, d.status === 'sending' ? '<span class="tag warn">Sending now</span>' : `Sends ${fmtMtStamp(Date.parse(d.send_at))} to ${d.recipients} ${d.recipients === 1 ? 'person' : 'people'} · scheduled by ${who(d)}`,
@@ -9560,7 +9565,7 @@ async function handleSubmit(f, v, err){
     const cap = parseInt(v('au-cap')) || 500;
     if (cap < 1 || cap > 5000) return err('au-err', 'Set a daily limit from 1 to 5,000.');
     const cfg = { enabled: document.getElementById('au-enabled').checked, survey: document.getElementById('au-survey').checked, daily_cap: cap,
-      case_teams_only: v('au-case') !== 'same', chat_alerts: document.getElementById('au-chat').checked, profile_reminders: document.getElementById('au-profile').checked, push: document.getElementById('au-push').checked,
+      case_teams_only: v('au-case') !== 'same', chat_alerts: document.getElementById('au-chat').checked, profile_reminders: document.getElementById('au-profile').checked, jobs_weekly: document.getElementById('au-jobs').checked, push: document.getElementById('au-push').checked,
       reminders: AUTO_REMINDERS.map(([k]) => ({ key: k, on: f.querySelector(`.au-on[data-k="${k}"]`).checked, to: f.querySelector(`.au-to[data-k="${k}"]`).value,
         ...(k === 'same' ? { at: f.querySelector('.au-at').value } : {}) })) };
     const r = await sb.from('settings').update({ auto_email: cfg }).eq('id', 1);

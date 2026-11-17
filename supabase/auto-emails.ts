@@ -10,6 +10,8 @@
 //     and the officer who sent it
 //   * new questions and partner inquiries: the presidents and the Communications branch (see 54-question-notifications.sql)
 //   * waitlists: anyone who just got a seat off an event's waitlist (see 62-rsvp-waitlist.sql)
+//   * the Job openings email every Monday at 9 AM: up to 12 new job listings per person, matched to their year, career
+//     interests, and big-name/Utah choice; only listings never emailed before (see 98-job-openings-email.sql)
 //   * a start-of-semester reminder to update your profile, in January, May, and August (see 67-profile-reminders.sql)
 //   * survey reminders at the times an officer picked in the survey builder, to members who haven't answered, with the
 //     points they can earn (see 74-survey-reminders.sql)
@@ -233,7 +235,7 @@ Deno.serve(async () => {
     try { scheduled = await sendScheduled(db); } catch (_) { /* not set up yet (89-email-drafts-and-scheduling.sql) */ }
 
     // Members, their choices, and who has a device signed up for notifications.
-    const { data: members } = await db.from('members').select('email, email_opt_in, first, notify, year');
+    const { data: members } = await db.from('members').select('email, email_opt_in, first, notify, year, interests, job_focus');
     const { data: tests } = await db.from('test_accounts').select('email');
     const { data: subs } = await db.from('push_subscriptions').select('email');
     const testSet = new Set((tests || []).map((t) => t.email));
@@ -473,7 +475,8 @@ ${lastNote}`
       const since = new Date(Date.now() - DAY).toISOString();
       const { data: a } = await db.from('auto_email_log').select('emails').gte('sent_at', since);
       const { data: b } = await db.from('survey_reminder_log').select('emails').gte('sent_at', since);
-      return [...(a || []), ...(b || [])].reduce((n: number, r: { emails: number }) => n + (r.emails || 0), 0);
+      const { data: c } = await db.from('job_digest_log').select('emails').gte('sent_at', since);
+      return [...(a || []), ...(b || []), ...(c || [])].reduce((n: number, r: { emails: number }) => n + (r.emails || 0), 0);
     };
 
     // Survey reminders (see 74-survey-reminders.sql): the times an officer picked for an open survey, to members who
@@ -525,6 +528,78 @@ ${lastNote}`
         await new Promise((res) => setTimeout(res, 600));
       }
       await finish({ status: ok || reached.size || !fail ? 'sent' : 'failed', recipients: reached.size + ok, emails: ok + fail, detail: note.slice(0, 500) });
+    }
+
+    // Job openings (98-job-openings-email.sql): Mondays at 9 AM Mountain Time (or the first run after, that day).
+    // Each person gets up to 12 listings that have never been emailed, picked like the newsletter's job picks.
+    // Claimed in job_digest_log first so it only goes out once a week. Works even when the event emails are off.
+    if (cfg?.jobs_weekly !== false) {
+      const p = mtParts(Date.now()), dow = new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay();
+      if (dow === 1 && p.hour >= 9) {
+        const week = isoDay(Date.now());
+        const claim = await db.from('job_digest_log').insert({ week }).select('week').single();
+        if (!claim.error) {
+          const finish = (row: Record<string, unknown>) => db.from('job_digest_log').update(row).eq('week', week);
+          const today = isoDay(Date.now());
+          const { data: jobRows } = await db.from('job_postings').select('id, kind, company, title, url, opens_on, closes_on, careers, states, remote, created_at').is('mailed_at', null).neq('kind', 'employer');
+          const { data: careerRows } = await db.from('careers').select('id, title');
+          const { data: firmRows } = await db.from('notable_firms').select('name, kind, aliases');
+          type JobRow = { id: string; kind: string; company: string; title: string; url: string; opens_on: string | null; closes_on: string | null; careers: string[]; states: string[]; remote: boolean; created_at: string };
+          const open = ((jobRows || []) as JobRow[]).filter((j) => (!j.closes_on || j.closes_on >= today) && (!j.opens_on || j.opens_on <= today));
+          const careerName = new Map((careerRows || []).map((c) => [c.id, c.title]));
+          const norm = (x: string) => ' ' + String(x || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
+          const firmList = (firmRows || []).map((f) => ({ kind: f.kind as string, names: [f.name, ...(f.aliases || [])].filter(Boolean).map(norm) }));
+          const firmKind = new Map<string, string>();
+          const kindOf = (company: string) => { if (!firmKind.has(company)) { const c = norm(company); firmKind.set(company, (firmList.find((f) => f.names.some((n) => c.includes(n))) || { kind: '' }).kind); } return firmKind.get(company)!; };
+          const bigName = (j: JobRow) => ['wall_street', 'buy_side', 'big4', 'consulting', 'big_company'].includes(kindOf(j.company));
+          const utah = (j: JobRow) => (j.states || []).includes('UT') || kindOf(j.company) === 'utah';
+          const kindsFor = (year: string) => year === 'Senior' ? ['full_time'] : year === 'Graduate student' ? ['full_time', 'internship']
+            : ['Freshman', 'Sophomore', 'Junior'].includes(year) ? ['internship'] : ['internship', 'full_time'];
+          const picksFor = (m: { year?: string; interests?: string[]; job_focus?: string }) => {
+            const kinds = kindsFor(m.year || ''), likes = new Set(m.interests || []), focus = m.job_focus || 'both';
+            const score = (j: JobRow) => ((likes.size && (j.careers || []).some((c) => likes.has(careerName.get(c) || '')) ? 100 : 0)
+              + (kinds.length > 1 && j.kind === kinds[0] ? 40 : 0) + (({ wall_street: 25, buy_side: 25, big4: 20, consulting: 20, big_company: 18 } as Record<string, number>)[kindOf(j.company)] || 0)
+              + (utah(j) ? 10 : 0) + (focus === 'big' && bigName(j) ? 60 : focus === 'utah' && utah(j) ? 60 : 0));
+            const list = open.filter((j) => kinds.includes(j.kind)).map((j) => [j, score(j)] as [JobRow, number])
+              .sort((a, b) => b[1] - a[1] || String(b[0].created_at).localeCompare(String(a[0].created_at)));
+            const per: Record<string, number> = {}, out: JobRow[] = [];
+            for (const [j] of list) { const k = j.company.toLowerCase(); if ((per[k] || 0) >= 2) continue; per[k] = (per[k] || 0) + 1; out.push(j); if (out.length >= 12) break; }
+            return out;
+          };
+          const people = real((members || []).filter((m) => m.email_opt_in !== false).map((m) => m.email))
+            .map((e) => [e, picksFor(byEmail.get(e) || {})] as [string, JobRow[]]).filter(([, l]) => l.length);
+          const cap = Math.max(0, Math.min(5000, Number(cfg?.daily_cap ?? 500)));
+          if (!people.length) await finish({ status: 'skipped', detail: open.length ? 'Nobody had new matches' : 'No new listings this week' });
+          else if (await sentToday() + people.length > cap) await finish({ status: 'skipped', detail: `Daily limit of ${cap} automatic emails reached` });
+          else {
+            const subject = `WFA Job Openings - ${new Intl.DateTimeFormat('en-US', { timeZone: TZ, month: 'long', day: 'numeric' }).format(new Date())}`;
+            const link = `${site}/#jobs`, KIND: Record<string, string> = { internship: 'Internship', full_time: 'Full-time' };
+            const dayOf = (d: string) => fmtDay(mtMs(d, '12:00'));
+            const where = (j: JobRow) => [...(j.states || []), ...(j.remote ? ['Remote'] : [])].join(', ');
+            const meta = (j: JobRow) => [KIND[j.kind] || '', where(j), j.closes_on ? 'Apply by ' + dayOf(j.closes_on) : ''].filter(Boolean).join(' - ');
+            const chip = (x: string, c: string) => `<span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:9px;background:${c};font-size:11px;font-weight:bold;color:#ffffff">${x}</span>`;
+            const card = (j: JobRow) => `<tr><td style="padding:10px 0;border-bottom:1px solid #e3e0d6"><div style="font-weight:bold">${escHtml(j.company)}${bigName(j) ? chip('Big name', '#8a6a1f') : ''}${utah(j) ? chip('Utah', '#1f4d2e') : ''}</div>` +
+              `<div style="margin:2px 0"><a href="${escHtml(j.url)}" style="color:#1f4d2e;font-weight:bold">${escHtml(j.title)}</a></div><div style="font-size:13px;color:#5e6b60">${escHtml(meta(j))}</div></td></tr>`;
+            const intro = 'Here are new finance openings picked for you. Many firms hire on a rolling basis, so apply early.';
+            const footer = `You're getting this because you're a Wolverine Finance Association member. Change your year, career interests, and job picks in My account, or turn off club emails there: <a href="${site}/#account" style="color:#1f4d2e">${site}/#account</a>`;
+            let ok = 0, fail = 0, last = '';
+            const used = new Set<string>();
+            for (let i = 0; i < people.length; i += 100) {
+              const chunk = people.slice(i, i + 100);
+              const r = await resendBatch(chunk.map(([e, l]) => ({ to: [e], subject,
+                html: htmlEmail(`<p style="margin:0 0 12px">${escHtml(hi(e))}</p><p style="margin:0 0 12px">${escHtml(intro)}</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${l.map(card).join('')}</table>`, { label: 'See every opening', url: link }, footer),
+                text: `${hi(e)}\n\n${intro}\n\n` + l.map((j) => `- ${j.company}: ${j.title} (${meta(j)})\n  ${j.url}`).join('\n') + `\n\nSee every opening: ${link}`,
+                tags: [{ name: 'campaign', value: 'jobs-' + week }] })));
+              if (r.ok) { ok += chunk.length; chunk.forEach(([, l]) => l.forEach((j) => used.add(j.id))); } else { fail += chunk.length; last = r.detail; }
+              await new Promise((res) => setTimeout(res, 600));
+            }
+            const ids = [...used];
+            for (let i = 0; i < ids.length; i += 100) await db.from('job_postings').update({ mailed_at: new Date().toISOString() }).in('id', ids.slice(i, i + 100)).is('mailed_at', null);
+            await finish({ status: ok ? 'sent' : 'failed', recipients: ok, emails: ok + fail, jobs: ids.length, detail: fail ? `${fail} failed: ${last}`.slice(0, 500) : '' });
+            if (ok) await db.from('change_log').insert({ who: 'automatic emails', text: `Sent the Job openings email (${ids.length} listings) to ${ok} ${ok === 1 ? 'person' : 'people'}` });
+          }
+        }
+      }
     }
 
     if (!cfg?.enabled) return json({ ok: true, sent: 0, chat_alerts: chatAlerts, scheduling: schedNotes, note: 'Automatic emails are off.' });
