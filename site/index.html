@@ -9412,6 +9412,7 @@ async function handleSubmit(f, v, err){
       if (mode === 'signoff' && !e.descr) return err('ev-err', 'Add a description before sending it to the presidents.');
       e.draft = true;
       const locked = rqLocked(editing), before = mode === 'branchok' ? rqEditSummary(rqOf(editing).form, rq.d, cur0, e) : '';
+      let pubNow = false;
       await act(async () => {
         let evId = editing;
         if (editing) must(await sb.from('events').update(e).eq('id', editing));
