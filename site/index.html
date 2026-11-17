@@ -4249,7 +4249,8 @@ function nlJobKinds(year){
 }
 function nlJobsFor(u){
   const today = todayIso(), kinds = nlJobKinds(u && u.year), likes = new Set((u && u.interests) || []), focus = (u && u.jobFocus) || 'both';
-  const open = (db.jobs || []).filter(j => j.kind !== 'employer' && kinds.includes(j.kind) && (!j.closes_on || j.closes_on >= today) && (!j.opens_on || j.opens_on <= today));
+  const open = (db.jobs || []).filter(j => j.kind !== 'employer' && kinds.includes(j.kind) && (!j.closes_on || j.closes_on >= today) && (!j.opens_on || j.opens_on <= today) && !(isJobsMail() && j.mailed_at));
+  const max = isJobsMail() ? NL_JOBS_DIGEST : NL_JOBS;
   const score = j => (likes.size && (j.careers || []).some(c => likes.has(jobCareerName(c))) ? 100 : 0)
     + (kinds.length > 1 && j.kind === kinds[0] ? 40 : 0) + ({ wall_street: 25, buy_side: 25, big4: 20, consulting: 20, big_company: 18 }[(firmOf(j.company) || {}).kind] || 0)
     + ((j.states || []).includes('UT') || (firmOf(j.company) || {}).kind === 'utah' ? 10 : 0)
@@ -4257,7 +4258,7 @@ function nlJobsFor(u){
   const sc = new Map(open.map(j => [j, score(j)]));
   const sorted = open.sort((a, b) => sc.get(b) - sc.get(a) || String(b.created_at).localeCompare(String(a.created_at)));
   const per = {}, out = [];
-  for (const j of sorted){ const k = j.company.toLowerCase(); if ((per[k] || 0) >= 2) continue; per[k] = (per[k] || 0) + 1; out.push(j); if (out.length >= NL_JOBS) break; }
+  for (const j of sorted){ const k = j.company.toLowerCase(); if ((per[k] || 0) >= 2) continue; per[k] = (per[k] || 0) + 1; out.push(j); if (out.length >= max) break; }
   return out;
 }
 // The line under "Opportunities for you" saying what the picks are based on.
@@ -4290,8 +4291,8 @@ const nlRuleTag = r => `+${r.points} for ${{ rsvp: 'RSVPing', checkin: 'checking
 // "WFA Newsletter - November 16", dated the day it goes out (the scheduled day, for a scheduled newsletter).
 let nlSendAt = null;
 const nlDateLabel = ms => new Date(ms).toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'America/Denver' });
-const nlSubjectFor = ms => 'WFA Newsletter - ' + nlDateLabel(ms);
-const NL_SUBJECT_RE = /^WFA Newsletter - [A-Z][a-z]+ \d{1,2}$/;
+const nlSubjectFor = ms => (isJobsMail() ? 'WFA Job Openings - ' : 'WFA Newsletter - ') + nlDateLabel(ms);
+const NL_SUBJECT_RE = /^WFA (Newsletter|Job Openings) - [A-Z][a-z]+ \d{1,2}$/;
 function nlPointsBlock(who){
   const rules = nlOtherRules(who), lines = rules.map(r => {
     const e = evById(r.event_id), sv = svById(r.survey_id), ev = e ? e.title : 'an event';
@@ -4301,10 +4302,15 @@ function nlPointsBlock(who){
   if ((db.settings.lbPrize || '').trim()) lines.push('', prizeLine());
   return lines.length ? '\n\n## Bonus points\n' + lines.join('\n') : '';
 }
-const isNewsletter = () => ui.mail.layout === 'newsletter';
+// Newsletter and Job openings are both personalized, one email per person. Job openings is only job listings,
+// more of them, and only ones that haven't been emailed before (98-job-openings-email.sql).
+const isNewsletter = () => ['newsletter', 'jobs'].includes(ui.mail.layout);
+const isJobsMail = () => ui.mail.layout === 'jobs';
+const NL_JOBS_DIGEST = 12;
+const JOBS_INTRO = 'Hi {first},\n\nHere are new finance openings picked for you. Many firms hire on a rolling basis, so apply early.';
 // The standard newsletter intro (90-newsletter-intro.sql): fills in the message when a newsletter is started.
 const NL_INTRO_DEFAULT = 'Hi {first},\n\nHere\u2019s what\u2019s happening at the WFA: what\u2019s on this week, bigger events to plan ahead for, openings picked for you, and bonus points you can still earn.';
-const nlIntro = () => (db.settings.nlIntro || '').trim() || NL_INTRO_DEFAULT;
+const nlIntro = () => isJobsMail() ? JOBS_INTRO : (db.settings.nlIntro || '').trim() || NL_INTRO_DEFAULT;
 // The message, with "Hi {first}," added at the top of newsletters unless it already uses {first}.
 const mailBody = () => { const b = fillMerge(ui.mail.body || '').trim(); return isNewsletter() && !/\{first\}/.test(b) ? 'Hi {first},' + (b ? '\n\n' + b : '') : b; };
 // Newsletters (sent weekly) sort events by time: everything in the next 7 days, then bigger events further out, then
@@ -4369,17 +4375,17 @@ function nlJobCard(j){
 }
 function nlHtml(who){
   const u = nlUser(who), mdh = s => mdToHtml(s).replace(/color:#0f1511/g, 'color:' + NLC.ink);
-  const list = sortedEvents().filter(e => (ui.mail.evs || []).includes(e.id));
+  const list = isJobsMail() ? [] : sortedEvents().filter(e => (ui.mail.evs || []).includes(e.id));
   const big = list.filter(e => BIG_CATS.includes(e.cat)), rest = list.filter(e => !BIG_CATS.includes(e.cat));
   const body = mailBody(), closing = fillMerge(ui.mail.closing || '').trim();
   const rows = [];
   if (body) rows.push(`<tr><td style="padding:28px 32px 0;font:16px/1.6 Arial,sans-serif;color:${NLC.ink}">${mdh(body)}</td></tr>`);
   nlEventGroups(list).forEach(([label, head, evs]) => rows.push(nlSection(label, head, evs.map(e => nlEventCard(e, BIG_CATS.includes(e.cat), who)).join(''))));
-  const jobs = ui.mail.nlJobs === false ? [] : nlJobsFor(u);
-  if (jobs.length) rows.push(nlSection('Careers', 'Opportunities for you', `<div style="font:italic 14px Arial,sans-serif;color:${NLC.gray};margin:0 0 4px">${nlEsc(nlJobsNote(u))}</div>
+  const jobs = ui.mail.nlJobs === false && !isJobsMail() ? [] : nlJobsFor(u);
+  if (jobs.length) rows.push(nlSection('Careers', isJobsMail() ? 'New openings for you' : 'Opportunities for you', `<div style="font:italic 14px Arial,sans-serif;color:${NLC.gray};margin:0 0 4px">${nlEsc(nlJobsNote(u))}</div>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${jobs.map(nlJobCard).join('')}</table>
     <div style="margin:16px 0 0">${nlButton('See every opening', SITE_URL + '/#jobs')}</div>`));
-  if (ui.mail.nlPoints !== false){
+  if (ui.mail.nlPoints !== false && !isJobsMail()){
     const rules = nlOtherRules(who);
     const prize = (db.settings.lbPrize || '').trim();
     if (rules.length || prize){
@@ -4405,7 +4411,7 @@ function nlHtml(who){
   <tr><td bgcolor="${NLC.dark}" align="center" style="padding:26px 24px 20px;border-bottom:4px solid ${NLC.gold}">
     <img src="${SITE_URL}/qr-seal.png" width="64" height="64" alt="WFA" style="display:block;margin:0 auto 10px;border:0">
     <div style="font:bold 12px Arial,sans-serif;letter-spacing:3px;color:${NLC.gold}">WOLVERINE FINANCE ASSOCIATION</div>
-    <div style="font:bold 28px/1.2 Georgia,'Times New Roman',serif;color:#ffffff;margin:6px 0 4px">The WFA Newsletter</div>
+    <div style="font:bold 28px/1.2 Georgia,'Times New Roman',serif;color:#ffffff;margin:6px 0 4px">${isJobsMail() ? 'WFA Job Openings' : 'The WFA Newsletter'}</div>
     <div style="font:13px Arial,sans-serif;color:#C9D3CB">${nlEsc(sent)} &middot; Utah Valley University</div></td></tr>
   ${rows.join('\n  ')}
   <tr><td style="padding:28px 32px 26px"><div style="border-top:1px solid ${NLC.line};padding-top:14px;font:12px/1.6 Arial,sans-serif;color:${NLC.gray}">
@@ -4425,11 +4431,11 @@ function mailText(who){
   // Newsletter: job picks for this person (their year and career interests), then bonus points.
   let nl = '';
   if (isNewsletter()){
-    const u = nlUser(who), jobs = ui.mail.nlJobs === false ? [] : nlJobsFor(u);
-    if (jobs.length) nl += `\n\n## Opportunities for you\n*${nlJobsNote(u)}*\n${jobs.map(nlJobLine).join('\n')}\n\nSee every opening on the job board: ${SITE_URL}/#jobs`;
-    if (ui.mail.nlPoints !== false) nl += nlPointsBlock(who);
+    const u = nlUser(who), jobs = ui.mail.nlJobs === false && !isJobsMail() ? [] : nlJobsFor(u);
+    if (jobs.length) nl += `\n\n## ${isJobsMail() ? 'New openings for you' : 'Opportunities for you'}\n*${nlJobsNote(u)}*\n${jobs.map(nlJobLine).join('\n')}\n\nSee every opening on the job board: ${SITE_URL}/#jobs`;
+    if (ui.mail.nlPoints !== false && !isJobsMail()) nl += nlPointsBlock(who);
   }
-  return (mailBody() + eventBlock(who) + nl + (closing ? '\n\n---\n' + closing : '') + extras + footer).trim();
+  return (mailBody() + (isJobsMail() ? '' : eventBlock(who)) + nl + (closing ? '\n\n---\n' + closing : '') + extras + footer).trim();
 }
 // Formatting buttons for one of the email builder's text boxes.
 function fmtBar(target){
@@ -4481,12 +4487,12 @@ function refreshMailPreview(now){
   if (now) go(); else mailPrevTimer = setTimeout(go, isNewsletter() ? 500 : 200);
 }
 function mailPreview(){
-  const to = audienceEmails(ui.mail.aud), personal = usesFirst() || isNewsletter();
+  const to = mailTo(), personal = usesFirst() || isNewsletter();
   const who = isNewsletter() && to.includes(ui.mail.previewAs) ? ui.mail.previewAs : to[0], name = who ? firstNameOf(who) : 'Sam', u = nlUser(who);
   return `<div class="stack" style="gap:10px">
     <dl class="facts"><dt>${personal ? 'To' : 'To (BCC)'}</dt><dd>${to.length} recipient${to.length===1?'':'s'}${to.length ? ': ' + esc(to.slice(0,3).join(', ')) + (to.length>3?` and ${to.length-3} more`:'') : ''}</dd>
     <dt>Subject</dt><dd><strong>${esc(withFirst(fillMerge(ui.mail.subject), name)) || '<span class="muted">No subject yet</span>'}</strong></dd></dl>
-    ${isNewsletter() ? `<div class="notice stack" style="margin:0;gap:6px">Newsletter: each person gets their own email, with jobs picked for their year and career interests.
+    ${isNewsletter() ? `<div class="notice stack" style="margin:0;gap:6px">${isJobsMail() ? 'Job openings' : 'Newsletter'}: each person gets their own email, with jobs picked for their year and career interests.
         <label>Preview as<select id="ml-as">${to.slice(0, 300).map(e => `<option value="${esc(e)}" ${e === who ? 'selected' : ''}>${esc(userName(e) || e)}</option>`).join('')}</select></label>
         <span class="hint">${u ? esc([u.year || 'No year set', (u.interests || []).length ? (u.interests || []).join(', ') : 'no career interests', u.jobFocus && u.jobFocus !== 'both' ? JOB_FOCUS[u.jobFocus][0] + ' first' : ''].filter(Boolean).join(' · ')) : 'No member profile, so they get the general picks.'}</span></div>`
       : personal ? `<div class="notice" style="margin:0">Personalized: each person gets their own email with their first name. Showing how it looks for ${esc(name)}.</div>` : ''}
@@ -6238,7 +6244,8 @@ function viewOfficer(){
         <div class="row" style="gap:6px"><span class="hint">Start from:</span>${Object.entries(MAIL_TEMPLATES).filter(([k]) => k !== 'dues' || DUES_ENABLED).map(([k,[l]]) => `<button type="button" class="btn ghost small" data-act="mail-tpl" data-tpl="${k}">${l}</button>`).join('')}</div>
         <fieldset class="rq-q"><legend>Layout</legend><div class="row" style="gap:6px 18px;flex-wrap:wrap">
           <label class="check"><input type="radio" name="ml-layout" value="regular" ${isNewsletter() ? '' : 'checked'}> Regular email</label>
-          <label class="check"><input type="radio" name="ml-layout" value="newsletter" ${isNewsletter() ? 'checked' : ''}> Newsletter <span class="hint">Personalized job picks and bonus points. Sent from the club address, one email per person.</span></label></div></fieldset>
+          <label class="check"><input type="radio" name="ml-layout" value="jobs" ${isJobsMail() ? 'checked' : ''}> Job openings <span class="hint">Up to ${NL_JOBS_DIGEST} new listings per person, only ones that haven’t been emailed before. One email per person.</span></label>
+          <label class="check"><input type="radio" name="ml-layout" value="newsletter" ${ui.mail.layout === 'newsletter' ? 'checked' : ''}> Newsletter <span class="hint">Personalized job picks and bonus points. Sent from the club address, one email per person.</span></label></div></fieldset>
         <label>Send to<select id="ml-aud">${mailAudiences().map(([g, opts]) => opts.length ? `<optgroup label="${esc(g)}">${opts.map(([k,l]) => `<option value="${k}" ${ui.mail.aud===k?'selected':''}>${esc(l)}</option>`).join('')}</optgroup>` : '').join('')}</select></label>
         ${ui.mail.aud === 'custom' ? `<label>Email addresses<textarea id="ml-custom" style="min-height:64px" placeholder="name@example.com, another@example.com">${esc(ui.mail.custom || '')}</textarea><span class="hint" id="ml-custom-hint">${mailCustomHint()}</span></label>` : ''}
         <label>Event <span class="hint">(optional)</span><select id="ml-ev">${eventOptions((l => ui.mail.ev && evById(ui.mail.ev) && !l.some(x => x.id === ui.mail.ev) ? [evById(ui.mail.ev), ...l] : l)(sortedEvents()), ui.mail.ev, 'None')}</select><span class="hint">Only needed if the message uses {event}, {date}, {time}, {location}, or {link}.</span></label>
@@ -6247,7 +6254,7 @@ function viewOfficer(){
         ${fmtBar('ml-body')}
         ${insertBar()}
         <label><textarea id="ml-body" style="min-height:200px" aria-label="Message">${esc(ui.mail.body)}</textarea>
-          ${isNewsletter() ? `<span class="row" style="gap:6px;flex-wrap:wrap;margin:4px 0"><button type="button" class="btn ghost small" data-act="nl-intro-use">Use the standard intro</button>${canPublish() ? '<button type="button" class="btn ghost small" data-act="nl-intro-save">Save this message as the standard intro</button>' : ''}</span>` : ''}
+          ${isNewsletter() && !isJobsMail() ? `<span class="row" style="gap:6px;flex-wrap:wrap;margin:4px 0"><button type="button" class="btn ghost small" data-act="nl-intro-use">Use the standard intro</button>${canPublish() ? '<button type="button" class="btn ghost small" data-act="nl-intro-save">Save this message as the standard intro</button>' : ''}</span>` : ''}
           <span class="hint">Select text and use the buttons, or type **bold**, *italic*, “- ” at the start of a line for a bullet, “## ” for a heading, and “> ” to indent. Insert buttons add a placeholder where your cursor is (in the subject, message, or conclusion). “First name” becomes each person’s first name. Event placeholders need an event picked above.</span></label>
         <fieldset class="stack" style="gap:6px">
           <legend>Add events to this email <span class="hint">(optional)</span></legend>
@@ -6261,7 +6268,11 @@ function viewOfficer(){
           <span class="hint">Added at the end of the email, after the events.</span></label>
         <div class="row" style="gap:6px"><button type="button" class="btn ghost small" data-act="sig-insert">Insert my signature</button><button type="button" class="btn ghost small" data-act="sig-edit">Edit my signature</button></div>
         ${ui.sigDraft != null ? sigEditor() : ''}
-        ${isNewsletter() ? `<fieldset class="stack" style="gap:8px"><legend>Newsletter sections</legend>
+        ${isJobsMail() ? (() => { const all = audienceEmails(ui.mail.aud), n = mailTo().length, fresh = (db.jobs || []).filter(j => j.kind !== 'employer' && !j.mailed_at && (!j.closes_on || j.closes_on >= todayIso())).length;
+          return `<fieldset class="stack" style="gap:8px"><legend>Job openings</legend>
+          <span class="hint">${fresh} open listing${fresh === 1 ? '' : 's'} haven’t been emailed yet. Each person gets up to ${NL_JOBS_DIGEST}, matched to their year, career interests, and whether they want big-name firms or Utah first. ${n} of ${all.length} ${all.length === 1 ? 'person has' : 'people have'} new matches; anyone with none is skipped. Once it’s sent (or scheduled), the listings in it won’t go out again.</span>
+          ${firmsEditor()}</fieldset>`; })() : ''}
+        ${isNewsletter() && !isJobsMail() ? `<fieldset class="stack" style="gap:8px"><legend>Newsletter sections</legend>
           <label class="check"><input type="checkbox" id="ml-nl-jobs" ${ui.mail.nlJobs === false ? '' : 'checked'}> Opportunities for you <span class="hint">${NL_JOBS} openings each: full-time for seniors, full-time and internships for grad students, internships for everyone else, matched to their career interests and whether they want big-name firms or Utah first (from their profile). Otherwise big-name firms first, then Utah, then the newest.</span></label>
           <label class="check"><input type="checkbox" id="ml-nl-points" ${ui.mail.nlPoints === false ? '' : 'checked'}> Bonus points <span class="hint">The open point rules each person hasn’t earned yet, and the leaderboard prize.</span></label>
           ${firmsEditor()}</fieldset>` : ''}
@@ -8704,8 +8715,17 @@ async function scheduleMail(){
   nlSendAt = Date.parse(at);
   try { await scheduleMailAt(at); } finally { nlSendAt = null; }
 }
+// Who an email goes to. Job openings skips anyone with no new listings to show.
+function mailTo(){ const to = audienceEmails(ui.mail.aud); return isJobsMail() ? to.filter(e => nlJobsFor(nlUser(e)).length) : to; }
+// After a Job openings email goes out (or is scheduled), its listings won't be emailed again.
+async function markJobsMailed(to){
+  if (!isJobsMail() || !to.length) return;
+  const ids = [...new Set(to.flatMap(e => nlJobsFor(nlUser(e)).map(j => j.id)))];
+  for (let i = 0; i < ids.length; i += 100) await sb.from('job_postings').update({ mailed_at: new Date().toISOString() }).in('id', ids.slice(i, i + 100)).is('mailed_at', null);
+}
 async function scheduleMailAt(at){
-  const to = audienceEmails(ui.mail.aud), subject = fillMerge(ui.mail.subject).trim(), md = mailText(), text = mdToPlain(md);
+  if (isJobsMail() && !mailTo().length) return toast('Nobody has new openings to send. Add listings on the Jobs page first.');
+  const to = mailTo(), subject = fillMerge(ui.mail.subject).trim(), md = mailText(), text = mdToPlain(md);
   const bad = mailProblem(to, subject, text); if (bad) return toast(bad);
   toast(`Preparing ${to.length} email${to.length === 1 ? '' : 's'}…`);
   const rows = to.map(e => { const name = firstNameOf(e), mdi = isNewsletter() ? mailText(e) : md;
@@ -8719,6 +8739,7 @@ async function scheduleMailAt(at){
   }
   const u = await sb.from('email_drafts').update({ status: 'scheduled', send_at: at, recipients: rows.length, detail: '' }).eq('id', id);
   if (u.error){ await sb.from('email_outbox').delete().eq('draft_id', id); return toast(draftsMissing(u.error)); }
+  await markJobsMailed(to);
   await logChange(`Scheduled the email “${subject}” to ${rows.length} ${rows.length === 1 ? 'person' : 'people'} for ${fmtMtStamp(Date.parse(at))}`);
   ui.mailDraftId = null; ui.mail = MAIL_BLANK(); await load(); render();
   toast(`Scheduled for ${fmtMtStamp(Date.parse(at))}. You can cancel or edit it until then.`);
@@ -8751,7 +8772,7 @@ function mailDraftsPanel(){
   const stats = d => { const x = (db.emailStats || {})[d.id]; if (!x || !x.delivered) return ''; const pct = n => Math.round(n / x.delivered * 100) + '%';
     return ` · <strong>${x.delivered} delivered · ${x.opened} opened (${pct(x.opened)})${x.clicked ? ` · ${x.clicked} clicked (${pct(x.clicked)})` : ''}${x.bounced ? ` · ${x.bounced} bounced` : ''}</strong>`; };
   const who = d => esc(userName(d.updated_by || d.created_by) || d.updated_by || d.created_by || '');
-  const title = d => esc(d.subject || '(No subject)') + (d.data && d.data.layout === 'newsletter' ? ' <span class="tag">Newsletter</span>' : '');
+  const title = d => esc(d.subject || '(No subject)') + (d.data && d.data.layout === 'newsletter' ? ' <span class="tag">Newsletter</span>' : d.data && d.data.layout === 'jobs' ? ' <span class="tag">Job openings</span>' : '');
   const row = (d, info, btns) => `<div class="list-row"><div><div class="ev-title">${title(d)}</div><div class="ev-sub">${info}</div></div><div class="row" style="gap:6px">${btns}</div></div>`;
   if (!ds.length && !autos.length) return '';
   const autoRow = d => { const l = d.auto, e = evById(l.event_id) || { title: 'Deleted event' };
@@ -8769,7 +8790,8 @@ function mailDraftsPanel(){
 async function sendMail(){
   readMail();
   if (isNewsletter() && NL_SUBJECT_RE.test((ui.mail.subject || '').trim())) ui.mail.subject = nlSubjectFor(Date.now());
-  const to = audienceEmails(ui.mail.aud), subject = fillMerge(ui.mail.subject).trim(), md = mailText(), text = mdToPlain(md);
+  if (isJobsMail() && !mailTo().length) return toast('Nobody has new openings to send. Add listings on the Jobs page first.');
+  const to = mailTo(), subject = fillMerge(ui.mail.subject).trim(), md = mailText(), text = mdToPlain(md);
   const bad = mailProblem(to, subject, text); if (bad) return toast(bad);
   // Every send is saved in the drafts list (marked sent afterward), and its emails carry that id so Resend's reports
   // (delivered, opened, clicked) can be counted for it.
@@ -8786,6 +8808,7 @@ async function sendMail(){
       if (i < to.length - 1) await new Promise(r => setTimeout(r, 600));
     }
     toast(failed ? `Sent to ${sent}. ${failed} couldn’t be sent${lastErr ? ': ' + lastErr : '.'}` : `Sent ${sent} personalized email${sent === 1 ? '' : 's'}`);
+    if (sent) await markJobsMailed(to);
     await markDraftSent(sent); await load(); render(); return;
   }
   toast('Sending…');
@@ -8827,8 +8850,9 @@ document.addEventListener('change', async e => {
     if (svHasOptions(q.type) && !(q.options || []).length) q.options = ['', '']; render(); return; }
   const id = e.target.id;
   if (['an-aud','an-pin'].includes(id)) updateAnnPreview();
-  if (e.target.name === 'ml-layout'){ readMail(); if (isNewsletter() && !(ui.mail.body || '').trim()) ui.mail.body = nlIntro();
-    if (isNewsletter() && !(ui.mail.subject || '').trim()) ui.mail.subject = nlSubjectFor(Date.now()); render(); return; }
+  if (e.target.name === 'ml-layout'){ readMail(); const b = (ui.mail.body || '').trim();
+    if (isNewsletter() && (!b || b === JOBS_INTRO || b === NL_INTRO_DEFAULT || b === (db.settings.nlIntro || '').trim())) ui.mail.body = nlIntro();
+    if (isNewsletter() && (!(ui.mail.subject || '').trim() || NL_SUBJECT_RE.test(ui.mail.subject.trim()))) ui.mail.subject = nlSubjectFor(Date.now()); render(); return; }
   if (id === 'ml-as'){ ui.mail.previewAs = e.target.value; refreshMailPreview(true); return; }
   if (['ml-nl-jobs', 'ml-nl-points'].includes(id)){ readMail(); refreshMailPreview(true); return; }
   if (['ml-aud','ml-ev'].includes(id)){ readMail(); if (id === 'ml-aud' && /^(nosurvey|att|noshow|rsvp|norsvp|teams|agents):/.test(ui.mail.aud)) ui.mail.ev = ui.mail.aud.split(':')[1]; render(); }
