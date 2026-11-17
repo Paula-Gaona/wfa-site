@@ -1268,7 +1268,7 @@ function homeIntro(join){
 // For visitors, while a joining bonus rule is active: a banner at the top of the home page with the bonus and the prize.
 function joinBonusBanner(){
   if (can('member')) return '';
-  const r = activeRules().find(x => x.kind === 'join'); if (!r) return '';
+  const r = activeRules().find(x => x.kind === 'join' && !(x.starts_at && Date.parse(x.starts_at) > Date.now())); if (!r) return '';   // not before its start
   return `<div class="today-bar" style="border-color:var(--gold,#B8923A)"><div class="stack" style="gap:2px"><span class="live">Join by ${fmtMtStamp(Date.parse(r.deadline))}</span>
     <strong>Get ${r.points} bonus leaderboard points.</strong>${db.settings.lbPrize ? `<span class="muted" style="font-size:.92rem">${esc(db.settings.lbPrize)}</span>` : ''}</div>
     <a class="btn small" href="#signup">Join the WFA</a></div>`;
@@ -2465,6 +2465,7 @@ function lbPrizeBox(){
 }
 // Active bonus point rules (see pointRulesSection), shown to members on the Leaderboard.
 function activeRules(){ return (db.pointRules || []).filter(r => Date.parse(r.deadline) >= Date.now()).sort((a, b) => Date.parse(a.deadline) - Date.parse(b.deadline)); }
+function ruleWhen(r){ return r.starts_at ? `between ${fmtMtStamp(Date.parse(r.starts_at))} and ${fmtMtStamp(Date.parse(r.deadline))}` : `by ${fmtMtStamp(Date.parse(r.deadline))}`; }
 function ruleText(r){
   const e = evById(r.event_id), ev = e ? `<a href="#event/${e.id}">${esc(e.title)}</a>` : 'an event', sv = svById(r.survey_id);
   return { join: 'Join the WFA', rsvp: `RSVP to ${ev}${r.revoke_noshow ? ' (and check in)' : ''}`, checkin: `Check in at ${ev}`, survey: `Fill out the survey for ${ev}`,
@@ -2474,7 +2475,7 @@ function bonusRulesBox(){
   const list = activeRules(), svs = liveSurveys('show_leaderboard'); if (!list.length && !svs.length) return '';
   return `<section class="panel stack" style="gap:8px"><div><h3 style="margin:0">Ways to earn bonus points</h3><span class="hint">Extra points on top of check-ins, for a limited time.</span></div>
     ${list.map(r => `<div class="row" style="gap:10px;align-items:baseline;flex-wrap:nowrap"><strong style="min-width:3.2rem;color:var(--brand-text)">${r.points > 0 ? '+' : ''}${r.points}</strong>
-      <span>${ruleText(r)} <span class="hint">by ${fmtMtStamp(Date.parse(r.deadline))}</span>${(db.myRules || new Set()).has(r.id) ? ' <span class="tag ok">✓ You earned this</span>' : ''}</span></div>`).join('')}
+      <span>${ruleText(r)} <span class="hint">${ruleWhen(r)}</span>${(db.myRules || new Set()).has(r.id) ? ' <span class="tag ok">✓ You earned this</span>' : ''}</span></div>`).join('')}
     ${svs.map(sv => `<div class="row" style="gap:10px;align-items:baseline;flex-wrap:nowrap"><strong style="min-width:3.2rem;color:var(--brand-text)">+${svMyMax(sv)}</strong>
       <span>Answer the survey <a href="#survey/${sv.id}">${esc(sv.title)}</a>${svTotal(sv) ? ' <span class="hint">(points for each question you answer)</span>' : ''}${sv.closes_at ? ` <span class="hint">by ${fmtMtStamp(Date.parse(sv.closes_at))}</span>` : ''}${svMine(sv.id) ? ` <span class="tag ok">✓ You earned ${svMine(sv.id).points}</span>` : ''}</span></div>`).join('')}</section>`;
 }
@@ -2748,29 +2749,30 @@ function lbHistorySection(){
 // by a deadline. The database applies them now and every 10 minutes; RSVP rules can take points back from no-shows.
 const RULE_KINDS = { join: 'Joining the club', rsvp: 'RSVPing to an event', checkin: 'Checking in at an event', survey: 'Filling out an event’s survey', form: 'Answering a survey (from the survey builder)' };
 function pointRulesSection(){
-  const d = ui.prDraft || (ui.prDraft = { kind: 'join', event: '', survey: '', deadline: '', points: 10, reason: '', noshow: true });
+  const d = ui.prDraft || (ui.prDraft = { kind: 'join', event: '', survey: '', start: '', deadline: '', points: 10, reason: '', noshow: true });
   // Only events the rule can apply to: RSVP rules need an upcoming event that takes RSVPs here; check-in rules need
   // one that hasn't ended and has WFA check-in; survey rules any of our events. The rule being edited keeps its event.
   const evOk = e => e.cat !== 'officer_meeting' && !hostedElsewhere(e) && (d.kind === 'rsvp' ? takesRsvps(e) && !hasStarted(e) : d.kind === 'checkin' ? !isPast(e) : true);
   const evs = sortedEvents().filter(e => evOk(e) || e.id === d.event), svs = (db.surveys || []).filter(x => x.status !== 'closed');
   const editing = ui.prEdit && (db.pointRules || []).find(x => x.id === ui.prEdit);
   const needsEv = !['join', 'form'].includes(d.kind), rules = db.pointRules || [];
-  const ruleLine = r => { const e = evById(r.event_id), sv = svById(r.survey_id), done = Date.parse(r.deadline) < Date.now();
+  const ruleLine = r => { const e = evById(r.event_id), sv = svById(r.survey_id), done = Date.parse(r.deadline) < Date.now(), later = r.starts_at && Date.parse(r.starts_at) > Date.now();
     return `<div class="list-row"><div><div class="ev-title">${r.points > 0 ? '+' : ''}${r.points} for ${esc(RULE_KINDS[r.kind].replace(/ \(.*\)$/, '').replace(/^[A-Z](?![A-Z])/, c => c.toLowerCase()))}${e ? ': ' + esc(e.title) : sv ? ': ' + esc(sv.title) : ''}</div>
-      <div class="ev-sub">By ${fmtMtStamp(Date.parse(r.deadline))} · “${esc(r.reason)}” · ${db.ruleCounts[r.id] || 0} ${(db.ruleCounts[r.id] || 0) === 1 ? 'person has' : 'people have'} it${r.revoke_noshow ? ' · no-shows lose it' : ''} · ${done ? '<span class="tag">Deadline passed</span>' : '<span class="tag ok">Active</span>'}</div></div>
+      <div class="ev-sub">${ruleWhen(r).replace(/^./, c => c.toUpperCase())} · “${esc(r.reason)}” · ${db.ruleCounts[r.id] || 0} ${(db.ruleCounts[r.id] || 0) === 1 ? 'person has' : 'people have'} it${r.revoke_noshow ? ' · no-shows lose it' : ''} · ${done ? '<span class="tag">Deadline passed</span>' : later ? '<span class="tag">Starts later</span>' : '<span class="tag ok">Active</span>'}</div></div>
       <div class="row" style="gap:6px"><button class="btn ghost small" data-act="pr-edit" data-id="${r.id}">Edit</button>${delBtn('pr-' + r.id, 'Delete and remove its points', 'pr-del', r.id)}</div></div>`; };
   return `<form class="panel stack" id="f-point-rule" style="gap:12px" novalidate>
-      ${editing ? `<div class="rq-warn"><strong>Editing “${esc(editing.reason)}.”</strong> New points or a new reason update everyone who already has them. A new deadline gives or takes points to match. Changing what earns the points, or the event or survey, starts the rule over.</div>` : ''}
-      <div><h3 style="margin:0">Automatic point rules</h3><span class="hint">Give points to everyone who does something by a deadline. People who already qualify get the points right away; anyone who qualifies later gets them within about 10 minutes. Officers and test accounts are skipped.</span></div>
+      ${editing ? `<div class="rq-warn"><strong>Editing “${esc(editing.reason)}.”</strong> New points or a new reason update everyone who already has them. A new start or deadline gives or takes points to match. Changing what earns the points, or the event or survey, starts the rule over.</div>` : ''}
+      <div><h3 style="margin:0">Automatic point rules</h3><span class="hint">Give points to everyone who does something by a deadline, or between a start and a deadline. People who already qualify get the points right away; anyone who qualifies later gets them within about 10 minutes. Officers and test accounts are skipped.</span></div>
       <div class="grid2">
         <label>Give points for<select id="pr-kind">${Object.entries(RULE_KINDS).map(([k, l]) => `<option value="${k}" ${d.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         ${needsEv ? `<label>Event<select id="pr-event"><option value="">Choose an event…</option>${evs.map(e => `<option value="${e.id}" ${d.event === e.id ? 'selected' : ''}>${fmtDay(e.date)} · ${esc(e.title)}</option>`).join('')}</select></label>`
           : d.kind === 'form' ? `<label>Survey <span class="hint">Make one in Officer tools → Survey builder</span><select id="pr-survey"><option value="">Choose a survey…</option>${svs.map(x => `<option value="${x.id}" ${d.survey === x.id ? 'selected' : ''}>${esc(x.title)}${x.status === 'draft' ? ' (draft)' : ''}</option>`).join('')}</select></label>` : '<span></span>'}
       </div>
       <div class="grid2">
+        <label>Start <span class="hint">Optional. Only counts what’s done from this minute on. Leave blank for anytime before the deadline.</span><input id="pr-start" type="datetime-local" value="${esc(d.start || '')}"></label>
         <label>Deadline <span class="hint">Mountain Time. Counts through that minute.</span><input id="pr-deadline" type="datetime-local" value="${esc(d.deadline)}"></label>
-        <label>Points<input id="pr-points" type="number" min="-1000" max="1000" step="1" value="${esc(d.points)}"></label>
       </div>
+      <label style="max-width:12rem">Points<input id="pr-points" type="number" min="-1000" max="1000" step="1" value="${esc(d.points)}"></label>
       <label>Reason <span class="hint">Members see this with their points.</span><input id="pr-reason" maxlength="200" value="${esc(d.reason)}" placeholder="${d.kind === 'join' ? 'e.g. Joined by October 31' : d.kind === 'form' ? 'e.g. Answered the survey in the first 2 days' : 'e.g. RSVP’d early'}"></label>
       ${d.kind === 'rsvp' ? `<label class="check"><input type="checkbox" id="pr-noshow" ${d.noshow ? 'checked' : ''}> Take the points back from people who RSVP’d but didn’t check in (once the event ends)</label>` : ''}
       <div class="err" id="pr-err"></div>
@@ -2781,7 +2783,7 @@ function pointRulesSection(){
 // Keeps what's typed in the rule form when it redraws (choosing what earns points shows or hides the event).
 function readRuleDraft(){
   const d = ui.prDraft, g = id => document.getElementById(id); if (!d || !g('pr-kind')) return;
-  d.kind = g('pr-kind').value; d.event = g('pr-event') ? g('pr-event').value : d.event; d.survey = g('pr-survey') ? g('pr-survey').value : d.survey; d.deadline = g('pr-deadline').value;
+  d.kind = g('pr-kind').value; d.event = g('pr-event') ? g('pr-event').value : d.event; d.survey = g('pr-survey') ? g('pr-survey').value : d.survey; d.deadline = g('pr-deadline').value; d.start = g('pr-start') ? g('pr-start').value : '';
   d.points = g('pr-points').value; d.reason = g('pr-reason').value; if (g('pr-noshow')) d.noshow = g('pr-noshow').checked;
 }
 // Admin → Award points: pick one or more members, give (or take away) points with a reason.
@@ -4169,7 +4171,7 @@ function eventBlock(who){
     if (hostedElsewhere(e) || !PTS[e.cat]) return '';
     const rules = isNewsletter() ? nlEventRules(who, e) : activeRules();
     const bonus = rules.filter(r => r.event_id === e.id && r.points > 0 && ['rsvp', 'checkin', 'survey'].includes(r.kind))
-      .map(r => `${r.points} more for ${{ rsvp: 'RSVPing', checkin: 'checking in', survey: 'filling out the survey' }[r.kind]} by ${fmtMtStamp(Date.parse(r.deadline))}`);
+      .map(r => `${r.points} more for ${{ rsvp: 'RSVPing', checkin: 'checking in', survey: 'filling out the survey' }[r.kind]} ${ruleWhen(r)}`);
     const revoke = rules.some(r => r.event_id === e.id && r.points > 0 && r.kind === 'rsvp' && r.revoke_noshow);
     return `\n- Points: ${PTS[e.cat]} for checking in${bonus.length ? ', plus ' + bonus.join(', plus ') : ''}${revoke ? ' (Early RSVP points will be revoked for no-shows)' : ''}`;
   };
@@ -4270,7 +4272,7 @@ function nlRulesFor(who){
 // Bonus points tied to one of the email's events show on that event's card; the "Bonus points" box lists the rest.
 const nlEventRules = (who, e) => nlRulesFor(who).filter(r => r.event_id === e.id && ['rsvp', 'checkin', 'survey'].includes(r.kind));
 const nlOtherRules = who => nlRulesFor(who).filter(r => !(r.event_id && (ui.mail.evs || []).includes(r.event_id))).slice(0, 6);
-const nlRuleTag = r => `+${r.points} for ${{ rsvp: 'RSVPing', checkin: 'checking in', survey: 'the survey' }[r.kind]} by ${fmtMtStamp(Date.parse(r.deadline))}${r.kind === 'rsvp' && r.revoke_noshow ? ' (no-shows lose it)' : ''}`;
+const nlRuleTag = r => `+${r.points} for ${{ rsvp: 'RSVPing', checkin: 'checking in', survey: 'the survey' }[r.kind]} ${ruleWhen(r)}${r.kind === 'rsvp' && r.revoke_noshow ? ' (no-shows lose it)' : ''}`;
 // "WFA Newsletter - November 16", dated the day it goes out (the scheduled day, for a scheduled newsletter).
 let nlSendAt = null;
 const nlDateLabel = ms => new Date(ms).toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'America/Denver' });
@@ -4280,7 +4282,7 @@ function nlPointsBlock(who){
   const rules = nlOtherRules(who), lines = rules.map(r => {
     const e = evById(r.event_id), sv = svById(r.survey_id), ev = e ? e.title : 'an event';
     const what = { join: 'Join the WFA', rsvp: `RSVP to ${ev}`, checkin: `Check in at ${ev}`, survey: `Fill out the survey for ${ev}`, form: `Answer the survey ${sv ? sv.title : ''}` }[r.kind];
-    return `- **+${r.points}:** ${what} by ${fmtMtStamp(Date.parse(r.deadline))}${r.kind === 'rsvp' && r.revoke_noshow ? ' (revoked for no-shows)' : ''}`;
+    return `- **+${r.points}:** ${what} ${ruleWhen(r)}${r.kind === 'rsvp' && r.revoke_noshow ? ' (revoked for no-shows)' : ''}`;
   });
   if ((db.settings.lbPrize || '').trim()) lines.push('', prizeLine());
   return lines.length ? '\n\n## Bonus points\n' + lines.join('\n') : '';
@@ -4370,7 +4372,7 @@ function nlHtml(who){
       const ruleRows = rules.map(r => { const e = evById(r.event_id), sv = svById(r.survey_id), ev = e ? e.title : 'an event';
         const what = { join: 'Join the WFA', rsvp: `RSVP to ${ev}`, checkin: `Check in at ${ev}`, survey: `Fill out the survey for ${ev}`, form: `Answer the survey ${sv ? sv.title : ''}` }[r.kind];
         return `<tr><td width="56" valign="top" style="padding:6px 0"><span style="display:inline-block;min-width:40px;text-align:center;padding:3px 6px;border-radius:4px;background:${NLC.gold};font:bold 14px Arial,sans-serif;color:#ffffff">+${r.points}</span></td>
-          <td style="padding:6px 0;font:14px/1.45 Arial,sans-serif;color:${NLC.ink}">${nlEsc(what)} <span style="color:${NLC.gray}">by ${nlEsc(fmtMtStamp(Date.parse(r.deadline)))}${r.kind === 'rsvp' && r.revoke_noshow ? ' (revoked for no-shows)' : ''}</span></td></tr>`; }).join('');
+          <td style="padding:6px 0;font:14px/1.45 Arial,sans-serif;color:${NLC.ink}">${nlEsc(what)} <span style="color:${NLC.gray}">${nlEsc(ruleWhen(r))}${r.kind === 'rsvp' && r.revoke_noshow ? ' (revoked for no-shows)' : ''}</span></td></tr>`; }).join('');
       rows.push(nlSection('Leaderboard', 'Bonus points', `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${NLC.cream};border:1px solid ${NLC.line};border-radius:6px"><tr><td style="padding:14px 16px">
         ${ruleRows ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${ruleRows}</table>` : ''}
         ${prize ? `<div style="font:14px/1.5 Arial,sans-serif;color:${NLC.ink};${ruleRows ? `margin-top:10px;padding-top:10px;border-top:1px solid ${NLC.line}` : ''}"><strong style="color:${NLC.goldDeep}">This season’s prize:</strong> ${nlEsc(prizeLine().replace(/ See them all and where you rank: \S+$/, ''))}</div>` : ''}
@@ -8323,7 +8325,7 @@ document.addEventListener('click', async ev => {
       break; }
     case 'prize-cancel': ui.prizeEdit = false; render(); break;
     case 'pr-edit': { const r = (db.pointRules || []).find(x => x.id === id); if (!r) break;
-      ui.prEdit = id; ui.prDraft = { kind: r.kind, event: r.event_id || '', survey: r.survey_id || '', deadline: mtLocalInput(r.deadline), points: r.points, reason: r.reason, noshow: !!r.revoke_noshow };
+      ui.prEdit = id; ui.prDraft = { kind: r.kind, event: r.event_id || '', survey: r.survey_id || '', start: mtLocalInput(r.starts_at), deadline: mtLocalInput(r.deadline), points: r.points, reason: r.reason, noshow: !!r.revoke_noshow };
       render(); document.getElementById('f-point-rule')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); break; }
     case 'pr-edit-cancel': ui.prEdit = null; ui.prDraft = null; render(); break;
     case 'pr-del': { const r = (db.pointRules || []).find(x => x.id === id);
@@ -9581,18 +9583,19 @@ async function handleSubmit(f, v, err){
     if (!['join', 'form'].includes(d.kind) && !d.event) return err('pr-err', 'Choose the event.');
     if (d.kind === 'form' && !d.survey) return err('pr-err', 'Choose the survey.');
     if (!d.deadline) return err('pr-err', 'Pick the deadline.');
+    if (d.start && Date.parse(mtFromInput(d.start)) >= Date.parse(mtFromInput(d.deadline))) return err('pr-err', 'The start has to be before the deadline.');
     if (!pts || Math.abs(pts) > 1000) return err('pr-err', 'Enter a number of points between -1000 and 1000 (not 0).');
     if (!d.reason.trim()) return err('pr-err', 'Add a reason members will see, like “Joined by October 31.”');
     if (ui.prEdit){
       const r = await sb.rpc('edit_point_rule', { p_id: ui.prEdit, p_kind: d.kind, p_event: ['join', 'form'].includes(d.kind) ? null : d.event, p_survey: d.kind === 'form' ? d.survey : null,
-        p_deadline: mtFromInput(d.deadline), p_points: pts, p_reason: d.reason.trim(), p_noshow: d.kind === 'rsvp' && !!d.noshow });
-      if (r.error) return err('pr-err', /edit_point_rule/.test(r.error.message || '') ? 'Editing rules isn’t set up yet. Run 86-edit-point-rules.sql in Supabase.' : errMsg(r.error));
+        p_deadline: mtFromInput(d.deadline), p_points: pts, p_reason: d.reason.trim(), p_noshow: d.kind === 'rsvp' && !!d.noshow, p_starts: mtFromInput(d.start) });
+      if (r.error) return err('pr-err', /edit_point_rule|starts_at|p_starts/.test(r.error.message || '') ? 'Rule start times aren’t set up yet. Run 96-point-rule-start.sql in Supabase.' : errMsg(r.error));
       ui.prDraft = null; ui.prEdit = null; await load(); render();
       toast(`Rule saved.${r.data ? ` ${r.data} more ${r.data === 1 ? 'person' : 'people'} got the points.` : ''}`);
       return;
     }
-    const r = await sb.from('point_rules').insert({ kind: d.kind, event_id: ['join', 'form'].includes(d.kind) ? null : d.event, survey_id: d.kind === 'form' ? d.survey : null, deadline: mtFromInput(d.deadline), points: pts, reason: d.reason.trim(), revoke_noshow: d.kind === 'rsvp' && !!d.noshow });
-    if (r.error) return err('pr-err', /point_rules/.test(r.error.message || '') ? 'Point rules aren’t set up yet. Run 56-point-rules.sql in Supabase.' : errMsg(r.error));
+    const r = await sb.from('point_rules').insert({ kind: d.kind, event_id: ['join', 'form'].includes(d.kind) ? null : d.event, survey_id: d.kind === 'form' ? d.survey : null, deadline: mtFromInput(d.deadline), ...(d.start ? { starts_at: mtFromInput(d.start) } : {}), points: pts, reason: d.reason.trim(), revoke_noshow: d.kind === 'rsvp' && !!d.noshow });
+    if (r.error) return err('pr-err', /starts_at/.test(r.error.message || '') ? 'Rule start times aren’t set up yet. Run 96-point-rule-start.sql in Supabase.' : /point_rules/.test(r.error.message || '') ? 'Point rules aren’t set up yet. Run 56-point-rules.sql in Supabase.' : errMsg(r.error));
     const ap = await sb.rpc('apply_point_rules');
     await logChange('Added the point rule “' + d.reason.trim() + '”');
     ui.prDraft = null; await load(); render();
