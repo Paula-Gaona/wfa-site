@@ -1260,7 +1260,8 @@ function tabCounts(which){
     questions: db.questions.filter(q => q.status === 'new').length,
     tasks: db.tasks.filter(t => !t.done && t.who === session && t.due <= todayIso()).length,   // your tasks due today or overdue
     contacts: ctMineDue(),   // your contacts that need a follow-up
-    scheduling: Object.values(db.requests || {}).filter(rqWaitingOnMe).length + (db.guestReqs || []).filter(gqWaitingOnMe).length
+    scheduling: Object.values(db.requests || {}).filter(rqWaitingOnMe).length + (db.guestReqs || []).filter(gqWaitingOnMe).length,
+    checkin: (db.claims || []).filter(c => c.status === 'pending' && evById(c.event_id)).length   // "I was there" requests to approve
   };
 }
 function countTotal(which){ return Object.values(tabCounts(which)).reduce((a, b) => a + b, 0); }
