@@ -7817,7 +7817,7 @@ function signFloorRow(e){
   const rf = roomFloor(e.loc), opts = [1, 2, 3, 4, 5, 6].map(n => `<option value="${n}" ${n === 1 ? 'selected' : ''}>${ordinal(n)} floor</option>`).join('');
   return `<div class="row" style="gap:8px;align-items:flex-end;margin-top:8px;flex-wrap:wrap">
     <label style="margin:0">What floor will the sign be on?<select id="sign-floor">${opts}</select></label>
-    <label class="check" style="margin:0"><input type="checkbox" id="sign-walkins" ${!e.cap || rsvpCount(e.id) < e.cap ? 'checked' : ''}> Say “Walk-ins welcome”</label>
+    <label class="check" style="margin:0"><input type="checkbox" id="sign-walkins" ${!e.cap || rsvpCount(e.id) < e.cap ? 'checked' : ''}> Say “Walk-ins welcome${e.cap ? ', limited seats' : ''}”</label>
     <button class="btn small" data-act="sign-dl" data-id="${e.id}">Download sign</button>
     <span class="hint">${rf ? `The room (${esc(e.loc)}) is on the ${ordinal(rf)} floor, so the sign will say upstairs, downstairs, or this floor.` : 'Add a room number to the location (like KB 401) so the sign can say which floor.'}</span></div>`;
 }
@@ -7856,7 +7856,7 @@ async function signPdf(id, signFloor = 1, walkins = false){
     if (rf){ doc.setFont('helvetica', 'normal'); doc.setFontSize(20); doc.setTextColor(...ink);
       center(rf > signFloor ? `Upstairs, ${ordinal(rf)} floor` : rf < signFloor ? `Downstairs, ${ordinal(rf)} floor` : 'On this floor', ay + 158 + rs * 0.95 + 38); }
     // Walk-ins welcome: a gold band above the footer.
-    if (walkins){ doc.setFillColor(...gold); doc.rect(0, H - 96, W, 44, 'F'); doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(255, 255, 255); center('WALK-INS WELCOME', H - 66); }
+    if (walkins){ doc.setFillColor(...gold); doc.rect(0, H - 96, W, 44, 'F'); doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(255, 255, 255); center(e.cap ? 'WALK-INS WELCOME · LIMITED SEATS' : 'WALK-INS WELCOME', H - 66); }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(12); doc.setTextColor(...gray); center('wolverinefinanceassociation.org', H - 30);
     doc.save(qrFileName(e.title + '-sign').replace(/-qr\.png$/, '.pdf'));
   } catch(err){ toast(err.message || 'The sign didn\u2019t work. Try again.'); }
