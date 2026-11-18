@@ -6713,7 +6713,7 @@ function qaBox(e){
   if (e.membersOnly && !session) return '';
   const mine = (db.evQuestions || []).filter(q => q.event_id === e.id && q.email === session);
   return `<div class="panel stack" style="gap:10px">
-    <div><strong>${(e.speakers || []).length > 1 ? 'Questions for the guests' : 'Questions for the speaker'}</strong><div class="hint">Send a question ahead of time. At the event, the host will call on you to ask it yourself, so ${(e.speakers || []).length > 1 ? 'the guests' : 'the speaker'} can put a face to the question. It’s a great way to make a connection. We’ll email you your questions the morning of the event so you have them ready.</div></div>
+    <div><strong>${(e.speakers || []).length > 1 ? 'Questions for the guests' : 'Questions for the speaker'}</strong><div class="hint">Send a question ahead of time. At the event, the emcee will call on you to ask it yourself, so ${(e.speakers || []).length > 1 ? 'the guests' : 'the speaker'} can put a face to the question. It’s a great way to make a connection. We’ll email you your questions the morning of the event so you have them ready.</div></div>
     <form class="stack" id="f-qa" data-id="${e.id}" style="gap:8px">
       ${session ? '' : '<label>Your name<input id="qa-name" autocomplete="name" required></label>'}
       ${(e.speakers || []).length > 1 ? `<fieldset class="rq-q"><legend>Who is it for?</legend><div class="row" style="gap:14px"><label class="check"><input type="checkbox" class="qa-sp" value="" checked> All of them</label>${e.speakers.map(sp => `<label class="check"><input type="checkbox" class="qa-sp" value="${esc(sp.name)}"> ${esc(sp.name)}</label>`).join('')}</div></fieldset>` : ''}

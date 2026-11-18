@@ -738,7 +738,7 @@ ${lastNote}`
         }
         const sp = Array.isArray(ev.speakers) ? ev.speakers.map((x: { name?: string }) => String(x?.name || '').trim()).filter(Boolean) : [];
         const spName = sp.length === 1 ? sp[0] : sp.length ? 'the speakers' : 'the speaker';
-        const qaNote = `During the Q&A, the host will call on you to ask your question yourself, so ${spName} can see who's asking. It's a great chance to introduce yourself and make a connection, so have ${'{n}'} ready:`;
+        const qaNote = `During the Q&A, the emcee will call on you to ask your question yourself, so ${spName} can see who's asking. It's a great chance to introduce yourself and make a connection, so have ${'{n}'} ready:`;
         const qaHtml = (email: string) => { const l = asked.get(email); return l ? `<div style="margin:16px 0 6px;padding:12px 14px;background:#f3f6f1;border-left:3px solid #1f4d2e"><p style="margin:0 0 6px"><strong>Get ready to be called on</strong></p><p style="margin:0 0 6px">${escHtml(qaNote.replace('{n}', l.length === 1 ? 'it' : 'them'))}</p><ul style="margin:0;padding-left:20px">${l.map((q) => `<li style="margin:0 0 4px">${escHtml(q)}</li>`).join('')}</ul></div>` : ''; };
         const qaText = (email: string) => { const l = asked.get(email); return l ? `\n\nGET READY TO BE CALLED ON\n${qaNote.replace('{n}', l.length === 1 ? 'it' : 'them')}` + l.map((q) => `\n- ${q}`).join('') : ''; };
         const askers = real([...asked.keys()]).filter((e) => byEmail.has(e) && getsEmail(e, 'events'));
