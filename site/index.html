@@ -6607,10 +6607,10 @@ function eventInner(id, page){
   if ((isToday(e) || openedEarly(e)) && !e.draft && !hostedElsewhere(e)){
     const pre = page ? decodeURIComponent(location.hash.slice(1).split('/')[2] || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) : '';
     if (!session) checkin = guestCheckin(e, pre);
-    else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e.cat)}.</div>`;
+    else if (here) checkin = `<div class="notice"><span><strong>You’re checked in.</strong> Show this screen to the door host to come in. ${ptsText(e.cat)}.</span></div>`;
     else {
       const opens = checkinOpensMs(e), early = Date.now() < opens;
-      checkin = `<form class="stack" id="f-checkin" data-id="${id}" style="gap:8px"><label for="ci-code">Check-in code <span class="hint">${pre ? 'Filled in from the QR code' : 'Shown on screen at the event'} · ${ptsText(e.cat)}${mine ? '' : ' · No RSVP needed'}</span></label>
+      checkin = `<form class="stack" id="f-checkin" data-id="${id}" style="gap:8px"><label for="ci-code">Check-in code <span class="hint">Check in, then show your screen to the door host to come in. ${pre ? 'Filled in from the QR code' : 'Shown on screen at the event'} · ${ptsText(e.cat)}${mine ? '' : ' · No RSVP needed'}</span></label>
       <div class="checkin-form"><input id="ci-code" maxlength="8" autocomplete="off" placeholder="CODE" value="${esc(pre)}"><button class="btn" type="submit" data-opens="${opens}" ${early ? 'aria-disabled="true"' : ''}>Check in</button></div>
       <span class="hint ci-opens" ${early ? '' : 'hidden'}>Check-in opens at ${fmtTime(mtClock(opens))}, 15 minutes before the event starts.</span><div class="err" id="ci-err"></div></form>`;
     }
@@ -6849,7 +6849,7 @@ function guestCheckin(e, pre){
   if (e.membersOnly) return membersOnlyNote(e, 'check in');
   const id = e.id, pts = PTS[e.cat] || 0, done = guestDone(id);
   const join = `<div class="row" style="gap:8px"><button class="btn" data-act="event-auth" data-to="signup" data-id="${id}">Join WFA (free) and check in</button><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">I have an account: sign in</button></div>`;
-  if (done) return `<div class="panel stack" style="gap:10px"><div class="notice"><span><strong>You’re checked in as a guest, ${esc(done.first)}.</strong> Join with ${esc(done.email)} and this check-in moves to your account${pts ? `, with the ${pts} points` : ''}.</span></div>${join}</div>`;
+  if (done) return `<div class="panel stack" style="gap:10px"><div class="notice"><span><strong>You’re checked in as a guest, ${esc(done.first)}.</strong> Show this screen to the door host to come in. Join with ${esc(done.email)} and this check-in moves to your account${pts ? `, with the ${pts} points` : ''}.</span></div>${join}</div>`;
   const opens = checkinOpensMs(e), early = Date.now() < opens;
   return `<div class="panel stack" style="gap:12px">
     <strong style="font-size:1.1rem">At the event? Check in</strong>
