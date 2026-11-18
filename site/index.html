@@ -320,6 +320,12 @@ main{padding-block:36px 64px}
 .facts dt{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding-top:3px}
 .facts dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .dress-more summary{cursor:pointer;margin-top:4px}
+/* Guest options (RSVP, check in, ask to be added): a clear button, not a small disclosure link. */
+.guest-opt>summary{list-style:none;display:inline-flex;align-items:center;gap:10px;cursor:pointer;font-weight:700;color:var(--brand-text);border:2px solid var(--brand-text);border-radius:var(--radius);padding:9px 16px;background:var(--surface)}
+.guest-opt>summary::-webkit-details-marker{display:none}
+.guest-opt>summary::before{content:'+';font-size:1.15em;line-height:1}
+.guest-opt[open]>summary::before{content:'−'}
+.guest-opt>summary:hover{background:var(--bg, transparent)}
 .dress-list{display:grid;gap:8px;margin:6px 0 0;font-size:.9rem}
 .dress-list ul{margin:2px 0 0;padding-left:1.2em}.dress-list li{margin:1px 0}
 .role-card{border-left:3px solid var(--line);padding:2px 0 2px 10px}
@@ -6737,7 +6743,7 @@ function guestRsvpInner(e){
     <strong style="font-size:1.1rem">Not a member yet?</strong>
     <p style="margin:0">Members ${evPts(e) ? `earn <strong>${evPts(e)} points</strong> for coming, ` : ''}get reminders for every event, and can join the resume book. Joining is free.</p>
     ${join}
-    <details ${ui.grsvpOpen === id ? 'open' : ''}><summary style="cursor:pointer">Not ready to join? RSVP as a guest</summary>
+    <details class="guest-opt" ${ui.grsvpOpen === id ? 'open' : ''}><summary>Not ready to join? RSVP as a guest</summary>
       <form class="stack" id="f-grsvp" data-id="${id}" style="gap:8px;margin-top:10px">
         <div class="grid2"><label>First name<input id="gr-first" autocomplete="given-name" required></label><label>Last name<input id="gr-last" autocomplete="family-name" required></label></div>
         <label>Email<input id="gr-email" type="email" autocomplete="email" required></label>
@@ -6902,7 +6908,7 @@ function guestClaimBox(e){
   const signin = `<div class="notice"><span><strong>Check-in is closed.</strong> Were you there but forgot to check in? Members: sign in and click “I was there” on this page within a week of the event.</span></div><div class="row" style="gap:8px"><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">Sign in</button></div>`;
   if (e.membersOnly) return signin;
   if (sent) return signin + '<div class="notice"><span><strong>Request sent.</strong> An officer will review it.</span></div>';
-  return signin + `<details ${ui.gclaimOpen === id ? 'open' : ''}><summary style="cursor:pointer">Came as a guest? Ask to be added</summary>
+  return signin + `<details class="guest-opt" ${ui.gclaimOpen === id ? 'open' : ''}><summary>Came as a guest? Ask to be added</summary>
     <form class="stack" id="f-gclaim" data-id="${id}" style="gap:8px;margin-top:10px">
       <div class="grid2"><label>First name<input id="gcl-first" autocomplete="given-name" required></label><label>Last name<input id="gcl-last" autocomplete="family-name" required></label></div>
       <label>Email <span class="hint">The one you RSVP’d with, if you did</span><input id="gcl-email" type="email" autocomplete="email" required></label>
@@ -6945,7 +6951,7 @@ function guestCheckin(e, pre){
     <strong style="font-size:1.1rem">Not a member yet?</strong>
     <p style="margin:0">Members ${pts ? `earn <strong>${pts} points</strong> for this event, ` : ''}show up on the leaderboard, get event reminders, and can join the resume book we share with recruiters. Joining is free and takes about a minute.</p>
     ${join}
-    <details ${ui.guestOpen === id ? 'open' : ''} data-guest="${id}"><summary style="cursor:pointer">Not ready to join? Check in as a guest</summary>
+    <details class="guest-opt" ${ui.guestOpen === id ? 'open' : ''} data-guest="${id}"><summary>Not ready to join? Check in as a guest</summary>
       <form class="stack" id="f-guest" data-id="${id}" style="gap:8px;margin-top:10px">
         <div class="grid2"><label>First name<input id="gc-first" autocomplete="given-name" required></label><label>Last name<input id="gc-last" autocomplete="family-name" required></label></div>
         <label>Email<input id="gc-email" type="email" autocomplete="email" required></label>
