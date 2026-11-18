@@ -8466,7 +8466,7 @@ document.addEventListener('click', async ev => {
       break; }
     case 'show-code': await showCode(id); break;
     case 'ck-pdf': await ckPdf(id); break;
-    case 'sign-pdf': ui.signFor = ui.signFor === id ? null : id; render(); break;
+    case 'sign-pdf': ui.signFor = ui.signFor === id ? null : id; refreshEvent(id); break;
     case 'sign-dl': await signPdf(id, +document.getElementById('sign-floor').value || 1); break;
     case 'signoff-send': { const e = evById(id); let pubNow = false;
       if (!(e.desc || '').trim()){ ui.officerTab = 'events'; ui.editEvent = id; render(); window.scrollTo(0, 0); toast('Add a description first.'); break; }
