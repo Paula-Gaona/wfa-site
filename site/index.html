@@ -6737,7 +6737,8 @@ function guestRsvpInner(e){
       <form class="stack" id="f-grsvp" data-id="${id}" style="gap:8px;margin-top:10px">
         <div class="grid2"><label>First name<input id="gr-first" autocomplete="given-name" required></label><label>Last name<input id="gr-last" autocomplete="family-name" required></label></div>
         <label>Email<input id="gr-email" type="email" autocomplete="email" required></label>
-        <label>UVU ID <span class="hint">Optional. Then you can check in at the event with just your UVU ID.</span><input id="gr-uvid" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="8 digits"></label>
+        <label>UVU ID <span class="hint">So you can check in at the event with just your UVU ID.</span><input id="gr-uvid" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="8 digits"></label>
+        <label class="check" style="margin-top:-4px"><input type="checkbox" id="gr-nouvid" onchange="const i=document.getElementById('gr-uvid'); i.disabled=this.checked; if (this.checked) i.value='';"> I don’t have a UVU ID</label>
         <label class="check"><input type="checkbox" id="gr-remind"> Send me email reminders about this event</label>
         <div><button class="btn ghost" type="submit">RSVP as a guest</button></div><div class="err" id="gr-err"></div>
       </form></details></div>`;
@@ -9458,11 +9459,12 @@ async function handleSubmit(f, v, err){
   if (f.id === 'f-grsvp'){
     const id = f.dataset.id, first = v('gr-first'), last = v('gr-last'), email = v('gr-email').toLowerCase(), reminders = document.getElementById('gr-remind').checked;
     ui.grsvpOpen = id;
+    if (!document.getElementById('gr-nouvid').checked && !/^\d{8}$/.test(v('gr-uvid').replace(/\D/g, ''))) return err('gr-err', 'Enter your 8-digit UVU ID, or check “I don’t have a UVU ID.”');
     const r = await sb.rpc('guest_rsvp', { p_event: id, p_first: first, p_last: last, p_email: email, p_reminders: reminders, p_uvid: v('gr-uvid').replace(/\D/g, '') });
     if (r.error) return err('gr-err', /guest_rsvp/.test(r.error.message || '') ? 'Guest RSVPs aren’t set up yet.' : errMsg(r.error));
     const msg = { name: 'Enter your first and last name.', email: 'Enter a valid email address.', missing: 'This event isn’t open for guest RSVPs.',
       started: 'This event has already started. Check in with the code on screen instead.', full: 'All seats are taken.',
-      member: 'There’s already a WFA account with this email. Sign in to RSVP.', uvid: 'Enter an 8-digit UVU ID, or leave it blank.',
+      member: 'There’s already a WFA account with this email. Sign in to RSVP.', uvid: 'Enter your 8-digit UVU ID, or check “I don’t have a UVU ID.”',
       memberid: 'That UVU ID belongs to a WFA account. Use “RSVP with your UVU ID” above instead.', notyet: 'Members get early access. Guest RSVPs aren’t open yet.' }[r.data];
     if (msg) return err('gr-err', msg);
     try { localStorage.setItem('wfa-grsvp-' + id, JSON.stringify({ first, email, reminders })); } catch(x){}
