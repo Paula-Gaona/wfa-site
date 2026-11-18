@@ -9196,7 +9196,7 @@ async function handleSubmit(f, v, err){
     const email = v('si-email').toLowerCase(), pw = document.getElementById('si-pw').value;
     if (!email || !pw) return err('si-err', 'Enter your email and password.');
     const { error } = await sb.auth.signInWithPassword({ email, password: pw });
-    if (error) return err('si-err', /not confirmed/i.test(error.message) ? 'Confirm your email first. Click the link we sent when you signed up, or use “Send a new one” below if it expired.' : /invalid login/i.test(error.message) ? 'Email or password is incorrect.' : errMsg(error));
+    if (error) return err('si-err', /not confirmed/i.test(error.message) ? 'Confirm your email first. Click the link we sent when you signed up, or use “Send a new one” above if it expired or never came.' : /invalid login/i.test(error.message) ? 'Email or password is incorrect.' : errMsg(error));
     ui.notice = ''; await afterLogin(); toast('Signed in as ' + myRole);
   }
 
