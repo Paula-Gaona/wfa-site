@@ -6164,7 +6164,7 @@ function viewOfficer(){
     const claims = (db.claims || []).filter(c => c.status === 'pending' && evById(c.event_id));
     const claimsHtml = claims.length ? `<section class="stack"><div class="section-head"><h3>Check-in requests</h3><span class="muted">${claims.length}</span></div>
       <p class="hint" style="margin:0">Members who say they were there but forgot to check in, with one thing they learned. Approving checks them in, with the points.</p>
-      <div>${claims.map(c => { const ev = evById(c.event_id); return `<div class="list-row"><div><div class="ev-title">${esc(userName(c.email))}</div><div class="ev-sub">${esc(ev.title)} · ${fmtDay(ev.date)} · ${going(ev.id).includes(c.email) ? 'RSVP’d' : 'Didn’t RSVP'}${c.note ? ` · “${esc(c.note)}”` : ''}</div></div>
+      <div>${claims.map(c => { const ev = evById(c.event_id); return `<div class="list-row"><div><div class="ev-title">${c.guest ? `${esc(c.first)} ${esc(c.last)} <span class="tag">Guest</span>` : esc(userName(c.email))}</div><div class="ev-sub">${c.guest ? esc(c.email) + (c.uvid ? ' · UVU ID ' + esc(c.uvid) : '') + ' · ' : ''}${esc(ev.title)} · ${fmtDay(ev.date)} · ${(c.guest ? ((db.guestRsvps || {})[ev.id] || []).some(g => g.email === c.email) : going(ev.id).includes(c.email)) ? 'RSVP’d' : 'Didn’t RSVP'}${c.note ? ` · “${esc(c.note)}”` : ''}</div></div>
         <div class="row" style="gap:6px"><button class="btn small" data-act="claim-ok" data-id="${ev.id}" data-email="${esc(c.email)}">Approve</button><button class="btn ghost small" data-act="claim-no" data-id="${ev.id}" data-email="${esc(c.email)}">Deny</button></div></div>`; }).join('')}</div></section>` : '';
     body = `<div class="stack" style="gap:32px">${claimsHtml}
       <section class="stack">
@@ -6645,7 +6645,7 @@ function eventInner(id, page){
   // For a week after an event: forgot to check in? Ask an officer to add you.
   else if (session && isPast(e) && !e.draft && !hostedElsewhere(e) && e.cat !== 'officer_meeting' && !here && Date.now() < evEndMs(e) + 7 * 864e5) checkin = claimBox(e);
   else if (!session && isPast(e) && !e.draft && !hostedElsewhere(e) && e.cat !== 'officer_meeting' && Date.now() < evEndMs(e) + 7 * 864e5)
-    checkin = `<div class="notice"><span><strong>Check-in is closed.</strong> Were you there but forgot to check in? Sign in and click “I was there” on this page within a week of the event.</span></div><div class="row" style="gap:8px"><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">Sign in</button></div>`;
+    checkin = guestClaimBox(e);
   // Scanned a check-in QR before the event day: say when check-in opens, so it doesn't look broken.
   else if (page && !e.draft && !isPast(e) && (location.hash.slice(1).split('/')[2] || '')){
     const opens = checkinOpensMs(e);
@@ -6893,6 +6893,23 @@ function eventOfficerExtras(e){
       <div><button class="btn ghost small" data-act="arrival-mail" data-id="${e.id}">Prep the email</button></div></div>`;
   }
   return h;
+}
+// Signed out, after check-in closes: members sign in for "I was there"; guests send a request with their name and email.
+// Guests' "I was there" requests ask for a UVU ID on events after this date (guest RSVPs started asking for it then).
+const GUEST_UVID_FROM = '2026-11-18';
+function guestClaimBox(e){
+  const id = e.id, sent = (() => { try { return localStorage.getItem('wfa-gclaim-' + id) === '1'; } catch(x){ return false; } })();
+  const signin = `<div class="notice"><span><strong>Check-in is closed.</strong> Were you there but forgot to check in? Members: sign in and click “I was there” on this page within a week of the event.</span></div><div class="row" style="gap:8px"><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">Sign in</button></div>`;
+  if (e.membersOnly) return signin;
+  if (sent) return signin + '<div class="notice"><span><strong>Request sent.</strong> An officer will review it.</span></div>';
+  return signin + `<details ${ui.gclaimOpen === id ? 'open' : ''}><summary style="cursor:pointer">Came as a guest? Ask to be added</summary>
+    <form class="stack" id="f-gclaim" data-id="${id}" style="gap:8px;margin-top:10px">
+      <div class="grid2"><label>First name<input id="gcl-first" autocomplete="given-name" required></label><label>Last name<input id="gcl-last" autocomplete="family-name" required></label></div>
+      <label>Email <span class="hint">The one you RSVP’d with, if you did</span><input id="gcl-email" type="email" autocomplete="email" required></label>
+      ${e.date > GUEST_UVID_FROM ? `<label>UVU ID<input id="gcl-uvid" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="8 digits"></label>
+      <label class="check" style="margin-top:-4px"><input type="checkbox" id="gcl-nouvid" onchange="const i=document.getElementById('gcl-uvid'); i.disabled=this.checked; if (this.checked) i.value='';"> I don’t have a UVU ID</label>` : ''}
+      <label>One thing you learned or heard at the event<textarea id="gcl-note" maxlength="300" required style="min-height:64px" placeholder="A sentence or two"></textarea></label>
+      <div><button class="btn ghost" type="submit">I was there</button></div><div class="err" id="gcl-err"></div></form></details>`;
 }
 function claimBox(e){
   const c = (db.claims || []).find(x => x.event_id === e.id && x.email === session), pts = evPts(e);
@@ -8584,7 +8601,8 @@ document.addEventListener('click', async ev => {
     case 'report-ev': ui.reportEvent = id; render(); break;
     case 'claim-ok': case 'claim-no': { const email = t.dataset.email, ok = a === 'claim-ok';
       await act(async () => { const r = must(await sb.rpc('review_attendance_claim', { p_event: id, p_email: email, p_ok: ok }));
-        await logChange(`${ok ? 'Approved' : 'Denied'} ${userName(email)}’s check-in request for “${(evById(id) || {}).title}”`); }, ok ? `${userName(email)} checked in` : 'Request denied'); break; }
+        const cl = (db.claims || []).find(x => x.event_id === id && x.email === email) || {}, who = cl.guest ? `${cl.first} ${cl.last} (guest)` : userName(email);
+        await logChange(`${ok ? 'Approved' : 'Denied'} ${who}’s check-in request for “${(evById(id) || {}).title}”`); }, ok ? 'Checked in' : 'Request denied'); break; }
     case 'pin-ann': { const x = db.announcements.find(n => n.id === id);
       await doOrPropose('announcement', 'edit', id, { row: { pinned: !x.pinned } }, (x.pinned ? 'Unpin' : 'Pin') + ' announcement “' + x.title + '”', x.pinned ? 'Unpinned' : 'Pinned'); break; }
     case 'del-ann': { const x = db.announcements.find(n => n.id === id);
@@ -9486,6 +9504,22 @@ async function handleSubmit(f, v, err){
     toast('Question sent. Thanks!'); await load(); refreshEvent(id); return;
   }
 
+  if (f.id === 'f-gclaim'){
+    const id = f.dataset.id, first = v('gcl-first'), last = v('gcl-last'), email = v('gcl-email').toLowerCase(), note = v('gcl-note');
+    ui.gclaimOpen = id;
+    if (note.length < 20) return err('gcl-err', 'Write a sentence or two about something you learned or heard at the event.');
+    const uvEl = document.getElementById('gcl-uvid'), uvid = uvEl ? uvEl.value.replace(/\D/g, '') : '';
+    if (uvEl && !document.getElementById('gcl-nouvid').checked && !/^\d{8}$/.test(uvid)) return err('gcl-err', 'Enter your 8-digit UVU ID, or check “I don’t have a UVU ID.”');
+    const r = await sb.rpc('guest_claim_attendance', { p_event: id, p_first: first, p_last: last, p_email: email, p_note: note, p_uvid: uvid });
+    if (r.error) return err('gcl-err', /guest_claim_attendance/.test(r.error.message || '') ? 'This isn’t set up yet. Ask an officer to add you.' : errMsg(r.error));
+    const msg = { name: 'Enter your first and last name.', email: 'Enter a valid email address.', note: 'Write a sentence or two about something you learned or heard at the event.',
+      missing: 'This event doesn’t take check-ins.', notover: 'This event isn’t over yet. Check in with the code on screen.',
+      late: 'It’s been more than a week since this event, so it can’t be changed.', member: 'There’s a WFA account with this email. Sign in and click “I was there.”',
+      here: 'You’re already checked in as a guest.', uvid: 'Enter your 8-digit UVU ID, or check “I don’t have a UVU ID.”' }[r.data];
+    if (msg) return err('gcl-err', msg);
+    try { localStorage.setItem('wfa-gclaim-' + id, '1'); } catch(x){}
+    toast('Request sent'); refreshEvent(id); return;
+  }
   if (f.id === 'f-claim'){
     const id = f.dataset.id, note = v('cl-note');
     if (note.length < 20) return err('cl-err', 'Write a sentence or two about something you learned or heard at the event.');
