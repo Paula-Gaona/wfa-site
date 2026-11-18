@@ -7762,6 +7762,15 @@ function loadJsPdf(){
     document.head.appendChild(sc);
   }));
 }
+// The official UVU horizontal logo (UVU Green), for printouts. Department organizations use it next to their name
+// instead of their own logo (UVU brand rules).
+let uvuLogo = null;
+function loadUvuLogo(){
+  return uvuLogo || (uvuLogo = fetch('/uvu-logo-horizontal-green.png').then(r => { if (!r.ok) throw new Error('logo'); return r.blob(); })
+    .then(b => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(b); }))
+    .catch(err => { uvuLogo = null; throw err; }));
+}
+const UVU_LOGO_RATIO = 5395 / 808;
 async function ckPdf(id){
   let e = evById(id); if (!e) return;
   if (!e.code){
@@ -7781,10 +7790,10 @@ async function ckPdf(id){
     const W = 612, green = [24, 92, 51], gold = [210, 172, 95], ink = [0, 0, 0];
     const center = (txt, y) => doc.text(txt, W / 2, y, { align: 'center' });
     const spaced = (txt, y, cs) => { doc.setCharSpace(cs); doc.text(txt, W / 2 - (doc.getTextWidth(txt) + cs * (txt.length - 1)) / 2, y); doc.setCharSpace(0); };   // letter-spaced text, centered
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...green); spaced('WOLVERINE FINANCE ASSOCIATION', 96, 2.5);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(12); doc.setTextColor(...ink); center('at Utah Valley University', 118);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...green); spaced('WOLVERINE FINANCE ASSOCIATION', 112, 2.5);
+    try { const lw = 210; doc.addImage(await loadUvuLogo(), 'PNG', (W - lw) / 2, 36, lw, lw / UVU_LOGO_RATIO, undefined, 'FAST'); } catch(err){}
     doc.setFont('helvetica', 'bold'); doc.setFontSize(26); doc.setTextColor(...green);
-    const title = doc.splitTextToSize(e.title.toUpperCase(), 520).slice(0, 2);
+    let title, ts = 26; for (; ts >= 16; ts -= 2){ doc.setFontSize(ts); title = doc.splitTextToSize(e.title.toUpperCase(), 520); if (title.length <= 2) break; } title = title.slice(0, 2);   // shrink long titles to fit 2 lines
     title.forEach((t, i) => center(t, 166 + i * 30));
     let y = 166 + (title.length - 1) * 30 + 26;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(13); doc.setTextColor(...ink);
@@ -7832,16 +7841,15 @@ async function signPdf(id, signFloor = 1, walkins = false){
     const W = 612, H = 792, green = [24, 92, 51], gold = [210, 172, 95], ink = [0, 0, 0], gray = [90, 90, 90];
     const center = (txt, y) => doc.text(txt, W / 2, y, { align: 'center' });
     // Green band with the club name.
-    doc.setFillColor(...green); doc.rect(0, 0, W, 64, 'F'); doc.setFillColor(...gold); doc.rect(0, 64, W, 5, 'F');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(255, 255, 255);
-    const club = 'WOLVERINE FINANCE ASSOCIATION'; doc.setCharSpace(3); doc.text(club, W / 2 - (doc.getTextWidth(club) + 3 * (club.length - 1)) / 2, 41); doc.setCharSpace(0);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(13); doc.setTextColor(...ink); center('at Utah Valley University', 98);
+    try { const lw = 230; doc.addImage(await loadUvuLogo(), 'PNG', (W - lw) / 2, 36, lw, lw / UVU_LOGO_RATIO, undefined, 'FAST'); } catch(err){}
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...green);
+    const club = 'WOLVERINE FINANCE ASSOCIATION'; doc.setCharSpace(3); doc.text(club, W / 2 - (doc.getTextWidth(club) + 3 * (club.length - 1)) / 2, 114); doc.setCharSpace(0);
     // Event name, as big as fits in 3 lines.
     doc.setFont('helvetica', 'bold'); doc.setTextColor(...green);
     let size = 40, lines;
     for (; size >= 24; size -= 2){ doc.setFontSize(size); lines = doc.splitTextToSize(e.title, 500); if (lines.length <= 3) break; }
     lines = lines.slice(0, 3);
-    let y = 170; lines.forEach((t, i) => center(t, y + i * size * 1.15)); y += (lines.length - 1) * size * 1.15 + 34;
+    let y = 186; lines.forEach((t, i) => center(t, y + i * size * 1.15)); y += (lines.length - 1) * size * 1.15 + 34;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(16); doc.setTextColor(...gray);
     center(`${fmtDay(e.date)} \u00b7 ${fmtTime(e.start)}\u2013${fmtTime(e.end)}`, y);
     // Big arrow: up if the room is upstairs, down if it's downstairs, up (straight ahead) if it's on this floor.
