@@ -42,3 +42,33 @@ create policy "officers add headcount" on public.event_headcount for insert with
 drop policy if exists "officers edit headcount" on public.event_headcount;
 create policy "officers edit headcount" on public.event_headcount for update using (is_officer()) with check (is_officer());
 grant select, insert, update on public.event_headcount to authenticated;
+
+-- 3. Members can RSVP without signing in: their UVU ID and last name (both must match their profile). Same rules as
+--    RSVPing on the site: when RSVPs open and close, the seat limit, and the waitlist when it's full.
+create or replace function public.uvid_rsvp(p_event uuid, p_uvid text, p_last text) returns text
+language plpgsql security definer set search_path = public as $$
+declare e events; em text;
+  u text := regexp_replace(coalesce(p_uvid, ''), '\D', '', 'g');
+  l text := lower(trim(coalesce(p_last, '')));
+begin
+  if u !~ '^\d{8}$' then return 'uvid'; end if;
+  if l = '' then return 'last'; end if;
+  select * into e from events where id = p_event for update;
+  if e.id is null or e.draft or e.test or e.reg_mode <> 'rsvp' or e.cat in ('officer_meeting', 'case_competition') then return 'missing'; end if;
+  if now() >= (e.date + e.start_time) at time zone 'America/Denver' then return 'started'; end if;
+  if e.rsvp_opens is not null and now() < e.rsvp_opens then return 'notyet'; end if;
+  if e.rsvp_closes is not null and now() >= e.rsvp_closes then return 'closed'; end if;
+  select m.email into em from members m
+    where (m.uvuid = u or lower(m.email) = u || '@uvu.edu') and lower(trim(m.last)) = l
+    order by (m.uvuid = u) desc limit 1;
+  if em is null then return 'nomember'; end if;
+  if exists (select 1 from rsvps where event_id = p_event and email = em) then return 'going'; end if;
+  if coalesce(e.cap, 0) = 0 or (seats_taken(p_event) < e.cap
+       and not exists (select 1 from waitlist w where w.event_id = p_event and w.promoted_at is null and w.email <> em)) then
+    insert into rsvps (event_id, email) values (p_event, em);
+    return 'rsvp';
+  end if;
+  insert into waitlist (event_id, email) values (p_event, em) on conflict (event_id, email) do nothing;
+  return 'waitlist';
+end $$;
+grant execute on function public.uvid_rsvp(uuid, text, text) to anon, authenticated;

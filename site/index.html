@@ -6660,7 +6660,7 @@ function eventInner(id, page){
     ${isCase(e) && !e.draft ? caseSection(e) : ''}
     ${checkin}
     ${rsvpTimesNote(e)}
-    ${!session && !isCase(e) && takesRsvps(e) && !hasStarted(e) && !e.draft ? (e.membersOnly ? membersOnlyNote(e, 'RSVP') : guestRsvpBox(e)) : ''}
+    ${!session && !isCase(e) && takesRsvps(e) && !hasStarted(e) && !e.draft ? (e.membersOnly ? (uvidRsvpDone(e.id) ? uvidRsvpNote(e.id) : uvidRsvp(e) + membersOnlyNote(e, 'RSVP')) : guestRsvpBox(e)) : ''}
     ${e.qaEnabled && !isPast(e) && !e.draft ? (qaOpen(e) ? qaBox(e) : `<div class="panel"><span class="muted">Questions for the ${(e.speakers || []).length > 1 ? 'guests' : 'speaker'} open when RSVPs do.</span></div>`) : ''}
     <div class="row">${action}${can('officer') ? `<span style="margin-left:auto" class="row"><button class="btn ghost small" data-act="edit-event" data-id="${id}">Edit event</button></span>` : ''}</div>
     ${codeBox}
@@ -6691,7 +6691,19 @@ function rsvpTimesNote(e){
   const when = t => t > now ? fmtMtStamp(t) : 'Open now';
   return `<div class="rsvp-times"><strong>When RSVPs open</strong><dl class="facts" style="margin:4px 0 0"><dt>Members</dt><dd>${when(m)}</dd>${e.membersOnly ? '<dt>Guests</dt><dd>Members only</dd>' : `<dt>Guests</dt><dd>${when(Math.max(g, m))}</dd>`}</dl></div>`;
 }
-function guestRsvpBox(e){
+// Members RSVP without signing in: their UVU ID and last name.
+function uvidRsvpDone(id){ try { return localStorage.getItem('wfa-uvrsvp-' + id) || ''; } catch(e){ return ''; } }
+function uvidRsvpNote(id){ const w = uvidRsvpDone(id) === 'waitlist';
+  return `<div class="notice"><span><strong>${w ? 'You’re on the waitlist.' : 'You’re going!'}</strong> ${w ? 'If a seat opens, it’s yours, and we’ll email you.' : 'Sign in anytime to see your RSVPs and points.'}</span></div>`; }
+function uvidRsvp(e){
+  if (rsvpClosed(e) || (e.rsvpOpens && Date.now() < Date.parse(e.rsvpOpens))) return '';
+  const full = e.cap && seatsTaken(e.id) >= e.cap, verb = full ? 'Join the waitlist' : 'RSVP';
+  return `<form class="panel stack" id="f-uvrsvp" data-id="${e.id}" style="gap:10px"><strong style="font-size:1.1rem">Member? ${verb} with your UVU ID</strong>
+    <div class="grid2"><label>UVU ID<input id="ur-id" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="8 digits"></label><label>Last name<input id="ur-last" autocomplete="family-name"></label></div>
+    <div><button class="btn" type="submit">${verb}</button></div><span class="hint">No need to sign in.${full ? ` All ${e.cap} seats are taken right now.` : ''}</span><div class="err" id="ur-err"></div></form>`;
+}
+function guestRsvpBox(e){ return uvidRsvpDone(e.id) ? uvidRsvpNote(e.id) : uvidRsvp(e) + guestRsvpInner(e); }
+function guestRsvpInner(e){
   const id = e.id, done = guestRsvpDone(id), full = e.cap && seatsTaken(id) >= e.cap;
   const join = `<div class="row" style="gap:8px"><button class="btn" data-act="event-auth" data-to="signup" data-id="${id}">Join WFA (free) and RSVP</button><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">I have an account: sign in</button></div>`;
   if (done) return `<div class="panel stack" style="gap:10px"><div class="notice"><span><strong>You’re going, ${esc(done.first)}!</strong> ${done.reminders ? 'We’ll email you reminders about this event.' : ''} Join WFA to earn points for coming and get the full calendar.</span></div>${join}</div>`;
@@ -6701,7 +6713,7 @@ function guestRsvpBox(e){
   if (e.guestOpens && Date.now() < Date.parse(e.guestOpens)) return `<div class="panel stack" style="gap:10px"><div><strong>Members get early access</strong>
       <div class="hint">Guest RSVPs open ${fmtMtStamp(Date.parse(e.guestOpens))}${e.cap ? `, and there are ${e.cap} seats` : ''}. ${memberWait ? `Join WFA (free) to RSVP as soon as member RSVPs open, ${fmtMtStamp(Date.parse(e.rsvpOpens))}.` : 'Join WFA (free) to RSVP now.'}</div></div>${join}</div>`;
   return `<div class="panel stack" style="gap:12px">
-    <strong style="font-size:1.1rem">RSVP</strong>
+    <strong style="font-size:1.1rem">Not a member yet?</strong>
     <p style="margin:0">Members ${PTS[e.cat] ? `earn <strong>${PTS[e.cat]} points</strong> for coming, ` : ''}get reminders for every event, and can join the resume book. Joining is free.</p>
     ${join}
     <details ${ui.grsvpOpen === id ? 'open' : ''}><summary style="cursor:pointer">Not ready to join? RSVP as a guest</summary>
@@ -9434,6 +9446,20 @@ async function handleSubmit(f, v, err){
       name: 'Enter your name.', many: 'That’s a lot of questions! Try again in a bit.' }[r.data];
     if (msg) return err('qa-err', msg);
     toast('Question sent. Thanks!'); await load(); refreshEvent(id); return;
+  }
+
+  if (f.id === 'f-uvrsvp'){
+    const id = f.dataset.id, uvid = v('ur-id').replace(/\D/g, ''), last = v('ur-last');
+    if (!/^\d{8}$/.test(uvid)) return err('ur-err', 'Enter your 8-digit UVU ID.');
+    if (!last) return err('ur-err', 'Enter your last name.');
+    const r = await sb.rpc('uvid_rsvp', { p_event: id, p_uvid: uvid, p_last: last });
+    if (r.error) return err('ur-err', /uvid_rsvp/.test(r.error.message || '') ? 'This isn’t set up yet. Sign in to RSVP.' : errMsg(r.error));
+    const msg = { uvid: 'Enter your 8-digit UVU ID.', last: 'Enter your last name.', missing: 'This event doesn’t take RSVPs.', started: 'This event has already started.',
+      notyet: 'RSVPs for this event aren’t open yet.', closed: 'RSVPs for this event are closed.',
+      nomember: 'We couldn’t find a WFA account with that UVU ID and last name. Sign in to RSVP, or join (free) or RSVP as a guest below.' }[r.data];
+    if (msg) return err('ur-err', msg);
+    try { localStorage.setItem('wfa-uvrsvp-' + id, r.data === 'waitlist' ? 'waitlist' : 'rsvp'); } catch(x){}
+    toast(r.data === 'waitlist' ? 'You’re on the waitlist' : r.data === 'going' ? 'You’re already going' : 'RSVP saved'); await load(); refreshEvent(id); return;
   }
 
   if (f.id === 'f-uvid'){
