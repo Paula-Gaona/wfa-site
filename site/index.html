@@ -6852,7 +6852,7 @@ function guestCheckin(e, pre){
   if (done) return `<div class="panel stack" style="gap:10px"><div class="notice"><span><strong>You’re checked in as a guest, ${esc(done.first)}.</strong> Show this screen to the door host to come in. Join with ${esc(done.email)} and this check-in moves to your account${pts ? `, with the ${pts} points` : ''}.</span></div>${join}</div>`;
   const opens = checkinOpensMs(e), early = Date.now() < opens;
   return `<div class="panel stack" style="gap:12px">
-    <strong style="font-size:1.1rem">At the event? Check in</strong><span class="hint">Check in, then show your screen to the door host to come in.</span>
+    <strong style="font-size:1.1rem">At the event? Check in</strong>
     <p style="margin:0">Members ${pts ? `earn <strong>${pts} points</strong> for this event, ` : ''}show up on the leaderboard, get event reminders, and can join the resume book we share with recruiters. Joining is free and takes about a minute.</p>
     ${join}
     <details ${ui.guestOpen === id ? 'open' : ''} data-guest="${id}"><summary style="cursor:pointer">Not ready to join? Check in as a guest</summary>
