@@ -47,7 +47,7 @@
   --up:#2f9a55;
   --warn:#9a6a00;
   --danger:#b3261e;
-  --cat-meeting:#4b5a50; --cat-speaker:#275D38; --cat-panel:#8a3b5c; --cat-workshop:#2d5d86; --cat-competition:#6a3f86; --cat-social:#9a4a26; --cat-career:#7a5c12; --cat-excursion:#1f7a7a;
+  --cat-meeting:#4b5a50; --cat-speaker:#275D38; --cat-panel:#8a3b5c; --cat-other:#6b5d3f; --cat-workshop:#2d5d86; --cat-competition:#6a3f86; --cat-social:#9a4a26; --cat-career:#7a5c12; --cat-excursion:#1f7a7a;
   --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
   --body:"Source Sans 3","Segoe UI",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
@@ -57,13 +57,13 @@
   --brand:#2f7046; --brand-deep:#1b3d27; --brand-text:#82c99a; --on-brand:#ffffff; --tint:#17281d;
   --paper:#0c120e; --surface:#131b16; --ink:#e7eee9; --muted:#9aae9f; --line:#26352b;
   --header-bg:#163322; --ticker-bg:#050806; --ticker-fg:#cfe3d5; --up:#5fd08a; --warn:#f0c060; --danger:#ff8a80;
-  --cat-meeting:#8fa094; --cat-speaker:#6cc28a; --cat-panel:#e08aab; --cat-workshop:#6fa8dc; --cat-competition:#b48fd6; --cat-social:#e0956b; --cat-career:#e0b860; --cat-excursion:#5fc4c4;
+  --cat-meeting:#8fa094; --cat-speaker:#6cc28a; --cat-panel:#e08aab; --cat-other:#cdb88a; --cat-workshop:#6fa8dc; --cat-competition:#b48fd6; --cat-social:#e0956b; --cat-career:#e0b860; --cat-excursion:#5fc4c4;
   color-scheme:dark}}
 :root[data-theme="dark"]{
   --brand:#2f7046; --brand-deep:#1b3d27; --brand-text:#82c99a; --on-brand:#ffffff; --tint:#17281d;
   --paper:#0c120e; --surface:#131b16; --ink:#e7eee9; --muted:#9aae9f; --line:#26352b;
   --header-bg:#163322; --ticker-bg:#050806; --ticker-fg:#cfe3d5; --up:#5fd08a; --warn:#f0c060; --danger:#ff8a80;
-  --cat-meeting:#8fa094; --cat-speaker:#6cc28a; --cat-panel:#e08aab; --cat-workshop:#6fa8dc; --cat-competition:#b48fd6; --cat-social:#e0956b; --cat-career:#e0b860; --cat-excursion:#5fc4c4;
+  --cat-meeting:#8fa094; --cat-speaker:#6cc28a; --cat-panel:#e08aab; --cat-other:#cdb88a; --cat-workshop:#6fa8dc; --cat-competition:#b48fd6; --cat-social:#e0956b; --cat-career:#e0b860; --cat-excursion:#5fc4c4;
   color-scheme:dark}
 
 *{box-sizing:border-box}
@@ -704,6 +704,7 @@ const CATS = {
   excursion: ['Excursion', '--cat-excursion'],
   workshop: ['Workshop', '--cat-workshop'],
   social: ['Social', '--cat-social'],
+  other: ['Other', '--cat-other'],   // officers set the points on the event
   officer_meeting: ['Officer meeting', '--cat-meeting']   // officers and admins only, no points
 };
 const PTS = { case_competition:25, career_fair:25, guest_speaker:15, panel:20, excursion:25, workshop:10, social:10, officer_meeting:0 };
@@ -878,7 +879,7 @@ async function load(){
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
-    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, showRsvps:e.show_rsvps !== false, checkinOpenedAt:e.checkin_opened_at || null, regMode:e.reg_mode || 'rsvp', regUrl:e.reg_url || '', host:e.host || '', dress:DRESS[e.dress_code] ? e.dress_code : '', dressNote:e.dress_note || '', inStats:e.in_stats !== false, speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, rsvpCloses:e.rsvp_closes || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
+    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, points:e.points ?? null, showRsvps:e.show_rsvps !== false, checkinOpenedAt:e.checkin_opened_at || null, regMode:e.reg_mode || 'rsvp', regUrl:e.reg_url || '', host:e.host || '', dress:DRESS[e.dress_code] ? e.dress_code : '', dressNote:e.dress_note || '', inStats:e.in_stats !== false, speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, rsvpCloses:e.rsvp_closes || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -1015,7 +1016,9 @@ function statusTag(ev){
   return isToday(ev) ? `<span class="tag warn">Today · ${fmtTime(ev.start)}</span>` : '';
 }
 function catName(c){ return (CATS[c] || ['Event'])[0]; }
-function ptsText(c){ return PTS[c] ? '+' + PTS[c] + ' points' : 'no points'; }
+// An event's points: its type's, or the amount set on the event for "Other".
+function evPts(e){ return !e ? 0 : e.cat === 'other' ? (+e.points || 0) : (PTS[e.cat] || 0); }
+function ptsText(x){ const p = x && typeof x === 'object' ? evPts(x) : (PTS[x] || 0); return p ? '+' + p + ' points' : 'no points'; }
 // Officer meetings are hidden from members, and from officers in member view.
 // Drafts only appear in Officer tools > Events until they're published.
 function visibleEvents(){ const ev = db.events.filter(e => !e.draft); return can('officer') ? ev : ev.filter(e => e.cat !== 'officer_meeting'); }
@@ -1103,7 +1106,7 @@ function catVar(c){ return 'var(' + (CATS[c] || CATS.meeting)[1] + ')'; }
 function points(email){
   const row = db.leader.find(x => x.email === email); if (row) return row.points;
   const since = db.settings.lbSince ? iso(new Date(db.settings.lbSince)) : '';
-  return db.events.reduce((s, e) => s + (e.date >= since && attended(e.id).includes(email) ? PTS[e.cat] || 0 : 0), 0);
+  return db.events.reduce((s, e) => s + (e.date >= since && attended(e.id).includes(email) ? evPts(e) || 0 : 0), 0);
 }
 function attendCount(email){ return db.events.filter(e => attended(e.id).includes(email)).length; }
 function leaderboard(){
@@ -1373,7 +1376,7 @@ function featuredPanel(){
         <span class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</span>
         <strong>${esc(e.title)}</strong>
         <span class="ev-sub">${fmtDay(e.date)} · ${fmtTime(e.start)}${e.loc ? ' · ' + esc(e.loc) : ''}</span>
-        <span class="ev-sub">${hostLabel(e) ? esc(hostLabel(e)) : ptsText(e.cat)}${showRsvps(e) ? ` · ${rsvpCount(e.id)} going` : takesRsvps(e) ? ' · ' + seatNote(e) : ''}</span>
+        <span class="ev-sub">${hostLabel(e) ? esc(hostLabel(e)) : ptsText(e)}${showRsvps(e) ? ` · ${rsvpCount(e.id)} going` : takesRsvps(e) ? ' · ' + seatNote(e) : ''}</span>
       </button>`).join('') || `<p class="muted" style="margin:0">Career fairs, case competitions, guest speakers, and excursions will show up here as they’re announced.</p>`}
   </aside>`;
 }
@@ -4192,12 +4195,12 @@ function eventBlock(who){
   const link = e => e.regMode === 'link' ? 'Details & registration' : takesRsvps(e) ? 'Details & RSVP' : 'Details';
   // Points: the check-in points, plus any bonus rules for this event that haven't passed (like RSVPing early).
   const points = e => {
-    if (hostedElsewhere(e) || !PTS[e.cat]) return '';
+    if (hostedElsewhere(e) || !evPts(e)) return '';
     const rules = isNewsletter() ? nlEventRules(who, e) : activeRules();
     const bonus = rules.filter(r => r.event_id === e.id && r.points > 0 && ['rsvp', 'checkin', 'survey'].includes(r.kind))
       .map(r => `${r.points} more for ${{ rsvp: 'RSVPing', checkin: 'checking in', survey: 'filling out the survey' }[r.kind]} ${ruleWhen(r)}`);
     const revoke = rules.some(r => r.event_id === e.id && r.points > 0 && r.kind === 'rsvp' && r.revoke_noshow);
-    return `\n- Points: ${PTS[e.cat]} for checking in${bonus.length ? ', plus ' + bonus.join(', plus ') : ''}${revoke ? ' (Early RSVP points will be revoked for no-shows)' : ''}`;
+    return `\n- Points: ${evPts(e)} for checking in${bonus.length ? ', plus ' + bonus.join(', plus ') : ''}${revoke ? ' (Early RSVP points will be revoked for no-shows)' : ''}`;
   };
   const one = e =>
     '\n### ' + e.title + '\n- When: ' + fmtDay(e.date) + (e.start ? ', ' + fmtTime(e.start) + (e.end ? ' to ' + fmtTime(e.end) : '') : '') +
@@ -4375,7 +4378,7 @@ function nlButton(label, url, gold){
 function nlEventCard(e, featured, who){
   const d = new Date(e.date + 'T12:00:00'), mon = d.toLocaleString('en-US', { month: 'short' }).toUpperCase(), day = d.getDate();
   const meta = [fmtDay(e.date) + (e.start ? ', ' + fmtTime(e.start) + (e.end ? ' to ' + fmtTime(e.end) : '') : ''), e.loc].filter(Boolean).map(nlEsc).join(' &middot; ');
-  const pts = hostedElsewhere(e) || !PTS[e.cat] ? '' : `${PTS[e.cat]} points for checking in`;
+  const pts = hostedElsewhere(e) || !evPts(e) ? '' : `${evPts(e)} points for checking in`;
   const seats = !takesRsvps(e) || !e.cap ? '' : seatLeft(e) <= 0 ? 'Full: join the waitlist' : 'Seats limited';
   const tags = [hostLabel(e), dressName(e) && 'Dress: ' + dressName(e), seats, pts].filter(Boolean).map(t => `<span style="display:inline-block;margin:0 6px 4px 0;padding:2px 8px;border-radius:10px;background:${NLC.cream};border:1px solid ${NLC.line};font:12px Arial,sans-serif;color:${NLC.green}">${nlEsc(t)}</span>`).join('')
     + (hostedElsewhere(e) ? '' : nlEventRules(who, e).map(r => `<span style="display:inline-block;margin:0 6px 4px 0;padding:2px 8px;border-radius:10px;background:#F6ECD2;border:1px solid ${NLC.gold};font:bold 12px Arial,sans-serif;color:${NLC.goldDeep}">${nlEsc(nlRuleTag(r))}</span>`).join(''));
@@ -6071,7 +6074,8 @@ function viewOfficer(){
     body = `<div class="split">
       <form class="panel stack" id="f-event" novalidate>
         <h3>${e ? (e.draft ? 'Edit draft' : 'Edit event') : 'Create an event'}${e && e.draft ? ' <span class="tag">Draft</span>' : ''}</h3>
-        <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${(e ? e.cat : ui.evNewCat) === k ? 'selected' : ''}>${l} · ${PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select></label>
+        <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${(e ? e.cat : ui.evNewCat) === k ? 'selected' : ''}>${l} · ${k === 'other' ? 'you set the points' : PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select></label>
+        <label id="ev-pts-wrap" ${(e ? e.cat : ui.evNewCat) === 'other' ? '' : 'hidden'}>Points for checking in<input id="ev-pts" type="number" min="0" max="100" value="${e && e.points != null ? e.points : 10}"></label>
         <div id="rq-guests-box">${rqGuestsBox(e, e?.cat || ui.evNewCat || Object.keys(CATS)[0])}</div>
         <label>Title<input id="ev-title" required value="${esc(e?.title)}" placeholder="e.g. DCF Valuation Workshop"><span id="ev-help-title"></span></label>
         <div class="grid2">
@@ -6621,10 +6625,10 @@ function eventInner(id, page){
   if ((isToday(e) || openedEarly(e)) && !e.draft && !hostedElsewhere(e)){
     const pre = page ? decodeURIComponent(location.hash.slice(1).split('/')[2] || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) : '';
     if (!session) checkin = guestCheckin(e, pre);
-    else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e.cat)}.</div>`;
+    else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e)}.</div>`;
     else {
       const opens = checkinOpensMs(e), early = Date.now() < opens;
-      checkin = `<form class="stack" id="f-checkin" data-id="${id}" style="gap:8px"><label for="ci-code">Check-in code <span class="hint">${pre ? 'Filled in from the QR code' : 'Shown on screen at the event'} · ${ptsText(e.cat)}${mine ? '' : ' · No RSVP needed'}</span></label>
+      checkin = `<form class="stack" id="f-checkin" data-id="${id}" style="gap:8px"><label for="ci-code">Check-in code <span class="hint">${pre ? 'Filled in from the QR code' : 'Shown on screen at the event'} · ${ptsText(e)}${mine ? '' : ' · No RSVP needed'}</span></label>
       <div class="checkin-form"><input id="ci-code" maxlength="8" autocomplete="off" placeholder="CODE" value="${esc(pre)}"><button class="btn" type="submit" data-opens="${opens}" ${early ? 'aria-disabled="true"' : ''}>Check in</button></div>
       <span class="hint ci-opens" ${early ? '' : 'hidden'}>Check-in opens at ${fmtTime(mtClock(opens))}, 15 minutes before the event starts.</span><div class="err" id="ci-err"></div></form>`;
     }
@@ -6652,7 +6656,7 @@ function eventInner(id, page){
     ? `<div class="stack" style="gap:8px"><div class="row" style="gap:8px;align-items:center"><strong>Coming-soon page is on.</strong>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${id}">Turn off</button>` : ''}</div><span class="hint">Anyone who opens this link before it’s published sees only this:</span>${soonBlock(e.title, e.soonDesc)}</div>`
     : `<div class="row" style="gap:8px;align-items:center"><span class="hint">Coming-soon page is off: people who open this link before it’s published see “Event not found.”</span>${isScheduler() ? `<button class="btn ghost small" data-act="soon-toggle" data-id="${id}">Turn on coming soon</button>` : ''}</div>`;
   const share = e.draft && !can('officer') ? '' : `${e.draft ? '<span class="hint">This link starts working when the event is published.</span>' : ''}<div class="row" style="gap:6px"><button class="btn ghost small" data-act="copy-link" data-id="${id}">Copy link</button>${can('officer') ? `<button class="btn ghost small" data-act="qr" data-id="${id}" data-kind="page">QR code</button>` : ''}${page ? '' : `<a class="btn ghost small" href="#event/${id}">Open event page</a>`}</div>`;
-  return `<div><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${hostLabel(e) ? esc(hostLabel(e)) : PTS[e.cat] ? PTS[e.cat] + ' pts' : 'officers only'}${e.draft ? ' · <span class="tag">Draft</span>' : ''}${e.membersOnly ? ' · <span class="tag">Members only</span>' : ''}</div></div>
+  return `<div><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${hostLabel(e) ? esc(hostLabel(e)) : evPts(e) ? evPts(e) + ' pts' : 'officers only'}${e.draft ? ' · <span class="tag">Draft</span>' : ''}${e.membersOnly ? ' · <span class="tag">Members only</span>' : ''}</div></div>
     <h2>${esc(e.title)}</h2>
     <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} <span class="hint">Mountain Time</span></dd>
       <dt>Status</dt><dd>${{ upcoming: 'Upcoming', live: '<strong>Happening now</strong>', over: 'Over' }[evStatus(e)]}</dd>
@@ -6718,7 +6722,7 @@ function guestRsvpInner(e){
       <div class="hint">Guest RSVPs open ${fmtMtStamp(Date.parse(e.guestOpens))}${e.cap ? `, and there are ${e.cap} seats` : ''}. ${memberWait ? `Join WFA (free) to RSVP as soon as member RSVPs open, ${fmtMtStamp(Date.parse(e.rsvpOpens))}.` : 'Join WFA (free) to RSVP now.'}</div></div>${join}</div>`;
   return `<div class="panel stack" style="gap:12px">
     <strong style="font-size:1.1rem">Not a member yet?</strong>
-    <p style="margin:0">Members ${PTS[e.cat] ? `earn <strong>${PTS[e.cat]} points</strong> for coming, ` : ''}get reminders for every event, and can join the resume book. Joining is free.</p>
+    <p style="margin:0">Members ${evPts(e) ? `earn <strong>${evPts(e)} points</strong> for coming, ` : ''}get reminders for every event, and can join the resume book. Joining is free.</p>
     ${join}
     <details ${ui.grsvpOpen === id ? 'open' : ''}><summary style="cursor:pointer">Not ready to join? RSVP as a guest</summary>
       <form class="stack" id="f-grsvp" data-id="${id}" style="gap:8px;margin-top:10px">
@@ -6886,13 +6890,13 @@ function uvidCheckin(e, pre){
       <label>Check-in code <span class="hint">${pre ? 'Filled in from the QR code' : 'Shown on screen'}</span><input id="uv-code" maxlength="8" autocomplete="off" placeholder="CODE" value="${esc(pre)}" style="text-transform:uppercase"></label></div>
     <div><button class="btn" type="submit" data-opens="${opens}" ${early ? 'aria-disabled="true"' : ''}>Check in</button></div>
     <span class="hint ci-opens" ${early ? '' : 'hidden'}>Check-in opens at ${fmtTime(mtClock(opens))}, 15 minutes before the event starts.</span>
-    <span class="hint">No need to sign in. ${ptsText(e.cat)}.</span>
+    <span class="hint">No need to sign in. ${ptsText(e)}.</span>
     <div class="err" id="uv-err"></div></form>`;
 }
 function guestCheckin(e, pre){
-  if (uvidDone(e.id)) return `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e.cat)}.</div>`;
+  if (uvidDone(e.id)) return `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e)}.</div>`;
   if (e.membersOnly) return uvidCheckin(e, pre) + membersOnlyNote(e, 'check in');
-  const id = e.id, pts = PTS[e.cat] || 0, done = guestDone(id);
+  const id = e.id, pts = evPts(e) || 0, done = guestDone(id);
   const join = `<div class="row" style="gap:8px"><button class="btn" data-act="event-auth" data-to="signup" data-id="${id}">Join WFA (free) and check in</button><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">I have an account: sign in</button></div>`;
   if (done) return uvidCheckin(e, pre) + `<div class="panel stack" style="gap:10px"><div class="notice"><span><strong>You’re checked in as a guest, ${esc(done.first)}.</strong> Join with ${esc(done.email)} and this check-in moves to your account${pts ? `, with the ${pts} points` : ''}.</span></div>${join}</div>`;
   const opens = checkinOpensMs(e), early = Date.now() < opens;
@@ -7971,6 +7975,7 @@ function syncCaseBox(){
   const c = document.getElementById('ev-cat'); if (!c) return;
   const b = document.getElementById('ev-case'), m = document.getElementById('ev-branches');
   if (b) b.hidden = c.value !== 'case_competition'; if (m) m.hidden = c.value !== 'officer_meeting';
+  const pw = document.getElementById('ev-pts-wrap'); if (pw) pw.hidden = c.value !== 'other';
   const mo = document.getElementById('ev-mo-wrap'), qa = document.getElementById('ev-qa-wrap');
   if (mo) mo.hidden = c.value === 'officer_meeting' || (document.getElementById('ev-reg') || {}).value === 'link'; if (qa) qa.hidden = !SPEAKER_CATS.includes(c.value);
   const noRsvp = ['officer_meeting', 'case_competition'].includes(c.value), rg = document.getElementById('ev-reg'), reg = noRsvp || !rg ? 'rsvp' : rg.value;
@@ -9478,7 +9483,7 @@ async function handleSubmit(f, v, err){
       nomember: 'We couldn’t find a WFA account with that UVU ID. Sign in to check in, or join (free) or check in as a guest below.' }[r.data];
     if (msg) return err('uv-err', msg);
     try { localStorage.setItem('wfa-uvid-' + id, '1'); } catch(x){}
-    toast('Checked in · ' + ptsText(e.cat)); refreshEvent(id); return;
+    toast('Checked in · ' + ptsText(e)); refreshEvent(id); return;
   }
 
   if (f.id === 'f-guest'){
@@ -9504,7 +9509,7 @@ async function handleSubmit(f, v, err){
     const msg = { early:`Check-in opens at ${fmtTime(mtClock(checkinOpensMs(e)))}, 15 minutes before the event starts.`, closed:'Check-in is only open on the day of the event.', notstarted:'Check-in hasn’t started yet. Wait for an officer to show the code.',
       wrong:'That code doesn’t match. Check the screen and try again.', signin:'Sign in first.', missing:'This event no longer exists.' }[r.data];
     if (msg) return err('ci-err', msg);
-    await load(); toast('Checked in · ' + ptsText(e.cat)); render(); if (route() !== 'event') openEvent(id);
+    await load(); toast('Checked in · ' + ptsText(e)); render(); if (route() !== 'event') openEvent(id);
   }
 
   if (f.id === 'f-mark-many'){
@@ -9581,7 +9586,7 @@ async function handleSubmit(f, v, err){
   }
 
   if (f.id === 'f-event'){
-    const e = { title: v('ev-title'), cat: v('ev-cat'), date: v('ev-date'), start_time: v('ev-start'), end_time: v('ev-end'), loc: v('ev-loc'), cap: Math.max(0, parseInt(v('ev-cap')) || 0), descr: v('ev-desc') };
+    const e = { title: v('ev-title'), cat: v('ev-cat'), points: v('ev-cat') === 'other' ? Math.max(0, Math.min(100, parseInt(v('ev-pts')) || 0)) : null, date: v('ev-date'), start_time: v('ev-start'), end_time: v('ev-end'), loc: v('ev-loc'), cap: Math.max(0, parseInt(v('ev-cap')) || 0), descr: v('ev-desc') };
     const waitFinal = evHideFinal(ui.editEvent ? evById(ui.editEvent) : null, e.cat), cur0 = evById(ui.editEvent) || {};
     // External guests shown on the event page: from the request (editable form, or the saved one once it's locked).
     if (needsSched(e.cat) && !ui.guestForm){ const rf = ui.rq && ui.rq.key === (ui.editEvent || 'new') && !rqLocked(ui.editEvent) ? ui.rq.d : (rqOf(ui.editEvent) || {}).form || {};
