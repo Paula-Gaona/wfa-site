@@ -1530,7 +1530,7 @@ function viewPartners(){
       <div class="section-head"><h2>Who our members are</h2><span class="muted">Live from our member profiles</span></div>
       <div class="tiles">${tile(s.members, 'Members')}${tile(s.events, 'Events held')}${s.by_type ? '' : tile(s.avg_attendance, 'Average attendance')}</div>
       <div class="stats-grid">
-        ${s.by_type && s.by_type.length ? `<section class="panel"><div><h3>Average attendance by event type</h3><span class="hint">People at each event, on average. Bigger events like guest speakers draw more people than hands-on workshops.</span></div>
+        ${s.by_type && s.by_type.length ? `<section class="panel"><div><h3>Average attendance by event type</h3><span class="hint">Average event attendance</span></div>
           ${hbars(s.by_type.map(x => [catName(x.cat), x.avg, `${catName(x.cat)}: ${x.avg} on average across ${x.events} event${x.events === 1 ? '' : 's'}`]))}</section>` : ''}
         ${s.interests.length ? `<section class="panel"><div><h3>Career interests</h3><span class="hint">Share of the ${ans} members who told us. Members can pick more than one.</span></div>
           ${hbars(s.interests.map(x => [x.name, pct(x.n, ans), `${x.name}: ${x.n} members`]), '%')}</section>` : ''}
