@@ -1001,6 +1001,8 @@ const CHECKIN_EARLY_MIN = 15;
 // Check-in opens 15 minutes before the start, or earlier if an admin opened it early (81-open-checkin-early.sql).
 function checkinOpensMs(ev){ const usual = evStartMs(ev) - CHECKIN_EARLY_MIN * 60e3, early = ev.checkinOpenedAt ? Date.parse(ev.checkinOpenedAt) : 0; return early && early < usual ? early : usual; }
 // Opened early by an admin and not over yet: check-in works even before the event day.
+// Check-in closes 30 minutes after the event ends; after that, "I was there" requests.
+function checkinClosesMs(ev){ return evEndMs(ev) + 30 * 60e3; }
 function openedEarly(ev){ return !!ev.checkinOpenedAt && Date.now() >= Date.parse(ev.checkinOpenedAt) && !isPast(ev); }
 function mtClock(ms){ const p = mtParts(ms); return String(p.hour % 24).padStart(2, '0') + ':' + String(p.minute).padStart(2, '0'); }
 function evEndMs(ev){ return ev.end && ev.end > (ev.start || '') ? mtMs(ev.date, ev.end) : evStartMs(ev) + 3600000; }
@@ -6629,7 +6631,7 @@ function eventInner(id, page){
   else if (full || wl.waiting) action = `<span class="muted">All ${e.cap} seats are taken.</span><button class="btn" data-act="wl-join" data-id="${id}">Join the waitlist</button>${wl.waiting && showRsvps(e) ? `<span class="hint">${wl.waiting} ${wl.waiting === 1 ? 'person is' : 'people are'} waiting.</span>` : ''}`;
   else action = `<button class="btn" data-act="rsvp" data-id="${id}">RSVP</button>`;
   let checkin = '';
-  if ((isToday(e) || openedEarly(e)) && !e.draft && !hostedElsewhere(e)){
+  if ((isToday(e) || openedEarly(e)) && !e.draft && !hostedElsewhere(e) && Date.now() < checkinClosesMs(e)){
     const pre = page ? decodeURIComponent(location.hash.slice(1).split('/')[2] || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) : '';
     if (!session) checkin = guestCheckin(e, pre);
     else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e)}.</div>`;
@@ -6642,6 +6644,8 @@ function eventInner(id, page){
   }
   // For a week after an event: forgot to check in? Ask an officer to add you.
   else if (session && isPast(e) && !e.draft && !hostedElsewhere(e) && e.cat !== 'officer_meeting' && !here && Date.now() < evEndMs(e) + 7 * 864e5) checkin = claimBox(e);
+  else if (!session && isPast(e) && !e.draft && !hostedElsewhere(e) && e.cat !== 'officer_meeting' && Date.now() < evEndMs(e) + 7 * 864e5)
+    checkin = `<div class="notice"><span><strong>Check-in is closed.</strong> Were you there but forgot to check in? Sign in and click “I was there” on this page within a week of the event.</span></div><div class="row" style="gap:8px"><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">Sign in</button></div>`;
   // Scanned a check-in QR before the event day: say when check-in opens, so it doesn't look broken.
   else if (page && !e.draft && !isPast(e) && (location.hash.slice(1).split('/')[2] || '')){
     const opens = checkinOpensMs(e);
@@ -6657,7 +6661,7 @@ function eventInner(id, page){
           : shown ? `<span class="row" style="gap:8px;align-items:center"><span class="code-inline">${esc(e.code)}</span><button class="btn ghost small" data-act="reveal-code" data-id="${id}">Hide</button></span>`
           : `<button class="btn ghost small" data-act="reveal-code" data-id="${id}">Show code</button>`}</div>
       <div class="row" style="gap:6px"><button class="btn ghost small" data-act="ck-pdf" data-id="${id}">Check-in sheet (PDF)</button><button class="btn ghost small" data-act="sign-pdf" data-id="${id}">Direction sign (PDF)</button>${e.code ? `<button class="btn ghost small" data-act="show-code" data-id="${id}">Check-in screen</button><button class="btn ghost small" data-act="qr" data-id="${id}" data-kind="checkin">Check-in QR</button>` : ''}</div>${ui.signFor === id ? signFloorRow(e) : ''}
-      <span class="hint">${Date.now() >= checkinOpensMs(e) && (isToday(e) || openedEarly(e)) ? `Check-in is open${openedEarly(e) && Date.now() < evStartMs(e) - CHECKIN_EARLY_MIN * 60e3 ? ' (opened early)' : ''}.` : `Check-in opens ${fmtDay(e.date)} at ${fmtTime(mtClock(evStartMs(e) - CHECKIN_EARLY_MIN * 60e3))}, 15 minutes before the start.`}</span>
+      <span class="hint">${Date.now() >= checkinClosesMs(e) ? `Check-in closed at ${fmtTime(mtClock(checkinClosesMs(e)))}, 30 minutes after the end. Members who forgot can send “I was there” requests for a week.` : Date.now() >= checkinOpensMs(e) && (isToday(e) || openedEarly(e)) ? `Check-in is open until ${fmtTime(mtClock(checkinClosesMs(e)))}${openedEarly(e) && Date.now() < evStartMs(e) - CHECKIN_EARLY_MIN * 60e3 ? ' (opened early)' : ''}.` : `Check-in opens ${fmtDay(e.date)} at ${fmtTime(mtClock(evStartMs(e) - CHECKIN_EARLY_MIN * 60e3))}, 15 minutes before the start.`}</span>
       ${can('admin') ? (e.checkinOpenedAt ? `<div class="row" style="gap:8px;align-items:center"><span class="hint">Opened early ${fmtMtStamp(Date.parse(e.checkinOpenedAt))}.</span><button class="btn ghost small" data-act="ck-close-early" data-id="${id}">Undo early opening</button></div>`
         : Date.now() < checkinOpensMs(e) ? `<div>${armBtn('ck-open-' + id, 'Open check-in now', 'Click again to open check-in now', 'ck-open-early', id)}</div>` : '') : ''}</div>`;
   }
