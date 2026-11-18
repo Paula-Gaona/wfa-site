@@ -823,6 +823,7 @@ async function load(){
     guestRsvps: off && t('guest_rsvps'),
     evQuestions: signed && sb.from('event_questions').select('*').order('created_at'),
     eventRoles: off && t('event_roles'),
+    headcount: off && t('event_headcount'),
     rolePresets: off && sb.from('role_presets').select('roles').eq('id', 1).maybeSingle(),
     caseBoard: signed && sb.rpc('case_board'),
     chats: signed && sb.rpc('my_chats'),
@@ -901,6 +902,7 @@ async function load(){
   db.caseNotes = {}; (Array.isArray(R.caseNotes) ? R.caseNotes : []).forEach(n => db.caseNotes[n.id] = { rating: n.officer_rating || null, note: n.officer_note || '' });
   db.memberPts = {}; (Array.isArray(R.memberPts) ? R.memberPts : []).forEach(x => db.memberPts[x.email] = x.points);
   db.rolePresets = R.rolePresets && Array.isArray(R.rolePresets.roles) ? R.rolePresets.roles : null;
+  db.headcount = {}; (Array.isArray(R.headcount) ? R.headcount : []).forEach(x => db.headcount[x.event_id] = +x.extra || 0);
   db.roles = {}; db.roleSeats = {}; (Array.isArray(R.eventRoles) ? R.eventRoles : []).forEach(x => { db.roles[x.event_id] = Array.isArray(x.roles) ? x.roles : []; db.roleSeats[x.event_id] = !!x.count_seats; });
   db.guestRsvps = {}; (Array.isArray(R.guestRsvps) ? R.guestRsvps : []).forEach(g => (db.guestRsvps[g.event_id] = db.guestRsvps[g.event_id] || []).push(g));
   db.evQuestions = Array.isArray(R.evQuestions) ? R.evQuestions : [];
@@ -3885,7 +3887,8 @@ function guestList(id){
 function attendanceStats(e){
   const r = going(e.id), a = attended(e.id);
   const showed = r.filter(x => a.includes(x));
-  return { rsvp: r.length, came: a.length, showed: showed.length, walkins: a.filter(x => !r.includes(x)), noshows: r.filter(x => !a.includes(x)), rate: r.length ? Math.round(showed.length / r.length * 100) : null };
+  const extra = (db.headcount || {})[e.id] || 0;
+  return { rsvp: r.length, came: a.length + extra, extra, showed: showed.length, walkins: a.filter(x => !r.includes(x)), noshows: r.filter(x => !a.includes(x)), rate: r.length ? Math.round(showed.length / r.length * 100) : null };
 }
 function memberTable(rows){
   return `<div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Major(s)</th><th>UVU ID</th><th>Role</th><th class="num">Events</th>${DUES_ENABLED ? '<th>Dues</th>' : ''}${can('admin') ? '<th></th>' : ''}</tr></thead><tbody>
@@ -6157,7 +6160,7 @@ function viewOfficer(){
         <div class="section-head"><h3>Attendance report</h3><span class="muted">${held.length} events held</span></div>
         <div class="tiles">
           <div class="tile"><span class="v">${all.r ? Math.round(all.s/all.r*100) + '%' : '—'}</span><span class="l">RSVPs who showed up</span></div>
-          <div class="tile"><span class="v">${all.c}</span><span class="l">Total check-ins</span></div>
+          <div class="tile"><span class="v">${all.c}</span><span class="l">Total attendance</span></div>
           <div class="tile"><span class="v">${all.w}</span><span class="l">Walk-ins (no RSVP)</span></div>
           <div class="tile"><span class="v">${held.reduce((n, e) => n + (db.guests[e.id] || []).length, 0)}</span><span class="l">Guest check-ins</span></div>
           <div class="tile"><span class="v">${held.length ? (all.c/held.length).toFixed(1) : '—'}</span><span class="l">Avg per event</span></div>
@@ -6168,7 +6171,12 @@ function viewOfficer(){
         ${sel ? `<div class="panel stack">
           <h3>${esc(sel.title)}</h3>
           <dl class="facts"><dt>Checked in</dt><dd>${nameList(attended(sel.id))}</dd><dt>Guests</dt><dd>${guestList(sel.id)}</dd><dt>Walk-ins</dt><dd>${nameList(st.walkins)}</dd><dt>No-shows</dt><dd>${nameList(st.noshows)}</dd></dl>
-          <form class="row" id="f-mark" data-id="${sel.id}"><label style="flex:1;min-width:200px">Mark someone present<select id="mark-who">${db.users.filter(u => !attended(sel.id).includes(u.email)).map(u => `<option value="${esc(u.email)}">${esc(u.first)} ${esc(u.last)}</option>`).join('')}</select></label><button class="btn ghost" style="align-self:end" type="submit">Mark present</button></form>
+          ${st.noshows.length ? `<form class="stack" id="f-mark-many" data-id="${sel.id}" style="gap:6px"><strong>RSVP’d but didn’t check in</strong><span class="hint">Check the people who were there, then mark them present. They get the points.</span>
+            <div class="row" style="gap:4px 16px;flex-wrap:wrap">${st.noshows.map(em => `<label class="check" style="margin:0"><input type="checkbox" class="mm-who" value="${esc(em)}"> ${esc(userName(em))}</label>`).join('')}</div>
+            <div><button class="btn ghost small" type="submit">Mark checked people present</button></div></form>` : ''}
+          <form class="row" id="f-mark" data-id="${sel.id}"><label style="flex:1;min-width:200px">Add someone else who came<select id="mark-who">${db.users.filter(u => !attended(sel.id).includes(u.email)).map(u => `<option value="${esc(u.email)}">${esc(u.first)} ${esc(u.last)}</option>`).join('')}</select></label><button class="btn ghost" style="align-self:end" type="submit">Mark present</button></form>
+          <form class="row" id="f-extra" data-id="${sel.id}" style="align-items:end"><label style="flex:1;min-width:200px">People who came but aren’t on any list<input id="extra-n" type="number" min="0" max="2000" value="${st.extra}"></label><button class="btn ghost" type="submit">Save</button></form>
+          <span class="hint" style="margin-top:-6px">A headcount for people who didn’t check in and you can’t name. It counts toward this event’s attendance, without points.${st.extra ? ` Attendance: ${st.came} (${st.came - st.extra} checked in + ${st.extra}).` : ''}</span>
           <div class="row" style="gap:6px">${st.noshows.length ? `<button class="btn ghost small" data-act="mail-to" data-aud="noshow:${sel.id}" data-tpl="missed">Email the no-shows</button>` : ''}${(db.guests[sel.id] || []).length ? `<button class="btn ghost small" data-act="copy-text" data-text="${esc((db.guests[sel.id] || []).map(g => g.email).join('; '))}">Copy guest emails</button>` : ''}</div>
           ${(db.guests[sel.id] || []).length ? '<p class="hint" style="margin:0">Guests who join with the same email get these check-ins (and points) added to their account automatically. Copy their emails to invite them to join.</p>' : ''}
         </div>` : ''}
@@ -6852,14 +6860,28 @@ function eventOfficerExtras(e){
   return h;
 }
 function guestDone(id){ try { return JSON.parse(localStorage.getItem('wfa-guest-' + id) || 'null'); } catch(e){ return null; } }
+// Members check in without signing in: their UVU ID and the code on screen.
+function uvidDone(id){ try { return localStorage.getItem('wfa-uvid-' + id) === '1'; } catch(e){ return false; } }
+function uvidCheckin(e, pre){
+  const id = e.id, opens = checkinOpensMs(e), early = Date.now() < opens;
+  return `<form class="panel stack" id="f-uvid" data-id="${id}" style="gap:10px">
+    <strong style="font-size:1.1rem">Member? Check in with your UVU ID</strong>
+    <div class="grid2"><label>UVU ID<input id="uv-id" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="8 digits"></label>
+      <label>Check-in code <span class="hint">${pre ? 'Filled in from the QR code' : 'Shown on screen'}</span><input id="uv-code" maxlength="8" autocomplete="off" placeholder="CODE" value="${esc(pre)}" style="text-transform:uppercase"></label></div>
+    <div><button class="btn" type="submit" data-opens="${opens}" ${early ? 'aria-disabled="true"' : ''}>Check in</button></div>
+    <span class="hint ci-opens" ${early ? '' : 'hidden'}>Check-in opens at ${fmtTime(mtClock(opens))}, 15 minutes before the event starts.</span>
+    <span class="hint">No need to sign in. ${ptsText(e.cat)}.</span>
+    <div class="err" id="uv-err"></div></form>`;
+}
 function guestCheckin(e, pre){
-  if (e.membersOnly) return membersOnlyNote(e, 'check in');
+  if (uvidDone(e.id)) return `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e.cat)}.</div>`;
+  if (e.membersOnly) return uvidCheckin(e, pre) + membersOnlyNote(e, 'check in');
   const id = e.id, pts = PTS[e.cat] || 0, done = guestDone(id);
   const join = `<div class="row" style="gap:8px"><button class="btn" data-act="event-auth" data-to="signup" data-id="${id}">Join WFA (free) and check in</button><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">I have an account: sign in</button></div>`;
-  if (done) return `<div class="panel stack" style="gap:10px"><div class="notice"><span><strong>You’re checked in as a guest, ${esc(done.first)}.</strong> Join with ${esc(done.email)} and this check-in moves to your account${pts ? `, with the ${pts} points` : ''}.</span></div>${join}</div>`;
+  if (done) return uvidCheckin(e, pre) + `<div class="panel stack" style="gap:10px"><div class="notice"><span><strong>You’re checked in as a guest, ${esc(done.first)}.</strong> Join with ${esc(done.email)} and this check-in moves to your account${pts ? `, with the ${pts} points` : ''}.</span></div>${join}</div>`;
   const opens = checkinOpensMs(e), early = Date.now() < opens;
-  return `<div class="panel stack" style="gap:12px">
-    <strong style="font-size:1.1rem">At the event? Check in</strong>
+  return uvidCheckin(e, pre) + `<div class="panel stack" style="gap:12px">
+    <strong style="font-size:1.1rem">Not a member yet?</strong>
     <p style="margin:0">Members ${pts ? `earn <strong>${pts} points</strong> for this event, ` : ''}show up on the leaderboard, get event reminders, and can join the resume book we share with recruiters. Joining is free and takes about a minute.</p>
     ${join}
     <details ${ui.guestOpen === id ? 'open' : ''} data-guest="${id}"><summary style="cursor:pointer">Not ready to join? Check in as a guest</summary>
@@ -9414,6 +9436,21 @@ async function handleSubmit(f, v, err){
     toast('Question sent. Thanks!'); await load(); refreshEvent(id); return;
   }
 
+  if (f.id === 'f-uvid'){
+    const id = f.dataset.id, e = evById(id), uvid = v('uv-id').replace(/\D/g, ''), code = v('uv-code').toUpperCase();
+    if (!/^\d{8}$/.test(uvid)) return err('uv-err', 'Enter your 8-digit UVU ID.');
+    if (Date.now() < checkinOpensMs(e)) return err('uv-err', `Check-in opens at ${fmtTime(mtClock(checkinOpensMs(e)))}, 15 minutes before the event starts.`);
+    const r = await sb.rpc('uvid_check_in', { p_event: id, p_code: code, p_uvid: uvid });
+    if (r.error) return err('uv-err', /uvid_check_in/.test(r.error.message || '') ? 'This isn’t set up yet. Sign in to check in.' : errMsg(r.error));
+    const msg = { uvid: 'Enter your 8-digit UVU ID.', missing: 'This event isn’t open for check-in.', closed: 'Check-in is only open on the day of the event.',
+      early: `Check-in opens at ${fmtTime(mtClock(checkinOpensMs(e)))}, 15 minutes before the event starts.`, notstarted: 'Check-in hasn’t started yet. Wait for an officer to show the code.',
+      wrong: 'That code doesn’t match. Check the screen and try again.',
+      nomember: 'We couldn’t find a WFA account with that UVU ID. Sign in to check in, or join (free) or check in as a guest below.' }[r.data];
+    if (msg) return err('uv-err', msg);
+    try { localStorage.setItem('wfa-uvid-' + id, '1'); } catch(x){}
+    toast('Checked in · ' + ptsText(e.cat)); refreshEvent(id); return;
+  }
+
   if (f.id === 'f-guest'){
     const id = f.dataset.id, e = evById(id), first = v('gc-first'), last = v('gc-last'), email = v('gc-email').toLowerCase(), code = v('gc-code').toUpperCase();
     ui.guestOpen = id;
@@ -9440,6 +9477,18 @@ async function handleSubmit(f, v, err){
     await load(); toast('Checked in · ' + ptsText(e.cat)); render(); if (route() !== 'event') openEvent(id);
   }
 
+  if (f.id === 'f-mark-many'){
+    const id = f.dataset.id, who = [...f.querySelectorAll('.mm-who:checked')].map(x => x.value); if (!who.length) return toast('Check the people who came first.');
+    await act(async () => { must(await sb.from('attendance').upsert(who.map(email => ({ event_id: id, email })), { onConflict: 'event_id,email', ignoreDuplicates: true }));
+      await logChange(`Marked ${who.length} ${who.length === 1 ? 'person' : 'people'} present at “${evById(id).title}”: ${who.map(userName).join(', ')}`); }, `${who.length} marked present`);
+    return;
+  }
+  if (f.id === 'f-extra'){
+    const id = f.dataset.id, n = Math.max(0, Math.min(2000, Math.round(+v('extra-n')) || 0));
+    await act(async () => { must(await sb.from('event_headcount').upsert({ event_id: id, extra: n, updated_by: session || '', updated_at: new Date().toISOString() }));
+      await logChange(`Set the uncounted headcount for “${evById(id).title}” to ${n}`); }, 'Headcount saved');
+    return;
+  }
   if (f.id === 'f-mark'){
     const id = f.dataset.id, who = v('mark-who'); if (!who) return;
     await act(async () => { must(await sb.from('attendance').insert({ event_id: id, email: who })); await logChange('Marked ' + userName(who) + ' present at “' + evById(id).title + '”'); }, userName(who) + ' marked present');
