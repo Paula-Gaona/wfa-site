@@ -7774,17 +7774,16 @@ async function ckPdf(id){
     const keep = [ui.qrBg, ui.qrShape, ui.qrSeal];
     ui.qrBg = 'white'; ui.qrShape = 'square'; ui.qrSeal = 'none';
     let inQr, joinQr;
-    try { inQr = await qrPng(eventLink(id, e.code), 'green:#94701F', 800); joinQr = await qrPng(SITE_URL + '/#signup', 'green:#94701F', 800); }
+    try { inQr = await qrPng(eventLink(id, e.code), '#185C33:same', 800); joinQr = await qrPng(SITE_URL + '/#signup', '#185C33:same', 800); }   // UVU Green on white: official color, scans best
     finally { [ui.qrBg, ui.qrShape, ui.qrSeal] = keep; }
     const JsPDF = await loadJsPdf(), doc = new JsPDF({ unit: 'pt', format: 'letter' });
-    const W = 612, green = [31, 77, 46], gold = [184, 146, 58], ink = [40, 48, 42];
+    // UVU brand rules for department organizations: UVU Green and white, Legacy Gold as a small accent, no WFA crest.
+    const W = 612, green = [24, 92, 51], gold = [210, 172, 95], ink = [0, 0, 0];
     const center = (txt, y) => doc.text(txt, W / 2, y, { align: 'center' });
-    try { const img = await loadQrSeal(), cv = document.createElement('canvas'); cv.width = cv.height = 320; const g = cv.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, 320, 320);
-      doc.addImage(cv.toDataURL('image/png'), 'PNG', W / 2 - 38, 34, 76, 76, undefined, 'FAST'); } catch(err){}   // 320 px is plenty for a 1-inch seal
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...gold);
     const spaced = (txt, y, cs) => { doc.setCharSpace(cs); doc.text(txt, W / 2 - (doc.getTextWidth(txt) + cs * (txt.length - 1)) / 2, y); doc.setCharSpace(0); };   // letter-spaced text, centered
-    spaced('WOLVERINE FINANCE ASSOCIATION', 132, 2);
-    doc.setFontSize(26); doc.setTextColor(...green);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...green); spaced('WOLVERINE FINANCE ASSOCIATION', 96, 2.5);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(12); doc.setTextColor(...ink); center('at Utah Valley University', 118);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(26); doc.setTextColor(...green);
     const title = doc.splitTextToSize(e.title.toUpperCase(), 520).slice(0, 2);
     title.forEach((t, i) => center(t, 166 + i * 30));
     let y = 166 + (title.length - 1) * 30 + 26;
@@ -7797,13 +7796,14 @@ async function ckPdf(id){
     doc.text('SCAN TO CHECK IN', lx + q / 2, qy - 16, { align: 'center' });
     doc.text('NEW? JOIN WFA', rx + q / 2, qy - 16, { align: 'center' });
     doc.addImage(inQr, 'PNG', lx, qy, q, q, undefined, 'FAST'); doc.addImage(joinQr, 'PNG', rx, qy, q, q, undefined, 'FAST');
+    doc.link(lx, qy, q, q, { url: eventLink(id, e.code) }); doc.link(rx, qy, q, q, { url: SITE_URL + '/#signup' });   // clickable in the PDF
     doc.setFont('helvetica', 'normal'); doc.setFontSize(11.5); doc.setTextColor(...ink);
     doc.text('Members and guests', lx + q / 2, qy + q + 18, { align: 'center' });
     doc.text(doc.splitTextToSize('Free for every UVU student. Earn points for coming to events.', q), rx + q / 2, qy + q + 18, { align: 'center' });
     // The code.
     let cy = qy + q + 78;
     doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...green); center('OR ENTER THE CHECK-IN CODE', cy);
-    doc.setFont('courier', 'bold'); doc.setFontSize(76); doc.setTextColor(...gold); spaced(e.code, cy + 74, 14);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(76); doc.setTextColor(...green); spaced(e.code, cy + 74, 14);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(11.5); doc.setTextColor(...ink);
     center('on the event page at wolverinefinanceassociation.org', cy + 104);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(...green);
@@ -7828,20 +7828,20 @@ async function signPdf(id, signFloor = 1, walkins = false){
   toast('Making the sign\u2026');
   try {
     const JsPDF = await loadJsPdf(), doc = new JsPDF({ unit: 'pt', format: 'letter' });
-    const W = 612, H = 792, green = [18, 54, 34], gold = [184, 146, 58], ink = [61, 74, 64], gray = [94, 107, 96];
+    // UVU brand rules for department organizations: UVU Green and white, Legacy Gold as a small accent, no WFA crest.
+    const W = 612, H = 792, green = [24, 92, 51], gold = [210, 172, 95], ink = [0, 0, 0], gray = [90, 90, 90];
     const center = (txt, y) => doc.text(txt, W / 2, y, { align: 'center' });
     // Green band with the club name.
     doc.setFillColor(...green); doc.rect(0, 0, W, 64, 'F'); doc.setFillColor(...gold); doc.rect(0, 64, W, 5, 'F');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(255, 255, 255);
     const club = 'WOLVERINE FINANCE ASSOCIATION'; doc.setCharSpace(3); doc.text(club, W / 2 - (doc.getTextWidth(club) + 3 * (club.length - 1)) / 2, 41); doc.setCharSpace(0);
-    try { const img = await loadQrSeal(), cv = document.createElement('canvas'); cv.width = cv.height = 320; const g = cv.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, 320, 320);
-      doc.addImage(cv.toDataURL('image/png'), 'PNG', W / 2 - 40, 96, 80, 80, undefined, 'FAST'); } catch(err){}
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(13); doc.setTextColor(...ink); center('at Utah Valley University', 98);
     // Event name, as big as fits in 3 lines.
-    doc.setFont('times', 'normal'); doc.setTextColor(...green);
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(...green);
     let size = 40, lines;
     for (; size >= 24; size -= 2){ doc.setFontSize(size); lines = doc.splitTextToSize(e.title, 500); if (lines.length <= 3) break; }
     lines = lines.slice(0, 3);
-    let y = 222; lines.forEach((t, i) => center(t, y + i * size * 1.15)); y += (lines.length - 1) * size * 1.15 + 34;
+    let y = 170; lines.forEach((t, i) => center(t, y + i * size * 1.15)); y += (lines.length - 1) * size * 1.15 + 34;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(16); doc.setTextColor(...gray);
     center(`${fmtDay(e.date)} \u00b7 ${fmtTime(e.start)}\u2013${fmtTime(e.end)}`, y);
     // Big arrow: up if the room is upstairs, down if it's downstairs, up (straight ahead) if it's on this floor.
@@ -7858,7 +7858,7 @@ async function signPdf(id, signFloor = 1, walkins = false){
     if (rf){ doc.setFont('helvetica', 'normal'); doc.setFontSize(20); doc.setTextColor(...ink);
       center(rf > signFloor ? `Upstairs, ${ordinal(rf)} floor` : rf < signFloor ? `Downstairs, ${ordinal(rf)} floor` : 'On this floor', ay + 158 + rs * 0.95 + 38); }
     // Walk-ins welcome: a gold band above the footer.
-    if (walkins){ doc.setFillColor(...gold); doc.rect(0, H - 96, W, 44, 'F'); doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(255, 255, 255); center(e.cap ? 'WALK-INS WELCOME · LIMITED SEATS' : 'WALK-INS WELCOME', H - 66); }
+    if (walkins){ doc.setFillColor(...gold); doc.rect(0, H - 96, W, 44, 'F'); doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(...green); center(e.cap ? 'WALK-INS WELCOME · LIMITED SEATS' : 'WALK-INS WELCOME', H - 66); }
     doc.setFont('helvetica', 'normal'); doc.setFontSize(12); doc.setTextColor(...gray); center('wolverinefinanceassociation.org', H - 30);
     doc.save(qrFileName(e.title + '-sign').replace(/-qr\.png$/, '.pdf'));
   } catch(err){ toast(err.message || 'The sign didn\u2019t work. Try again.'); }
