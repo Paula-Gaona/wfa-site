@@ -123,6 +123,12 @@ const PREP: Record<string, string[]> = {
     'Stay after to thank the speaker: a handshake, your name, and one thing you took away.',
     'Connect on LinkedIn within a day or two, with a short note mentioning something from the talk.',
   ],
+  panel: [
+    'Look up the panelists and their firms on LinkedIn, and come with one or two questions.',
+    'Arrive a few minutes early and sit near the front.',
+    'Stay after to thank the panelists: a handshake, your name, and one thing you took away.',
+    'Connect on LinkedIn within a day or two, with a short note mentioning something from the panel.',
+  ],
   career_fair: [
     'Bring printed copies of your resume (10 or more) in a padfolio if you have one (a folder works too), and a pen.',
     'Check which firms are coming on the event page, and pick the ones you most want to meet.',
@@ -307,7 +313,7 @@ Deno.serve(async () => {
     if (reqs?.length) {
       const { data: evs } = await db.from('events').select('id, title, cat, date').in('id', reqs.map((r) => r.event_id));
       const titleOf = new Map((evs || []).map((e) => [e.id, e.title])), evOf = new Map((evs || []).map((e) => [e.id, e]));
-      const BIG = ['case_competition', 'excursion', 'guest_speaker', 'career_fair'];
+      const BIG = ['case_competition', 'excursion', 'guest_speaker', 'panel', 'career_fair'];
       const { data: sch } = await db.from('event_schedulers').select('email');
       const schedulers = (sch || []).map((s) => s.email);
       const { data: offs } = await db.from('officer_profiles').select('email, tier, branch');

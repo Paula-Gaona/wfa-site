@@ -47,7 +47,7 @@
   --up:#2f9a55;
   --warn:#9a6a00;
   --danger:#b3261e;
-  --cat-meeting:#4b5a50; --cat-speaker:#275D38; --cat-workshop:#2d5d86; --cat-competition:#6a3f86; --cat-social:#9a4a26; --cat-career:#7a5c12; --cat-excursion:#1f7a7a;
+  --cat-meeting:#4b5a50; --cat-speaker:#275D38; --cat-panel:#8a3b5c; --cat-workshop:#2d5d86; --cat-competition:#6a3f86; --cat-social:#9a4a26; --cat-career:#7a5c12; --cat-excursion:#1f7a7a;
   --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
   --body:"Source Sans 3","Segoe UI",system-ui,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
@@ -57,13 +57,13 @@
   --brand:#2f7046; --brand-deep:#1b3d27; --brand-text:#82c99a; --on-brand:#ffffff; --tint:#17281d;
   --paper:#0c120e; --surface:#131b16; --ink:#e7eee9; --muted:#9aae9f; --line:#26352b;
   --header-bg:#163322; --ticker-bg:#050806; --ticker-fg:#cfe3d5; --up:#5fd08a; --warn:#f0c060; --danger:#ff8a80;
-  --cat-meeting:#8fa094; --cat-speaker:#6cc28a; --cat-workshop:#6fa8dc; --cat-competition:#b48fd6; --cat-social:#e0956b; --cat-career:#e0b860; --cat-excursion:#5fc4c4;
+  --cat-meeting:#8fa094; --cat-speaker:#6cc28a; --cat-panel:#e08aab; --cat-workshop:#6fa8dc; --cat-competition:#b48fd6; --cat-social:#e0956b; --cat-career:#e0b860; --cat-excursion:#5fc4c4;
   color-scheme:dark}}
 :root[data-theme="dark"]{
   --brand:#2f7046; --brand-deep:#1b3d27; --brand-text:#82c99a; --on-brand:#ffffff; --tint:#17281d;
   --paper:#0c120e; --surface:#131b16; --ink:#e7eee9; --muted:#9aae9f; --line:#26352b;
   --header-bg:#163322; --ticker-bg:#050806; --ticker-fg:#cfe3d5; --up:#5fd08a; --warn:#f0c060; --danger:#ff8a80;
-  --cat-meeting:#8fa094; --cat-speaker:#6cc28a; --cat-workshop:#6fa8dc; --cat-competition:#b48fd6; --cat-social:#e0956b; --cat-career:#e0b860; --cat-excursion:#5fc4c4;
+  --cat-meeting:#8fa094; --cat-speaker:#6cc28a; --cat-panel:#e08aab; --cat-workshop:#6fa8dc; --cat-competition:#b48fd6; --cat-social:#e0956b; --cat-career:#e0b860; --cat-excursion:#5fc4c4;
   color-scheme:dark}
 
 *{box-sizing:border-box}
@@ -700,12 +700,13 @@ const CATS = {
   case_competition: ['Case competition', '--cat-competition'],
   career_fair: ['Career fair', '--cat-career'],
   guest_speaker: ['Guest speaker', '--cat-speaker'],
+  panel: ['Panel', '--cat-panel'],
   excursion: ['Excursion', '--cat-excursion'],
   workshop: ['Workshop', '--cat-workshop'],
   social: ['Social', '--cat-social'],
   officer_meeting: ['Officer meeting', '--cat-meeting']   // officers and admins only, no points
 };
-const PTS = { case_competition:25, career_fair:25, guest_speaker:15, excursion:25, workshop:10, social:10, officer_meeting:0 };
+const PTS = { case_competition:25, career_fair:25, guest_speaker:15, panel:15, excursion:25, workshop:10, social:10, officer_meeting:0 };
 const ARCH = { slides:'Slides', recording:'Recording', notes:'Notes', template:'Template' };
 const TIERS = { president:'President', vice_president:'Vice President', advisor:'Faculty advisor', officer:'Officer', honorary:'Honorary (hidden from Officers page)' };
 // Dues tracking is hidden until the club collects dues. Set to true to bring it back.
@@ -1063,7 +1064,7 @@ const DRESS = {
     ['Anyone', ['Comfortable clothes you can move in', 'Closed-toe shoes for walking', 'Check the weather: bring layers, water, and sun protection if you’ll be outside']]]],
 };
 // What new events start with, by type (officers can change it).
-const DRESS_DEFAULT = { case_competition: 'business_professional', career_fair: 'business_professional', guest_speaker: 'business_casual', excursion: 'business_casual', workshop: 'casual', social: 'casual' };
+const DRESS_DEFAULT = { case_competition: 'business_professional', career_fair: 'business_professional', guest_speaker: 'business_casual', panel: 'business_casual', excursion: 'business_casual', workshop: 'casual', social: 'casual' };
 const dressName = e => DRESS[e.dress] ? DRESS[e.dress][0] : '';
 // One line for emails: "Business casual (slacks or chinos ...). Note"
 function dressLine(e){
@@ -1361,7 +1362,9 @@ function monthGrid(y, mo, byDay){
   return `<section class="stack" style="gap:10px;min-width:0"><h2>${MONTHS[mo]} ${y}</h2><div class="cal-scroll"><div class="cal">${cells}</div></div></section>`;
 }
 // The club's headline events, shown beside the calendar no matter which months are on screen.
-const FEATURED_CATS = ['career_fair', 'case_competition', 'guest_speaker', 'excursion'];
+const FEATURED_CATS = ['career_fair', 'case_competition', 'guest_speaker', 'panel', 'excursion'];
+// Events with outside speakers: Q&A and speaker details.
+const SPEAKER_CATS = ['guest_speaker', 'panel'];
 function featuredPanel(){
   const list = upcoming().filter(e => FEATURED_CATS.includes(e.cat)).slice(0, 6);
   return `<aside class="featured" aria-label="Featured events">
@@ -1733,7 +1736,7 @@ const CT_STATUS = { prospect: ['Not contacted yet', ''], contacted: ['Contacted'
 const CT_OPEN = ['prospect', 'contacted', 'interested', 'confirmed'];
 // Kinds of events in the plan and on contacts: the event types, plus panels (scheduled as guest speaker events).
 const CT_EXTRA = { panel: 'Panel' };
-const CT_CATS = Object.keys(CATS).filter(k => k !== 'officer_meeting').flatMap(k => k === 'guest_speaker' ? [k, 'panel'] : [k]);
+const CT_CATS = Object.keys(CATS).filter(k => k !== 'officer_meeting');
 const ctCat = k => CT_EXTRA[k] || catName(k);
 const ctEventCat = k => CATS[k] ? k : 'guest_speaker';
 const ctSem = () => db.settings.semester || '';
@@ -4579,6 +4582,7 @@ const PLAN_DEFAULTS = {
     ['Reserve a room', -7], ['Write the agenda', -3], ['Send the agenda to officers', -1], ['Take notes and post action items', 0],
     ['Assign follow-up tasks', 1]]
 };
+PLAN_DEFAULTS.panel = PLAN_DEFAULTS.guest_speaker;
 function planTemplate(cat){ const t = ((db.app || {}).planTpl || {})[cat]; return Array.isArray(t) && t.length ? t : (PLAN_DEFAULTS[cat] || PLAN_DEFAULTS.workshop); }
 // Admin editor for the standard checklists: one event type at a time.
 function templateEditor(){
@@ -4923,7 +4927,7 @@ const RQ_STATUS = { draft: ['Not sent yet', ''], branch: ['Waiting for the branc
   returned: ['Sent back: needs changes', 'warn'], submitted: ['Confirming with UVU', 'warn'], approved: ['Confirmed by UVU: being finalized', 'ok'], signoff: ['Presidents’ sign-off', 'warn'], adminok: ['Waiting for the admin’s sign-off', 'warn'],
   published: ['Published', 'ok'], vote: ['Approved', 'ok'], objection: ['Objected', 'warn'], branch_ok: ['Approved by branch leadership', 'ok'] };
 // Bigger events get every president's review before they go to UVU.
-const BIG_CATS = ['case_competition', 'excursion', 'guest_speaker', 'career_fair'];
+const BIG_CATS = ['case_competition', 'excursion', 'guest_speaker', 'panel', 'career_fair'];
 // Bigger events publish once every president approves (2 of 3 after 2 business days). Everything else publishes like
 // before the scheduling system: leadership publishes it, other officers send it to them. The scheduling form is optional.
 const needsSignoff = cat => BIG_CATS.includes(cat);
@@ -5030,7 +5034,7 @@ const fmtShortDay = iso => parseDay(iso).toLocaleDateString('en-US', { weekday: 
 const noLayout = d => d.campus === 'off' || d.locType === 'Auditorium';
 const hasSpeaker = (d, cat) => d.speaker === 'yes' || (!d.speaker && GUEST_CATS.includes(cat));
 // How far ahead to plan each kind of event. Anything sooner gets a short-notice warning.
-const LEAD_TIMES = { case_competition: [{ months: 3 }, '3 months'], career_fair: [{ months: 2 }, '2 months'], guest_speaker: [{ days: 42 }, '6 weeks'], workshop: [{ days: 21 }, '3 weeks'] };
+const LEAD_TIMES = { case_competition: [{ months: 3 }, '3 months'], career_fair: [{ months: 2 }, '2 months'], guest_speaker: [{ days: 42 }, '6 weeks'], panel: [{ days: 42 }, '6 weeks'], workshop: [{ days: 21 }, '3 weeks'] };
 const LEAD_DEFAULT = [{ days: 21 }, '3 weeks'];
 const leadFor = cat => LEAD_TIMES[cat] || LEAD_DEFAULT;
 function leadCutoff(cat){
@@ -5067,7 +5071,7 @@ const rqYN = (k, label, d, hint = '') => `<fieldset class="rq-q"><legend>${label
 const rqFileLine = (k, d) => d[k] ? `<span class="hint">${d[k].pending ? 'Will upload when you save: ' : 'Attached: '}${esc(d[k].name)} <button type="button" class="btn ghost small" data-act="rq-file-clear" data-id="${k}">Remove</button></span>` : '';
 
 // Event types that always have outside guests (speakers, judges, recruiters).
-const GUEST_CATS = ['guest_speaker', 'case_competition', 'career_fair'];
+const GUEST_CATS = ['guest_speaker', 'panel', 'case_competition', 'career_fair'];
 const US_STATES = [['AL', 'Alabama'], ['AK', 'Alaska'], ['AZ', 'Arizona'], ['AR', 'Arkansas'], ['CA', 'California'], ['CO', 'Colorado'], ['CT', 'Connecticut'], ['DE', 'Delaware'], ['DC', 'District of Columbia'],
   ['FL', 'Florida'], ['GA', 'Georgia'], ['HI', 'Hawaii'], ['ID', 'Idaho'], ['IL', 'Illinois'], ['IN', 'Indiana'], ['IA', 'Iowa'], ['KS', 'Kansas'], ['KY', 'Kentucky'], ['LA', 'Louisiana'], ['ME', 'Maine'],
   ['MD', 'Maryland'], ['MA', 'Massachusetts'], ['MI', 'Michigan'], ['MN', 'Minnesota'], ['MS', 'Mississippi'], ['MO', 'Missouri'], ['MT', 'Montana'], ['NE', 'Nebraska'], ['NV', 'Nevada'], ['NH', 'New Hampshire'],
@@ -5567,7 +5571,7 @@ function evFinalSummary(e){
   const rows = [['Title', e.title], ['Date', fmtDay(e.date)], ['Time', `${fmtTime(e.start)}–${fmtTime(e.end)}`], ['Location', e.loc], ['Seat limit', e.cap ? String(e.cap) : 'No limit'],
     ['Members only', e.membersOnly ? 'Yes' : 'No'], ...(e.cat === 'case_competition' ? [] : [['RSVPs open', e.rsvpOpens ? fmtMtStamp(Date.parse(e.rsvpOpens)) : 'As soon as it’s published'], ['RSVPs close', e.rsvpCloses ? fmtMtStamp(Date.parse(e.rsvpCloses)) : 'When the event starts'],
     ['Guest RSVPs', e.membersOnly ? 'Members only' : e.guestDelay ? `${e.guestDelay} day${e.guestDelay === 1 ? '' : 's'} after members` : e.guestOpens && e.guestOpens !== e.rsvpOpens ? fmtMtStamp(Date.parse(e.guestOpens)) : 'Same time as members']]),
-    ...(e.cat === 'guest_speaker' ? [['Q&A', e.qaEnabled ? 'On' : 'Off']] : []), ['Description', e.desc]];
+    ...(SPEAKER_CATS.includes(e.cat) ? [['Q&A', e.qaEnabled ? 'On' : 'Off']] : []), ['Description', e.desc]];
   return `<dl class="rq-sum">${rows.map(([l, v]) => `<dt>${esc(l)}</dt><dd style="white-space:pre-wrap">${esc(v || '—')}</dd>`).join('')}</dl>`;
 }
 
@@ -5581,7 +5585,7 @@ const SUG_FORM = [['uvuName', 'Event name for UVU', 'text'], ['start', 'Start ti
   ['clothColor', 'Tablecloth color', 'text'], ['av', 'Additional A/V equipment', 'yn'], ['avNeeds', 'A/V needed', 'textarea'], ['estMax', 'Expected attendance (no seat limit)', 'number'], ['other', 'Other details', 'textarea']];
 // What a president can suggest: before UVU, the request and the website basics; at sign-off, the website settings.
 function sugDefs(e, step){
-  const ev = SUG_EVENT.filter(([f]) => f !== 'qa_enabled' || e.cat === 'guest_speaker').filter(([f]) => e.cat !== 'case_competition' || !['rsvp_opens', 'guest_rsvp_delay'].includes(f));
+  const ev = SUG_EVENT.filter(([f]) => f !== 'qa_enabled' || SPEAKER_CATS.includes(e.cat)).filter(([f]) => e.cat !== 'case_competition' || !['rsvp_opens', 'guest_rsvp_delay'].includes(f));
   return step === 'review' ? [...ev.filter(([f]) => ['title', 'descr', 'cap'].includes(f)).map(x => ['event', ...x]), ...SUG_FORM.map(x => ['form', ...x])] : ev.map(x => ['event', ...x]);
 }
 function sugCur(e, r, target, field){
@@ -6116,7 +6120,7 @@ function viewOfficer(){
         ${!e || e.draft ? (isScheduler() ? `<label class="check"><input type="checkbox" id="ev-soon" ${e?.comingSoon ? 'checked' : ''}> Coming-soon page <span class="hint">While this is a draft, anyone who opens its link sees only the title and the coming-soon description below (no date or other details) instead of “event not found.” Copy the link or QR code from the Drafts list after saving.</span></label>
           <label id="ev-soon-wrap" ${e?.comingSoon ? '' : 'hidden'}>Coming-soon description <span class="hint">Optional. A short teaser, like “Lunch with a Goldman Sachs VP. Seats are limited; RSVPs open soon.”</span><textarea id="ev-soon-desc" rows="3" maxlength="1000">${esc(e?.soonDesc || '')}</textarea></label>`
           : e?.comingSoon ? '<span class="hint">This draft has a coming-soon page: its link shows the title and “coming soon” until it’s published. Only event schedulers can change that.</span>' : '') : ''}
-        <label class="check" id="ev-qa-wrap" ${e?.cat === 'guest_speaker' ? '' : 'hidden'}><input type="checkbox" id="ev-qa" ${e?.qaEnabled ? 'checked' : ''}> Add Q&A <span class="hint">People can submit questions for the speaker ahead of time. Only officers see them.</span></label>
+        <label class="check" id="ev-qa-wrap" ${SPEAKER_CATS.includes(e?.cat) ? '' : 'hidden'}><input type="checkbox" id="ev-qa" ${e?.qaEnabled ? 'checked' : ''}> Add Q&A <span class="hint">People can submit questions for the speaker ahead of time. Only officers see them.</span></label>
         <label>Check-in code <span class="hint">(optional)</span>
           <span class="row" style="gap:8px;flex-wrap:nowrap"><input id="ev-code" maxlength="8" autocomplete="off" value="${esc(e?.code || '')}" placeholder="e.g. BULL" style="font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;flex:1;min-width:0"><button type="button" class="btn ghost small" data-act="ev-gen-code">Generate</button></span>
           <span class="hint">Members type this at the event to check in. It only works on the event’s date. Leave blank to make one on the day.</span></label>
@@ -7968,7 +7972,7 @@ function syncCaseBox(){
   const b = document.getElementById('ev-case'), m = document.getElementById('ev-branches');
   if (b) b.hidden = c.value !== 'case_competition'; if (m) m.hidden = c.value !== 'officer_meeting';
   const mo = document.getElementById('ev-mo-wrap'), qa = document.getElementById('ev-qa-wrap');
-  if (mo) mo.hidden = c.value === 'officer_meeting' || (document.getElementById('ev-reg') || {}).value === 'link'; if (qa) qa.hidden = c.value !== 'guest_speaker';
+  if (mo) mo.hidden = c.value === 'officer_meeting' || (document.getElementById('ev-reg') || {}).value === 'link'; if (qa) qa.hidden = !SPEAKER_CATS.includes(c.value);
   const noRsvp = ['officer_meeting', 'case_competition'].includes(c.value), rg = document.getElementById('ev-reg'), reg = noRsvp || !rg ? 'rsvp' : rg.value;
   const rw = document.getElementById('ev-reg-wrap'); if (rw) rw.hidden = noRsvp;
   const hw = document.getElementById('ev-host-wrap'); if (hw) hw.hidden = document.getElementById('ev-cat')?.value === 'officer_meeting';
@@ -9586,7 +9590,7 @@ async function handleSubmit(f, v, err){
     if (!e.title || !e.date || !e.start_time || !e.end_time || !e.loc) return err('ev-err', 'Fill in the title, date, times, and location.');
     if (e.end_time <= e.start_time) return err('ev-err', 'End time must be after the start time.');
     e.members_only = e.cat !== 'officer_meeting' && document.getElementById('ev-members-only').checked;
-    e.qa_enabled = e.cat === 'guest_speaker' && document.getElementById('ev-qa').checked;
+    e.qa_enabled = SPEAKER_CATS.includes(e.cat) && document.getElementById('ev-qa').checked;
     e.in_stats = e.cat === 'officer_meeting' || !document.getElementById('ev-in-stats') || document.getElementById('ev-in-stats').checked;
     e.show_rsvps = ['officer_meeting', 'case_competition'].includes(e.cat) || !document.getElementById('ev-show-rsvps') || document.getElementById('ev-show-rsvps').checked;
     e.reg_mode = ['officer_meeting', 'case_competition'].includes(e.cat) ? 'rsvp' : (v('ev-reg') || 'rsvp');
