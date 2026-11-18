@@ -901,7 +901,7 @@ async function load(){
   db.caseNotes = {}; (Array.isArray(R.caseNotes) ? R.caseNotes : []).forEach(n => db.caseNotes[n.id] = { rating: n.officer_rating || null, note: n.officer_note || '' });
   db.memberPts = {}; (Array.isArray(R.memberPts) ? R.memberPts : []).forEach(x => db.memberPts[x.email] = x.points);
   db.rolePresets = R.rolePresets && Array.isArray(R.rolePresets.roles) ? R.rolePresets.roles : null;
-  db.roles = {}; (Array.isArray(R.eventRoles) ? R.eventRoles : []).forEach(x => db.roles[x.event_id] = Array.isArray(x.roles) ? x.roles : []);
+  db.roles = {}; db.roleSeats = {}; (Array.isArray(R.eventRoles) ? R.eventRoles : []).forEach(x => { db.roles[x.event_id] = Array.isArray(x.roles) ? x.roles : []; db.roleSeats[x.event_id] = !!x.count_seats; });
   db.guestRsvps = {}; (Array.isArray(R.guestRsvps) ? R.guestRsvps : []).forEach(g => (db.guestRsvps[g.event_id] = db.guestRsvps[g.event_id] || []).push(g));
   db.evQuestions = Array.isArray(R.evQuestions) ? R.evQuestions : [];
   db.guests = {}; (Array.isArray(R.guests) ? R.guests : []).forEach(g => (db.guests[g.event_id] = db.guests[g.event_id] || []).push(g));
@@ -1022,6 +1022,8 @@ function heldEvents(){ return sortedEvents().filter(hasStarted).reverse(); }   /
 function going(id){ return db.rsvps[id] || []; }
 function attended(id){ return db.attendance[id] || []; }
 function rsvpCount(id){ return db.stats[id] ? db.stats[id].rsvps : going(id).length; }
+// Seats taken from the seat limit. Officers with a role are RSVP'd automatically but only take seats if the event counts them.
+function seatsTaken(id){ return db.stats[id] && db.stats[id].seats != null ? db.stats[id].seats : rsvpCount(id); }
 // Whether this viewer sees how many people RSVP'd. Officers always do; members and guests only if the event shows it.
 // Registration: RSVP on this site, no button, or a link to another organization's page (82-simpler-event-approvals.sql).
 function takesRsvps(e){ return (e.regMode || 'rsvp') === 'rsvp'; }
@@ -1082,7 +1084,7 @@ function regLinkBtn(e){ if (e.regMode !== 'link' || !e.regUrl) return ''; let ho
   return `<a class="btn" href="${esc(e.regUrl)}" target="_blank" rel="noopener">Register ↗</a><span class="hint">Registration is on ${esc(host || 'another site')}. This event is run by ${esc(e.host || 'another organization')}.</span>`; }
 // What members and guests see instead of the count when it's hidden: Seats open, Few seats left (under 10), or Full.
 const SEATS_LOW = 10;
-function seatLeft(e){ return e.cap ? Math.max(0, e.cap - rsvpCount(e.id)) : Infinity; }
+function seatLeft(e){ return e.cap ? Math.max(0, e.cap - seatsTaken(e.id)) : Infinity; }
 function seatNote(e){ const left = seatLeft(e); return left === 0 ? 'Full' + seatWait(e) : left < SEATS_LOW ? 'Few seats left' : 'Seats open'; }
 // After "Full": point people to the waitlist (members only, and only until the event starts).
 function seatWait(e){
@@ -1207,7 +1209,7 @@ function evRow(e){
     <div style="min-width:0"><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</div>
       <div class="ev-title">${esc(e.title)} ${statusTag(e)}</div>
       <div class="ev-sub">${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc)}${hostLabel(e) ? ' · ' + esc(hostLabel(e)) : ''}</div></div>
-    <div class="rsvp-count">${status}${showRsvps(e) ? `<span class="up">▲</span> ${n}${e.cap?` / ${e.cap}`:''}` : isPast(e) || e.cat === 'officer_meeting' || !takesRsvps(e) ? '' : seatTag(e)}</div>
+    <div class="rsvp-count">${status}${showRsvps(e) ? `<span class="up">▲</span> ${e.cap ? `${seatsTaken(e.id)} / ${e.cap}` : n}` : isPast(e) || e.cat === 'officer_meeting' || !takesRsvps(e) ? '' : seatTag(e)}</div>
   </button>`;
 }
 function todayBar(){
@@ -6587,7 +6589,7 @@ const rsvpClosed = e => !!(e.rsvpCloses && Date.now() >= Date.parse(e.rsvpCloses
 function eventLink(id, code){ return SITE_URL + '/#event/' + id + (code ? '/' + encodeURIComponent(code) : ''); }
 function eventInner(id, page){
   const e = evById(id); if (!e) return '';
-  const n = rsvpCount(id), mine = session && going(id).includes(session), full = e.cap && n >= e.cap, wl = (db.wait || {})[id] || {};
+  const n = rsvpCount(id), seats = seatsTaken(id), mine = session && going(id).includes(session), full = e.cap && seats >= e.cap, wl = (db.wait || {})[id] || {};
   const here = session && attended(id).includes(session);
   let action;
   if (isPast(e)) action = `<span class="muted">This event has ended.${here ? ' You attended.' : mine ? ' You RSVP’d.' : ''}</span>`;
@@ -6642,8 +6644,8 @@ function eventInner(id, page){
     <h2>${esc(e.title)}</h2>
     <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} <span class="hint">Mountain Time</span></dd>
       <dt>Status</dt><dd>${{ upcoming: 'Upcoming', live: '<strong>Happening now</strong>', over: 'Over' }[evStatus(e)]}</dd>
-      <dt>Where</dt><dd>${esc(e.loc)}</dd>${dressFacts(e)}${e.cat === 'officer_meeting' ? `<dt>Who</dt><dd>${meetingFor(e)}${session && can('officer') ? `<br><strong>${{ required: 'You’re required.', invited: 'You’re invited (optional).', '': 'You’re not expected at this one.' }[myMeetingStatus(e)]}</strong>` : ''}</dd>` : ''}${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : showRsvps(e) ? `<dt>Going</dt><dd class="num">${n}${e.cap?` of ${e.cap} seats`:''}` : !takesRsvps(e) ? `<dt>Registration</dt><dd>${e.regMode === 'link' ? 'On the host’s site' : 'None needed'}` : isPast(e) ? `<dt>Seats</dt><dd>${e.cap || 'No limit'}` : `<dt>Availability</dt><dd>${seatTag(e)}`}${hasStarted(e) && showRsvps(e) ?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
-    ${e.cap && !isCase(e) && showRsvps(e) ? `<div class="meter"><span style="width:${Math.min(100,n/e.cap*100)}%"></span></div>` : ''}
+      <dt>Where</dt><dd>${esc(e.loc)}</dd>${dressFacts(e)}${e.cat === 'officer_meeting' ? `<dt>Who</dt><dd>${meetingFor(e)}${session && can('officer') ? `<br><strong>${{ required: 'You’re required.', invited: 'You’re invited (optional).', '': 'You’re not expected at this one.' }[myMeetingStatus(e)]}</strong>` : ''}</dd>` : ''}${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : showRsvps(e) ? `<dt>Going</dt><dd class="num">${n}${e.cap ? (seats !== n ? ` · ${seats} of ${e.cap} seats taken` : ` of ${e.cap} seats`) : ''}` : !takesRsvps(e) ? `<dt>Registration</dt><dd>${e.regMode === 'link' ? 'On the host’s site' : 'None needed'}` : isPast(e) ? `<dt>Seats</dt><dd>${e.cap || 'No limit'}` : `<dt>Availability</dt><dd>${seatTag(e)}`}${hasStarted(e) && showRsvps(e) ?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
+    ${e.cap && !isCase(e) && showRsvps(e) ? `<div class="meter"><span style="width:${Math.min(100,seats/e.cap*100)}%"></span></div>` : ''}
     <p style="white-space:pre-wrap">${esc(e.desc)}</p>
     ${(e.speakers || []).some(sp => sp.firm) ? `<div class="stack" style="gap:10px"><h3 style="margin:0">Firms attending</h3><div class="firm-grid">${e.speakers.map(sp => `<div class="speaker-card">${sp.url ? `<a href="${esc(sp.url)}" target="_blank" rel="noopener"><strong>${esc(sp.name)}</strong> ↗</a>` : `<strong>${esc(sp.name)}</strong>`}${sp.bio ? `<div class="hint">Hiring for: ${esc(sp.bio)}</div>` : ''}</div>`).join('')}</div></div>`
     : (e.speakers || []).length ? `<div class="stack" style="gap:10px"><h3 style="margin:0">${e.speakers.length === 1 ? 'Guest' : 'Guests'}</h3>${e.speakers.map(sp => `<div class="speaker-card"><strong>${esc(sp.name)}</strong>${sp.title || sp.company ? `<div class="hint">${esc([sp.title, sp.company].filter(Boolean).join(', '))}</div>` : ''}${sp.bio ? `<p style="white-space:pre-wrap;margin:6px 0 0">${esc(sp.bio)}</p>` : ''}</div>`).join('')}</div>` : ''}
@@ -6682,7 +6684,7 @@ function rsvpTimesNote(e){
   return `<div class="rsvp-times"><strong>When RSVPs open</strong><dl class="facts" style="margin:4px 0 0"><dt>Members</dt><dd>${when(m)}</dd>${e.membersOnly ? '<dt>Guests</dt><dd>Members only</dd>' : `<dt>Guests</dt><dd>${when(Math.max(g, m))}</dd>`}</dl></div>`;
 }
 function guestRsvpBox(e){
-  const id = e.id, done = guestRsvpDone(id), full = e.cap && rsvpCount(id) >= e.cap;
+  const id = e.id, done = guestRsvpDone(id), full = e.cap && seatsTaken(id) >= e.cap;
   const join = `<div class="row" style="gap:8px"><button class="btn" data-act="event-auth" data-to="signup" data-id="${id}">Join WFA (free) and RSVP</button><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">I have an account: sign in</button></div>`;
   if (done) return `<div class="panel stack" style="gap:10px"><div class="notice"><span><strong>You’re going, ${esc(done.first)}!</strong> ${done.reminders ? 'We’ll email you reminders about this event.' : ''} Join WFA to earn points for coming and get the full calendar.</span></div>${join}</div>`;
   if (rsvpClosed(e)) return `<div class="panel"><span class="muted">RSVPs closed ${fmtMtStamp(Date.parse(e.rsvpCloses))}.</span></div>`;
@@ -6760,7 +6762,7 @@ function rolesPanel(e){
       ${isPast(e) ? '' : `<button class="btn ghost small" data-act="roles-edit" data-id="${e.id}">${rs.length ? 'Edit roles' : 'Add roles'}</button>`}</div>
     ${rs.length ? ROLE_PHASES.map(([p, label]) => { const l = rs.map((r, i) => [r, i]).filter(([r]) => r.phase === p); return l.length ? `<div class="stack" style="gap:8px"><div class="hint" style="font-weight:600">${label}</div>${l.map(([r, i]) => roleCard(e, r, i)).join('')}</div>` : ''; }).join('')
       : '<span class="hint">List the jobs for this event (setup, check-in, MC, cleanup…), how early each one should arrive, and which officers are on them. Officers with a role get their instructions and arrival time in an email the day before.</span>'}
-    ${rs.length && !isPast(e) ? '<span class="hint">Officers with a role get their instructions and arrival time in an email the day before.</span>' : ''}</div>`;
+    ${rs.length && !isPast(e) ? `<span class="hint">Officers with a role are RSVP’d automatically${e.cap ? (db.roleSeats[e.id] ? ' and take seats from the seat limit' : ', without taking seats from the seat limit') : ''}, and get their instructions and arrival time in an email the day before.</span>` : ''}</div>`;
 }
 // The editor: ui.roleEd = { id, roles }. Structural changes (add, remove, move, how many) read the inputs, then redraw.
 function rolesModal(keep){
@@ -6786,6 +6788,8 @@ function rolesModal(keep){
         : `<div class="row" style="gap:6px;flex-wrap:wrap">${Array.from({ length: Math.min(20, +r.qty || 1) }, (_, k) => `<select class="ro-who" aria-label="Officer ${k + 1}" style="flex:1 1 10rem;min-width:0">${who((r.officers || [])[k])}</select>`).join('')}</div>`}
       <div class="row" style="gap:6px;justify-content:flex-end">${i ? `<button type="button" class="btn ghost small" data-act="ro-move" data-i="${i}" data-d="-1" aria-label="Move up">↑</button>` : ''}${i < roles.length - 1 ? `<button type="button" class="btn ghost small" data-act="ro-move" data-i="${i}" data-d="1" aria-label="Move down">↓</button>` : ''}<button type="button" class="btn ghost small" data-act="ro-rm" data-i="${i}">Remove</button></div></div>`).join('')}</div>
     <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn ghost small" data-act="ro-add">+ Add a role</button>${more ? '<button type="button" class="btn ghost small" data-act="ro-presets">Add the usual roles</button>' : ''}${preset ? (db.rolePresets ? '<button type="button" class="btn ghost small" data-act="ro-reset">Put back the original list</button>' : '') : '<button type="button" class="btn ghost small" data-act="ro-usual">Edit the usual roles</button>'}</div>
+    ${!preset ? `<div class="stack" style="gap:4px">${e.cap ? `<label class="check"><input type="checkbox" id="ro-seats" ${ui.roleEd.seats ? 'checked' : ''}> Officers with roles take seats from the ${e.cap}-seat limit</label>` : ''}
+      <span class="hint">Officers with a role are RSVP’d automatically, so the RSVP total (for food) includes them${e.cap ? '. Unchecked, they don’t take a member’s seat or push anyone onto the waitlist' : ''}.</span></div>` : ''}
     <div class="err" id="ro-err"></div>
     <div class="row" style="gap:8px"><button class="btn" data-act="ro-save">${preset ? 'Save the usual roles' : 'Save roles'}</button><button class="btn ghost" data-act="${back}">${back === 'ro-back' ? 'Back to the event' : 'Cancel'}</button></div></div>`);
   const nb = document.querySelector('#modal .modal'); if (nb) nb.scrollTop = top;
@@ -6797,6 +6801,7 @@ function readRoles(){
     r.qty = Math.min(20, Math.max(1, Math.round(+el.querySelector('.ro-qty').value) || 1)); r.duties = el.querySelector('.ro-duties').value;
     if (el.querySelector('.ro-guest')) r.guest = el.querySelector('.ro-guest').checked; else r.officers = [...el.querySelectorAll('.ro-who')].map(x => x.value);
   });
+  const st = document.getElementById('ro-seats'); if (st) ui.roleEd.seats = st.checked;
 }
 function cleanRoles(roles){
   const order = ROLE_PHASES.map(p => p[0]);
@@ -6809,8 +6814,8 @@ async function savePresets(roles){
   const clean = cleanRoles(roles).map(({ officers, ...r }) => ({ ...r, guest: !!(roles.find(x => String(x.name || '').trim() === r.name) || {}).guest }));
   return act(async () => must(await sb.from('role_presets').upsert({ id: 1, roles: clean, updated_by: session || '', updated_at: new Date().toISOString() })), 'Usual roles saved');
 }
-async function saveRoles(id, roles, msg){
-  return act(async () => must(await sb.from('event_roles').upsert({ event_id: id, roles: cleanRoles(roles), updated_by: session || '', updated_at: new Date().toISOString() })), msg);
+async function saveRoles(id, roles, msg, seats = !!(db.roleSeats || {})[id]){
+  return act(async () => must(await sb.from('event_roles').upsert({ event_id: id, roles: cleanRoles(roles), count_seats: !!seats, updated_by: session || '', updated_at: new Date().toISOString() })), msg);
 }
 document.addEventListener('change', ev => {
   if (!ev.target.classList || !ev.target.classList.contains('ro-qty') || !ui.roleEd) return;
@@ -6820,10 +6825,12 @@ function eventOfficerExtras(e){
   const g = (db.guestRsvps || {})[e.id] || [], qs = (db.evQuestions || []).filter(q => q.event_id === e.id);
   let h = '';
   // Everyone who RSVP'd, members and guests. Case competitions use teams instead.
-  const rs = [...going(e.id).map(em => ({ name: userName(em), email: em, note: '' })), ...g.map(x => ({ name: (x.first + ' ' + x.last).trim(), email: x.email, note: x.reminders ? 'Guest, wants reminders' : 'Guest' }))].sort((a, b) => a.name.localeCompare(b.name));
+  const crew = new Set(rolesOf(e.id).flatMap(r => r.officers || []).map(x => String(x).toLowerCase()));
+  const rs = [...going(e.id).map(em => ({ name: userName(em), email: em, note: crew.has(String(em).toLowerCase()) ? 'Officer role' : '' })), ...g.map(x => ({ name: (x.first + ' ' + x.last).trim(), email: x.email, note: x.reminders ? 'Guest, wants reminders' : 'Guest' }))].sort((a, b) => a.name.localeCompare(b.name));
   if (rs.length) h += `<div class="panel stack" style="gap:6px;padding:12px 14px"><div class="row" style="justify-content:space-between;align-items:center"><strong>RSVPs (${rs.length})</strong>
       <button class="btn ghost small" data-act="copy-text" data-label="Emails copied" data-text="${esc(rs.map(x => x.email).join('; '))}">Copy emails</button></div>
     ${rs.map(x => `<div class="ev-sub">${esc(x.name)} · ${esc(x.email)}${x.note ? ' · ' + x.note : ''}</div>`).join('')}
+    ${(() => { const k = going(e.id).filter(em => crew.has(String(em).toLowerCase())).length; return k ? `<span class="hint">Includes ${k} officer${k === 1 ? '' : 's'} with a role${e.cap ? (db.roleSeats[e.id] ? `, who ${k === 1 ? 'takes a seat' : 'take seats'} from the seat limit` : `, who ${k === 1 ? 'doesn’t take a seat' : 'don’t take seats'} (${seatsTaken(e.id)} of ${e.cap} seats taken)`) : ''}.</span>` : ''; })()}
     ${g.length ? '<span class="hint">Guests who join with the same email get their RSVP moved to their account.</span>' : ''}</div>`;
   else if (!isCase(e) && !e.draft) h += '<div class="panel" style="padding:12px 14px"><strong>RSVPs (0)</strong><div class="ev-sub">No one has RSVP’d yet.</div></div>';
   if (e.qaEnabled){
@@ -7828,7 +7835,7 @@ function signFloorRow(e){
   const rf = roomFloor(e.loc), opts = [1, 2, 3, 4, 5, 6].map(n => `<option value="${n}" ${n === 1 ? 'selected' : ''}>${ordinal(n)} floor</option>`).join('');
   return `<div class="row" style="gap:8px;align-items:flex-end;margin-top:8px;flex-wrap:wrap">
     <label style="margin:0">What floor will the sign be on?<select id="sign-floor">${opts}</select></label>
-    <label class="check" style="margin:0"><input type="checkbox" id="sign-walkins" ${!e.cap || rsvpCount(e.id) < e.cap ? 'checked' : ''}> Say “Walk-ins welcome${e.cap ? ', limited seats' : ''}”</label>
+    <label class="check" style="margin:0"><input type="checkbox" id="sign-walkins" ${!e.cap || seatsTaken(e.id) < e.cap ? 'checked' : ''}> Say “Walk-ins welcome${e.cap ? ', limited seats' : ''}”</label>
     <button class="btn small" data-act="sign-dl" data-id="${e.id}">Download sign</button>
     <span class="hint">${rf ? `The room (${esc(e.loc)}) is on the ${ordinal(rf)} floor, so the sign will say upstairs, downstairs, or this floor.` : 'Add a room number to the location (like KB 401) so the sign can say which floor.'}</span></div>`;
 }
@@ -8536,7 +8543,7 @@ document.addEventListener('click', async ev => {
       if (await act(async () => must(await sb.from('officer_profiles').upsert({ email: session, signature: text === SIG_DEFAULT ? '' : text, name: p.name || userName(session), title: p.rawTitle || '', tier: p.tier || 'officer', branch: p.branch || '' })), 'Signature saved')){ ui.sigDraft = null; render(); }
       break; }
     case 'arrival-mail': arrivalModal(id); break;
-    case 'roles-edit': ui.roleEdBack = null; ui.roleEd = { id, roles: JSON.parse(JSON.stringify(rolesOf(id))) }; rolesModal(); break;
+    case 'roles-edit': ui.roleEdBack = null; ui.roleEd = { id, roles: JSON.parse(JSON.stringify(rolesOf(id))), seats: !!(db.roleSeats || {})[id] }; rolesModal(); break;
     case 'ro-add': readRoles(); ui.roleEd.roles.push({ phase: 'during', name: '', arrive: 15, qty: 1, duties: '', officers: [] }); rolesModal(true);
       { const l = document.querySelectorAll('#modal .ro-name'); if (l.length){ l[l.length - 1].focus(); l[l.length - 1].scrollIntoView({ block: 'center' }); } } break;
     case 'ro-rm': readRoles(); ui.roleEd.roles.splice(+t.dataset.i, 1); rolesModal(true); break;
@@ -8550,7 +8557,7 @@ document.addEventListener('click', async ev => {
     case 'ro-save': { readRoles(); const { id: eid, roles, preset } = ui.roleEd;
       if (roles.some(r => !String(r.name || '').trim() && (String(r.duties || '').trim() || (r.officers || []).some(Boolean)))) { document.getElementById('ro-err').textContent = 'Give each role a name, or remove it.'; break; }
       if (preset){ if (await savePresets(roles)){ await logChange('Updated the usual officer roles'); if (ui.roleEdBack){ ui.roleEd = ui.roleEdBack; ui.roleEdBack = null; rolesModal(); } else { closeModal(); ui.roleEd = null; } } break; }
-      if (await saveRoles(eid, roles, 'Roles saved')){ closeModal(); ui.roleEd = null; await logChange(`Updated the officer roles for “${(evById(eid) || {}).title}”`); } break; }
+      if (await saveRoles(eid, roles, 'Roles saved', ui.roleEd.seats)){ closeModal(); ui.roleEd = null; await logChange(`Updated the officer roles for “${(evById(eid) || {}).title}”`); } break; }
     case 'role-take': case 'role-drop': { const roles = JSON.parse(JSON.stringify(rolesOf(id))), r = roles[+t.dataset.i]; if (!r) break;
       r.officers = (r.officers || []).filter(x => x && x !== session); if (a === 'role-take') r.officers.push(session);
       await saveRoles(id, roles, a === 'role-take' ? `You’re on ${r.name}` : `Dropped ${r.name}`); break; }
