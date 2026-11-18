@@ -7494,7 +7494,13 @@ function maybeWelcome(){
     <div class="row" style="gap:8px"><button class="btn" data-act="push-on">Turn on notifications</button><button class="btn ghost" data-act="close">Not now</button></div></div>`);
 }
 // Re-show an event after a change, on its page or in the pop-up.
-function refreshEvent(id){ if (route() === 'event') render(); else openEvent(id); }
+// Redraws the event page or window without jumping back to the top.
+function refreshEvent(id){
+  const m = document.getElementById('modal'), boxes = m && !m.hidden ? [m, ...m.querySelectorAll('*')].filter(x => x.scrollTop > 0).map(x => [x.className, x.scrollTop]) : [], y = window.scrollY;
+  if (route() === 'event') render(); else openEvent(id);
+  window.scrollTo(0, y);
+  if (m && !m.hidden) boxes.forEach(([c, t]) => { const x = c ? m.querySelector('.' + String(c).trim().split(/\s+/).join('.')) || (m.className === c ? m : null) : m; if (x) x.scrollTop = t; });
+}
 // What people see when they open a draft's link and its coming-soon page is on: the title and the teaser, nothing else.
 function soonBlock(title, desc){
   return `<div class="soon-card stack" style="gap:12px"><span><span class="tag soon">Coming soon</span></span><h1 class="page" style="margin:0">${esc(title)}</h1>
@@ -8466,7 +8472,7 @@ document.addEventListener('click', async ev => {
       break; }
     case 'show-code': await showCode(id); break;
     case 'ck-pdf': await ckPdf(id); break;
-    case 'sign-pdf': ui.signFor = ui.signFor === id ? null : id; refreshEvent(id); break;
+    case 'sign-pdf': ui.signFor = ui.signFor === id ? null : id; refreshEvent(id); document.getElementById('sign-floor')?.scrollIntoView({ block: 'nearest' }); break;
     case 'sign-dl': await signPdf(id, +document.getElementById('sign-floor').value || 1); break;
     case 'signoff-send': { const e = evById(id); let pubNow = false;
       if (!(e.desc || '').trim()){ ui.officerTab = 'events'; ui.editEvent = id; render(); window.scrollTo(0, 0); toast('Add a description first.'); break; }
