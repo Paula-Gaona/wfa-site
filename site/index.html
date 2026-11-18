@@ -6737,6 +6737,7 @@ function guestRsvpInner(e){
       <form class="stack" id="f-grsvp" data-id="${id}" style="gap:8px;margin-top:10px">
         <div class="grid2"><label>First name<input id="gr-first" autocomplete="given-name" required></label><label>Last name<input id="gr-last" autocomplete="family-name" required></label></div>
         <label>Email<input id="gr-email" type="email" autocomplete="email" required></label>
+        <label>UVU ID <span class="hint">Optional. Then you can check in at the event with just your UVU ID.</span><input id="gr-uvid" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="8 digits"></label>
         <label class="check"><input type="checkbox" id="gr-remind"> Send me email reminders about this event</label>
         <div><button class="btn ghost" type="submit">RSVP as a guest</button></div><div class="err" id="gr-err"></div>
       </form></details></div>`;
@@ -6903,12 +6904,12 @@ function uvidDone(id){ try { return localStorage.getItem('wfa-uvid-' + id) === '
 function uvidCheckin(e, pre){
   const id = e.id, opens = checkinOpensMs(e), early = Date.now() < opens;
   return `<form class="panel stack" id="f-uvid" data-id="${id}" style="gap:10px">
-    <strong style="font-size:1.1rem">Member? Check in with your UVU ID</strong>
+    <strong style="font-size:1.1rem">Check in with your UVU ID</strong>
     <div class="grid2"><label>UVU ID<input id="uv-id" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="8 digits"></label>
       <label>Check-in code <span class="hint">${pre ? 'Filled in from the QR code' : 'Shown on screen'}</span><input id="uv-code" maxlength="8" autocomplete="off" placeholder="CODE" value="${esc(pre)}" style="text-transform:uppercase"></label></div>
     <div><button class="btn" type="submit" data-opens="${opens}" ${early ? 'aria-disabled="true"' : ''}>Check in</button></div>
     <span class="hint ci-opens" ${early ? '' : 'hidden'}>Check-in opens at ${fmtTime(mtClock(opens))}, 15 minutes before the event starts.</span>
-    <span class="hint">No need to sign in. ${ptsText(e)}.</span>
+    <span class="hint">No need to sign in. Members: ${ptsText(e)}. Guests: works if you gave your UVU ID when you RSVP’d.</span>
     <div class="err" id="uv-err"></div></form>`;
 }
 function guestCheckin(e, pre){
@@ -9457,11 +9458,12 @@ async function handleSubmit(f, v, err){
   if (f.id === 'f-grsvp'){
     const id = f.dataset.id, first = v('gr-first'), last = v('gr-last'), email = v('gr-email').toLowerCase(), reminders = document.getElementById('gr-remind').checked;
     ui.grsvpOpen = id;
-    const r = await sb.rpc('guest_rsvp', { p_event: id, p_first: first, p_last: last, p_email: email, p_reminders: reminders });
+    const r = await sb.rpc('guest_rsvp', { p_event: id, p_first: first, p_last: last, p_email: email, p_reminders: reminders, p_uvid: v('gr-uvid').replace(/\D/g, '') });
     if (r.error) return err('gr-err', /guest_rsvp/.test(r.error.message || '') ? 'Guest RSVPs aren’t set up yet.' : errMsg(r.error));
     const msg = { name: 'Enter your first and last name.', email: 'Enter a valid email address.', missing: 'This event isn’t open for guest RSVPs.',
       started: 'This event has already started. Check in with the code on screen instead.', full: 'All seats are taken.',
-      member: 'There’s already a WFA account with this email. Sign in to RSVP.', notyet: 'Members get early access. Guest RSVPs aren’t open yet.' }[r.data];
+      member: 'There’s already a WFA account with this email. Sign in to RSVP.', uvid: 'Enter an 8-digit UVU ID, or leave it blank.',
+      memberid: 'That UVU ID belongs to a WFA account. Use “RSVP with your UVU ID” above instead.', notyet: 'Members get early access. Guest RSVPs aren’t open yet.' }[r.data];
     if (msg) return err('gr-err', msg);
     try { localStorage.setItem('wfa-grsvp-' + id, JSON.stringify({ first, email, reminders })); } catch(x){}
     toast('You’re going!'); await load(); refreshEvent(id); return;
@@ -9511,10 +9513,10 @@ async function handleSubmit(f, v, err){
     const msg = { uvid: 'Enter your 8-digit UVU ID.', missing: 'This event isn’t open for check-in.', closed: 'Check-in is only open on the day of the event.',
       early: `Check-in opens at ${fmtTime(mtClock(checkinOpensMs(e)))}, 15 minutes before the event starts.`, notstarted: 'Check-in hasn’t started yet. Wait for an officer to show the code.',
       wrong: 'That code doesn’t match. Check the screen and try again.',
-      nomember: 'We couldn’t find a WFA account with that UVU ID. Sign in to check in, or join (free) or check in as a guest below.' }[r.data];
+      nomember: 'We couldn’t find a WFA account or guest RSVP with that UVU ID. Sign in, or join (free) or check in as a guest below.' }[r.data];
     if (msg) return err('uv-err', msg);
     try { localStorage.setItem('wfa-uvid-' + id, '1'); } catch(x){}
-    toast('Checked in · ' + ptsText(e)); refreshEvent(id); return;
+    toast(r.data === 'guest' ? 'Checked in as a guest. Join to get the points!' : 'Checked in · ' + ptsText(e)); refreshEvent(id); return;
   }
 
   if (f.id === 'f-guest'){
