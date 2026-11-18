@@ -618,7 +618,7 @@ ${lastNote}`
     let used = await sentToday();
     const cap = Math.max(0, Math.min(5000, Number(cfg.daily_cap ?? 500)));
 
-    const { data: events } = await db.from('events').select('id, title, cat, date, start_time, end_time, loc, descr, draft, test, reg_mode, dress_code, dress_note')
+    const { data: events } = await db.from('events').select('id, title, cat, date, start_time, end_time, loc, descr, draft, test, reg_mode, dress_code, dress_note, qa_enabled, speakers')
       .eq('draft', false).eq('test', false).neq('cat', 'officer_meeting')
       .gte('date', isoDay(now - 2 * DAY)).lte('date', isoDay(now + 8 * DAY));
     if (!events?.length) return json({ ok: true, sent: 0, chat_alerts: chatAlerts });
@@ -729,10 +729,24 @@ ${lastNote}`
           (gr || []).forEach((g) => { if (!byEmail.has(g.email)) { guestTo.push(g.email); firstName.set(g.email, String(g.first || '').trim()); } });
           guestTo = [...new Set(guestTo)];
         }
-        jobs.push({ ev, kind, subject, emailTo: [...base.filter((e) => getsEmail(e, 'events') && !(r.key === '1d' && crewSet.has(e))), ...guestTo], pushTo: base.filter((e) => getsPush(e, 'events')),
-          html: (g) => htmlEmail(`<p style="margin:0 0 12px">${escHtml(g)}</p><p style="margin:0 0 16px">${escHtml(lead)}</p>${details}` +
+        // Day of: people who sent questions for the speaker get them back, with a heads-up that the host will call on
+        // them to ask it themselves (so the speaker can see who's asking).
+        const asked = new Map<string, string[]>();
+        if (r.key === 'same' && ev.qa_enabled) {
+          const { data: qs } = await db.from('event_questions').select('email, question, created_at').eq('event_id', ev.id).not('email', 'is', null).order('created_at');
+          (qs || []).forEach((q) => { const e = String(q.email).toLowerCase(); asked.set(e, [...(asked.get(e) || []), String(q.question)]); });
+        }
+        const sp = Array.isArray(ev.speakers) ? ev.speakers.map((x: { name?: string }) => String(x?.name || '').trim()).filter(Boolean) : [];
+        const spName = sp.length === 1 ? sp[0] : sp.length ? 'the speakers' : 'the speaker';
+        const qaNote = `During the Q&A, the host will call on you to ask your question yourself, so ${spName} can see who's asking. It's a great chance to introduce yourself and make a connection, so have ${'{n}'} ready:`;
+        const qaHtml = (email: string) => { const l = asked.get(email); return l ? `<div style="margin:16px 0 6px;padding:12px 14px;background:#f3f6f1;border-left:3px solid #1f4d2e"><p style="margin:0 0 6px"><strong>Get ready to be called on</strong></p><p style="margin:0 0 6px">${escHtml(qaNote.replace('{n}', l.length === 1 ? 'it' : 'them'))}</p><ul style="margin:0;padding-left:20px">${l.map((q) => `<li style="margin:0 0 4px">${escHtml(q)}</li>`).join('')}</ul></div>` : ''; };
+        const qaText = (email: string) => { const l = asked.get(email); return l ? `\n\nGET READY TO BE CALLED ON\n${qaNote.replace('{n}', l.length === 1 ? 'it' : 'them')}` + l.map((q) => `\n- ${q}`).join('') : ''; };
+        const askers = real([...asked.keys()]).filter((e) => byEmail.has(e) && getsEmail(e, 'events'));
+        const emailTo = [...new Set([...base.filter((e) => getsEmail(e, 'events') && !(r.key === '1d' && crewSet.has(e))), ...guestTo, ...askers])];
+        jobs.push({ ev, kind, subject, emailTo, pushTo: base.filter((e) => getsPush(e, 'events')),
+          html: (g, email) => htmlEmail(`<p style="margin:0 0 12px">${escHtml(g)}</p><p style="margin:0 0 16px">${escHtml(lead)}</p>${qaHtml(email)}${details}` +
             (r.key === '1d' ? prepHtml() : dressShort ? `<p style="margin:0 0 6px"><strong>Dress:</strong> ${escHtml(dressShort)}</p>` : ''), { label, url: link }, footer),
-          text: (g) => `${g}\n\n${lead}\n\n${when}\n${ev.loc || ''}\n\n${ev.descr || ''}` +
+          text: (g, email) => `${g}\n\n${lead}${qaText(email)}\n\n${when}\n${ev.loc || ''}\n\n${ev.descr || ''}` +
             (r.key === '1d' ? prepText() : dressShort ? `\n\nDress: ${dressShort}` : '') + `\n\n${label}: ${link}`,
           push: { title: subject, body: `${fmtTime(start)}${ev.loc ? ' - ' + ev.loc : ''}`, url: link } });
       }
