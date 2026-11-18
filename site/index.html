@@ -6161,7 +6161,7 @@ function viewOfficer(){
     const nameList = l => l.length ? l.map(em => esc(userName(em))).join(', ') : '<span class="muted">None</span>';
     const claims = (db.claims || []).filter(c => c.status === 'pending' && evById(c.event_id));
     const claimsHtml = claims.length ? `<section class="stack"><div class="section-head"><h3>Check-in requests</h3><span class="muted">${claims.length}</span></div>
-      <p class="hint" style="margin:0">Members who say they were there but forgot to check in. Approving checks them in, with the points.</p>
+      <p class="hint" style="margin:0">Members who say they were there but forgot to check in, with one thing they learned. Approving checks them in, with the points.</p>
       <div>${claims.map(c => { const ev = evById(c.event_id); return `<div class="list-row"><div><div class="ev-title">${esc(userName(c.email))}</div><div class="ev-sub">${esc(ev.title)} · ${fmtDay(ev.date)} · ${going(ev.id).includes(c.email) ? 'RSVP’d' : 'Didn’t RSVP'}${c.note ? ` · “${esc(c.note)}”` : ''}</div></div>
         <div class="row" style="gap:6px"><button class="btn small" data-act="claim-ok" data-id="${ev.id}" data-email="${esc(c.email)}">Approve</button><button class="btn ghost small" data-act="claim-no" data-id="${ev.id}" data-email="${esc(c.email)}">Deny</button></div></div>`; }).join('')}</div></section>` : '';
     body = `<div class="stack" style="gap:32px">${claimsHtml}
@@ -6896,7 +6896,7 @@ function claimBox(e){
     : `<div class="notice"><span><strong>Request sent.</strong> An officer will review it${pts ? `, and you’ll get the ${pts} points once they approve it` : ''}.</span></div>`;
   return `<form class="panel stack" id="f-claim" data-id="${e.id}" style="gap:8px"><strong>Were you there but forgot to check in?</strong>
     <span class="hint">Ask an officer to add you${pts ? `. You get the ${pts} points once they approve it` : ''}. You can ask until ${fmtDay(new Date(evEndMs(e) + 7 * 864e5).toISOString().slice(0, 10))}.</span>
-    <input id="cl-note" maxlength="300" placeholder="Optional: anything that helps, like where you sat or who you talked to" aria-label="Note for the officers">
+    <label>One thing you learned or heard at the event<textarea id="cl-note" maxlength="300" required style="min-height:64px" placeholder="A sentence or two"></textarea></label>
     <div><button class="btn ghost" type="submit">I was there</button></div><div class="err" id="cl-err"></div></form>`;
 }
 function guestDone(id){ try { return JSON.parse(localStorage.getItem('wfa-guest-' + id) || 'null'); } catch(e){ return null; } }
@@ -9484,10 +9484,11 @@ async function handleSubmit(f, v, err){
 
   if (f.id === 'f-claim'){
     const id = f.dataset.id, note = v('cl-note');
+    if (note.length < 20) return err('cl-err', 'Write a sentence or two about something you learned or heard at the event.');
     const r = await sb.rpc('claim_attendance', { p_event: id, p_note: note });
     if (r.error) return err('cl-err', /claim_attendance/.test(r.error.message || '') ? 'This isn’t set up yet. Ask an officer to add you.' : errMsg(r.error));
     const msg = { signin: 'Sign in first.', missing: 'This event doesn’t take check-ins.', notover: 'This event isn’t over yet. Check in with the code on screen.',
-      late: 'It’s been more than a week since this event, so it can’t be changed.', here: 'You’re already checked in.' }[r.data];
+      late: 'It’s been more than a week since this event, so it can’t be changed.', note: 'Write a sentence or two about something you learned or heard at the event.', here: 'You’re already checked in.' }[r.data];
     if (msg) return err('cl-err', msg);
     toast('Request sent'); await load(); refreshEvent(id); return;
   }
