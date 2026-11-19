@@ -1368,10 +1368,21 @@ function viewHome(){
 function myVisits(){ return can('officer') ? (db.visits || []).filter(x => x.officer === session) : []; }
 function visitWhen(x){ return `${fmtDay(x.date)}, ${fmtTime(x.start_time)}${x.end_time ? '–' + fmtTime(x.end_time) : ''}`; }
 function visitRow(x){
-  return `<button class="ev-row" data-act="otab" data-tab="visits">${datebox(x.date)}
+  return `<button class="ev-row" data-act="visit-open" data-id="${x.id}">${datebox(x.date)}
     <div style="min-width:0"><div class="cat" style="--c:var(--gold)">Class visit</div>
       <div class="ev-title">${esc(x.course)}</div><div class="ev-sub">${fmtTime(x.start_time)}${x.end_time ? '–' + fmtTime(x.end_time) : ''}${x.room ? ' · ' + esc(x.room) : ''}${x.professor ? ' · ' + esc(x.professor) : ''}</div></div>
     <div class="going">You’re visiting</div></button>`;
+}
+// A class visit's details in a popup, like an event's (from the calendar).
+function openVisit(id){
+  const x = (db.visits || []).find(n => n.id === id); if (!x) return;
+  showModal(`<div class="modal-in"><button class="modal-x" data-act="close" aria-label="Close" style="float:right">×</button>
+    <div class="stack"><div class="cat" style="--c:var(--gold)">Class visit</div><h2 style="margin:0">${esc(x.course)}</h2>
+    <dl class="facts"><dt>When</dt><dd>${visitWhen(x)} <span class="hint">Mountain Time</span></dd>
+      ${x.room ? `<dt>Where</dt><dd>${esc(x.room)}</dd>` : ''}${x.professor ? `<dt>Professor</dt><dd>${esc(x.professor)}</dd>` : ''}
+      <dt>Officer</dt><dd>${x.officer ? esc(userName(x.officer)) : 'Open'}</dd>${x.notes ? `<dt>Notes</dt><dd style="white-space:pre-wrap">${esc(x.notes)}</dd>` : ''}</dl>
+    <span class="hint">You’ll get a reminder the morning of the visit and again two hours before.</span>
+    <div class="row" style="gap:8px">${x.officer === session && x.date >= todayIso() ? `<button class="btn ghost" data-act="visit-drop" data-id="${x.id}">Give up this visit</button>` : ''}<button class="btn ghost" data-act="visit-all">See all class visits</button></div></div></div>`, null, '', 'var(--gold)');
 }
 function monthGrid(y, mo, byDay){
   const first = new Date(y, mo, 1), start = new Date(y, mo, 1 - first.getDay());
@@ -1383,7 +1394,7 @@ function monthGrid(y, mo, byDay){
     cells += `<div class="cell ${inMonth ? '' : 'out'} ${inMonth && k === todayIso() ? 'today' : ''}">
       <span class="num">${d.getDate()}</span>
       ${evs.map(e => `<button class="cal-ev" style="--c:${catVar(e.cat)}" data-act="open-event" data-id="${e.id}" title="${esc(e.title)}"><span class="t">${fmtTime(e.start).replace(':00','')}</span>${esc(e.title)}</button>`).join('')}
-      ${inMonth ? myVisits().filter(x => x.date === k).map(x => `<button class="cal-ev" style="--c:var(--gold)" data-act="otab" data-tab="visits" title="Class visit: ${esc(x.course)}"><span class="t">${fmtTime(x.start_time).replace(':00','')}</span>Class visit: ${esc(x.course)}</button>`).join('') : ''}
+      ${inMonth ? myVisits().filter(x => x.date === k).map(x => `<button class="cal-ev" style="--c:var(--gold)" data-act="visit-open" data-id="${x.id}" title="Class visit: ${esc(x.course)}"><span class="t">${fmtTime(x.start_time).replace(':00','')}</span>Class visit: ${esc(x.course)}</button>`).join('') : ''}
     </div>`;
   }
   return `<section class="stack" style="gap:10px;min-width:0"><h2>${MONTHS[mo]} ${y}</h2><div class="cal-scroll"><div class="cal">${cells}</div></div></section>`;
@@ -8677,13 +8688,15 @@ document.addEventListener('click', async ev => {
       await doOrPropose('recap', 'delete', id, { photos, row: { title: x.title } }, 'Delete recap “' + x.title + '”', 'Recap deleted'); break; }
     case 'del-arch': { const x = db.archive.find(n => n.id === id);
       await doOrPropose('archive', 'delete', id, { row: { title: x.title } }, 'Remove “' + x.title + '” from Recaps', 'Removed'); break; }
+    case 'visit-open': openVisit(id); break;
+    case 'visit-all': closeModal(); ui.officerTab = 'visits'; if (route() !== 'officer') location.hash = 'officer/visits'; else { history.pushState(null, '', ui._hash = '#officer/visits'); render(); } window.scrollTo(0, 0); break;
     case 'visit-edit': ui.visitEdit = id; render(); window.scrollTo(0, 0); break;
     case 'visit-cancel': ui.visitEdit = null; render(); break;
     case 'visit-claim': { const x = (db.visits || []).find(n => n.id === id); let taken = false;
       await act(async () => { const r = must(await sb.rpc('claim_class_visit', { p_id: id })); taken = r === 'taken';
         if (!taken) await logChange(`Claimed the class visit to ${x.course} on ${fmtDay(x.date)}`); },
         () => taken ? 'Another officer already claimed that one' : 'It’s yours. It’s on your calendar now'); break; }
-    case 'visit-drop': { const x = (db.visits || []).find(n => n.id === id);
+    case 'visit-drop': { const x = (db.visits || []).find(n => n.id === id); closeModal();
       await act(async () => { must(await sb.from('class_visits').update({ officer: null }).eq('id', id).eq('officer', session));
         await logChange(`Gave up the class visit to ${x.course} on ${fmtDay(x.date)}`); }, 'The visit is open again'); break; }
     case 'visit-del': { const x = (db.visits || []).find(n => n.id === id);
