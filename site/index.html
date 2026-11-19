@@ -142,7 +142,7 @@ p{margin:0}
 }
 .linklike{font:inherit;background:none;border:0;padding:0;color:var(--brand-text);text-decoration:underline;text-underline-offset:2px;cursor:pointer;text-align:left}
 .linklike:hover{text-decoration-thickness:2px}
-.navmenu.main{width:min(320px,calc(100vw - 16px));max-height:calc(100vh - 76px)}
+.navmenu.main{width:min(320px,calc(100vw - 16px));max-height:calc(100vh - 76px);max-height:calc(100dvh - 76px);overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .navmenu.main a{padding:11px 14px;font-size:1rem}
 .navmenu.main a[aria-current="page"]{background:var(--tint)}
 .foot-links{display:flex;flex-wrap:wrap;gap:6px 18px}
@@ -6771,8 +6771,11 @@ function closeNavMenu(){
   m.hidden = true;
   document.querySelectorAll('[data-act="nav-menu"]').forEach(b => b.setAttribute('aria-expanded', 'false'));
 }
-window.addEventListener('resize', closeNavMenu);
-window.addEventListener('scroll', closeNavMenu, { passive: true });
+// The phone Menu stays open while you scroll it. (On a phone, scrolling also hides the browser's address bar, which
+// counts as a resize, so only a change in width closes a menu.)
+let navMenuW = window.innerWidth;
+window.addEventListener('resize', () => { if (window.innerWidth !== navMenuW){ navMenuW = window.innerWidth; closeNavMenu(); } });
+window.addEventListener('scroll', () => { if ((document.getElementById('navmenu') || {}).dataset?.for !== 'main') closeNavMenu(); }, { passive: true });
 
 // Each event has its own page (#event/<id>) to link to or put on a QR code. The calendar opens the same content in a pop-up.
 // A check-in QR adds the code (#event/<id>/<code>) so it's filled in for people who scan it at the event.
