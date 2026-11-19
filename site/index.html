@@ -9084,8 +9084,8 @@ function mailDraftsPanel(){
       d.status === 'sending' ? '' : `<button class="btn ghost small" data-act="mdraft-edit" data-id="${d.id}">Edit</button>${armBtn('mds-' + d.id, 'Cancel send', 'Click again to cancel it', 'mdraft-cancel', d.id)}`)).join('')}` : ''}
     ${drafts.length ? `<strong>Drafts</strong>${drafts.map(d => row(d, `${d.status === 'failed' ? `<span class="tag warn">Didn’t send${d.detail ? ': ' + esc(d.detail) : ''}</span> · ` : ''}Saved ${fmtMtStamp(Date.parse(d.updated_at))} by ${who(d)}`,
       `<button class="btn ghost small" data-act="mdraft-open" data-id="${d.id}">${ui.mailDraftId === d.id ? 'Open (editing)' : 'Open'}</button>${delBtn('mdd-' + d.id, 'Delete', 'mdraft-del', d.id)}`)).join('')}` : ''}
-    ${sent.length ? `<strong>Recently sent</strong>${sent.map(d => d.auto ? autoRow(d) : row(d, `Sent ${fmtMtStamp(Date.parse(d.sent_at))} to ${d.sent_count} ${d.sent_count === 1 ? 'person' : 'people'}${stats(d)}${d.detail ? ' · ' + esc(d.detail) : ''}`,
-      `<button class="btn ghost small" data-act="mdraft-copy" data-id="${d.id}">Use as a new draft</button>`)).join('')}` : ''}
+    ${sent.length ? `<details class="guest-opt" ${ui.mailSentOpen ? 'open' : ''} ontoggle="ui.mailSentOpen = this.open"><summary>Recently sent (${sent.length})</summary>${sent.map(d => d.auto ? autoRow(d) : row(d, `Sent ${fmtMtStamp(Date.parse(d.sent_at))} to ${d.sent_count} ${d.sent_count === 1 ? 'person' : 'people'}${stats(d)}${d.detail ? ' · ' + esc(d.detail) : ''}`,
+      `<button class="btn ghost small" data-act="mdraft-copy" data-id="${d.id}">Use as a new draft</button>`)).join('')}</details>` : ''}
   </section>`;
 }
 async function sendMail(){
