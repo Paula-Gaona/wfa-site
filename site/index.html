@@ -133,7 +133,9 @@ p{margin:0}
 .off-drop[open]>summary::after{content:'▴'}
 .off-drop>.off-nav{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:8px;margin-top:6px}
 @media (min-width:1000px){
-  .off-layout{display:grid;grid-template-columns:232px minmax(0,1fr);gap:36px;align-items:start}
+  .off-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;align-items:start}
+  #app.with-side{max-width:none;padding-left:10px}
+  #app.with-side .off-main{max-width:1500px}
   .off-drop{display:none}
   .off-side{display:block;position:sticky;top:calc(var(--head-h, 110px) + 14px);max-height:calc(100vh - var(--head-h, 110px) - 28px);overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:8px}
   .off-title{font-family:var(--serif);font-weight:700;font-size:1.05rem;color:var(--brand-text);padding:6px 10px 2px}
@@ -8200,6 +8202,7 @@ function render(){
   renderChrome(r);
   const app = document.getElementById('app'), side = app.querySelector('.off-side'), sideAt = side ? side.scrollTop : 0;
   app.innerHTML = officerShell(VIEWS[r](), r);
+  app.classList.toggle('with-side', !!app.querySelector('.off-side'));   // the sidebar sits at the left edge of the screen
   if (sideAt && app.querySelector('.off-side')) app.querySelector('.off-side').scrollTop = sideAt;
   requestAnimationFrame(markLongBios);   // officer cards: show 'See more' on bios that are cut off
   addPasswordToggles(); syncCaseBox(); afterChatRender(); updateTabBadge();
