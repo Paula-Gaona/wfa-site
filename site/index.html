@@ -120,6 +120,26 @@ p{margin:0}
 .safebar .wrap{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding-block:8px}
 .who{display:flex;align-items:center;gap:10px;margin-left:auto}
 .who .who-more{display:none}
+.nav-toggle{display:none!important}
+.linklike{font:inherit;background:none;border:0;padding:0;color:var(--brand-text);text-decoration:underline;text-underline-offset:2px;cursor:pointer;text-align:left}
+.linklike:hover{text-decoration-thickness:2px}
+.navmenu.main{width:min(320px,calc(100vw - 16px));max-height:calc(100vh - 76px)}
+.navmenu.main a{padding:11px 14px;font-size:1rem}
+.navmenu.main a[aria-current="page"]{background:var(--tint)}
+.foot-links{display:flex;flex-wrap:wrap;gap:6px 18px}
+.foot-links a{color:inherit;font-weight:600}
+@media (max-width:760px){
+  .nav{display:none!important}
+  .nav-toggle{display:inline-flex!important}
+  .head-in{flex-wrap:nowrap!important;gap:8px!important;padding-block:8px!important}
+  .site-head .seal{width:2.4rem!important;height:2.4rem!important}
+  .site-head .brand{min-width:0;gap:8px}
+  .site-head .brand-name{font-size:.78rem!important;letter-spacing:.06em!important}
+  .site-head .brand-name small{font-size:.5rem!important;letter-spacing:.18em!important}
+  .who .hide-m,.who [data-act="install-any"],.who [data-act="app-refresh"]{display:none!important}
+  .cal .cell[data-act]{cursor:pointer}
+  .cal .cell[data-act] .cal-ev{pointer-events:none}
+}
 @media (max-width:760px){
   .who{gap:6px}
   .who .seg-toggle,.who [data-act="member-view"],.who .name,.who .role,.who [data-act="signout"]{display:none}
@@ -657,7 +677,8 @@ h3{font-family:var(--serif);font-weight:700;font-size:1.4rem;letter-spacing:.01e
     <p class="muted" id="boot-msg">Loading club events and announcements…</p>
   </section>
 </main>
-<footer><div class="wrap row" style="justify-content:space-between">
+<footer><div class="wrap" style="margin-bottom:12px"><nav class="foot-links" aria-label="Footer"><a href="#calendar">Calendar</a><a href="#jobs">Jobs</a><a href="#signup">Join</a><a href="#partners">Partner with us</a><a href="#contact">Contact</a></nav></div>
+<div class="wrap row" style="justify-content:space-between">
   <span>Wolverine Finance Association · A department organization of the Woodbury School of Business, Utah Valley University</span>
   <span class="row" style="gap:12px;align-items:center"><span id="foot-install"></span><span id="foot-role"></span></span>
 </div></footer>
@@ -1172,10 +1193,16 @@ function pendingRsvp(){ try { return sessionStorage.getItem('wfa-pending'); } ca
 function setPendingRsvp(id){ ui._pending = id; try { id ? sessionStorage.setItem('wfa-pending', id) : sessionStorage.removeItem('wfa-pending'); } catch(e){} }
 
 /* ---------- Chrome: nav, ticker ---------- */
-function renderChrome(route){
-  const links = [['home','Home'],['calendar','Calendar'],['recaps','Recaps'],['officers','Officers'],['about','About'],['resources','Resources'],['jobs','Jobs'],['programs','Early programs'],['partners','Partner with us'],['contact','Contact']];
+// The main pages (the header row on a computer, the Menu button on a phone). Recaps shows once there's one to read.
+function navLinks(){
+  const links = [['home','Home'],['calendar','Calendar'],['recaps','Recaps'],['officers','Officers'],['about','About'],['resources','Resources'],['jobs','Jobs'],['programs','Early programs'],['partners','Partner with us'],['contact','Contact']]
+    .filter(([r]) => r !== 'recaps' || can('officer') || (db.recaps || []).length || (db.archive || []).length);
   if (appsOpen()) links.push(['apply','Apply']);
-  const mem = [['leaderboard','Leaderboard'],['availability','Availability'],['messages','Messages'],['account','My account']];
+  return links;
+}
+const NAV_MEM = [['leaderboard','Leaderboard'],['availability','Availability'],['messages','Messages'],['account','My account']];
+function renderChrome(route){
+  const links = navLinks(), mem = NAV_MEM;
   const staff = [];
   if (can('officer')) staff.push(['officer','Officer tools']);
   if (can('admin')) staff.push(['admin','Admin']);
@@ -1186,7 +1213,8 @@ function renderChrome(route){
   const u = me(), r = role();
   document.getElementById('who').innerHTML = u
     ? `${isStaff() && !ui.memberView ? `<span class="seg-toggle" role="group" aria-label="Edit or safe view"><button data-act="safe-view" data-mode="edit" aria-pressed="${!ui.safeView}" title="Make changes">Edit</button><button data-act="safe-view" data-mode="safe" aria-pressed="${!!ui.safeView}" title="Look around without changing anything">Safe</button></span>` : ''}${isStaff() ? `<button class="btn on-dark ${ui.memberView ? '' : 'ghost'} small" data-act="member-view" aria-pressed="${!!ui.memberView}">${ui.memberView ? 'Member view: on' : 'Member view'}</button>` : ''}<span class="name">${esc(u.first)}</span><span class="role ${r}">${r}</span><button class="btn on-dark ghost small" data-act="signout">Sign out</button><button class="btn on-dark ghost small who-more" data-act="who-menu" aria-label="Account menu">☰</button>`
-    : `<a class="btn on-dark ghost small" href="#signin">Sign in</a><a class="btn on-dark small" href="#signup">Join</a>`;
+    : `<a class="btn on-dark ghost small hide-m" href="#signin">Sign in</a><a class="btn on-dark small" href="#signup">Join</a>`;
+  document.getElementById('who').insertAdjacentHTML('beforeend', `<button class="btn on-dark ghost small nav-toggle" data-act="nav-menu" data-menu="main" aria-haspopup="true" aria-expanded="false">☰ Menu</button>`);
   document.getElementById('who').insertAdjacentHTML('afterbegin', appHeaderBtn() + (u ? `<button class="btn on-dark ghost small bell" data-act="notify-settings" title="Notification settings" aria-label="Notification settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></button>` : ''));
   const bar = document.getElementById('safebar');
   bar.hidden = !(ui.safeView && isStaff()) && !testRole;
@@ -1251,6 +1279,7 @@ function todayBar(){
   }).join('');
 }
 function gate(need){
+  if (!session) setReturnTo(location.hash.slice(1));   // after signing in, come back to this page (links in emails land here)
   if (!session) return `<div class="view"><div class="lock"><span>This page is for members. Sign in or join to see it.</span><div class="row"><a class="btn small ghost" href="#signup">Join</a><a class="btn small" href="#signin">Sign in</a></div></div></div>`;
   return `<div class="view"><div class="lock"><span>This page is for ${need}s. Your account is on the ${role()} list.</span><a class="btn small" href="#home">Go home</a></div></div>`;
 }
@@ -1360,11 +1389,11 @@ function viewHome(){
         <p class="muted" style="margin:0">Work in finance? Speak to students, host an office visit, judge a case competition, recruit from our resume book, or sponsor an event. Whether you have an hour or a recruiting season, there’s a way to get involved.</p></div>
       <a class="btn ghost" href="#partners">Get involved</a>
     </section>
-    <div class="home-cols">
-      <section class="stack">
+    <div class="home-cols" ${db.announcements.length || can('officer') ? '' : 'style="grid-template-columns:1fr"'}>
+      ${db.announcements.length || can('officer') ? `<section class="stack">
         <div class="section-head"><h2>Announcements</h2>${can('officer')?'<a href="#officer" data-tab="announcements">Write one</a>':''}</div>
         <div>${annList(4)}</div>
-      </section>
+      </section>` : ''}
       <section class="stack">
         <div class="section-head"><h2>Coming up</h2><a href="#calendar">Full calendar</a></div>
         <div class="ev-list">${upcoming().slice(0,4).map(evRow).join('') || '<div class="empty">No events scheduled yet.</div>'}</div>
@@ -1403,7 +1432,8 @@ function monthGrid(y, mo, byDay){
   for (let i = 0; i < weeks * 7; i++){
     const d = new Date(start); d.setDate(start.getDate() + i);
     const k = iso(d), inMonth = d.getMonth() === mo, evs = inMonth ? byDay[k] || [] : [];
-    cells += `<div class="cell ${inMonth ? '' : 'out'} ${inMonth && k === todayIso() ? 'today' : ''}">
+    const dayVisits = inMonth ? myVisits().filter(x => x.date === k) : [];
+    cells += `<div class="cell ${inMonth ? '' : 'out'} ${inMonth && k === todayIso() ? 'today' : ''}" ${evs.length || dayVisits.length ? `data-act="cal-day" data-d="${k}"` : ''}>
       <span class="num">${d.getDate()}</span>
       ${evs.map(e => `<button class="cal-ev" style="--c:${catVar(e.cat)}" data-act="open-event" data-id="${e.id}" title="${esc(e.title)}"><span class="t">${fmtTime(e.start).replace(':00','')}</span>${esc(e.title)}</button>`).join('')}
       ${inMonth ? myVisits().filter(x => x.date === k).map(x => `<button class="cal-ev" style="--c:var(--gold)" data-act="visit-open" data-id="${x.id}" title="Class visit: ${esc(x.course)}"><span class="t">${fmtTime(x.start_time).replace(':00','')}</span>Class visit: ${esc(x.course)}</button>`).join('') : ''}
@@ -1523,7 +1553,8 @@ function viewContact(){
     <div class="auth-form"><h2>Question sent</h2><p>Have another one?</p><div class="row"><button class="btn" data-act="q-again">Ask another question</button><a class="btn ghost" href="#home">Back to home</a></div></div></div></div>`;
   return `<div class="view"><div class="auth">
     <div class="auth-side"><div class="stack"><div class="eyebrow">Contact</div><h2>Ask us anything</h2>
-      <p>Questions about joining, events, officer applications, or recruiting? Send them here and an officer will email you back.</p></div>
+      <p>Questions about joining, events, officer applications, or recruiting? Send them here and an officer will email you back.</p>
+      <p>Work in finance and want to speak, host a visit, or recruit? <a href="#partners" style="color:inherit;font-weight:700">Partner with us</a>.</p></div>
       <p style="opacity:.8;font-size:.9rem">You don’t need an account. Check your spam or junk folder for our reply.</p></div>
     <form class="auth-form" id="f-question" novalidate>
       <h2>Send a question</h2>
@@ -2191,6 +2222,8 @@ function jobImportTable(){
 const jobFindText = j => [j.title, j.company, j.descr, j.officer_notes, JOB_KINDS[j.kind], j.remote ? 'Remote' : '', ...(j.careers || []).map(jobCareerName), ...(j.semesters || []), ...(j.states || []).flatMap(x => [x, JOB_STATES[x]])].filter(Boolean).join(' ').toLowerCase();
 // Past this many year-round employers the list shortens to the first few (fewer on phones) with a button to show them all.
 const JOB_EMP_MAX = 6;
+// Openings show this many at a time, with a "Show more" button.
+const JOB_PAGE = 20;
 function jobLists(){
   const f = jobFilters(), all = db.jobs || [], off = can('officer'), today = todayIso();
   const isPast = j => !!j.closes_on && j.closes_on < today, inUtah = j => (j.states || []).includes('UT');
@@ -2206,9 +2239,10 @@ function jobLists(){
       <div class="job-emp-grid${empLong && !ui.jobEmpAll ? ' short' : ''}">${employers.map(jobRow).join('')}</div>
       ${empLong ? `<div><button class="btn ghost small" data-act="job-emp-toggle">${ui.jobEmpAll ? 'Show fewer employers' : `Show all ${employers.length} employers`}</button></div>` : ''}</section>` : ''}
     <section class="stack" style="gap:10px"><div class="section-head"><h2>Openings</h2><span class="muted">${jobs.length} ${jobs.length === 1 ? 'listing' : 'listings'}${filtered ? ' · <button class="btn ghost small" data-act="job-clear">Clear filters</button>' : ''}</span></div>
-      ${jobs.map(jobRow).join('') || `<div class="empty">${filtered ? 'No openings match right now.' : 'No openings posted yet. Check back soon.'}</div>`}</section>`;
+      ${jobs.slice(0, ui.jobShown || JOB_PAGE).map(jobRow).join('') || `<div class="empty">${filtered ? 'No openings match right now.' : 'No openings posted yet. Check back soon.'}</div>`}
+      ${jobs.length > (ui.jobShown || JOB_PAGE) ? `<div class="row" style="gap:10px;align-items:center"><button class="btn ghost" data-act="job-more">Show ${Math.min(JOB_PAGE, jobs.length - (ui.jobShown || JOB_PAGE))} more</button><span class="muted">Showing ${ui.jobShown || JOB_PAGE} of ${jobs.length}. Search or filter to narrow it down.</span></div>` : ''}</section>`;
 }
-document.addEventListener('input', e => { if (e.target.id === 'job-q'){ jobFilters().q = e.target.value; const box = document.getElementById('job-lists'); if (box) box.innerHTML = jobLists(); } });
+document.addEventListener('input', e => { if (e.target.id === 'job-q'){ ui.jobShown = JOB_PAGE; jobFilters().q = e.target.value; const box = document.getElementById('job-lists'); if (box) box.innerHTML = jobLists(); } });
 function viewJobs(){
   const f = jobFilters(), all = db.jobs || [], off = can('officer');
   // Only places that have a listing, so the list stays short.
@@ -2216,6 +2250,7 @@ function viewJobs(){
   return `<div class="view">
     <section class="page-head"><div class="eyebrow">Careers</div><h1 class="page">Jobs and internships</h1>
       <p class="muted">Finance openings for UVU students, picked out by our officers. Select a listing for the details and the link to apply. Freshman or sophomore? See <a href="#programs">Early programs</a>.</p></section>
+    ${session ? '' : `<div class="notice row" style="justify-content:space-between;align-items:center;gap:10px"><span><strong>Get openings matched to you.</strong> Members get an email every Monday with new listings picked for their year and career interests. Joining is free.</span><a class="btn small" href="#signup">Join the WFA</a></div>`}
     ${off ? `<section class="panel stack" style="gap:10px"><h3 style="margin:0">Add listings</h3>
       <div class="row" style="gap:8px"><button class="btn small" data-act="job-new">+ Add a job</button><button class="btn ghost small" data-act="job-new" data-kind="employer">+ Add a year-round employer</button>
         <button class="btn ghost small" data-act="job-template">Download template (Excel)</button>
@@ -2494,7 +2529,7 @@ function viewRecaps(){
   const loose = [...db.archive].filter(a => !a.eventId || !withRecap.has(a.eventId)).sort((a,b) => b.date.localeCompare(a.date)).filter(a => (ui.archType || 'all') === 'all' || a.type === ui.archType);
   return `<div class="view">
     <section class="page-head"><div class="eyebrow">Event recaps</div><h1 class="page">What you missed</h1>
-      <p class="muted">Notes and photos from past events${mem ? ', with the slides, recordings, and templates' : '. Members can also open the slides, recordings, and templates.'}${mem ? '' : ' <a href="#signin">Sign in</a>'}</p></section>
+      <p class="muted">Notes and photos from past events${mem ? ', with the slides, recordings, and templates' : '. Members can also open the slides, recordings, and templates.'}${mem ? '' : ' <a href="#signup">Join free</a> or <a href="#signin">sign in</a>.'}</p></section>
     ${can('officer') ? '<div class="row" style="gap:8px"><a class="btn small" href="#officer" data-tab="recaps">+ Write a recap</a><a class="btn ghost small" href="#officer" data-tab="recaps">+ Add slides or a recording</a></div>' : ''}
     <div class="stack" style="gap:32px">${list.map(r => { const e = evById(r.eventId), m = r.eventId ? mats(r.eventId) : []; return `<article class="recap">
       <div class="ann-meta">${e ? `<span class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</span><span>${esc(e.title)} · ${fmtDay(e.date)}</span>` : ''}<span>· by ${esc(userName(r.author))}</span></div>
@@ -2502,7 +2537,7 @@ function viewRecaps(){
       <p class="ann-body">${esc(r.body)}</p>
       ${r.photos.length ? `<div class="photos">${r.photos.map((p,i) => `<button data-act="photo" data-id="${r.id}" data-i="${i}" aria-label="View photo ${i+1}"><img src="${esc(p)}" alt="Photo ${i+1} from ${esc(r.title)}" loading="lazy"></button>`).join('')}</div>` : ''}
       ${mem && m.length ? `<div class="stack" style="gap:6px"><span class="hint" style="font-weight:700">From this event</span>${matLinks(m)}</div>` : ''}
-    </article>`; }).join('') || '<div class="empty">No recaps yet.</div>'}</div>
+    </article>`; }).join('') || '<div class="empty">No recaps yet. See what’s coming up on the <a href="#calendar">calendar</a>.</div>'}</div>
     ${mem && db.archive.some(a => !a.eventId || !withRecap.has(a.eventId)) ? `<section class="stack" style="gap:12px">
       <div class="section-head"><h2>Slides, recordings, and templates</h2><span class="muted">Members only</span></div>
       <div class="filters">${[['all','All'], ...Object.entries(ARCH)].map(([k,l]) => `<button class="chip" aria-pressed="${(ui.archType || 'all')===k}" data-act="arch-type" data-type="${k}">${l}</button>`).join('')}</div>
@@ -2788,7 +2823,7 @@ function viewLeaderboard(){
     <div class="tiles">${Object.entries(PTS).filter(([,v]) => v).map(([k,v]) => `<div class="tile"><span class="v">${v}</span><span class="l">${catName(k)}</span></div>`).join('')}</div>
     ${db.settings.lbSince ? `<p class="hint" style="margin:0">This season started ${fmtDay(iso(new Date(db.settings.lbSince)))}. Past seasons are below.</p>` : ''}
     <div class="table-wrap"><table><thead><tr><th class="num">Rank</th><th>Member</th><th>Major</th><th class="num">Events</th><th class="num">Points</th></tr></thead><tbody>
-      ${lb.map((x,i) => `<tr class="${x.u.email===session?'me':''}"><td class="num"><span class="rank">${tiedRank(lb, i, y => y.pts)}</span></td><td>${x.anon && x.u.email !== session && !can('officer') ? 'Anonymous Member' : esc(x.u.first) + ' ' + esc(x.u.last)}${x.u.email===session ? ' (you' + (x.anon ? ', shown to others as Anonymous Member' : '') + ')' : x.anon && can('officer') ? ' <span class="tag">Anonymous to members</span>' : ''}</td><td>${x.anon && x.u.email !== session && !can('officer') ? '' : esc(x.u.major)}</td><td class="num">${x.n}</td><td class="num">${x.pts}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No members yet.</td></tr>'}
+      ${lb.map((x,i) => `<tr class="${x.u.email===session?'me':''}"><td class="num"><span class="rank">${tiedRank(lb, i, y => y.pts)}</span></td><td>${x.anon && x.u.email !== session && !can('officer') ? 'Anonymous Member' : memberLink(x.u.email, x.u.first + ' ' + x.u.last)}${x.u.email===session ? ' (you' + (x.anon ? ', shown to others as Anonymous Member' : '') + ')' : x.anon && can('officer') ? ' <span class="tag">Anonymous to members</span>' : ''}</td><td>${x.anon && x.u.email !== session && !can('officer') ? '' : esc(x.u.major)}</td><td class="num">${x.n}</td><td class="num">${x.pts}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No members yet.</td></tr>'}
     </tbody></table></div>
     ${lbHistorySection()}
   </div>`;
@@ -3107,7 +3142,7 @@ function viewAuth(mode){
       </div>
       ${majorPicker('su', ui.picks.su || [], '')}
       ${yearSelect('su', '')}
-      ${careerChecklist('su', [])}
+      ${careerChecklist('su', [], true)}
       <label class="check"><input type="checkbox" id="su-lb" checked> Show my name on the leaderboard <span class="hint">(uncheck to appear as “Anonymous Member”)</span></label>
       <label class="check"><input type="checkbox" id="su-mail" checked> Email me about club events and announcements <span class="hint">(you’ll still get account emails like confirmations and password resets)</span></label>
       <label>Preferred email<input id="su-email" type="email" autocomplete="email" required><span class="hint">We’ll email you a link to confirm your account. If you’re an officer, use the email on the officer list.</span></label>
@@ -3215,7 +3250,10 @@ function majorEditForm(u){
 /* ---------- Career interests checklist (careers come from the Resources page) ---------- */
 const NOT_SURE = 'Not sure yet';
 // Each career shows its summary, with pay, hours, and how to get in a click away (the same info as the Resources page).
-function careerChecklist(p, selected){
+// tucked: on the sign-up form the list starts closed, so the form is short.
+function careerChecklist(p, selected, tucked){
+  if (tucked) return `<details class="guest-opt"><summary>Add your career interests (optional)</summary>
+    <div style="margin-top:10px"><span class="hint">This helps us match you with events and job openings. You can also add or change these later in My account.</span>${careerChecklist(p, selected)}</div></details>`;
   const sel = selected || [], box = t => `<label class="check"><input type="checkbox" class="${p}-int" value="${esc(t)}" ${sel.includes(t) ? 'checked' : ''}> ${esc(t)}</label>`;
   const opt = c => `<div class="career-opt">${box(c.title)}
     ${c.summary ? `<span class="hint">${esc(c.summary)}</span>` : ''}
@@ -3945,9 +3983,35 @@ function attendanceStats(e){
   const extra = (db.headcount || {})[e.id] || 0;
   return { rsvp: r.length, came: a.length + extra, extra, showed: showed.length, walkins: a.filter(x => !r.includes(x)), noshows: r.filter(x => !a.includes(x)), rate: r.length ? Math.round(showed.length / r.length * 100) : null };
 }
+// A member's name: for officers, a link that opens their account in a popup.
+function memberLink(email, name){
+  return can('officer') && email && db.users.some(u => u.email === email) ? `<button type="button" class="linklike" data-act="member-open" data-email="${esc(email)}">${esc(name)}</button>` : esc(name);
+}
+// Officers: one member's account at a glance (profile, points, and the events they came to).
+function openMember(email){
+  const u = db.users.find(x => x.email === email); if (!u || !can('officer')) return;
+  const lb = leaderboard(), i = lb.findIndex(x => x.u.email === email), today = todayIso();
+  const went = sortedEvents().filter(e => attended(e.id).includes(email) && e.cat !== 'officer_meeting').reverse();
+  const coming = upcoming().filter(e => going(e.id).includes(email) && e.cat !== 'officer_meeting');
+  const fact = (k, v) => v ? `<dt>${k}</dt><dd>${v}</dd>` : '';
+  const evLine = e => `<div class="list-row"><div style="min-width:0"><div class="ev-title">${esc(e.title)}</div><div class="ev-sub">${fmtDay(e.date)} · ${catName(e.cat)}</div></div>${evPts(e) && e.date <= today ? `<div class="muted">${evPts(e)} pts</div>` : ''}</div>`;
+  showModal(`<div class="modal-in"><button class="modal-x" data-act="close" aria-label="Close" style="float:right">×</button>
+    <div class="stack"><div class="cat">Member <span class="role ${roleOf(email)}">${roleOf(email)}</span></div><h2 style="margin:0">${esc(u.first)} ${esc(u.last)}</h2>
+    <dl class="facts">
+      ${fact('Email', `${esc(u.email)} <button class="btn ghost small" data-act="copy" data-text="${esc(u.email)}" data-label="email">Copy</button>`)}
+      ${fact('UVU ID', esc(u.uvuid || ''))}${fact('Year', esc(u.year))}${fact('Major', esc(u.major))}${fact('Minor', esc(u.minor))}
+      ${fact('Interests', esc((u.interests || []).join(', ')))}
+      ${fact('Joined', u.joined ? fmtDay(String(u.joined).slice(0, 10)) : '')}
+      ${fact('Leaderboard', i >= 0 ? `Rank ${tiedRank(lb, i, y => y.pts)} of ${lb.length} · ${lb[i].pts} points${u.lbPublic === false ? ' · shown to members as Anonymous' : ''}` : 'Not ranked (officers and admins aren’t)')}
+      ${fact('Club emails', u.emailOptIn === false ? 'Turned off' : 'On')}
+    </dl>
+    ${coming.length ? `<div class="stack" style="gap:4px"><strong>RSVP’d to (${coming.length})</strong><div>${coming.map(evLine).join('')}</div></div>` : ''}
+    <div class="stack" style="gap:4px"><strong>Events attended (${went.length})</strong><div>${went.map(evLine).join('') || '<div class="empty">None yet.</div>'}</div></div>
+    <div class="row" style="gap:8px"><button class="btn ghost" data-act="member-find" data-email="${esc(email)}">Find in the Members list</button></div></div></div>`);
+}
 function memberTable(rows){
   return `<div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Major(s)</th><th>UVU ID</th><th>Role</th><th class="num">Events</th>${DUES_ENABLED ? '<th>Dues</th>' : ''}${can('admin') ? '<th></th>' : ''}</tr></thead><tbody>
-    ${rows.map(u => `<tr><td>${esc(u.first)} ${esc(u.last)}</td><td>${esc(u.email)}</td><td>${esc(u.major)}${u.minor ? `<div class="hint">Minor: ${esc(u.minor)}</div>` : ''}${u.year ? `<div class="hint">${esc(u.year)}</div>` : ''}${(u.interests || []).length ? `<div class="hint">Interests: ${esc(u.interests.join(', '))}</div>` : ''}</td><td class="num">${esc(u.uvuid)}</td><td><span class="role ${roleOf(u.email)}">${roleOf(u.email)}</span></td><td class="num">${attendCount(u.email)}</td>${DUES_ENABLED ? `<td>${duesOf(u.email)}</td>` : ''}${can('admin') ? `<td>${u.email === session ? '' : `<div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn ghost small" data-act="change-status" data-id="${esc(u.email)}">${roleOf(u.email) === 'member' ? 'Make officer' : 'Change role'}</button>${delBtn('mem-' + u.email, 'Remove', 'rm-member', u.email)}</div>`}</td>` : ''}</tr>`).join('') || '<tr><td colspan="7" class="muted">No members yet.</td></tr>'}
+    ${rows.map(u => `<tr><td>${memberLink(u.email, u.first + ' ' + u.last)}</td><td>${esc(u.email)}</td><td>${esc(u.major)}${u.minor ? `<div class="hint">Minor: ${esc(u.minor)}</div>` : ''}${u.year ? `<div class="hint">${esc(u.year)}</div>` : ''}${(u.interests || []).length ? `<div class="hint">Interests: ${esc(u.interests.join(', '))}</div>` : ''}</td><td class="num">${esc(u.uvuid)}</td><td><span class="role ${roleOf(u.email)}">${roleOf(u.email)}</span></td><td class="num">${attendCount(u.email)}</td>${DUES_ENABLED ? `<td>${duesOf(u.email)}</td>` : ''}${can('admin') ? `<td>${u.email === session ? '' : `<div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn ghost small" data-act="change-status" data-id="${esc(u.email)}">${roleOf(u.email) === 'member' ? 'Make officer' : 'Change role'}</button>${delBtn('mem-' + u.email, 'Remove', 'rm-member', u.email)}</div>`}</td>` : ''}</tr>`).join('') || '<tr><td colspan="7" class="muted">No members yet.</td></tr>'}
   </tbody></table></div>`;
 }
 
@@ -8073,8 +8137,14 @@ async function showCode(id, fresh){
 /* ---------- Render ---------- */
 const VIEWS = { home:viewHome, calendar:viewCalendar, recaps:viewRecaps, officers:viewOfficers, about:viewAbout, resources:viewResources, jobs:viewJobs, programs:viewPrograms,
   archive:viewRecaps, leaderboard:viewLeaderboard, account:viewAccount, apply:viewApply, availability:viewAvailability,
-  contact:viewContact, partners:viewPartners, event:viewEvent, checkin:viewCheckin, survey:viewSurvey, messages:viewMessages, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin };
-function route(){ const r = location.hash.slice(1).split('/')[0]; return VIEWS[r] ? r : 'home'; }
+  contact:viewContact, partners:viewPartners, event:viewEvent, checkin:viewCheckin, survey:viewSurvey, messages:viewMessages, signin:() => viewAuth('signin'), signup:() => viewAuth('signup'), reset:viewReset, setup:viewSetup, officer:viewOfficer, admin:viewAdmin, notfound:viewNotFound };
+// An address that isn't a page shows "page not found" (sign-in links from emails carry "=" and "&", and go Home).
+function route(){ const h = location.hash.slice(1), r = h.split('/')[0]; return VIEWS[r] ? r : (!r || /[=&?]/.test(h) ? 'home' : 'notfound'); }
+function viewNotFound(){
+  return `<div class="view"><div class="page-head"><div class="eyebrow">Wolverine Finance Association</div><h1 class="page">We couldn’t find that page</h1>
+    <p class="muted">The link may be mistyped or out of date.</p></div>
+    <div class="row" style="gap:8px"><a class="btn" href="#home">Go to the home page</a><a class="btn ghost" href="#calendar">See the calendar</a><a class="btn ghost" href="#contact">Contact us</a></div></div>`;
+}
 // Officer and admin tabs live in the address (#officer/stats, #admin/applications), so a refresh,
 // a bookmark, or the back button lands on the same tab.
 const TAB_KEY = { officer: ['officerTab', OFFICER_TABS], admin: ['adminTab', ADMIN_TABS] };
@@ -8300,9 +8370,16 @@ document.addEventListener('click', async ev => {
       const m = document.getElementById('navmenu'), which = t.dataset.menu;
       if (!m.hidden && m.dataset.for === which){ closeNavMenu(); break; }
       closeNavMenu();
-      const counts = tabCounts(which);
+      const counts = which === 'main' ? {} : tabCounts(which);
       const item = ([k,l]) => `<a role="menuitem" href="#${which}" data-tab="${k}"><span>${l}</span>${dot(counts[k])}</a>`;
-      m.innerHTML = which === 'admin' ? ADMIN_TABS.map(item).join('')
+      // Phones: every page in one list, since the header row of links is hidden there.
+      const cur = route(), page = ([r, l], extra = '') => `<a role="menuitem" href="#${r}" ${cur === r ? 'aria-current="page"' : ''}><span>${l}</span>${extra}</a>`;
+      m.classList.toggle('main', which === 'main');
+      m.innerHTML = which === 'main' ? navLinks().map(x => page(x)).join('')
+          + (can('member') ? '<div class="nm-head">Members</div>' + NAV_MEM.map(x => page(x, x[0] === 'account' ? dot(pendingSurveys().length) : x[0] === 'messages' ? dot(chatUnread()) : '')).join('')
+            : '<div class="nm-head">Account</div>' + page(['signin', 'Sign in']) + page(['signup', 'Join (free)']))
+          + (can('officer') ? '<div class="nm-head">Officers</div>' + page(['officer', 'Officer tools'], dot(countTotal('officer'))) + (can('admin') ? page(['admin', 'Admin'], dot(countTotal('admin'))) : '') : '')
+        : which === 'admin' ? ADMIN_TABS.map(item).join('')
         : OFFICER_GROUPS.map(([h, tabs]) => `<div class="nm-group" role="group" aria-label="${h}"><div class="nm-head">${h}</div>${tabs.map(item).join('')}</div>`).join('');
       m.classList.toggle('grouped', which !== 'admin');
       const r = t.getBoundingClientRect();
@@ -8702,6 +8779,14 @@ document.addEventListener('click', async ev => {
     case 'del-arch': { const x = db.archive.find(n => n.id === id);
       await doOrPropose('archive', 'delete', id, { row: { title: x.title } }, 'Remove “' + x.title + '” from Recaps', 'Removed'); break; }
     case 'visit-open': openVisit(id); break;
+    case 'member-open': openMember(t.dataset.email); break;
+    case 'member-find': closeModal(); ui.memberSearch = t.dataset.email; ui.officerTab = 'members'; if (route() !== 'officer') location.hash = 'officer/members'; else { history.pushState(null, '', ui._hash = '#officer/members'); render(); } window.scrollTo(0, 0); break;
+    case 'job-more': { ui.jobShown = (ui.jobShown || JOB_PAGE) + JOB_PAGE; const box = document.getElementById('job-lists'); if (box) box.innerHTML = jobLists(); break; }
+    case 'cal-day': { const d = t.dataset.d, evs = visibleEvents().filter(e => e.date === d && ui.catsOn.has(e.cat)).sort((a, b) => a.start.localeCompare(b.start)), vis = myVisits().filter(x => x.date === d);
+      if (evs.length === 1 && !vis.length) { openEvent(evs[0].id); break; }
+      if (!evs.length && vis.length === 1) { openVisit(vis[0].id); break; }
+      showModal(`<div class="modal-in"><button class="modal-x" data-act="close" aria-label="Close" style="float:right">×</button><div class="stack"><h2 style="margin:0">${fmtDay(d)}</h2><div class="ev-list">${evs.map(evRow).join('')}${vis.map(visitRow).join('')}</div></div></div>`);
+      break; }
     case 'visit-all': closeModal(); ui.officerTab = 'visits'; if (route() !== 'officer') location.hash = 'officer/visits'; else { history.pushState(null, '', ui._hash = '#officer/visits'); render(); } window.scrollTo(0, 0); break;
     case 'visit-edit': ui.visitEdit = id; render(); window.scrollTo(0, 0); break;
     case 'visit-cancel': ui.visitEdit = null; render(); break;
