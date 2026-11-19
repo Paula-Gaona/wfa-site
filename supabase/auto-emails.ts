@@ -428,6 +428,24 @@ ${lastNote}`
       }
     }
 
+    // Membership milestones (see 115-member-milestones.sql): tell every officer once each time the club passes another
+    // 50 members. Claimed in member_milestones first so it only goes out once. Works even when the event emails are off.
+    try {
+      const total = real((members || []).map((m) => m.email)).length, mark = Math.floor(total / 50) * 50;
+      if (mark >= 50) {
+        const claim = await db.from('member_milestones').insert({ count: mark }).select('count').single();
+        if (!claim.error) {
+          const { data: acc } = await db.from('access_list').select('email');
+          await tell((acc || []).map((x) => x.email), `WFA just passed ${mark} members!`,
+            `The Wolverine Finance Association now has ${total} members. Thank you for everything you do to grow the club.
+
+Next milestone: ${mark + 50} members.`,
+            'See the members', `${site}/#officer/members`, `members-${mark}`);
+          await db.from('change_log').insert({ who: 'automatic emails', text: `Told the officers WFA passed ${mark} members` });
+        }
+      }
+    } catch (_) { /* not set up yet (115-member-milestones.sql) */ }
+
     // Waitlists (see 62-rsvp-waitlist.sql): tell people who just got a seat. Works even when the event emails are off.
     const { data: promoted } = await db.from('waitlist').select('event_id, email').not('promoted_at', 'is', null).is('notified_at', null).limit(200);
     if (promoted?.length) {
