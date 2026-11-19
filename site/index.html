@@ -834,6 +834,7 @@ async function load(){
     headcount: off && t('event_headcount'),
     claims: signed && t('attendance_claims'),
     visits: off && t('class_visits'),
+    linkClicks: off && t('event_link_clicks'),
     rolePresets: off && sb.from('role_presets').select('roles').eq('id', 1).maybeSingle(),
     caseBoard: signed && sb.rpc('case_board'),
     chats: signed && sb.rpc('my_chats'),
@@ -913,6 +914,7 @@ async function load(){
   db.memberPts = {}; (Array.isArray(R.memberPts) ? R.memberPts : []).forEach(x => db.memberPts[x.email] = x.points);
   db.rolePresets = R.rolePresets && Array.isArray(R.rolePresets.roles) ? R.rolePresets.roles : null;
   db.claims = Array.isArray(R.claims) ? R.claims : [];
+  db.linkClicks = Array.isArray(R.linkClicks) ? R.linkClicks : [];
   db.visits = (Array.isArray(R.visits) ? R.visits : []).sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time));
   db.headcount = {}; (Array.isArray(R.headcount) ? R.headcount : []).forEach(x => db.headcount[x.event_id] = +x.extra || 0);
   db.roles = {}; db.roleSeats = {}; (Array.isArray(R.eventRoles) ? R.eventRoles : []).forEach(x => { db.roles[x.event_id] = Array.isArray(x.roles) ? x.roles : []; db.roleSeats[x.event_id] = !!x.count_seats; });
@@ -1098,8 +1100,16 @@ function dressHint(){
   const d = DRESS[sel.value]; h.textContent = d ? d[1] : 'No dress code shown on the event.';
 }
 function hostLabel(e){ return e.host ? 'Hosted by ' + e.host : e.regMode === 'link' ? 'Hosted by another organization' : ''; }
+// Events run by another organization: which members clicked Register (117-link-clicks.sql). One per member per event.
+function logLinkClick(id){ if (!session) return; try { sb.rpc('log_link_click', { p_event: id }).then(() => {}, () => {}); } catch(x){} }
+function linkClicksNote(e){
+  if (e.regMode !== 'link' || !e.regUrl) return '';
+  const l = (db.linkClicks || []).filter(c => c.event_id === e.id).sort((a, b) => String(a.clicked_at).localeCompare(String(b.clicked_at)));
+  return `<details class="panel"><summary style="cursor:pointer"><strong>${l.length} ${l.length === 1 ? 'member has' : 'members have'} clicked Register</strong> <span class="hint">Officers only. Each member counts once; visitors who aren’t signed in aren’t counted.</span></summary>
+    <div style="margin-top:8px">${l.map(c => `<div class="list-row"><div>${esc(userName(c.email))}</div><div class="muted">${fmtDay(String(c.clicked_at).slice(0, 10))}</div></div>`).join('') || '<div class="empty">Nobody yet.</div>'}</div></details>`;
+}
 function regLinkBtn(e){ if (e.regMode !== 'link' || !e.regUrl) return ''; let host = ''; try { host = new URL(e.regUrl).hostname.replace(/^www\./, ''); } catch(x){}
-  return `<a class="btn" href="${esc(e.regUrl)}" target="_blank" rel="noopener">Register ↗</a><span class="hint">Registration is on ${esc(host || 'another site')}. This event is run by ${esc(e.host || 'another organization')}.</span>`; }
+  return `<a class="btn" href="${esc(e.regUrl)}" target="_blank" rel="noopener" onclick="logLinkClick('${e.id}')">Register ↗</a><span class="hint">Registration is on ${esc(host || 'another site')}. This event is run by ${esc(e.host || 'another organization')}.</span>`; }
 // What members and guests see instead of the count when it's hidden: Seats open, Few seats left (under 10), or Full.
 const SEATS_LOW = 10;
 function seatLeft(e){ return e.cap ? Math.max(0, e.cap - seatsTaken(e.id)) : Infinity; }
@@ -6754,6 +6764,7 @@ function eventInner(id, page){
     ${!session && !isCase(e) && takesRsvps(e) && !hasStarted(e) && !e.draft ? (e.membersOnly ? (uvidRsvpDone(e.id) ? uvidRsvpNote(e.id) : uvidRsvp(e) + membersOnlyNote(e, 'RSVP')) : guestRsvpBox(e)) : ''}
     ${e.qaEnabled && !isPast(e) && !e.draft ? (qaOpen(e) ? qaBox(e) : `<div class="panel"><span class="muted">Questions for the ${(e.speakers || []).length > 1 ? 'guests' : 'speaker'} open when RSVPs do.</span></div>`) : ''}
     <div class="row">${action}${can('officer') ? `<span style="margin-left:auto" class="row"><button class="btn ghost small" data-act="edit-event" data-id="${id}">Edit event</button></span>` : ''}</div>
+    ${can('officer') ? linkClicksNote(e) : ''}
     ${codeBox}
     ${soonBox}
     ${can('officer') ? eventOfficerExtras(e) : ''}
