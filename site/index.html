@@ -1038,6 +1038,8 @@ function ptsText(x){ const p = x && typeof x === 'object' ? evPts(x) : (PTS[x] |
 function visibleEvents(){ const ev = db.events.filter(e => !e.draft); return can('officer') ? ev : ev.filter(e => e.cat !== 'officer_meeting'); }
 function sortedEvents(){ return [...visibleEvents()].sort((a,b) => (a.date + a.start).localeCompare(b.date + b.start)); }
 function upcoming(){ return sortedEvents().filter(e => !isPast(e)); }
+// Events that can go in a club email or newsletter: never officer meetings.
+const mailEv = e => e.cat !== 'officer_meeting';
 function heldEvents(){ return sortedEvents().filter(hasStarted).reverse(); }   // started (happening now or over)
 function going(id){ return db.rsvps[id] || []; }
 function attended(id){ return db.attendance[id] || []; }
@@ -4234,7 +4236,7 @@ function outlookButtons(to){
 }
 // Event details appended to the message for the events picked under "Add events to this email".
 function eventBlock(who){
-  const list = sortedEvents().filter(e => (ui.mail.evs || []).includes(e.id));
+  const list = sortedEvents().filter(e => mailEv(e) && (ui.mail.evs || []).includes(e.id));
   if (!list.length) return '';
   // One event goes straight in under its own title; several get an "Upcoming events" heading.
   // Seat-limited events say so (or that they're full, with the waitlist).
@@ -4451,7 +4453,7 @@ function nlJobCard(j){
 }
 function nlHtml(who){
   const u = nlUser(who), mdh = s => mdToHtml(s).replace(/color:#0f1511/g, 'color:' + NLC.ink);
-  const list = isJobsMail() ? [] : sortedEvents().filter(e => (ui.mail.evs || []).includes(e.id));
+  const list = isJobsMail() ? [] : sortedEvents().filter(e => mailEv(e) && (ui.mail.evs || []).includes(e.id));
   const big = list.filter(e => BIG_CATS.includes(e.cat)), rest = list.filter(e => !BIG_CATS.includes(e.cat));
   const body = mailBody(), closing = fillMerge(ui.mail.closing || '').trim();
   const rows = [];
@@ -6388,7 +6390,7 @@ function viewOfficer(){
           <legend>Add events to this email <span class="hint">(optional)</span></legend>
           <span class="hint">Each event’s date, time, location, and description are added below your message.</span>
           <div class="row" style="gap:6px;flex-wrap:wrap"><span class="hint">Pick:</span>${[['7', 'Next week'], ['14', 'Next 2 weeks'], ['31', 'Next month'], ['all', 'All upcoming'], ['0', 'Clear']].map(([d, l]) => `<button type="button" class="btn ghost small" data-act="ml-evs-range" data-days="${d}">${l}</button>`).join('')}</div>
-          ${upcoming().map(e => `<label class="check"><input type="checkbox" class="ml-evs" value="${e.id}" ${(ui.mail.evs || []).includes(e.id) ? 'checked' : ''}> ${fmtDay(e.date)} · ${esc(e.title)}</label>`).join('') || '<span class="hint">No upcoming events.</span>'}
+          ${upcoming().filter(mailEv).map(e => `<label class="check"><input type="checkbox" class="ml-evs" value="${e.id}" ${(ui.mail.evs || []).includes(e.id) ? 'checked' : ''}> ${fmtDay(e.date)} · ${esc(e.title)}</label>`).join('') || '<span class="hint">No upcoming events.</span>'}
         </fieldset>
         <label for="ml-closing">Conclusion <span class="hint">(optional)</span></label>
         ${fmtBar('ml-closing')}
@@ -8813,7 +8815,7 @@ document.addEventListener('click', async ev => {
         if (r.error) throw new Error(/newsletter_intro/.test(r.error.message || '') ? 'The standard intro isn\u2019t set up yet. Run 90-newsletter-intro.sql in Supabase.' : errMsg(r.error));
         await logChange('Updated the standard newsletter intro');
       }, 'Saved. New newsletters start with this intro.'); break; }
-    case 'ml-evs-range': { readMail(); const d = t.dataset.days; ui.mail.evs = d === '0' ? [] : upcoming().filter(e => d === 'all' || e.date <= dayOffset(+d)).map(e => e.id); render(); break; }
+    case 'ml-evs-range': { readMail(); const d = t.dataset.days; ui.mail.evs = d === '0' ? [] : upcoming().filter(e => mailEv(e) && (d === 'all' || e.date <= dayOffset(+d))).map(e => e.id); render(); break; }
     case 'mail-save': await saveMailDraft(); break;
     case 'mail-schedule': await scheduleMail(); break;
     case 'mail-new': ui.mailDraftId = null; ui.mail = MAIL_BLANK(); render(); break;
