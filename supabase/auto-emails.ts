@@ -444,6 +444,39 @@ ${lastNote}`
       }
     } catch (_) { /* not set up yet (115-member-milestones.sql) */ }
 
+    // Class visits (see 116-class-visits.sql): remind the officer doing a visit the morning of (7 AM) and again two
+    // hours before. A visit nobody has claimed goes to every officer instead. Each reminder is claimed on the visit
+    // first so it only goes out once. Works even when the event emails are off.
+    try {
+      const { data: visits } = await db.from('class_visits').select('*').eq('date', isoDay(Date.now()));
+      let everyone: string[] | null = null;
+      for (const v of visits || []) {
+        const at = Date.now(), start = mtMs(v.date, v.start_time);
+        if (at >= start) continue;
+        const kind = !v.soon_reminded_at && at >= start - 2 * HOUR ? 'soon'
+          : !v.soon_reminded_at && !v.day_reminded_at && at >= mtMs(v.date, '07:00') ? 'day' : '';
+        if (!kind) continue;
+        const col = kind === 'soon' ? 'soon_reminded_at' : 'day_reminded_at';
+        const claim = await db.from('class_visits').update({ [col]: new Date().toISOString() }).eq('id', v.id).is(col, null).select('id');
+        if (claim.error || !(claim.data || []).length) continue;
+        const what = `${v.course}${v.professor ? ' (' + v.professor + ')' : ''}`, time = fmtTime(start);
+        const where = `${time}${v.end_time ? ' to ' + fmtTime(mtMs(v.date, v.end_time)) : ''}${v.room ? ', ' + v.room : ''}`;
+        const notes = String(v.notes || '').trim() ? `\n\nNotes: ${String(v.notes).trim()}` : '';
+        let to: string[], subject: string, body: string, label = 'See class visits';
+        if (v.officer) {
+          to = [v.officer];
+          subject = kind === 'soon' ? `In 2 hours: class visit to ${v.course}` : `Today at ${time}: class visit to ${v.course}`;
+          body = `You're visiting ${what} today.\n\nWhen and where: ${where}${notes}\n\nCan't make it? Give it up in Officer tools -> Class visits so another officer can take it.`;
+        } else {
+          if (!everyone) { const { data: acc } = await db.from('access_list').select('email'); everyone = (acc || []).map((x) => x.email); }
+          to = everyone; label = 'Claim this visit';
+          subject = kind === 'soon' ? `Still open, in 2 hours: class visit to ${v.course}` : `Open class visit today: ${v.course} at ${time}`;
+          body = `Nobody has claimed today's class visit to ${what} yet.\n\nWhen and where: ${where}${notes}\n\nIf you can go, claim it in Officer tools -> Class visits.`;
+        }
+        await tell(to, subject, body, label, `${site}/#officer/visits`, `visit-${v.id}-${kind}`);
+      }
+    } catch (_) { /* not set up yet (116-class-visits.sql) */ }
+
     // Waitlists (see 62-rsvp-waitlist.sql): tell people who just got a seat. Works even when the event emails are off.
     const { data: promoted } = await db.from('waitlist').select('event_id, email').not('promoted_at', 'is', null).is('notified_at', null).limit(200);
     if (promoted?.length) {
