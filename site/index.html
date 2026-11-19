@@ -135,7 +135,9 @@ p{margin:0}
 @media (min-width:1000px){
   .off-layout{display:grid;grid-template-columns:232px minmax(0,1fr);gap:36px;align-items:start}
   .off-drop{display:none}
-  .off-side{display:block;position:sticky;top:132px;max-height:calc(100vh - 150px);overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:8px}
+  .off-side{display:block;position:sticky;top:calc(var(--head-h, 110px) + 14px);max-height:calc(100vh - var(--head-h, 110px) - 28px);overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:8px}
+  .off-title{font-family:var(--serif);font-weight:700;font-size:1.05rem;color:var(--brand-text);padding:6px 10px 2px}
+  .nav .menu-btn[data-menu="officer"]{display:none}
   .off-nav button{padding:7px 10px}
 }
 .linklike{font:inherit;background:none;border:0;padding:0;color:var(--brand-text);text-decoration:underline;text-underline-offset:2px;cursor:pointer;text-align:left}
@@ -6561,10 +6563,7 @@ function viewOfficer(){
     ${(() => { const list = OFFICER_GROUPS.map(([h, g]) => `<div class="nm-head">${h}</div>${g.map(([k, l]) => `<button data-act="otab" data-tab="${k}" ${T === k ? 'aria-current="page"' : ''}><span>${l}</span>${dot(counts[k])}</button>`).join('')}`).join('');
       // A sidebar on a computer; on a phone, one dropdown that shows the tool you're on.
       return `<details class="off-drop"><summary><span>${esc((OFFICER_TABS.find(([k]) => k === T) || ['', 'Officer tools'])[1])}</span><span style="margin-left:auto;font-weight:600;color:var(--muted)">All tools${dot(countTotal('officer'))}</span></summary><nav class="off-nav" aria-label="Officer tools">${list}</nav></details>
-    <div class="off-layout">
-      <nav class="off-side off-nav" aria-label="Officer tools">${list}</nav>
-      <div class="off-main" style="min-width:0">${body}</div>
-    </div>`; })()}
+    ${body}`; })()}
   </div>`;
 }
 
@@ -8180,13 +8179,25 @@ function syncTabHash(r){
   if (location.hash !== want) history.replaceState(null, '', want);
   ui._hash = want;
 }
+// Officers on a computer: Officer tools stay in a sidebar beside every page (phones use the dropdown on the Officer tools page).
+function officerShell(html, r){
+  if (!can('officer') || r === 'setup') return html;
+  const counts = tabCounts('officer'), T = r === 'officer' ? ui.officerTab : '';
+  const head = document.querySelector('.site-head');
+  document.documentElement.style.setProperty('--head-h', (head ? head.offsetHeight : 110) + 'px');
+  return `<div class="off-layout"><nav class="off-side off-nav" aria-label="Officer tools"><div class="off-title">Officer tools</div>${OFFICER_GROUPS.map(([h, g]) => `<div class="nm-head">${h}</div>${g.map(([k, l]) => `<button data-act="otab" data-tab="${k}" ${T === k ? 'aria-current="page"' : ''}><span>${l}</span>${dot(counts[k])}</button>`).join('')}`).join('')}</nav>
+    <div class="off-main" style="min-width:0">${html}</div></div>`;
+}
 function render(){
   ui.dirtyForm = false;
   if (!loaded) return;
   let r = route();
   if (session && (needsPassword() || needsProfile())) r = 'setup';   // finish the account before anything else
   syncTabHash(r);
-  renderChrome(r); document.getElementById('app').innerHTML = VIEWS[r]();
+  renderChrome(r);
+  const app = document.getElementById('app'), side = app.querySelector('.off-side'), sideAt = side ? side.scrollTop : 0;
+  app.innerHTML = officerShell(VIEWS[r](), r);
+  if (sideAt && app.querySelector('.off-side')) app.querySelector('.off-side').scrollTop = sideAt;
   requestAnimationFrame(markLongBios);   // officer cards: show 'See more' on bios that are cut off
   addPasswordToggles(); syncCaseBox(); afterChatRender(); updateTabBadge();
   if (!ui.welcomed){ ui.welcomed = true; setTimeout(maybeWelcome, 800); }
@@ -8539,7 +8550,7 @@ document.addEventListener('click', async ev => {
     case 'photo': { const r = db.recaps.find(x => x.id === id); showModal(`<div class="modal-in"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3>${esc(r.title)}</h3></div><img src="${esc(r.photos[+t.dataset.i])}" alt="" style="width:100%;border-radius:3px"></div>`, null, 'wide'); break; }
     case 'arch-type': ui.archType = t.dataset.type; render(); break;
     // pushState so the back button returns to the previous tab
-    case 'otab': ui.officerTab = t.dataset.tab; history.pushState(null, '', ui._hash = '#officer/' + ui.officerTab); render(); break;
+    case 'otab': { const was = route(); ui.officerTab = t.dataset.tab; history.pushState(null, '', ui._hash = '#officer/' + ui.officerTab); render(); if (was !== 'officer') window.scrollTo(0, 0); break; }
     case 'atab': ui.adminTab = t.dataset.tab; history.pushState(null, '', ui._hash = '#admin/' + ui.adminTab); render(); break;
     case 'edit-event': closeModal(); ui.officerTab = 'events'; ui.editEvent = id; ui.guestForm = null; ui.rq = null; if (route() !== 'officer') location.hash = 'officer'; else render(); window.scrollTo(0,0); break;
     case 'cancel-edit': ui.editEvent = null; ui.rq = null; ui.evNewCat = null; ui.ctLink = null; render(); break;
