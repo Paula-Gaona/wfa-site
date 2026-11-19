@@ -436,10 +436,8 @@ ${lastNote}`
         const claim = await db.from('member_milestones').insert({ count: mark }).select('count').single();
         if (!claim.error) {
           const { data: acc } = await db.from('access_list').select('email');
-          await tell((acc || []).map((x) => x.email), `WFA just passed ${mark} members!`,
-            `The Wolverine Finance Association now has ${total} members. Thank you for everything you do to grow the club.
-
-Next milestone: ${mark + 50} members.`,
+          await tell((acc || []).map((x) => x.email), `\u{1F389} We did it: ${mark} members!`,
+            `Time to celebrate! The Wolverine Finance Association just passed ${mark} members, and we're now ${total} strong. \u{1F973}\n\nEvery event you planned, every flyer you posted, and every student you invited got us here. This one belongs to the whole officer team. Thank you!\n\nNext stop: ${mark + 50} members. Let's go! \u{1F680}`,
             'See the members', `${site}/#officer/members`, `members-${mark}`);
           await db.from('change_log').insert({ who: 'automatic emails', text: `Told the officers WFA passed ${mark} members` });
         }
