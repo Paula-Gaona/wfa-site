@@ -109,6 +109,7 @@ p{margin:0}
 .navmenu a{color:var(--ink);text-decoration:none;padding:9px 12px;border-radius:4px;font-weight:600}
 .navmenu a:hover,.navmenu a:focus-visible{background:var(--tint);outline:none}
 .navmenu.grouped{display:block;width:max-content;min-width:0;max-width:calc(100vw - 16px);max-height:min(420px,calc(100vh - 90px));overflow-y:auto;overscroll-behavior:contain}
+@media (max-width:760px){.navmenu.grouped,.navmenu:not(.main){width:min(320px,calc(100vw - 16px));max-height:calc(100dvh - 130px);overflow-y:auto;overscroll-behavior:contain}.navmenu.grouped a,.navmenu:not(.main) a{padding:10px 12px;font-size:1rem}}
 .navmenu.grouped a{padding:4px 10px;font-size:.9rem}
 .nm-group{display:flex;flex-direction:column;break-inside:avoid;padding-bottom:6px}
 .nm-head{position:sticky;top:-6px;z-index:1;background:var(--surface);font-family:var(--mono);font-size:.66rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);padding:6px 10px 2px}
@@ -126,7 +127,7 @@ p{margin:0}
 .off-nav button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;font:inherit;font-weight:600;text-align:left;background:none;border:0;border-left:3px solid transparent;border-radius:3px;padding:9px 10px;color:var(--ink);cursor:pointer}
 .off-nav button:hover{background:var(--tint)}
 .off-nav button[aria-current="page"]{background:var(--tint);border-left-color:var(--gold);color:var(--brand-text)}
-.off-drop{margin-bottom:18px}
+.off-drop{display:none}   /* replaced by the Officer tools button in the header */
 .off-drop>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;font-weight:700;color:var(--brand-text);border:2px solid var(--brand-text);border-radius:var(--radius);padding:11px 14px;background:var(--surface)}
 .off-drop>summary::-webkit-details-marker{display:none}
 .off-drop>summary::after{content:'▾';font-size:1.1em}
@@ -151,10 +152,18 @@ p{margin:0}
 .foot-links a{color:inherit;font-weight:600}
 @media (max-width:760px){
   .nav{display:none!important}
+  /* Officers: Officer tools and Admin get their own dropdown buttons in a slim second row. */
+  .nav.has-staff{display:flex!important;margin-inline:0;gap:8px;padding-bottom:8px}
+  .nav.has-staff a,.nav.has-staff .sep{display:none}
+  .nav.has-staff .menu-btn{border:1px solid rgba(255,255,255,.45);border-radius:3px;padding:7px 12px;opacity:1}
+  .nav.has-staff .menu-btn.current{border-color:var(--gold)}
   .nav-toggle{display:inline-flex!important}
-  .head-in{flex-wrap:nowrap!important;gap:8px!important;padding-block:8px!important}
+  .head-in{gap:8px!important;padding-block:8px 0!important;row-gap:8px!important}
+  .site-head .brand,.who{padding-bottom:8px}
+  .nav.has-staff{margin-top:-8px}
   .site-head .seal{width:2.4rem!important;height:2.4rem!important}
-  .site-head .brand{min-width:0;gap:8px}
+  .site-head .brand{flex:1 1 0;min-width:0;gap:8px}
+  .who{flex:none}
   .site-head .brand-name{font-size:.78rem!important;letter-spacing:.06em!important}
   .site-head .brand-name small{font-size:.5rem!important;letter-spacing:.18em!important}
   .who .hide-m,.who [data-act="install-any"],.who [data-act="app-refresh"]{display:none!important}
@@ -1231,6 +1240,7 @@ function renderChrome(route){
   document.getElementById('nav').innerHTML = links.map(l => a(l)).join('') +
     (can('member') ? '<span class="sep"></span>' + mem.map(l => a(l)).join('') : '') +
     (staff.length ? '<span class="sep"></span>' + staff.map(([r,l]) => `<button class="menu-btn ${route===r?'current':''}" data-act="nav-menu" data-menu="${r}" aria-haspopup="true" aria-expanded="false">${l}${dot(countTotal(r))} ▾</button>`).join('') : '');
+  document.getElementById('nav').classList.toggle('has-staff', staff.length > 0);
   const u = me(), r = role();
   document.getElementById('who').innerHTML = u
     ? `${isStaff() && !ui.memberView ? `<span class="seg-toggle" role="group" aria-label="Edit or safe view"><button data-act="safe-view" data-mode="edit" aria-pressed="${!ui.safeView}" title="Make changes">Edit</button><button data-act="safe-view" data-mode="safe" aria-pressed="${!!ui.safeView}" title="Look around without changing anything">Safe</button></span>` : ''}${isStaff() ? `<button class="btn on-dark ${ui.memberView ? '' : 'ghost'} small" data-act="member-view" aria-pressed="${!!ui.memberView}">${ui.memberView ? 'Member view: on' : 'Member view'}</button>` : ''}<span class="name">${esc(u.first)}</span><span class="role ${r}">${r}</span><button class="btn on-dark ghost small" data-act="signout">Sign out</button><button class="btn on-dark ghost small who-more" data-act="who-menu" aria-label="Account menu">☰</button>`
@@ -6777,7 +6787,7 @@ function closeNavMenu(){
 // counts as a resize, so only a change in width closes a menu.)
 let navMenuW = window.innerWidth;
 window.addEventListener('resize', () => { if (window.innerWidth !== navMenuW){ navMenuW = window.innerWidth; closeNavMenu(); } });
-window.addEventListener('scroll', () => { if ((document.getElementById('navmenu') || {}).dataset?.for !== 'main') closeNavMenu(); }, { passive: true });
+window.addEventListener('scroll', () => { if (window.innerWidth > 760) closeNavMenu(); }, { passive: true });
 
 // Each event has its own page (#event/<id>) to link to or put on a QR code. The calendar opens the same content in a pop-up.
 // A check-in QR adds the code (#event/<id>/<code>) so it's filled in for people who scan it at the event.
@@ -8417,7 +8427,7 @@ document.addEventListener('click', async ev => {
       m.innerHTML = which === 'main' ? navLinks().map(x => page(x)).join('')
           + (can('member') ? '<div class="nm-head">Members</div>' + NAV_MEM.map(x => page(x, x[0] === 'account' ? dot(pendingSurveys().length) : x[0] === 'messages' ? dot(chatUnread()) : '')).join('')
             : '<div class="nm-head">Account</div>' + page(['signin', 'Sign in']) + page(['signup', 'Join (free)']))
-          + (can('officer') ? '<div class="nm-head">Officers</div>' + page(['officer', 'Officer tools'], dot(countTotal('officer'))) + (can('admin') ? page(['admin', 'Admin'], dot(countTotal('admin'))) : '') : '')
+
         : which === 'admin' ? ADMIN_TABS.map(item).join('')
         : OFFICER_GROUPS.map(([h, tabs]) => `<div class="nm-group" role="group" aria-label="${h}"><div class="nm-head">${h}</div>${tabs.map(item).join('')}</div>`).join('');
       m.classList.toggle('grouped', which !== 'admin');
