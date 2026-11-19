@@ -6906,10 +6906,15 @@ function eventOfficerExtras(e){
 const GUEST_UVID_FROM = '2026-11-18';
 function guestClaimBox(e){
   const id = e.id, sent = (() => { try { return localStorage.getItem('wfa-gclaim-' + id) === '1'; } catch(x){ return false; } })();
-  const signin = `<div class="notice"><span><strong>Check-in is closed.</strong> Were you there but forgot to check in? Members: sign in and click “I was there” on this page within a week of the event.</span></div><div class="row" style="gap:8px"><button class="btn ghost" data-act="event-auth" data-to="signin" data-id="${id}">Sign in</button></div>`;
+  if (sent) return '<div class="notice"><span><strong>Check-in is closed.</strong> Your “I was there” request is sent. An officer will review it.</span></div>';
+  const signin = `<form class="panel stack" id="f-uvclaim" data-id="${id}" style="gap:8px"><strong style="font-size:1.1rem">Were you there but forgot to check in?</strong>
+    <span class="hint">Check-in is closed, but you can ask an officer to add you until ${fmtDay(new Date(evEndMs(e) + 7 * 864e5).toISOString().slice(0, 10))}. No need to sign in.</span>
+    <div class="grid2"><label>UVU ID<input id="ucl-uvid" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="8 digits" required></label><label>Last name<input id="ucl-last" autocomplete="family-name" required></label></div>
+    <label>One thing you learned or heard at the event<textarea id="ucl-note" maxlength="300" required style="min-height:64px" placeholder="A sentence or two"></textarea></label>
+    <div class="row" style="gap:8px"><button class="btn" type="submit">I was there</button><button class="btn ghost" type="button" data-act="event-auth" data-to="signin" data-id="${id}">Sign in instead</button></div>
+    <div class="err" id="ucl-err"></div></form>`;
   if (e.membersOnly) return signin;
-  if (sent) return signin + '<div class="notice"><span><strong>Request sent.</strong> An officer will review it.</span></div>';
-  return signin + `<details class="guest-opt" ${ui.gclaimOpen === id ? 'open' : ''}><summary>Came as a guest? Ask to be added</summary>
+  return signin + `<details class="guest-opt" ${ui.gclaimOpen === id ? 'open' : ''}><summary>Guest without a UVU ID on your RSVP? Ask here</summary>
     <form class="stack" id="f-gclaim" data-id="${id}" style="gap:8px;margin-top:10px">
       <div class="grid2"><label>First name<input id="gcl-first" autocomplete="given-name" required></label><label>Last name<input id="gcl-last" autocomplete="family-name" required></label></div>
       <label>Email <span class="hint">The one you RSVP’d with, if you did</span><input id="gcl-email" type="email" autocomplete="email" required></label>
@@ -9511,6 +9516,20 @@ async function handleSubmit(f, v, err){
     toast('Question sent. Thanks!'); await load(); refreshEvent(id); return;
   }
 
+  if (f.id === 'f-uvclaim'){
+    const id = f.dataset.id, uvid = v('ucl-uvid').replace(/\D/g, ''), last = v('ucl-last'), note = v('ucl-note');
+    if (!/^\d{8}$/.test(uvid)) return err('ucl-err', 'Enter your 8-digit UVU ID.');
+    if (note.length < 20) return err('ucl-err', 'Write a sentence or two about something you learned or heard at the event.');
+    const r = await sb.rpc('uvid_claim_attendance', { p_event: id, p_uvid: uvid, p_last: last, p_note: note });
+    if (r.error) return err('ucl-err', /uvid_claim_attendance/.test(r.error.message || '') ? 'This isn’t set up yet. Sign in instead.' : errMsg(r.error));
+    const msg = { uvid: 'Enter your 8-digit UVU ID.', last: 'Enter your last name.', note: 'Write a sentence or two about something you learned or heard at the event.',
+      missing: 'This event doesn’t take check-ins.', notover: 'This event isn’t over yet. Check in with the code on screen.',
+      late: 'It’s been more than a week since this event, so it can’t be changed.', here: 'You’re already checked in.',
+      nomatch: 'We couldn’t find a WFA account or guest RSVP with that UVU ID and last name. Sign in, or use the guest option below.' }[r.data];
+    if (msg) return err('ucl-err', msg);
+    try { localStorage.setItem('wfa-gclaim-' + id, '1'); } catch(x){}
+    toast(r.data === 'guest' ? 'Request sent' : 'Request sent. You’ll get the points once an officer approves it'); refreshEvent(id); return;
+  }
   if (f.id === 'f-gclaim'){
     const id = f.dataset.id, first = v('gcl-first'), last = v('gcl-last'), email = v('gcl-email').toLowerCase(), note = v('gcl-note');
     ui.gclaimOpen = id;
