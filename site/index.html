@@ -4209,8 +4209,12 @@ function talkSplit(T){
   const r = (a, b) => { const x = Math.max(1, Math.round(T * a)), y = Math.max(x, Math.round(T * b)); return x === y ? String(x) : x + '–' + y; };
   return { bg: r(.15, .2), career: r(.4, .47), advice: r(.27, .33) };
 }
-// A sensible default for how long each speaker talks: about 70% of the event split between the speakers, the rest is Q&A.
-function talkDefault(e, n){ const d = evDur(e) || 60; return Math.min(45, Math.max(10, Math.round(d * .7 / Math.max(1, n) / 5) * 5)); }
+// Every guest event: 12 minutes for people to arrive, a 3-minute introduction, a 5-minute wrap-up, and 30 minutes of networking after.
+const EV_ARRIVE = 12, EV_INTRO = 3, EV_WRAP = 5, EV_NETWORK = 30;
+// Minutes left for Q&A once arrival, the introduction, the speeches, and the wrap-up are taken out.
+function qaLeft(e, talk, n){ return (evDur(e) || 60) - EV_ARRIVE - EV_INTRO - EV_WRAP - talk * Math.max(1, n); }
+// A sensible default speech length: a 60-minute event with one speaker gives a 25-minute speech and 15 minutes of Q&A.
+function talkDefault(e, n){ const free = (evDur(e) || 60) - EV_ARRIVE - EV_INTRO - EV_WRAP; return Math.min(45, Math.max(10, Math.round(free * .625 / Math.max(1, n) / 5) * 5)); }
 // Which email is due, going by how far away the event is.
 function guestMailDue(e){
   if (isPast(e)) return 'thanks';
@@ -4228,8 +4232,8 @@ function guestMailModal(id, key){
     <div><h3 style="margin:0">Guest emails</h3><div class="hint">${esc(e.title)} · ${fmtDay(e.date)} at ${fmtTime(e.start)}</div></div>
     <label>Which email<select id="gm-tpl">${GUEST_MAILS.map(([k, name, when]) => `<option value="${k}" ${k === key ? 'selected' : ''}>${name} (${when})${k === due ? ' · due now' : ''}</option>`).join('')}</select>
       <span class="hint">You can edit everything in the email builder before it’s sent.</span></label>
-    <label data-gm="talk"${show('talk')}>Minutes each speaker talks<input id="gm-talk" type="number" min="5" max="90" step="1" value="${talkDefault(e, n)}">
-      <span class="hint">The speaker outline in the invitation is sized to this. ${evDur(e) ? `The event is ${evDur(e)} minutes long; what’s left is Q&A.` : ''}</span></label>
+    <label data-gm="talk"${show('talk')}>Speech length, in minutes${n > 1 ? ' (each speaker)' : ''}<input id="gm-talk" type="number" min="5" max="90" step="1" value="${talkDefault(e, n)}">
+      <span class="hint">The speaker outline and the schedule in the invitation are sized to this. Arrival (${EV_ARRIVE} min), the introduction (${EV_INTRO}), and the wrap-up (${EV_WRAP}) are fixed, and Q&A gets what’s left of the ${evDur(e) || 60} minutes.</span></label>
     <label data-gm="phone"${show('phone')}>Your phone number<input id="ar-phone" type="tel" data-vcheck="phone" maxlength="20" placeholder="(801) 555-0123" value="${esc(phone)}">
       <span class="hint">Guests text you when they’ve parked. It only goes in this email (and is remembered on this device).</span></label>
     <label data-gm="early"${show('early')}>Arrive how early<select id="ar-early">${AR_EARLY.map(([a, b]) => `<option value="${a}-${b}" ${a === 20 ? 'selected' : ''}>${b} to ${a} minutes before</option>`).join('')}</select>
@@ -4258,7 +4262,14 @@ function guestMailText(key, e, o){
   let park = arr.slice(arr.indexOf('## When to arrive'), arr.indexOf('\n\nSee you soon')).replace('15 to 20 minutes early', `${o.b} to ${o.a} minutes early`).replace('{arrive}', arriveWindow(e, o.a, o.b)).replace('[YOUR PHONE NUMBER]', o.phone);
   if (o.guide) park = park.replace('One of our club officers can meet you', `${o.guide}, one of our officers, will be your guide. They can meet you`);
   if (key === 'invite'){
-    const t = talkSplit(o.talk), left = dur ? dur - o.talk * o.n : 0, slides = shiftDay(e.date, -14);
+    const t = talkSplit(o.talk), slides = shiftDay(e.date, -14), total = dur || 60, qa = qaLeft(e, o.talk, o.n);
+    // The schedule, with clock times counted from the event's start.
+    const [sh, sm] = String(e.start || '12:00').split(':').map(Number);
+    let clock = sh * 60 + sm;
+    const row = (what, mins) => { const at = fmtTime(String(Math.floor(clock / 60) % 24).padStart(2, '0') + ':' + String(clock % 60).padStart(2, '0')); clock += mins; return `- **${at}:** ${what} (${mins} min)`; };
+    const schedule = [row('Students arrive and get food', EV_ARRIVE), row(`The host introduces ${o.n > 1 ? 'the speakers' : 'you'}`, EV_INTRO),
+      row(o.n > 1 ? `Presentations (${o.n} speakers, ${o.talk} min each)` : 'Your presentation', o.talk * o.n), row('Q&A with students', qa), row('Wrap-up', EV_WRAP),
+      row('Networking with students, one on one', EV_NETWORK)].join('\n');
     return { subject: 'Invitation to speak: {event}', closing: 'Sincerely,', body:
 `Hi {first},
 
@@ -4272,24 +4283,28 @@ The Association serves finance students at every level, from first-year students
 - **Format:** Presentation with Q&A
 - **Date and time:** ${when}
 - **Location:** ${loc}
-- **Length:** ${dur ? dur + ' minutes' : '60 to 90 minutes, at your discretion'}
+- **Length:** ${total} minutes, followed by networking
 - **Audience:** UVU finance students across all years
 
 ## Purpose
-We ask each guest to cover a few things:
-- What your work involves and how you got there
-- What you look for in candidates, and what students should do now to prepare
-- Your view of what makes professionals successful from where you sit
-- How your part of the industry is changing, and what that means for people entering it
-- A setback or mistake early in your career, and what it taught you
+We ask each guest to cover four things:
+- **Your path:** your background and the key decisions that got you where you are
+- **Your work:** what a typical week looks like, what you love about it, and what’s hardest
+- **What mattered most:** the skills, technical and soft, and the relationships that moved your career forward
+- **Your advice:** what students should be doing now, and what you look for when adding someone to your team
+
+## Schedule
+${schedule}
+
+The networking time gives students a chance to talk with you one on one. We hope you can stay for as much of it as your schedule allows.
 
 ## What we aim to do for students
 - Give accurate, first-hand information on finance careers
 - Improve their internship applications, interviews, and technical preparation
 - Build direct relationships with Utah’s finance and business community
 
-## Our template for guest speakers
-This is a suggested outline for about ${o.talk} minutes of speaking${o.n > 1 ? ' per speaker' : ''}. Please adapt it however you like.
+## A suggested outline (optional)
+If it helps, here is one way to use your ${o.talk} minutes. You are welcome to go about it a different way, as long as the four points above are covered.
 
 **Background (about ${t.bg} min)**
 - Where you’re from and a bit about yourself (family, hobbies, interests, whatever you’re comfortable sharing)
@@ -4307,8 +4322,7 @@ This is a suggested outline for about ${o.talk} minutes of speaking${o.n > 1 ? '
 - What students should be doing now (classes, certifications, internships, involvement)
 - What you look for when adding someone to your team
 
-**Q&A and wrap-up (${left >= 5 ? 'the remaining ' + left + ' minutes or so' : 'the remaining time'})**
-- Questions from students, including ones they send in ahead of time
+**To close**
 - How students can connect with you (LinkedIn, email, etc.)
 
 ## What we’ll need from you
@@ -4376,14 +4390,16 @@ function guestMailGo(id){
   const phone = fmtPhone(String(document.getElementById('ar-phone').value || '').trim());
   if (need('phone') && String(phone).replace(/\D/g, '').length < 10) return bad('Enter your phone number, so guests can text you when they’ve parked.');
   const talk = Math.round(+document.getElementById('gm-talk').value || 0);
-  if (need('talk') && (talk < 5 || talk > 90)) return bad('Enter how many minutes each speaker talks (5 to 90).');
+  if (need('talk') && (talk < 5 || talk > 90)) return bad('Enter the speech length in minutes (5 to 90).');
   const guests = [...document.querySelectorAll('.ar-row')].map(r => ({ first: r.querySelector('.ar-first').value.trim(), last: r.querySelector('.ar-last').value.trim(), email: r.querySelector('.ar-email').value.trim().toLowerCase() }))
     .filter(g => g.first || g.last || g.email);
   if (!guests.length) return bad('Add at least one guest.');
   const noEmail = guests.find(g => !EMAIL_RE.test(g.email)); if (noEmail) return bad(`Check the email for ${noEmail.first || noEmail.last || 'each guest'}.`);
   if (need('phone')) try { localStorage.setItem('wfa-arrival-phone', phone); } catch(_){}
   const [a, b] = document.getElementById('ar-early').value.split('-').map(Number);
-  const m = guestMailText(key, e, { phone, a, b, talk, guide: document.getElementById('gm-guide').value.trim(), n: Math.max(guests.length, (e.speakers || []).length, 1) });
+  const nSp = Math.max(guests.length, (e.speakers || []).length, 1);
+  if (need('talk') && qaLeft(e, talk, nSp) < 5) return bad(`${nSp > 1 ? nSp + ' speeches of ' + talk + ' minutes leave' : 'A ' + talk + '-minute speech leaves'} ${Math.max(0, qaLeft(e, talk, nSp))} minutes for Q&A in a ${evDur(e) || 60}-minute event. Shorten the speech, or make the event longer.`);
+  const m = guestMailText(key, e, { phone, a, b, talk, guide: document.getElementById('gm-guide').value.trim(), n: nSp });
   const names = {}; guests.forEach(g => names[g.email] = { first: g.first, last: g.last });
   closeModal(); ui.mailDraftId = null;
   ui.mail = { ...MAIL_BLANK(), aud: 'custom', custom: guests.map(g => g.email).join(', '), ev: id, names, subject: m.subject, body: m.body, closing: m.closing + '\n\n' + sigFill(mySig()) };
