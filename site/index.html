@@ -781,7 +781,7 @@ function buildTitle(tier, branch){
 // Officer tools, in groups (the menu shows the headings; the tab row puts a divider between groups).
 const OFFICER_GROUPS = [
   ['To do', [['approvals','Approvals'],['questions','Questions'],['tasks','Tasks'],['visits','Class visits']]],
-  ['Planning events', [['events','Events'],['scheduling','Scheduling'],['contacts','Contacts'],['eventplan','Semester plan'],['plan','Get started with an event'],['guide','Guest speaker guide'],['process','How scheduling works'],['availability','Availability']]],
+  ['Planning events', [['events','Events'],['scheduling','Scheduling'],['contacts','Contacts'],['eventplan','Semester plan'],['plan','Get started with an event'],['guide','Event guides'],['process','How scheduling works'],['availability','Availability']]],
   ['At the event', [['checkin','Check-in & attendance'],['qr','QR codes'],['surveys','Event surveys']]],
   ['Communications', [['announcements','Announcements'],['email','Email builder'],['forms','Survey builder'],['recaps','Recaps']]],
   ['People & data', [['members','Members'],['directory','Officer directory'],['resumes','Resume book'],...(DUES_ENABLED ? [['dues','Dues']] : []),['stats','Statistics'],['results','Survey results']]]
@@ -939,7 +939,7 @@ async function load(){
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
   db.events = (R.events || []).map(e => ({ id:e.id, title:e.title, cat:e.cat, date:e.date, start:(e.start_time || '').slice(0,5), end:(e.end_time || '').slice(0,5), loc:e.loc, cap:e.cap || 0, desc:e.descr || '', code:codes[e.id] || null, draft:!!e.draft, planNotes:e.plan_notes || '',
-    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, points:e.points ?? null, showRsvps:e.show_rsvps !== false, checkinOpenedAt:e.checkin_opened_at || null, regMode:e.reg_mode || 'rsvp', regUrl:e.reg_url || '', host:e.host || '', dress:DRESS[e.dress_code] ? e.dress_code : '', dressNote:e.dress_note || '', inStats:e.in_stats !== false, speakers:Array.isArray(e.speakers) ? e.speakers : [], guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, rsvpCloses:e.rsvp_closes || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
+    teamMin:e.team_min || 2, teamMax:e.team_max || 4, teamLimit:e.team_limit || null, teamMode:e.team_mode || 'fcfs', regDeadline:e.reg_deadline || null, who:e.meeting_who || {}, membersOnly:!!e.members_only, qaEnabled:!!e.qa_enabled, points:e.points ?? null, showRsvps:e.show_rsvps !== false, checkinOpenedAt:e.checkin_opened_at || null, regMode:e.reg_mode || 'rsvp', regUrl:e.reg_url || '', host:e.host || '', dress:DRESS[e.dress_code] ? e.dress_code : '', dressNote:e.dress_note || '', inStats:e.in_stats !== false, speakers:Array.isArray(e.speakers) ? e.speakers : [], panelTarget:e.panel_target || null, guestOpens:e.guest_rsvp_opens || null, rsvpOpens:e.rsvp_opens || null, rsvpCloses:e.rsvp_closes || null, guestDelay:e.guest_rsvp_delay ?? null, publishedAt:e.published_at || null, comingSoon:!!e.coming_soon, soonDesc:e.soon_desc || '' }));
   db.stats = {}; (R.stats || []).forEach(x => db.stats[x.event_id] = x);
   const group = rows => { const o = {}; (rows || []).forEach(x => (o[x.event_id] = o[x.event_id] || []).push(x.email)); return o; };
   db.rsvps = group(R.rsvps); db.attendance = group(R.att);
@@ -4914,7 +4914,19 @@ const PLAN_DEFAULTS = {
     ['Reserve a room', -7], ['Write the agenda', -3], ['Send the agenda to officers', -1], ['Take notes and post action items', 0],
     ['Assign follow-up tasks', 1]]
 };
-PLAN_DEFAULTS.panel = PLAN_DEFAULTS.guest_speaker;
+PLAN_DEFAULTS.panel = [
+  ['Set the target date and how many panelists to aim for', -42], ['Reserve the place and time through Todd, with an estimated guest count', -42],
+  ['Invite panelists for that date', -40], ['Write the description, set the RSVP maximum, and post the event', -35],
+  ['Get the marketing materials made; send them to Emmy for approval and to Todd for printing', -35],
+  ['Count the confirmed panelists: with fewer than three, run it as a guest speaker event or move the date', -21],
+  ['Assign roles to officers and recruit volunteers if needed', -21],
+  ['Send the panelists the 2-week check-in for anything still missing', -14], ['Start preparing the panelist gifts', -14],
+  ['Send Todd the food order (RSVPs + 20, up to the RSVP maximum) and dietary restrictions', -10], ['Set the RSVP maximum to the number of people food was ordered for', -10],
+  ['Send the panelists the 1-week check-in: parking, their guide, the host questions, who else is on the panel', -7],
+  ['Make sure the microphones work and are set aside', -7],
+  ['Print the signage and the name cards', -3], ['Finalize the PowerPoint (one slide per panelist) and the host script', -3], ['Send the final check-in with the starred questions', -3],
+  ['Gather everything on the What to bring list', -1],
+  ['Send a thank-you to each panelist', 1], ['Return the borrowed sign holders', 1], ['Check that attendance is complete', 1], ['Post a recap with photos', 2]];
 function planTemplate(cat){ const t = ((db.app || {}).planTpl || {})[cat]; return Array.isArray(t) && t.length ? t : (PLAN_DEFAULTS[cat] || PLAN_DEFAULTS.workshop); }
 // Admin editor for the standard checklists: one event type at a time.
 function templateEditor(){
@@ -6343,6 +6355,60 @@ function guideFood(r, cap){
   if (r + 20 >= cap) return `${r} RSVPs + 20 ${r + 20 === cap ? 'is exactly' : 'is more than'} the maximum of ${cap}. Order for <strong>${cap}</strong> and leave the RSVP maximum where it is.`;
   return `${r} RSVPs + 20 = <strong>${r + 20}</strong>. Order for ${r + 20}, then lower the RSVP maximum from ${cap} to ${r + 20}.`;
 }
+// The panel guide. Same shape as GUIDE_STEPS; extra: 'count' | 'roles' | 'food'.
+const PANEL_STEPS = [
+  [-42, 'As soon as the panel is decided', 'Set the target date and reserve the room', 'Pick the date first, then get the place and time reserved through Todd, with an estimated guest count. That estimate is the starting RSVP maximum. Decide how many panelists you’re aiming for and set it under The schedule above. A panel is three or more; fewer than that is a guest speaker event.'],
+  [-40, 'Once the room is reserved', 'Invite panelists for that date', 'Each panelist is invited on their own, for the date you reserved. Tell them it’s a two-hour panel with a short talk and no slides, and ask for a headshot, a short bio, any accommodations or dietary restrictions, and permission to show a QR code to their LinkedIn.'],
+  [-35, 'Once the first panelists confirm', 'Post the event on the site', 'Write the description, set the RSVP maximum, and post it. List each panelist on the event as they confirm, so members can choose who their question is for.'],
+  [-35, 'At the same time', 'Get the marketing materials made', 'Follow UVU design standards. Send them to Emmy for approval, with a 2160x3840 pixel version for the WSB screens and one the same size without QR codes for the WSB Instagram. Send the files to Todd to print: 4x5.5 mini flyers for tables and study spaces (about 100), 11x17 flyers for the flyer holders and the Fintech Center glass, and 8.5x11 flyers for the Fintech Center sign holders.'],
+  [-21, '3 weeks before', 'Count the confirmed panelists', 'With three or more, the panel goes ahead: set the number of panelists to how many confirmed and the schedule resizes. With fewer than three, run it as a guest speaker event or move the date.', '', 'count'],
+  [-21, 'At the same time', 'Assign roles to officers', 'The MC is the host: they introduce the panelists, keep each talk to time, and ask the questions. Start recruiting volunteers if needed.', '', 'roles'],
+  [-14, '2 weeks before', 'Send the 2-week check-in', 'Ask each panelist only for what they haven’t sent yet. Start making the club’s slide for each panelist (name, title, field, and their LinkedIn QR code if they agreed), and start preparing the gifts.'],
+  [-10, '1.5 weeks before', 'Send Todd the food order', 'Order for the current RSVPs + 20, but never more than the RSVP maximum, and include any dietary restrictions. Then change the RSVP maximum to the number you ordered for, so nobody goes without food.', '', 'food'],
+  [-7, '1 week before', 'Send the 1-week check-in', 'Parking instructions, the name of their guide, the schedule, the host questions, and who else is on the panel. Also make sure the microphones work and are set aside.'],
+  [-3, '3 days before', 'Final preparations', 'Star the student questions to ask, spread across the panelists. Print the signage and name cards, finalize the PowerPoint and the host script (with which panelist answers each question first), and send the final check-in with the starred questions.'],
+  [1, 'After the event', 'Wrap up', 'Thank each panelist, post a recap with the photos, return the borrowed sign holders to UVUAS, and check that attendance is complete.']
+];
+function panelItems(n){
+  return [['signs', '4 sign holders (the WFA has two, and two can be borrowed from UVUAS)'], ['checkin', '2 printed check-in pages'], ['directions', '2 printed direction pages'],
+    ['mics', 'Microphones: 1 for the host and at least 2 for the panelists to pass along, plus 1 for audience questions in a large room'],
+    ['names', n ? `${n} name cards for the panelists’ table` : 'A name card for each panelist'], ['computer', 'Computer for set-up, with the club’s slide for each panelist'],
+    ['cards', 'Time cards for the timekeeper'], ['food', 'Food'], ['water', 'Water, including a bottle for each panelist'],
+    ['plates', 'Cutlery, plates, and napkins'], ['gifts', n ? `${n} gifts and thank-you cards (1 per panelist)` : '1 gift and thank-you card per panelist']];
+}
+// A panel is two hours. Fixed: 15 minutes to arrive, a 5-minute introduction, 25 minutes of student questions sent ahead, and a 5-minute wrap-up.
+// Talks are 5 minutes each with a minute between, and the host questions get 4 minutes per panelist. Live questions get what's left, up to 25 minutes:
+// past that, the talks lengthen (to 8 minutes at most), then the host questions. With 7 or 8 panelists everything is shortened to fit.
+const PANEL_MIN = 3, PANEL_MAX = 8, PANEL_LEN = 120, PANEL_ARRIVE = 15, PANEL_INTRO = 5, PANEL_STUDENT = 25, PANEL_WRAP = 5;
+function panelPlan(n){
+  n = Math.min(PANEL_MAX, Math.max(PANEL_MIN, Math.round(+n || 0) || 4));
+  let t = 5, host = 4 * n;
+  if (n >= 7){ t = Math.max(3, Math.floor(40 / n) - 1); host = 3 * n; }
+  const left = () => PANEL_LEN - PANEL_ARRIVE - PANEL_INTRO - PANEL_STUDENT - PANEL_WRAP - n * (t + 1) - host;
+  while (left() > 25 && t < 8) t++;
+  let live = left(); if (live > 25){ host += live - 25; live = 25; }
+  return { n, t, talks: n * (t + 1), host, live };
+}
+function panelSchedule(e, n){
+  const p = panelPlan(n), dur = e ? evDur(e) : 0;
+  const rows = [[PANEL_ARRIVE, 'People arrive and get food'], [PANEL_INTRO, 'The host welcomes everyone and introduces the panelists'],
+    [p.talks, `Panelist talks: ${p.t} minutes each, with a minute between`], [p.host, 'Host questions, with each panelist answering'],
+    [PANEL_STUDENT, 'Student questions sent in ahead of time, cycling through the panelists'], [p.live, 'Live questions from the audience'], [PANEL_WRAP, 'Wrap-up']];
+  const clock = m => { const [h, mm] = String(e.start).split(':').map(Number), x = h * 60 + mm + m; return fmtTime(String(Math.floor(x / 60) % 24).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0')); };
+  let at = 0;
+  const tr = ([m, label]) => { const from = at; at += m; return `<tr><td style="white-space:nowrap">${e && e.start ? clock(from) + '–' + clock(at) : m + ' min'}</td><td>${label}</td>${e && e.start ? `<td style="white-space:nowrap">${m} min</td>` : ''}</tr>`; };
+  return `<section class="stack" style="gap:8px"><div class="section-head"><h3>The schedule</h3></div>
+    <label style="max-width:16rem">Panelists<input id="guide-target" type="number" min="${PANEL_MIN}" max="${PANEL_MAX}" step="1" inputmode="numeric" value="${p.n}"${e ? ` data-ev="${e.id}"` : ''}>
+      <span class="hint">How many you’re aiming for (${PANEL_MIN} to ${PANEL_MAX}). Change it if a different number confirms, and the schedule resizes.</span></label>
+    ${dur && dur !== PANEL_LEN ? `<div class="notice"><span>This event is set for ${dur} minutes. A panel is planned for two hours, with up to 30 minutes of networking afterward.</span></div>` : ''}
+    <div class="table-wrap"><table><tbody>${rows.map(tr).join('')}<tr><td style="white-space:nowrap">${e && e.start ? 'Afterward' : '30 min'}</td><td>Networking${e && e.start ? '' : ' afterward'}</td>${e && e.start ? '<td style="white-space:nowrap">up to 30 min</td>' : ''}</tr></tbody></table></div>
+    <div class="panel stack" style="gap:8px;padding:12px 14px">
+      <div><strong>Each panelist’s ${p.t} minutes</strong><ul style="margin:4px 0 0;padding-left:1.2rem"><li>Introduction</li><li>What their field is, in a sentence or two</li><li>A brief description of the day to day</li><li>Their career path</li></ul>
+        <span class="hint">Panelists don’t bring slides. The club shows one slide for each: their name, title, field, and a QR code to their LinkedIn if they agreed.</span></div>
+      <div><strong>Host questions</strong> <span class="hint">About a minute per panelist, starting with a different panelist each time</span><ol style="margin:4px 0 0;padding-left:1.2rem"><li>Typical pay at entry level and a few years in</li><li>Hours and lifestyle (optional: cut this first if you’re running behind)</li><li>What students should be doing now</li></ol></div>
+      <div><strong>Host notes</strong><ul style="margin:4px 0 0;padding-left:1.2rem"><li>Call on the students whose questions were starred, going from one panelist’s field to the next so nobody is left out.</li><li>Keep a few backup questions ready for the live questions.</li><li>If the room goes quiet, wrap up and start the networking early.</li></ul></div>
+    </div></section>`;
+}
 function packed(id){ try { return JSON.parse(localStorage.getItem('wfa-pack-' + id) || '[]'); } catch(_){ return []; } }
 document.addEventListener('input', ev => {
   if (ev.target.id !== 'gf-r' && ev.target.id !== 'gf-cap') return;
@@ -6350,16 +6416,20 @@ document.addEventListener('input', ev => {
 });
 function guideBody(){
   const today = todayIso();
-  const evs = db.events.filter(x => ['guest_speaker', 'panel'].includes(x.cat) && shiftDay(x.date, 14) >= today).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
-  const e = ui.guideEv === '' ? null : (evs.find(x => x.id === ui.guideEv) || evs.find(x => !isPast(x)) || evs[0] || null);
+  const all = db.events.filter(x => ['guest_speaker', 'panel'].includes(x.cat) && shiftDay(x.date, 14) >= today).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  const picked = all.find(x => x.id === ui.guideEv), type = picked ? picked.cat : (ui.guideType === 'panel' ? 'panel' : 'guest_speaker'), isPanel = type === 'panel';
+  const evs = all.filter(x => x.cat === type);
+  const e = ui.guideEv === '' ? null : (picked || evs.find(x => !isPast(x)) || evs[0] || null);
   const n = e ? (e.speakers || []).length || eventGuests(e.id).length : 0;
+  const STEPS = isPanel ? PANEL_STEPS : GUIDE_STEPS, items = isPanel ? panelItems(n) : guideItems(n), who = isPanel ? 'panel' : 'guest speaker';
+  const target = isPanel ? panelPlan(e ? (e.panelTarget || n) : ui.guideTarget).n : 0;
   const tasks = e ? db.tasks.filter(t => t.eventId === e.id) : [], done = tasks.filter(t => t.done).length;
   // Who runs the event: whoever owns most of its unfinished steps.
   const staff = staffEmails(), open = tasks.filter(t => !t.done), tally = {}; (open.length ? open : tasks).forEach(t => { tally[t.who] = (tally[t.who] || 0) + 1; });
   const runner = Object.keys(tally).sort((a, b) => tally[b] - tally[a])[0] || '';
   const days = e ? Math.round((parseDay(e.date) - parseDay(today)) / 864e5) : 0;
   // "You are here": the latest step whose date has come.
-  let here = -1; if (e) GUIDE_STEPS.forEach(([d], i) => { if (shiftDay(e.date, d) <= today) here = i; });
+  let here = -1; if (e) STEPS.forEach(([d], i) => { if (shiftDay(e.date, d) <= today) here = i; });
   const roles = usualRoles(), mine = e ? rolesOf(e.id) : [], spots = mine.reduce((a, r) => a + (+r.qty || 1), 0), filled = mine.reduce((a, r) => a + (r.officers || []).filter(Boolean).length, 0);
   const tick = e ? packed(e.id) : [];
   const step = ([d, when, what, text, mail, extra], i) => `<div class="list-row" style="align-items:flex-start;gap:14px;justify-content:flex-start${i < here ? ';opacity:.7' : ''}">
@@ -6367,17 +6437,19 @@ function guideBody(){
       <div class="stack" style="flex:1;min-width:0;gap:6px"><div><div class="ev-title">${what}</div><div class="ev-sub">${text}</div></div>
         ${extra === 'food' ? `<div class="panel stack" style="gap:8px;padding:10px 12px"><div class="row" style="gap:10px;flex-wrap:wrap"><label style="flex:1 1 8rem">RSVPs now<input id="gf-r" type="number" min="0" inputmode="numeric" value="${e ? rsvpCount(e.id) : 40}"></label><label style="flex:1 1 8rem">RSVP maximum<input id="gf-cap" type="number" min="0" inputmode="numeric" value="${e ? (e.cap || '') : 80}"></label></div>
           <div id="gf-out">${guideFood(e ? rsvpCount(e.id) : 40, e ? e.cap : 80)}</div>${e ? `<div><button class="btn ghost small" data-act="edit-event" data-id="${e.id}">Change the RSVP maximum</button></div>` : ''}</div>` : ''}
+        ${extra === 'count' && e ? `<div class="hint"><strong>${n} panelist${n === 1 ? '' : 's'}</strong> listed on the event so far, aiming for ${target}. ${n < PANEL_MIN ? 'That’s fewer than three.' : n < target ? 'Enough to go ahead.' : 'You’ve reached your number.'}</div>` : ''}
         ${extra === 'roles' && e ? `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost small" data-act="open-event" data-id="${e.id}">${mine.length ? 'See the roles' : 'Assign roles'}</button><span class="hint">${mine.length ? `${filled} of ${spots} spots filled` : 'No roles set up for this event yet.'}</span></div>` : ''}
         ${mail ? (e ? `<div><button class="btn ghost small" data-act="guest-mail" data-id="${e.id}" data-tpl="${mail}">Write this email</button></div>` : '<span class="hint">Pick an event above to write this email.</span>') : ''}
       </div></div>`;
   return `<div class="stack" style="gap:18px">
-    <p class="muted" style="margin:0">How the WFA runs a guest speaker event: what to send and when, who does what, and what to bring. Pick an event and the dates, numbers, and emails fill in for it.</p>
+    <p class="muted" style="margin:0">How the WFA runs a ${who} event: what to send and when, who does what, and what to bring. Pick an event and the dates and numbers fill in for it.</p>
+    <label style="max-width:16rem">Guide<select id="guide-type"><option value="guest_speaker" ${isPanel ? '' : 'selected'}>Guest speaker</option><option value="panel" ${isPanel ? 'selected' : ''}>Panel</option></select></label>
     <label style="max-width:40rem">Event<select id="guide-ev"><option value="">No event (just the guide)</option>${evs.map(x => `<option value="${x.id}" ${e && x.id === e.id ? 'selected' : ''}>${fmtDay(x.date)} · ${esc(x.title)}${x.draft ? ' (draft)' : ''}${isPast(x) ? ' (past)' : ''}</option>`).join('')}</select>
-      ${evs.length ? '' : '<span class="hint">No guest speaker or panel events are coming up. Create one under Events and it shows here.</span>'}</label>
+      ${evs.length ? '' : `<span class="hint">No ${who} events are coming up. Create one under Events and it shows here.</span>`}</label>
     ${e ? `<section class="panel stack" style="gap:8px">
       <div><h3 style="margin:0">${esc(e.title)} ${e.draft ? '<span class="tag">Draft</span>' : ''}</h3>
         <div class="ev-sub">${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc) || 'No location yet'} · ${days === 0 ? 'Today' : days > 0 ? `In ${days} day${days === 1 ? '' : 's'}` : `${-days} day${days === -1 ? '' : 's'} ago`}${e.draft ? '' : ` · ${rsvpCount(e.id)} RSVP${rsvpCount(e.id) === 1 ? '' : 's'}${e.cap ? ' of ' + e.cap : ''}`}</div></div>
-      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn ghost small" data-act="open-event" data-id="${e.id}">Open the event</button><button class="btn ghost small" data-act="guest-mail" data-id="${e.id}">Guest emails</button>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn ghost small" data-act="open-event" data-id="${e.id}">Open the event</button>${isPanel ? '' : `<button class="btn ghost small" data-act="guest-mail" data-id="${e.id}">Guest emails</button>`}
         ${tasks.length ? `<button class="btn ghost small" data-act="guide-plan" data-id="${e.id}">Checklist: ${done} of ${tasks.length} done</button>` : ''}</div>
       ${tasks.length ? `<label style="max-width:22rem">Who’s running this event<select id="guide-runner-change" data-ev="${e.id}">${staff.map(x => `<option value="${esc(x)}" ${x === runner ? 'selected' : ''}>${esc(userName(x))}</option>`).join('')}</select>
           <span class="hint">They get a reminder the day before each step on the checklist is due. Changing this hands them every unfinished step.</span></label>`
@@ -6385,10 +6457,11 @@ function guideBody(){
           <button class="btn small" data-act="plan-template" data-guide="1" data-id="${e.id}">Create the checklist</button></div>
           <span class="hint">This turns the steps below into a checklist with due dates. The officer running the event gets a reminder the day before each step is due.</span>`}
     </section>` : ''}
-    <section class="stack" style="gap:6px"><div class="section-head"><h3>How to plan</h3></div><div>${GUIDE_STEPS.map(step).join('')}</div></section>
-    <section class="stack" style="gap:6px"><div class="section-head"><h3>What to bring</h3>${e ? `<span class="muted">${guideItems(n).filter(([k]) => tick.includes(k)).length} of ${guideItems(n).length} packed</span>` : ''}</div>
-      ${e ? `<div class="stack" style="gap:6px">${guideItems(n).map(([k, label]) => `<label style="display:flex;flex-direction:row;gap:10px;align-items:flex-start;font-weight:400"><input type="checkbox" class="pack-item" data-ev="${e.id}" data-k="${k}" ${tick.includes(k) ? 'checked' : ''} style="width:auto;flex:none;margin-top:4px"><span>${label}</span></label>`).join('')}</div><span class="hint">Ticks are saved on this device only.</span>`
-        : `<ul style="margin:0;padding-left:1.2rem">${guideItems(0).map(([, label]) => `<li>${label}</li>`).join('')}</ul>`}</section>
+    ${isPanel ? panelSchedule(e, target) : ''}
+    <section class="stack" style="gap:6px"><div class="section-head"><h3>How to plan</h3></div><div>${STEPS.map(step).join('')}</div></section>
+    <section class="stack" style="gap:6px"><div class="section-head"><h3>What to bring</h3>${e ? `<span class="muted">${items.filter(([k]) => tick.includes(k)).length} of ${items.length} packed</span>` : ''}</div>
+      ${e ? `<div class="stack" style="gap:6px">${items.map(([k, label]) => `<label style="display:flex;flex-direction:row;gap:10px;align-items:flex-start;font-weight:400"><input type="checkbox" class="pack-item" data-ev="${e.id}" data-k="${k}" ${tick.includes(k) ? 'checked' : ''} style="width:auto;flex:none;margin-top:4px"><span>${label}</span></label>`).join('')}</div><span class="hint">Ticks are saved on this device only.</span>`
+        : `<ul style="margin:0;padding-left:1.2rem">${items.map(([, label]) => `<li>${label}</li>`).join('')}</ul>`}</section>
     <section class="stack" style="gap:6px"><div class="section-head"><h3>Who does what</h3>${e ? `<button class="btn ghost small" data-act="open-event" data-id="${e.id}">${mine.length ? `Roles: ${filled} of ${spots} filled` : 'Assign roles'}</button>` : ''}</div>
       ${ROLE_PHASES.map(([ph, label]) => { const rs = roles.filter(r => r.phase === ph); return rs.length ? `<div class="eyebrow" style="margin-top:6px">${label}</div><div>${rs.map(r => `<div class="list-row" style="align-items:flex-start"><div style="min-width:0"><div class="ev-title">${esc(r.name)} <span class="hint">· ${(+r.qty || 1) > 1 ? r.qty + ' people · ' : ''}${e ? 'arrive by ' + esc(roleArriveAt(e, r.arrive)) : (r.arrive ? r.arrive + ' min early' : 'at the start')}</span></div><div class="ev-sub">${esc(r.duties || '')}</div></div></div>`).join('')}</div>` : ''; }).join('')}
       <span class="hint">Officers on a role get their instructions by email the day before.</span></section>
@@ -6402,7 +6475,7 @@ function startBody(){
     <div class="start-grid">
       ${card('Plan an event', 'Create the event, fill out its scheduling request, and send it on. Nothing is published or promoted until it’s confirmed with UVU and signed off.', '<button class="btn" data-act="start-event">Start an event</button>')}
       ${card('External guest form', 'A Word document to collect a speaker’s, judge’s, or panelist’s details (job title, topic, bio, contact info) before you plan the event.', '<button class="btn ghost" data-act="guest-doc">Download it</button>')}
-      ${card('Guest speaker guide', 'What to bring, who does what, and what to send the speaker and when, with the dates worked out for your event.', '<button class="btn ghost" data-act="otab" data-tab="guide">Open the guide</button>')}
+      ${card('Event guides', 'For guest speakers and panels: what to bring, who does what, and what to send and when, with the dates worked out for your event.', '<button class="btn ghost" data-act="otab" data-tab="guide">Open the guide</button>')}
       ${card('How scheduling works', 'How far ahead to plan, the reviews, and who does what.', '<button class="btn ghost" data-act="proc-tab" data-id="uvu">Read it</button>')}
     </div>
     <div class="section-head"><h3>Planning checklists</h3></div>
@@ -7350,7 +7423,7 @@ function eventOfficerExtras(e){
     const gs = eventGuests(e.id), due = GUEST_MAILS.find(m => m[0] === guestMailDue(e));
     h += `<div class="panel stack" style="gap:6px;padding:12px 14px"><strong>Guest emails</strong>
       <span class="hint">Ready-made emails for ${gs.length ? (gs.length === 1 ? esc(gs[0].name || gs[0].email) : gs.length + ' external guests') : 'external guests'}: the invitation, the 2-week and 1-week check-ins (with parking and arrival), the final check-in, and the thank-you. Going by the date, the next one is the ${esc(due[1].toLowerCase())}.</span>
-      <div class="row" style="gap:6px"><button class="btn ghost small" data-act="guest-mail" data-id="${e.id}">Choose an email</button>${['guest_speaker', 'panel'].includes(e.cat) ? `<button class="btn ghost small" data-act="guide-open" data-id="${e.id}">Guest speaker guide</button>` : ''}</div></div>`;
+      <div class="row" style="gap:6px"><button class="btn ghost small" data-act="guest-mail" data-id="${e.id}">Choose an email</button>${['guest_speaker', 'panel'].includes(e.cat) ? `<button class="btn ghost small" data-act="guide-open" data-id="${e.id}">${e.cat === 'panel' ? 'Panel guide' : 'Guest speaker guide'}</button>` : ''}</div></div>`;
   }
   return h;
 }
@@ -8926,7 +8999,7 @@ document.addEventListener('click', async ev => {
       toast(reset ? 'Back to the default checklist' : catName(d.cat) + ' checklist saved'); break; }
     case 'plan-template': {
       const e = evById(id), owner = (t.dataset.guide && (document.getElementById('guide-runner') || {}).value) || session;
-      const rows = (t.dataset.guide ? PLAN_DEFAULTS.guest_speaker : planTemplate(e.cat)).map(([title, n]) => { let due = shiftDay(e.date, n); if (n < 0 && due < todayIso()) due = todayIso();
+      const rows = (t.dataset.guide ? PLAN_DEFAULTS[e.cat === 'panel' ? 'panel' : 'guest_speaker'] : planTemplate(e.cat)).map(([title, n]) => { let due = shiftDay(e.date, n); if (n < 0 && due < todayIso()) due = todayIso();
         return { title, event_id: id, owner, due, done: false }; });
       await act(async () => { must(await sb.from('tasks').insert(rows)); await logChange('Added the planning checklist for “' + e.title + '”' + (owner === session ? '' : ', run by ' + userName(owner))); },
         t.dataset.guide ? `Checklist created. ${owner === session ? 'You' : userName(owner)} will get a reminder the day before each step is due.` : 'Checklist added. Assign owners below.');
@@ -9599,6 +9672,13 @@ document.addEventListener('change', async e => {
   if (id === 'stats-ev'){ ui.statsEv = e.target.value; render(); }
   if (id === 'plan-ev'){ ui.planEv = e.target.value; render(); }
   if (id === 'guide-ev'){ ui.guideEv = e.target.value; render(); }
+  if (id === 'guide-type'){ ui.guideType = e.target.value; ui.guideEv = undefined; render(); }
+  if (id === 'guide-target'){
+    const evId = e.target.dataset.ev, ev = evById(evId), num = panelPlan(e.target.value).n;
+    if (!ev){ ui.guideTarget = num; render(); }
+    else await act(async () => { must(await sb.from('events').update({ panel_target: num }).eq('id', evId));
+      await logChange('Set “' + ev.title + '” to ' + num + ' panelists'); }, 'Schedule resized for ' + num + ' panelists');
+  }
   if (id === 'guide-runner-change'){
     // Hand the event to another officer: every unfinished step becomes theirs.
     const evId = e.target.dataset.ev, who = e.target.value, ev = evById(evId);
