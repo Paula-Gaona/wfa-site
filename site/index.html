@@ -4278,7 +4278,6 @@ The Association serves finance students at every level, from first-year students
 
 ## Engagement details
 - **Event:** {event}
-- **Speakers:** Please confirm who will be presenting
 - **Format:** Presentation with Q&A
 - **Date and time:** ${when}
 - **Location:** ${loc}
@@ -4320,7 +4319,9 @@ This is one way to cover the four points above in about ${o.talk} minutes. Pleas
 - Any accommodations you need, and any dietary restrictions (we’ll have food)
 - A first draft of your slides, if you’re using them, ${slides > todayIso() ? 'by ' + longDay(slides) + ' (two weeks before the event)' : 'as soon as you can'}
 
-We are excited to host you.` };
+Please reply to confirm that you are able to speak on this date. If the date or time doesn’t work, we would be glad to find one that does.
+
+We would be excited to host you.` };
   }
   if (key === 'two_weeks') return { subject: '{event} is two weeks away', closing: 'Thank you,', body:
 `Hi {first},
