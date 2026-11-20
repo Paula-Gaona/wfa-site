@@ -4873,7 +4873,8 @@ const PLAN_DEFAULTS = {
     ['Send Todd the food order (RSVPs + 20, up to the RSVP maximum) and dietary restrictions', -10], ['Set the RSVP maximum to the number of people food was ordered for', -10],
     ['Send the speaker the 1-week check-in: parking, their guide, students’ questions, final call for slides', -7],
     ['Make sure the microphones and clicker work and are set aside', -7],
-    ['Print the signage', -3], ['Finalize the PowerPoint and the host script', -3], ['Send the final check-in with any last questions', -3],
+    ['Print the signage', -3], ['Finalize the PowerPoint and the host script', -3], ['Send the final check-in with the starred questions', -3],
+    ['Gather everything on the What to bring list', -1],
     ['Send a thank-you to the speaker', 1], ['Return the borrowed sign holders', 1], ['Check that attendance is complete', 1], ['Post a recap with photos', 2]],
   workshop: [
     ['Confirm the presenter, topic, and a few possible dates', -28], ['Fill out the scheduling request and send it on', -21],
@@ -4977,7 +4978,7 @@ function planBody(){
     </section>
     <section class="stack" style="gap:10px">
       <div class="section-head"><h3>Checklist</h3>${tasks.length ? '' : `<button class="btn small" data-act="plan-template" data-id="${e.id}">Add the ${esc(catName(e.cat))} checklist</button>`}</div>
-      ${tasks.length ? `<div class="table-wrap"><table><thead><tr><th style="width:2.5rem"></th><th>Task</th><th>Owner</th><th>Due</th><th></th></tr></thead><tbody>
+      ${tasks.length ? `<span class="hint">Each task’s owner gets a reminder the day before it’s due.</span><div class="table-wrap"><table><thead><tr><th style="width:2.5rem"></th><th>Task</th><th>Owner</th><th>Due</th><th></th></tr></thead><tbody>
         ${tasks.map(t => { const late = !t.done && t.due < todayIso();
           return `<tr${t.done ? ' style="opacity:.6"' : ''}><td><input type="checkbox" data-act="toggle-task" data-id="${t.id}" ${t.done ? 'checked' : ''} aria-label="Mark done"></td>
           <td${t.done ? ' style="text-decoration:line-through"' : ''}>${esc(t.title)}${late ? ' <span class="tag bad">Overdue</span>' : ''}</td>
@@ -6353,6 +6354,9 @@ function guideBody(){
   const e = ui.guideEv === '' ? null : (evs.find(x => x.id === ui.guideEv) || evs.find(x => !isPast(x)) || evs[0] || null);
   const n = e ? (e.speakers || []).length || eventGuests(e.id).length : 0;
   const tasks = e ? db.tasks.filter(t => t.eventId === e.id) : [], done = tasks.filter(t => t.done).length;
+  // Who runs the event: whoever owns most of its unfinished steps.
+  const staff = staffEmails(), open = tasks.filter(t => !t.done), tally = {}; (open.length ? open : tasks).forEach(t => { tally[t.who] = (tally[t.who] || 0) + 1; });
+  const runner = Object.keys(tally).sort((a, b) => tally[b] - tally[a])[0] || '';
   const days = e ? Math.round((parseDay(e.date) - parseDay(today)) / 864e5) : 0;
   // "You are here": the latest step whose date has come.
   let here = -1; if (e) GUIDE_STEPS.forEach(([d], i) => { if (shiftDay(e.date, d) <= today) here = i; });
@@ -6374,7 +6378,12 @@ function guideBody(){
       <div><h3 style="margin:0">${esc(e.title)} ${e.draft ? '<span class="tag">Draft</span>' : ''}</h3>
         <div class="ev-sub">${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc) || 'No location yet'} · ${days === 0 ? 'Today' : days > 0 ? `In ${days} day${days === 1 ? '' : 's'}` : `${-days} day${days === -1 ? '' : 's'} ago`}${e.draft ? '' : ` · ${rsvpCount(e.id)} RSVP${rsvpCount(e.id) === 1 ? '' : 's'}${e.cap ? ' of ' + e.cap : ''}`}</div></div>
       <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn ghost small" data-act="open-event" data-id="${e.id}">Open the event</button><button class="btn ghost small" data-act="guest-mail" data-id="${e.id}">Guest emails</button>
-        ${tasks.length ? `<button class="btn ghost small" data-act="guide-plan" data-id="${e.id}">Checklist: ${done} of ${tasks.length} done</button>` : `<button class="btn ghost small" data-act="plan-template" data-id="${e.id}">Add these steps as a checklist</button>`}</div>
+        ${tasks.length ? `<button class="btn ghost small" data-act="guide-plan" data-id="${e.id}">Checklist: ${done} of ${tasks.length} done</button>` : ''}</div>
+      ${tasks.length ? `<label style="max-width:22rem">Who’s running this event<select id="guide-runner-change" data-ev="${e.id}">${staff.map(x => `<option value="${esc(x)}" ${x === runner ? 'selected' : ''}>${esc(userName(x))}</option>`).join('')}</select>
+          <span class="hint">They get a reminder the day before each step on the checklist is due. Changing this hands them every unfinished step.</span></label>`
+        : `<div class="row" style="gap:10px;align-items:end;flex-wrap:wrap"><label style="flex:1 1 14rem;max-width:22rem">Who’s running this event<select id="guide-runner">${staff.map(x => `<option value="${esc(x)}" ${x === session ? 'selected' : ''}>${esc(userName(x))}</option>`).join('')}</select></label>
+          <button class="btn small" data-act="plan-template" data-guide="1" data-id="${e.id}">Create the checklist</button></div>
+          <span class="hint">This turns the steps below into a checklist with due dates. The officer running the event gets a reminder the day before each step is due.</span>`}
     </section>` : ''}
     <section class="stack" style="gap:6px"><div class="section-head"><h3>How to plan</h3></div><div>${GUIDE_STEPS.map(step).join('')}</div></section>
     <section class="stack" style="gap:6px"><div class="section-head"><h3>What to bring</h3>${e ? `<span class="muted">${guideItems(n).filter(([k]) => tick.includes(k)).length} of ${guideItems(n).length} packed</span>` : ''}</div>
@@ -8916,10 +8925,11 @@ document.addEventListener('click', async ev => {
       await load(); ui.tplDraft = { cat: d.cat, rows: planTemplate(d.cat).map(x => [...x]) }; render();
       toast(reset ? 'Back to the default checklist' : catName(d.cat) + ' checklist saved'); break; }
     case 'plan-template': {
-      const e = evById(id);
-      const rows = planTemplate(e.cat).map(([title, n]) => { let due = shiftDay(e.date, n); if (n < 0 && due < todayIso()) due = todayIso();
-        return { title, event_id: id, owner: session, due, done: false }; });
-      await act(async () => { must(await sb.from('tasks').insert(rows)); await logChange('Added the planning checklist for “' + e.title + '”'); }, 'Checklist added. Assign owners below.');
+      const e = evById(id), owner = (t.dataset.guide && (document.getElementById('guide-runner') || {}).value) || session;
+      const rows = (t.dataset.guide ? PLAN_DEFAULTS.guest_speaker : planTemplate(e.cat)).map(([title, n]) => { let due = shiftDay(e.date, n); if (n < 0 && due < todayIso()) due = todayIso();
+        return { title, event_id: id, owner, due, done: false }; });
+      await act(async () => { must(await sb.from('tasks').insert(rows)); await logChange('Added the planning checklist for “' + e.title + '”' + (owner === session ? '' : ', run by ' + userName(owner))); },
+        t.dataset.guide ? `Checklist created. ${owner === session ? 'You' : userName(owner)} will get a reminder the day before each step is due.` : 'Checklist added. Assign owners below.');
       break; }
     case 'about-edit': { const a = aboutContent(); ui.aboutDraft = { ...a, pillars: a.pillars.map(p => ({ ...p })), steps: a.steps.map(p => ({ ...p })) }; render(); window.scrollTo(0, 0); break; }
     case 'about-cancel': ui.aboutDraft = null; render(); break;
@@ -9589,6 +9599,12 @@ document.addEventListener('change', async e => {
   if (id === 'stats-ev'){ ui.statsEv = e.target.value; render(); }
   if (id === 'plan-ev'){ ui.planEv = e.target.value; render(); }
   if (id === 'guide-ev'){ ui.guideEv = e.target.value; render(); }
+  if (id === 'guide-runner-change'){
+    // Hand the event to another officer: every unfinished step becomes theirs.
+    const evId = e.target.dataset.ev, who = e.target.value, ev = evById(evId);
+    await act(async () => { must(await sb.from('tasks').update({ owner: who }).eq('event_id', evId).eq('done', false));
+      await logChange(userName(who) + ' now runs “' + (ev ? ev.title : 'an event') + '”'); }, userName(who) + ' now runs this event and gets its reminders');
+  }
   if (e.target.classList.contains('pack-item')){
     const k = e.target.dataset.k, evId = e.target.dataset.ev, cur = packed(evId).filter(x => x !== k); if (e.target.checked) cur.push(k);
     try { localStorage.setItem('wfa-pack-' + evId, JSON.stringify(cur)); } catch(_){}
@@ -9605,7 +9621,7 @@ document.addEventListener('change', async e => {
   }
   if (id === 'tpl-cat'){ const cat = e.target.value; ui.tplDraft = { cat, rows: planTemplate(cat).map(r => [...r]) }; render(); }
   if (e.target.classList.contains('plan-owner') || e.target.classList.contains('plan-due')){
-    const owner = e.target.classList.contains('plan-owner'), upd = owner ? { owner: e.target.value } : { due: e.target.value || todayIso() };
+    const owner = e.target.classList.contains('plan-owner'), upd = owner ? { owner: e.target.value } : { due: e.target.value || todayIso(), reminded_at: null };
     const r = await sb.from('tasks').update(upd).eq('id', e.target.dataset.id);
     if (r.error) toast(errMsg(r.error)); else { await load(); render(); toast(owner ? 'Assigned to ' + userName(e.target.value) : 'Due date changed'); }
   }

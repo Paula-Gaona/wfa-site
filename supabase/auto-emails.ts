@@ -477,6 +477,34 @@ ${lastNote}`
       }
     } catch (_) { /* not set up yet (116-class-visits.sql) */ }
 
+    // Checklist reminders (see 119-task-reminders.sql): the day before a planning-checklist task is due (from 9 AM),
+    // its owner gets one message listing what's due tomorrow, grouped by event. Each task is claimed first so it's
+    // only reminded once. Works even when the event emails are off.
+    try {
+      const nowMs = Date.now(), tomorrow = isoDay(nowMs + DAY);
+      if (nowMs >= mtMs(isoDay(nowMs), '09:00')) {
+        const claim = await db.from('tasks').update({ reminded_at: new Date().toISOString() }).eq('done', false).eq('due', tomorrow).is('reminded_at', null).select('id, title, owner, event_id');
+        const due = claim.error ? [] : (claim.data || []);
+        if (due.length) {
+          const evIds = [...new Set(due.map((x) => x.event_id).filter(Boolean))];
+          const { data: evs } = evIds.length ? await db.from('events').select('id, title').in('id', evIds) : { data: [] };
+          const evTitle = new Map((evs || []).map((x) => [x.id, String(x.title || '')]));
+          const byOwner = new Map<string, typeof due>();
+          due.forEach((x) => { const o = String(x.owner || '').toLowerCase(); if (o) byOwner.set(o, [...(byOwner.get(o) || []), x]); });
+          let told = 0;
+          for (const [owner, list] of byOwner) {
+            const groups = new Map<string, string[]>();
+            list.forEach((x) => { const k = evTitle.get(x.event_id) || 'Other tasks'; groups.set(k, [...(groups.get(k) || []), String(x.title)]); });
+            const lines = [...groups].map(([ev, items]) => `${ev}:\n` + items.map((i) => `- ${i}`).join('\n')).join('\n\n');
+            const subject = list.length === 1 ? `Due tomorrow: ${list[0].title}` : `${list.length} checklist items are due tomorrow`;
+            const body = `${list.length === 1 ? 'This checklist item is' : 'These checklist items are'} due tomorrow, ${fmtDay(nowMs + DAY)}:\n\n${lines}\n\nTick ${list.length === 1 ? 'it' : 'them'} off when ${list.length === 1 ? "it's" : "they're"} done, or change the due date if the plan has moved.`;
+            if (await tell([owner], subject, body, 'Open the checklist', `${site}/#officer/plan`, `tasks-${tomorrow}`)) told++;
+          }
+          if (told) await db.from('change_log').insert({ who: 'automatic emails', text: `Reminded ${told} officer${told === 1 ? '' : 's'} about checklist items due tomorrow` });
+        }
+      }
+    } catch (_) { /* not set up yet (119-task-reminders.sql) */ }
+
     // Waitlists (see 62-rsvp-waitlist.sql): tell people who just got a seat. Works even when the event emails are off.
     const { data: promoted } = await db.from('waitlist').select('event_id, email').not('promoted_at', 'is', null).is('notified_at', null).limit(200);
     if (promoted?.length) {
