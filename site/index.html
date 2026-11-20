@@ -781,7 +781,7 @@ function buildTitle(tier, branch){
 // Officer tools, in groups (the menu shows the headings; the tab row puts a divider between groups).
 const OFFICER_GROUPS = [
   ['To do', [['approvals','Approvals'],['questions','Questions'],['tasks','Tasks'],['visits','Class visits']]],
-  ['Planning events', [['events','Events'],['scheduling','Scheduling'],['contacts','Contacts'],['eventplan','Semester plan'],['plan','Get started with an event'],['process','How scheduling works'],['availability','Availability']]],
+  ['Planning events', [['events','Events'],['scheduling','Scheduling'],['contacts','Contacts'],['eventplan','Semester plan'],['plan','Get started with an event'],['guide','Guest speaker guide'],['process','How scheduling works'],['availability','Availability']]],
   ['At the event', [['checkin','Check-in & attendance'],['qr','QR codes'],['surveys','Event surveys']]],
   ['Communications', [['announcements','Announcements'],['email','Email builder'],['forms','Survey builder'],['recaps','Recaps']]],
   ['People & data', [['members','Members'],['directory','Officer directory'],['resumes','Resume book'],...(DUES_ENABLED ? [['dues','Dues']] : []),['stats','Statistics'],['results','Survey results']]]
@@ -4192,42 +4192,201 @@ function arRow(g = {}){
     <input class="ar-email" type="email" placeholder="Email" maxlength="254" value="${esc(g.email || '')}" style="flex:2 1 12rem;min-width:0">
     <button type="button" class="btn ghost small" data-act="ar-rm" aria-label="Remove this guest">×</button></div>`;
 }
-function arrivalModal(id){
+// Guest emails: what officers send speakers and other outside guests, in the order they go out.
+// [key, name, when it's sent]
+const GUEST_MAILS = [
+  ['invite', 'Official invitation', 'once the guest is confirmed'],
+  ['two_weeks', '2-week check-in', '2 weeks before'],
+  ['one_week', '1-week check-in, with parking and arrival', '1 week before'],
+  ['final', 'Final check-in', '3 days before'],
+  ['thanks', 'Thank-you', 'after the event']
+];
+const GM_NEEDS = { phone: ['one_week', 'final'], early: ['one_week', 'final'], guide: ['one_week'], talk: ['invite'] };
+function evDur(e){ const m = t => { const [h, mm] = String(t || '').split(':').map(Number); return h * 60 + mm; }, d = m(e.end) - m(e.start); return d > 0 ? d : 0; }
+function longDay(s){ return parseDay(s).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }); }
+// The speaker outline's sections, scaled to how long each speaker talks (15 minutes gives 2–3, 6–7, 4–5).
+function talkSplit(T){
+  const r = (a, b) => { const x = Math.max(1, Math.round(T * a)), y = Math.max(x, Math.round(T * b)); return x === y ? String(x) : x + '–' + y; };
+  return { bg: r(.15, .2), career: r(.4, .47), advice: r(.27, .33) };
+}
+// A sensible default for how long each speaker talks: about 70% of the event split between the speakers, the rest is Q&A.
+function talkDefault(e, n){ const d = evDur(e) || 60; return Math.min(45, Math.max(10, Math.round(d * .7 / Math.max(1, n) / 5) * 5)); }
+// Which email is due, going by how far away the event is.
+function guestMailDue(e){
+  if (isPast(e)) return 'thanks';
+  const d = Math.round((parseDay(e.date) - parseDay(todayIso())) / 864e5);
+  return d <= 4 ? 'final' : d <= 10 ? 'one_week' : d <= 17 ? 'two_weeks' : 'invite';
+}
+function guestMailModal(id, key){
   const e = evById(id); if (!e) return;
+  if (!GUEST_MAILS.some(m => m[0] === key)) key = guestMailDue(e);
   let phone = ''; try { phone = localStorage.getItem('wfa-arrival-phone') || ''; } catch(_){}
   const gs = eventGuests(id).map(g => { const [first, ...rest] = g.name.split(/\s+/); return { email: g.email, first: first || '', last: rest.join(' ') }; });
+  const n = Math.max(1, gs.length, (e.speakers || []).length), guideRole = rolesOf(id).find(r => /guide|host/i.test(r.name) && (r.officers || []).filter(Boolean).length);
+  const show = k => GM_NEEDS[k].includes(key) ? '' : ' hidden', due = guestMailDue(e);
   showModal(`<div class="modal-in stack" style="gap:14px"><button class="modal-x" data-act="close" aria-label="Close" style="float:right">×</button>
-    <div><h3 style="margin:0">Guest parking & arrival email</h3><div class="hint">${esc(e.title)} · ${fmtDay(e.date)} at ${fmtTime(e.start)}</div></div>
-    <label>Your phone number<input id="ar-phone" type="tel" data-vcheck="phone" maxlength="20" placeholder="(801) 555-0123" value="${esc(phone)}">
-      <span class="hint">Guests text you their license plate and parking zone. It only goes in this email (and is remembered on this device).</span></label>
-    <label>Arrive how early<select id="ar-early">${AR_EARLY.map(([a, b]) => `<option value="${a}-${b}" ${a === 20 ? 'selected' : ''}>${b} to ${a} minutes before</option>`).join('')}</select>
+    <div><h3 style="margin:0">Guest emails</h3><div class="hint">${esc(e.title)} · ${fmtDay(e.date)} at ${fmtTime(e.start)}</div></div>
+    <label>Which email<select id="gm-tpl">${GUEST_MAILS.map(([k, name, when]) => `<option value="${k}" ${k === key ? 'selected' : ''}>${name} (${when})${k === due ? ' · due now' : ''}</option>`).join('')}</select>
+      <span class="hint">You can edit everything in the email builder before it’s sent.</span></label>
+    <label data-gm="talk"${show('talk')}>Minutes each speaker talks<input id="gm-talk" type="number" min="5" max="90" step="1" value="${talkDefault(e, n)}">
+      <span class="hint">The speaker outline in the invitation is sized to this. ${evDur(e) ? `The event is ${evDur(e)} minutes long; what’s left is Q&A.` : ''}</span></label>
+    <label data-gm="phone"${show('phone')}>Your phone number<input id="ar-phone" type="tel" data-vcheck="phone" maxlength="20" placeholder="(801) 555-0123" value="${esc(phone)}">
+      <span class="hint">Guests text you when they’ve parked. It only goes in this email (and is remembered on this device).</span></label>
+    <label data-gm="early"${show('early')}>Arrive how early<select id="ar-early">${AR_EARLY.map(([a, b]) => `<option value="${a}-${b}" ${a === 20 ? 'selected' : ''}>${b} to ${a} minutes before</option>`).join('')}</select>
       <span class="hint" id="ar-early-hint">About ${esc(arriveWindow(e))}</span></label>
+    <label data-gm="guide"${show('guide')}>Their guide <span class="hint">Optional: the officer who meets them</span><input id="gm-guide" maxlength="80" value="${esc(guideRole ? userName(guideRole.officers.filter(Boolean)[0]) : '')}"></label>
     <div class="stack" style="gap:6px"><strong>Guests</strong>
-      <span class="hint">${gs.length ? 'Filled in from the event’s planning request.' : 'None with an email are on the event’s planning request, so add them here.'} Each guest gets their own email that greets them by first name.</span>
+      <span class="hint">${gs.length ? 'Filled in from the event’s planning request.' : 'Add the guests here.'} Each guest gets their own email that greets them by first name.</span>
       <div id="ar-guests" class="stack" style="gap:6px">${(gs.length ? gs : [{}]).map(arRow).join('')}</div>
       <div><button type="button" class="btn ghost small" data-act="ar-add">+ Add a guest</button></div></div>
     <div class="err" id="ar-err"></div>
-    <div class="row" style="gap:8px"><button class="btn" data-act="ar-go" data-id="${id}">Continue to the email</button><button class="btn ghost" data-act="close">Cancel</button></div></div>`);
+    <div class="row" style="gap:8px"><button class="btn" data-act="gm-go" data-id="${id}">Continue to the email</button><button class="btn ghost" data-act="close">Cancel</button></div></div>`);
 }
 document.addEventListener('change', ev => {
+  if (ev.target.id === 'gm-tpl') document.querySelectorAll('[data-gm]').forEach(el => { el.hidden = !GM_NEEDS[el.dataset.gm].includes(ev.target.value); });
   if (ev.target.id !== 'ar-early') return;
-  const id = (document.querySelector('[data-act="ar-go"]') || {}).dataset?.id, e = evById(id), [a, b] = ev.target.value.split('-').map(Number), h = document.getElementById('ar-early-hint');
+  const id = (document.querySelector('[data-act="gm-go"]') || {}).dataset?.id, e = evById(id), [a, b] = ev.target.value.split('-').map(Number), h = document.getElementById('ar-early-hint');
   if (e && h) h.textContent = 'About ' + arriveWindow(e, a, b);
 });
-function arrivalGo(id){
-  const e = evById(id), errEl = document.getElementById('ar-err'), bad = m => { errEl.textContent = m; };
+// The subject and text of one guest email. o: { phone, a, b (arrive a to b minutes early), guide, talk, n (speakers) }.
+function guestMailText(key, e, o){
+  const when = `${longDay(e.date)}, ${fmtTime(e.start)}${e.end ? ' to ' + fmtTime(e.end) : ''}`, loc = e.loc || 'UVU Keller Building', dur = evDur(e);
+  const weekday = parseDay(e.date).toLocaleDateString('en-US', { weekday: 'long' });
+  const qs = (db.evQuestions || []).filter(q => q.event_id === e.id).sort((x, y) => (y.starred - x.starred) || String(x.created_at).localeCompare(String(y.created_at)));
+  const qList = qs.map(q => '- ' + q.question + ((q.speakers || []).length ? ' (for ' + q.speakers.join(', ') + ')' : '')).join('\n');
+  const arr = MAIL_TEMPLATES.arrival[2];
+  let park = arr.slice(arr.indexOf('## When to arrive'), arr.indexOf('\n\nSee you soon')).replace('15 to 20 minutes early', `${o.b} to ${o.a} minutes early`).replace('{arrive}', arriveWindow(e, o.a, o.b)).replace('[YOUR PHONE NUMBER]', o.phone);
+  if (o.guide) park = park.replace('One of our club officers can meet you', `${o.guide}, one of our officers, will be your guide. They can meet you`);
+  if (key === 'invite'){
+    const t = talkSplit(o.talk), left = dur ? dur - o.talk * o.n : 0, slides = shiftDay(e.date, -14);
+    return { subject: 'Invitation to speak: {event}', closing: 'Sincerely,', body:
+`Hi {first},
+
+On behalf of the Wolverine Finance Association at Utah Valley University’s Woodbury School of Business, I am writing to formally invite you to speak to our members.
+
+The Association serves finance students at every level, from first-year students exploring the field to seniors recruiting for internships and full-time roles. Our goal is to give them direct access to professionals who work in the business world, so they can make informed career decisions and prepare for them properly.
+
+## Engagement details
+- **Event:** {event}
+- **Speakers:** Please confirm who will be presenting
+- **Format:** Presentation with Q&A
+- **Date and time:** ${when}
+- **Location:** ${loc}
+- **Length:** ${dur ? dur + ' minutes' : '60 to 90 minutes, at your discretion'}
+- **Audience:** UVU finance students across all years
+
+## Purpose
+We ask each guest to cover a few things:
+- What your work involves and how you got there
+- What you look for in candidates, and what students should do now to prepare
+- Your view of what makes professionals successful from where you sit
+- How your part of the industry is changing, and what that means for people entering it
+- A setback or mistake early in your career, and what it taught you
+
+## What we aim to do for students
+- Give accurate, first-hand information on finance careers
+- Improve their internship applications, interviews, and technical preparation
+- Build direct relationships with Utah’s finance and business community
+
+## Our template for guest speakers
+This is a suggested outline for about ${o.talk} minutes of speaking${o.n > 1 ? ' per speaker' : ''}. Please adapt it however you like.
+
+**Background (about ${t.bg} min)**
+- Where you’re from and a bit about yourself (family, hobbies, interests, whatever you’re comfortable sharing)
+- Your school and career path at a glance
+
+**Career (about ${t.career} min)**
+- Key decisions or turning points that got you here
+- Skills that mattered most (technical and soft), the role your network played, and how you built it
+- A challenge you faced and how you worked through it
+- What a typical week looks like in your role
+- What you love about your role, and what’s hardest
+
+**Advice (about ${t.advice} min)**
+- What you wish you’d known starting out
+- What students should be doing now (classes, certifications, internships, involvement)
+- What you look for when adding someone to your team
+
+**Q&A and wrap-up (${left >= 5 ? 'the remaining ' + left + ' minutes or so' : 'the remaining time'})**
+- Questions from students, including ones they send in ahead of time
+- How students can connect with you (LinkedIn, email, etc.)
+
+## What we’ll need from you
+- A headshot and a short bio, for our marketing materials
+- Any accommodations you need, and any dietary restrictions (we’ll have food)
+- A first draft of your slides, if you’re using them, ${slides > todayIso() ? 'by ' + longDay(slides) + ' (two weeks before the event)' : 'as soon as you can'}
+
+We are excited to host you.` };
+  }
+  if (key === 'two_weeks') return { subject: '{event} is two weeks away', closing: 'Thank you,', body:
+`Hi {first},
+
+{event} is two weeks away, and we’re looking forward to having you. A quick check-in:
+
+## The details
+- **Date and time:** ${when}
+- **Location:** ${loc}
+- **Format:** Presentation with Q&A
+
+## What we still need
+- **Slides:** if you’re using slides and haven’t sent a draft yet, please send one this week, so we can test it on the room’s system
+- **Headshot and short bio**, if you haven’t sent them
+- **Accommodations or dietary restrictions**, if there’s anything we should know
+
+Next week we’ll send parking and arrival instructions, the name of the officer who will meet you, and the questions students have sent in so far.` };
+  if (key === 'one_week') return { subject: 'Parking and arrival for {event} on {date}', closing: 'See you soon,', body:
+`Hi {first},
+
+{event} is one week away! Here’s everything you need for the day.
+
+${park}
+
+## Questions from students
+${qList ? 'Students have sent in these questions ahead of time:\n' + qList : 'We’ll send you the questions students submit ahead of time a few days before the event.'}
+
+## Slides
+If you’ve updated your slides, please send the final version by ${fmtDay(shiftDay(e.date, -3))}, so we can have them loaded and ready.` };
+  if (key === 'final') return { subject: `See you ${weekday}: {event}`, closing: 'See you soon,', body:
+`Hi {first},
+
+We’re looking forward to seeing you on ${weekday} for {event}. One last check-in:
+
+- **When:** ${when}. Please arrive about ${arriveWindow(e, o.a, o.b)}.
+- **Where:** ${loc}. Parking and arrival directions are in last week’s email. Once you’ve parked, text your license plate and zone number to **${o.phone}**.
+- **Slides:** if you’ve made changes, please send the final version by tomorrow so we can load it.
+${qList ? '\n## Questions from students\nHere’s the full list students have sent in:\n' + qList + '\n' : ''}
+If anything comes up before then, reply to this email or text ${o.phone}.` };
+  return { subject: 'Thank you for speaking at {event}', closing: 'With thanks,', body:
+`Hi {first},
+
+Thank you for taking the time to speak with our members at {event}. Hearing first-hand how you built your career, and what you look for in the people you hire, is exactly what our students need.
+
+[Add a specific moment, takeaway, or something students said afterward.]
+
+We’d love to stay in touch:
+- Students may reach out to connect with you on LinkedIn
+- We’ll share photos from the event on our LinkedIn and Instagram
+- If your firm has internships or openings you’d like in front of our members, send them our way and we’ll post them on our job board: ${SITE_URL}/#partners
+
+Thank you again. We hope to host you again soon.` };
+}
+function guestMailGo(id){
+  const e = evById(id), errEl = document.getElementById('ar-err'), bad = m => { errEl.textContent = m; }, key = document.getElementById('gm-tpl').value;
+  const need = k => GM_NEEDS[k].includes(key);
   const phone = fmtPhone(String(document.getElementById('ar-phone').value || '').trim());
-  if (String(phone).replace(/\D/g, '').length < 10) return bad('Enter your phone number, so guests can text you their plate and zone.');
+  if (need('phone') && String(phone).replace(/\D/g, '').length < 10) return bad('Enter your phone number, so guests can text you when they’ve parked.');
+  const talk = Math.round(+document.getElementById('gm-talk').value || 0);
+  if (need('talk') && (talk < 5 || talk > 90)) return bad('Enter how many minutes each speaker talks (5 to 90).');
   const guests = [...document.querySelectorAll('.ar-row')].map(r => ({ first: r.querySelector('.ar-first').value.trim(), last: r.querySelector('.ar-last').value.trim(), email: r.querySelector('.ar-email').value.trim().toLowerCase() }))
     .filter(g => g.first || g.last || g.email);
   if (!guests.length) return bad('Add at least one guest.');
   const noEmail = guests.find(g => !EMAIL_RE.test(g.email)); if (noEmail) return bad(`Check the email for ${noEmail.first || noEmail.last || 'each guest'}.`);
-  try { localStorage.setItem('wfa-arrival-phone', phone); } catch(_){}
-  const [a, b] = document.getElementById('ar-early').value.split('-').map(Number), [, subj, tpl] = MAIL_TEMPLATES.arrival;
+  if (need('phone')) try { localStorage.setItem('wfa-arrival-phone', phone); } catch(_){}
+  const [a, b] = document.getElementById('ar-early').value.split('-').map(Number);
+  const m = guestMailText(key, e, { phone, a, b, talk, guide: document.getElementById('gm-guide').value.trim(), n: Math.max(guests.length, (e.speakers || []).length, 1) });
   const names = {}; guests.forEach(g => names[g.email] = { first: g.first, last: g.last });
   closeModal(); ui.mailDraftId = null;
-  ui.mail = { ...MAIL_BLANK(), aud: 'custom', custom: guests.map(g => g.email).join(', '), ev: id, names, subject: subj,
-    body: tpl.replace('15 to 20 minutes early', `${b} to ${a} minutes early`).replace('{arrive}', arriveWindow(e, a, b)).replace('[YOUR PHONE NUMBER]', phone) };
+  ui.mail = { ...MAIL_BLANK(), aud: 'custom', custom: guests.map(g => g.email).join(', '), ev: id, names, subject: m.subject, body: m.body, closing: m.closing + '\n\n' + sigFill(mySig()) };
   ui.officerTab = 'email'; if (route() !== 'officer') location.hash = 'officer/email'; else { history.pushState(null, '', ui._hash = '#officer/email'); render(); } window.scrollTo(0, 0);
 }
 function fillMerge(s){
@@ -4684,13 +4843,16 @@ function thumbsHtml(){
 // plan 3 months ahead for case competitions, 2 months for career fairs, 6 weeks for guest speakers, 3 weeks otherwise.
 const PLAN_DEFAULTS = {
   guest_speaker: [
-    ['Confirm the speaker and a few possible dates', -49], ['Get the speaker’s details with the external guest form', -45],
-    ['Fill out the scheduling request and send it on', -42], ['Scheduler confirms it with UVU', -38],
-    ['Coordinate with the faculty advisor', -35], ['Scheduler finalizes the details; the presidents sign off and it’s published', -28],
-    ['Get the speaker’s headshot', -21], ['Make a flyer and post it on social media (only once it’s published)', -14],
-    ['Email members about the event', -7], ['Order food or refreshments', -7], ['Prepare the introduction and audience questions', -3],
-    ['Confirm parking, AV, and arrival time with the speaker', -2], ['Set the check-in code', -1], ['Send a reminder email', -1],
-    ['Send a thank-you to the speaker', 1], ['Post a recap with photos', 2]],
+    ['Confirm the speaker, topic, and date', -42], ['Reserve the place and time through Todd, with an estimated guest count', -42],
+    ['Email the speaker the official invitation', -40], ['Write the description, set the RSVP maximum, and post the event', -35],
+    ['Get the marketing materials made; send them to Emmy for approval and to Todd for printing', -35],
+    ['Assign roles to officers and recruit volunteers if needed', -21],
+    ['Send the speaker the 2-week check-in and request slides', -14], ['Start preparing the speaker gifts', -14],
+    ['Send Todd the food order (RSVPs + 20, up to the RSVP maximum) and dietary restrictions', -10], ['Set the RSVP maximum to the number of people food was ordered for', -10],
+    ['Send the speaker the 1-week check-in: parking, their guide, students’ questions, final call for slides', -7],
+    ['Make sure the microphones and clicker work and are set aside', -7],
+    ['Print the signage', -3], ['Finalize the PowerPoint and the host script', -3], ['Send the final check-in with any last questions', -3],
+    ['Send a thank-you to the speaker', 1], ['Return the borrowed sign holders', 1], ['Check that attendance is complete', 1], ['Post a recap with photos', 2]],
   workshop: [
     ['Confirm the presenter, topic, and a few possible dates', -28], ['Fill out the scheduling request and send it on', -21],
     ['Scheduler confirms it with UVU', -18], ['Scheduler finalizes the details; the presidents sign off and it’s published', -14],
@@ -6127,12 +6289,89 @@ const gqRow = g => { const f = g.form || {};
     <button class="btn ${gqWaitingOnMe(g) ? '' : 'ghost '}small" data-act="rq-open" data-id="g:${g.id}">Open</button></div>`; };
 
 // Officer tools → Get started with an event: where to begin, approved guests, and the planning checklists.
+/* ---------- Guest speaker guide (Officer tools): the club's playbook, filled in with the chosen event's dates and numbers ---------- */
+const GUIDE_PEOPLE = [['Todd Aubin', 'Finance Department Administrative Assistant', 'Reserves the room, orders the food, and sends flyers to the print center.'],
+  ['Emmy Bell', 'Director of Marketing and Communications', 'Approves marketing materials and posts them on the WSB screens and Instagram.']];
+// [days from the event, when, what, details, guest email to write, extra: 'roles' | 'food']
+const GUIDE_STEPS = [
+  [-42, 'As soon as the event is decided', 'Confirm the speaker, topic, and date', 'Get the place and time reserved through Todd, with an estimated guest count. That estimate is the starting RSVP maximum.'],
+  [-40, 'Once the speaker is confirmed', 'Email the official invitation', 'It confirms the date, time, topic, and location, shares the speech template and time limits, asks for a headshot, a short bio, and any accommodations or dietary restrictions, and gives the due date for first-draft slides (2 weeks before).', 'invite'],
+  [-35, 'Shortly after, ideally with the bio', 'Post the event on the site', 'Write the description, set the RSVP maximum, and post it.'],
+  [-35, 'At the same time', 'Get the marketing materials made', 'Follow UVU design standards. Send them to Emmy for approval, with a 2160x3840 pixel version for the WSB screens and one the same size without QR codes for the WSB Instagram. Send the files to Todd to print: 4x5.5 mini flyers for tables and study spaces (about 100), 11x17 flyers for the flyer holders and the Fintech Center glass, and 8.5x11 flyers for the Fintech Center sign holders.'],
+  [-21, '3 weeks before', 'Assign roles to officers', 'Start recruiting volunteers if needed.', '', 'roles'],
+  [-14, '2 weeks before', 'Send the 2-week check-in', 'Request slides if they haven’t been provided yet. Start preparing the speaker gifts.', 'two_weeks'],
+  [-10, '1.5 weeks before', 'Send Todd the food order', 'Order for the current RSVPs + 20, but never more than the RSVP maximum, and include any dietary restrictions. Then change the RSVP maximum to the number you ordered for, so nobody goes without food.', '', 'food'],
+  [-7, '1 week before', 'Send the 1-week check-in', 'Parking instructions, the name of their guide, students’ pre-submitted questions, and a final call for updated slides. Also make sure the microphones and clicker work and are set aside.', 'one_week'],
+  [-3, '3 days before', 'Final preparations', 'Print the signage, finalize the PowerPoint and the host script, and send the final check-in with any last pre-submitted questions.', 'final'],
+  [1, 'After the event', 'Wrap up', 'Thank the speakers, post a recap with the photos, return the borrowed sign holders to UVUAS, and check that attendance is complete.', 'thanks']
+];
+// What to bring. n = how many speakers (0 = not known).
+function guideItems(n){
+  return [['signs', '4 sign holders (the WFA has two, and two can be borrowed from UVUAS)'], ['checkin', '2 printed check-in pages'], ['directions', '2 printed direction pages'],
+    ['mics', n ? `${n + 1} microphones (1 per speaker + 1 for the host), plus 1 for audience questions in a large room` : 'Microphones: 1 per speaker + 1 for the host, plus 1 for audience questions in a large room'],
+    ['clicker', 'Clicker for the speaker’s slides'], ['computer', 'Computer for set-up'], ['cards', 'Time cards for the timekeeper'], ['food', 'Food'], ['water', 'Water'],
+    ['plates', 'Cutlery, plates, and napkins'], ['gifts', n ? `${n} gift${n === 1 ? '' : 's'} and thank-you card${n === 1 ? '' : 's'} (1 per speaker)` : '1 gift and thank-you card per speaker']];
+}
+// How much food to order: RSVPs + 20, but never more than the RSVP maximum.
+function guideFood(r, cap){
+  r = Math.max(0, Math.round(+r || 0)); cap = Math.max(0, Math.round(+cap || 0));
+  if (!cap) return `With no RSVP maximum: order for <strong>${r + 20}</strong> (${r} RSVPs + 20), then set the RSVP maximum to ${r + 20}.`;
+  if (r >= cap) return `The event is full. Order for <strong>${cap}</strong>, or see if the event can be expanded.`;
+  if (r + 20 >= cap) return `${r} RSVPs + 20 ${r + 20 === cap ? 'is exactly' : 'is more than'} the maximum of ${cap}. Order for <strong>${cap}</strong> and leave the RSVP maximum where it is.`;
+  return `${r} RSVPs + 20 = <strong>${r + 20}</strong>. Order for ${r + 20}, then lower the RSVP maximum from ${cap} to ${r + 20}.`;
+}
+function packed(id){ try { return JSON.parse(localStorage.getItem('wfa-pack-' + id) || '[]'); } catch(_){ return []; } }
+document.addEventListener('input', ev => {
+  if (ev.target.id !== 'gf-r' && ev.target.id !== 'gf-cap') return;
+  const out = document.getElementById('gf-out'); if (out) out.innerHTML = guideFood(document.getElementById('gf-r').value, document.getElementById('gf-cap').value);
+});
+function guideBody(){
+  const today = todayIso();
+  const evs = db.events.filter(x => ['guest_speaker', 'panel'].includes(x.cat) && shiftDay(x.date, 14) >= today).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  const e = ui.guideEv === '' ? null : (evs.find(x => x.id === ui.guideEv) || evs.find(x => !isPast(x)) || evs[0] || null);
+  const n = e ? (e.speakers || []).length || eventGuests(e.id).length : 0;
+  const tasks = e ? db.tasks.filter(t => t.eventId === e.id) : [], done = tasks.filter(t => t.done).length;
+  const days = e ? Math.round((parseDay(e.date) - parseDay(today)) / 864e5) : 0;
+  // "You are here": the latest step whose date has come.
+  let here = -1; if (e) GUIDE_STEPS.forEach(([d], i) => { if (shiftDay(e.date, d) <= today) here = i; });
+  const roles = usualRoles(), mine = e ? rolesOf(e.id) : [], spots = mine.reduce((a, r) => a + (+r.qty || 1), 0), filled = mine.reduce((a, r) => a + (r.officers || []).filter(Boolean).length, 0);
+  const tick = e ? packed(e.id) : [];
+  const step = ([d, when, what, text, mail, extra], i) => `<div class="list-row" style="align-items:flex-start;gap:14px;justify-content:flex-start${i < here ? ';opacity:.7' : ''}">
+      <div style="flex:0 0 9.5rem;max-width:36%"><strong>${when}</strong>${e ? `<div class="hint">${d > 0 ? 'From ' : ''}${fmtDay(shiftDay(e.date, d))}</div>` : ''}${i === here ? '<div><span class="tag ok">You are here</span></div>' : ''}</div>
+      <div class="stack" style="flex:1;min-width:0;gap:6px"><div><div class="ev-title">${what}</div><div class="ev-sub">${text}</div></div>
+        ${extra === 'food' ? `<div class="panel stack" style="gap:8px;padding:10px 12px"><div class="row" style="gap:10px;flex-wrap:wrap"><label style="flex:1 1 8rem">RSVPs now<input id="gf-r" type="number" min="0" inputmode="numeric" value="${e ? rsvpCount(e.id) : 40}"></label><label style="flex:1 1 8rem">RSVP maximum<input id="gf-cap" type="number" min="0" inputmode="numeric" value="${e ? (e.cap || '') : 80}"></label></div>
+          <div id="gf-out">${guideFood(e ? rsvpCount(e.id) : 40, e ? e.cap : 80)}</div>${e ? `<div><button class="btn ghost small" data-act="edit-event" data-id="${e.id}">Change the RSVP maximum</button></div>` : ''}</div>` : ''}
+        ${extra === 'roles' && e ? `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost small" data-act="open-event" data-id="${e.id}">${mine.length ? 'See the roles' : 'Assign roles'}</button><span class="hint">${mine.length ? `${filled} of ${spots} spots filled` : 'No roles set up for this event yet.'}</span></div>` : ''}
+        ${mail ? (e ? `<div><button class="btn ghost small" data-act="guest-mail" data-id="${e.id}" data-tpl="${mail}">Write this email</button></div>` : '<span class="hint">Pick an event above to write this email.</span>') : ''}
+      </div></div>`;
+  return `<div class="stack" style="gap:18px">
+    <p class="muted" style="margin:0">How the WFA runs a guest speaker event: what to send and when, who does what, and what to bring. Pick an event and the dates, numbers, and emails fill in for it.</p>
+    <label style="max-width:40rem">Event<select id="guide-ev"><option value="">No event (just the guide)</option>${evs.map(x => `<option value="${x.id}" ${e && x.id === e.id ? 'selected' : ''}>${fmtDay(x.date)} · ${esc(x.title)}${x.draft ? ' (draft)' : ''}${isPast(x) ? ' (past)' : ''}</option>`).join('')}</select>
+      ${evs.length ? '' : '<span class="hint">No guest speaker or panel events are coming up. Create one under Events and it shows here.</span>'}</label>
+    ${e ? `<section class="panel stack" style="gap:8px">
+      <div><h3 style="margin:0">${esc(e.title)} ${e.draft ? '<span class="tag">Draft</span>' : ''}</h3>
+        <div class="ev-sub">${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc) || 'No location yet'} · ${days === 0 ? 'Today' : days > 0 ? `In ${days} day${days === 1 ? '' : 's'}` : `${-days} day${days === -1 ? '' : 's'} ago`}${e.draft ? '' : ` · ${rsvpCount(e.id)} RSVP${rsvpCount(e.id) === 1 ? '' : 's'}${e.cap ? ' of ' + e.cap : ''}`}</div></div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn ghost small" data-act="open-event" data-id="${e.id}">Open the event</button><button class="btn ghost small" data-act="guest-mail" data-id="${e.id}">Guest emails</button>
+        ${tasks.length ? `<button class="btn ghost small" data-act="guide-plan" data-id="${e.id}">Checklist: ${done} of ${tasks.length} done</button>` : `<button class="btn ghost small" data-act="plan-template" data-id="${e.id}">Add these steps as a checklist</button>`}</div>
+    </section>` : ''}
+    <section class="stack" style="gap:6px"><div class="section-head"><h3>How to plan</h3></div><div>${GUIDE_STEPS.map(step).join('')}</div></section>
+    <section class="stack" style="gap:6px"><div class="section-head"><h3>What to bring</h3>${e ? `<span class="muted">${guideItems(n).filter(([k]) => tick.includes(k)).length} of ${guideItems(n).length} packed</span>` : ''}</div>
+      ${e ? `<div class="stack" style="gap:6px">${guideItems(n).map(([k, label]) => `<label style="display:flex;flex-direction:row;gap:10px;align-items:flex-start;font-weight:400"><input type="checkbox" class="pack-item" data-ev="${e.id}" data-k="${k}" ${tick.includes(k) ? 'checked' : ''} style="width:auto;flex:none;margin-top:4px"><span>${label}</span></label>`).join('')}</div><span class="hint">Ticks are saved on this device only.</span>`
+        : `<ul style="margin:0;padding-left:1.2rem">${guideItems(0).map(([, label]) => `<li>${label}</li>`).join('')}</ul>`}</section>
+    <section class="stack" style="gap:6px"><div class="section-head"><h3>Who does what</h3>${e ? `<button class="btn ghost small" data-act="open-event" data-id="${e.id}">${mine.length ? `Roles: ${filled} of ${spots} filled` : 'Assign roles'}</button>` : ''}</div>
+      ${ROLE_PHASES.map(([ph, label]) => { const rs = roles.filter(r => r.phase === ph); return rs.length ? `<div class="eyebrow" style="margin-top:6px">${label}</div><div>${rs.map(r => `<div class="list-row" style="align-items:flex-start"><div style="min-width:0"><div class="ev-title">${esc(r.name)} <span class="hint">· ${(+r.qty || 1) > 1 ? r.qty + ' people · ' : ''}${e ? 'arrive by ' + esc(roleArriveAt(e, r.arrive)) : (r.arrive ? r.arrive + ' min early' : 'at the start')}</span></div><div class="ev-sub">${esc(r.duties || '')}</div></div></div>`).join('')}</div>` : ''; }).join('')}
+      <span class="hint">Officers on a role get their instructions by email the day before.</span></section>
+    <section class="stack" style="gap:6px"><div class="section-head"><h3>People to know</h3></div>
+      <div>${GUIDE_PEOPLE.map(([name, title, what]) => `<div class="list-row"><div style="min-width:0"><div class="ev-title">${name}</div><div class="ev-sub">${title}. ${what}</div></div></div>`).join('')}</div></section>
+  </div>`;
+}
 function startBody(){
   const card = (title, text, btn) => `<div class="panel stack" style="gap:8px;padding:16px"><strong style="font-size:1.05rem">${title}</strong><span class="muted">${text}</span><div style="margin-top:auto">${btn}</div></div>`;
   return `<div class="stack" style="gap:18px">
     <div class="start-grid">
       ${card('Plan an event', 'Create the event, fill out its scheduling request, and send it on. Nothing is published or promoted until it’s confirmed with UVU and signed off.', '<button class="btn" data-act="start-event">Start an event</button>')}
       ${card('External guest form', 'A Word document to collect a speaker’s, judge’s, or panelist’s details (job title, topic, bio, contact info) before you plan the event.', '<button class="btn ghost" data-act="guest-doc">Download it</button>')}
+      ${card('Guest speaker guide', 'What to bring, who does what, and what to send the speaker and when, with the dates worked out for your event.', '<button class="btn ghost" data-act="otab" data-tab="guide">Open the guide</button>')}
       ${card('How scheduling works', 'How far ahead to plan, the reviews, and who does what.', '<button class="btn ghost" data-act="proc-tab" data-id="uvu">Read it</button>')}
     </div>
     <div class="section-head"><h3>Planning checklists</h3></div>
@@ -6197,6 +6436,7 @@ function viewOfficer(){
   else if (T === 'resumes'){ body = resumeBookBody(); }
 
   else if (T === 'plan'){ body = startBody(); }
+  else if (T === 'guide'){ body = guideBody(); }
 
   else if (T === 'scheduling'){ body = schedulingBody(); }
   else if (T === 'process'){ body = processBody(); }
@@ -6965,6 +7205,7 @@ const ROLE_PRESETS = [
   ['during', 'MC', 15, 1, 'Welcome everyone, give a quick WFA plug, and introduce the speakers with their short bios. Handle the transitions between speakers, ask the pre-submitted questions first, then call on people from the room so a few don’t take over.', true],
   ['during', 'Timekeeper', 10, 1, 'Hold up the 10-minute, 5-minute, and wrap-up cards from the back so the event ends on time.'],
   ['during', 'Photographer / social', 10, 1, 'Take photos of the event for Instagram and LinkedIn.'],
+  ['during', 'Mic runner', 10, 1, 'Large rooms only. Bring a microphone to attendees with questions. While the speaker answers, take the mic to the next person with a question.', true],
   ['after', 'Cleanup crew', 0, 2, 'Stay after to clear trash and leftover food, take down the signs, and reset the room.'],
 ];
 // The usual roles officers have saved (role_presets), or the built-in list above.
@@ -7068,12 +7309,12 @@ function eventOfficerExtras(e){
       <span class="hint">Star the ones to ask. “Copy all” puts starred questions first, ready to send to the speaker.</span></div>`;
   }
   if (!hostedElsewhere(e) && e.cat !== 'officer_meeting' && (!isPast(e) || rolesOf(e.id).length)) h += rolesPanel(e);
-  // Parking and arrival directions for external guests (speakers, firms, judges), ready to edit and send.
-  if (!hostedElsewhere(e) && !isPast(e) && e.cat !== 'officer_meeting'){
-    const gs = eventGuests(e.id);
-    h += `<div class="panel stack" style="gap:6px;padding:12px 14px"><strong>Guest parking & arrival email</strong>
-      <span class="hint">Parking and arrival directions for ${gs.length ? (gs.length === 1 ? esc(gs[0].name || gs[0].email) : gs.length + ' external guests') : 'external guests'}. Pick how early they should come, add your phone number, check the guests, then edit and send it from the email builder.</span>
-      <div><button class="btn ghost small" data-act="arrival-mail" data-id="${e.id}">Prep the email</button></div></div>`;
+  // Emails for external guests (speakers, firms, judges): invitation, check-ins with parking and arrival, thank-you.
+  if (!hostedElsewhere(e) && e.cat !== 'officer_meeting' && shiftDay(e.date, 14) >= todayIso()){
+    const gs = eventGuests(e.id), due = GUEST_MAILS.find(m => m[0] === guestMailDue(e));
+    h += `<div class="panel stack" style="gap:6px;padding:12px 14px"><strong>Guest emails</strong>
+      <span class="hint">Ready-made emails for ${gs.length ? (gs.length === 1 ? esc(gs[0].name || gs[0].email) : gs.length + ' external guests') : 'external guests'}: the invitation, the 2-week and 1-week check-ins (with parking and arrival), the final check-in, and the thank-you. Going by the date, the next one is the ${esc(due[1].toLowerCase())}.</span>
+      <div class="row" style="gap:6px"><button class="btn ghost small" data-act="guest-mail" data-id="${e.id}">Choose an email</button>${['guest_speaker', 'panel'].includes(e.cat) ? `<button class="btn ghost small" data-act="guide-open" data-id="${e.id}">Guest speaker guide</button>` : ''}</div></div>`;
   }
   return h;
 }
@@ -8866,7 +9107,8 @@ document.addEventListener('click', async ev => {
       const p = db.profiles[session] || {}, text = document.getElementById('ml-sig').value.trim();
       if (await act(async () => must(await sb.from('officer_profiles').upsert({ email: session, signature: text === SIG_DEFAULT ? '' : text, name: p.name || userName(session), title: p.rawTitle || '', tier: p.tier || 'officer', branch: p.branch || '' })), 'Signature saved')){ ui.sigDraft = null; render(); }
       break; }
-    case 'arrival-mail': arrivalModal(id); break;
+    case 'guest-mail': guestMailModal(id, t.dataset.tpl); break;
+    case 'guide-plan': ui.planEv = id; ui.officerTab = 'plan'; history.pushState(null, '', ui._hash = '#officer/plan'); render(); window.scrollTo(0, 0); break;
     case 'roles-edit': ui.roleEdBack = null; ui.roleEd = { id, roles: JSON.parse(JSON.stringify(rolesOf(id))), seats: !!(db.roleSeats || {})[id] }; rolesModal(); break;
     case 'ro-add': readRoles(); ui.roleEd.roles.push({ phase: 'during', name: '', arrive: 15, qty: 1, duties: '', officers: [] }); rolesModal(true);
       { const l = document.querySelectorAll('#modal .ro-name'); if (l.length){ l[l.length - 1].focus(); l[l.length - 1].scrollIntoView({ block: 'center' }); } } break;
@@ -8887,7 +9129,8 @@ document.addEventListener('click', async ev => {
       await saveRoles(id, roles, a === 'role-take' ? `You’re on ${r.name}` : `Dropped ${r.name}`); break; }
     case 'ar-add': { const w = document.getElementById('ar-guests'); w.insertAdjacentHTML('beforeend', arRow()); w.lastElementChild.querySelector('input').focus(); break; }
     case 'ar-rm': { const r = t.closest('.ar-row'), w = document.getElementById('ar-guests'); if (w.children.length > 1) r.remove(); else r.querySelectorAll('input').forEach(i => i.value = ''); break; }
-    case 'ar-go': arrivalGo(id); break;
+    case 'gm-go': guestMailGo(id); break;
+    case 'guide-open': closeModal(); ui.guideEv = id; ui.officerTab = 'guide'; if (route() !== 'officer') location.hash = 'officer/guide'; else { history.pushState(null, '', ui._hash = '#officer/guide'); render(); } window.scrollTo(0, 0); break;
     case 'mail-tpl': readMail(); useTemplate(t.dataset.tpl); render(); break;
     case 'mail-to': ui.mail.aud = t.dataset.aud; ui.mail.ev = ''; ui.mail.evs = []; useTemplate(t.dataset.tpl); ui.officerTab = 'email'; render(); window.scrollTo(0,0); break;
     case 'mail-copy': {
@@ -9318,6 +9561,12 @@ document.addEventListener('change', async e => {
   }
   if (id === 'stats-ev'){ ui.statsEv = e.target.value; render(); }
   if (id === 'plan-ev'){ ui.planEv = e.target.value; render(); }
+  if (id === 'guide-ev'){ ui.guideEv = e.target.value; render(); }
+  if (e.target.classList.contains('pack-item')){
+    const k = e.target.dataset.k, evId = e.target.dataset.ev, cur = packed(evId).filter(x => x !== k); if (e.target.checked) cur.push(k);
+    try { localStorage.setItem('wfa-pack-' + evId, JSON.stringify(cur)); } catch(_){}
+    render();
+  }
   if (id === 'lb-season'){ ui.lbSeason = e.target.value; render(); }
   if (id === 'pr-kind'){ readRuleDraft(); render(); }
   if (e.target.classList && e.target.classList.contains('aw-pick')){
