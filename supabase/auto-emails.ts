@@ -784,16 +784,16 @@ ${lastNote}`
           (gr || []).forEach((g) => { if (!byEmail.has(g.email)) { guestTo.push(g.email); firstName.set(g.email, String(g.first || '').trim()); } });
           guestTo = [...new Set(guestTo)];
         }
-        // Day of: people who sent questions for the speaker get them back, with a heads-up that the host will call on
+        // Day of: people whose question was starred (picked to be asked) get it back, with a heads-up that the host will call on
         // them to ask it themselves (so the speaker can see who's asking).
         const asked = new Map<string, string[]>();
         if (r.key === 'same' && ev.qa_enabled) {
-          const { data: qs } = await db.from('event_questions').select('email, question, created_at').eq('event_id', ev.id).not('email', 'is', null).order('created_at');
+          const { data: qs } = await db.from('event_questions').select('email, question, created_at').eq('event_id', ev.id).eq('starred', true).not('email', 'is', null).order('created_at');
           (qs || []).forEach((q) => { const e = String(q.email).toLowerCase(); asked.set(e, [...(asked.get(e) || []), String(q.question)]); });
         }
         const sp = Array.isArray(ev.speakers) ? ev.speakers.map((x: { name?: string }) => String(x?.name || '').trim()).filter(Boolean) : [];
         const spName = sp.length === 1 ? sp[0] : sp.length ? 'the speakers' : 'the speaker';
-        const qaNote = `During the Q&A, the emcee will call on you to ask your question yourself, so ${spName} can see who's asking. It's a great chance to introduce yourself and make a connection, so have ${'{n}'} ready:`;
+        const qaNote = `Your question was picked for the Q&A. The emcee will call on you to ask your question yourself, so ${spName} can see who's asking. It's a great chance to introduce yourself and make a connection, so have ${'{n}'} ready:`;
         const qaHtml = (email: string) => { const l = asked.get(email); return l ? `<div style="margin:16px 0 6px;padding:12px 14px;background:#f3f6f1;border-left:3px solid #1f4d2e"><p style="margin:0 0 6px"><strong>Get ready to be called on</strong></p><p style="margin:0 0 6px">${escHtml(qaNote.replace('{n}', l.length === 1 ? 'it' : 'them'))}</p><ul style="margin:0;padding-left:20px">${l.map((q) => `<li style="margin:0 0 4px">${escHtml(q)}</li>`).join('')}</ul></div>` : ''; };
         const qaText = (email: string) => { const l = asked.get(email); return l ? `\n\nGET READY TO BE CALLED ON\n${qaNote.replace('{n}', l.length === 1 ? 'it' : 'them')}` + l.map((q) => `\n- ${q}`).join('') : ''; };
         const askers = real([...asked.keys()]).filter((e) => byEmail.has(e) && getsEmail(e, 'events'));

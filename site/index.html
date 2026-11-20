@@ -4201,7 +4201,15 @@ const GUEST_MAILS = [
   ['final', 'Final check-in', '3 days before'],
   ['thanks', 'Thank-you', 'after the event']
 ];
-const GM_NEEDS = { phone: ['one_week', 'final'], early: ['one_week', 'final'], guide: ['one_week'], talk: ['invite'] };
+const GM_NEEDS = { phone: ['one_week', 'final'], early: ['one_week', 'final'], guide: ['one_week'], talk: ['invite'], got: ['two_weeks'] };
+// What the invitation asks the speaker for: [key, label in the pop-up, thanks for it, the ask if it's still missing]
+const GM_ASKS = [
+  ['slides', 'Draft slides (or they aren’t using slides)', 'your slides', '**A first draft of your slides**, if you’re using them, this week, so we can test them on the room’s system'],
+  ['headshot', 'Headshot', 'your headshot', '**A headshot**, for our flyers and the event page'],
+  ['bio', 'Short bio', 'your bio', '**A short bio** (three or four sentences), which our host will use to introduce you'],
+  ['needs', 'Accommodations and dietary restrictions', 'your accommodations and dietary needs', '**Any accommodations or dietary restrictions.** We order the food in the next few days'],
+  ['linkedin', 'Their answer about the LinkedIn QR code', 'your answer about the LinkedIn QR code', '**Whether we may display a QR code to your LinkedIn profile** on screen as students arrive, so they can connect with you. If so, please send your profile link']
+];
 function evDur(e){ const m = t => { const [h, mm] = String(t || '').split(':').map(Number); return h * 60 + mm; }, d = m(e.end) - m(e.start); return d > 0 ? d : 0; }
 function longDay(s){ return parseDay(s).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }); }
 // The speaker outline's sections, scaled to how long each speaker talks (15 minutes gives 2–3, 6–7, 4–5).
@@ -4232,6 +4240,9 @@ function guestMailModal(id, key){
       <span class="hint">You can edit everything in the email builder before it’s sent.</span></label>
     <label data-gm="talk"${show('talk')}>Speech length <span class="hint">Minutes each speaker talks</span><input id="gm-talk" type="number" min="5" max="90" step="1" value="${talkDefault(e, n)}">
       <span class="hint">The schedule and the speaker outline in the invitation are sized to this. ${evDur(e) ? `The event is ${evDur(e)} minutes: ${GM_ARRIVE} for people to arrive, ${GM_INTRO} for the introduction, and ${GM_WRAP} to wrap up. What’s left after the speech is Q&A.` : ''}</span></label>
+    <div data-gm="got"${show('got')} class="stack" style="gap:4px"><strong>What have they already sent?</strong>
+      <span class="hint">Tick what you have. The email thanks them for those and asks only for what’s missing.</span>
+      ${GM_ASKS.map(([k, label]) => `<label class="check"><input type="checkbox" class="gm-got" value="${k}"> ${label}</label>`).join('')}</div>
     <label data-gm="phone"${show('phone')}>Your phone number<input id="ar-phone" type="tel" data-vcheck="phone" maxlength="20" placeholder="(801) 555-0123" value="${esc(phone)}">
       <span class="hint">Guests text you when they’ve parked. It only goes in this email (and is remembered on this device).</span></label>
     <label data-gm="early"${show('early')}>Arrive how early<select id="ar-early">${AR_EARLY.map(([a, b]) => `<option value="${a}-${b}" ${a === 20 ? 'selected' : ''}>${b} to ${a} minutes before</option>`).join('')}</select>
@@ -4250,11 +4261,11 @@ document.addEventListener('change', ev => {
   const id = (document.querySelector('[data-act="gm-go"]') || {}).dataset?.id, e = evById(id), [a, b] = ev.target.value.split('-').map(Number), h = document.getElementById('ar-early-hint');
   if (e && h) h.textContent = 'About ' + arriveWindow(e, a, b);
 });
-// The subject and text of one guest email. o: { phone, a, b (arrive a to b minutes early), guide, talk, n (speakers) }.
+// The subject and text of one guest email. o: { phone, a, b (arrive a to b minutes early), guide, talk, n (speakers), got (what they've sent) }.
 function guestMailText(key, e, o){
   const when = `${longDay(e.date)}, ${fmtTime(e.start)}${e.end ? ' to ' + fmtTime(e.end) : ''}`, loc = e.loc || 'UVU Keller Building', dur = evDur(e);
   const weekday = parseDay(e.date).toLocaleDateString('en-US', { weekday: 'long' });
-  const qs = (db.evQuestions || []).filter(q => q.event_id === e.id).sort((x, y) => (y.starred - x.starred) || String(x.created_at).localeCompare(String(y.created_at)));
+  const qs = (db.evQuestions || []).filter(q => q.event_id === e.id && q.starred).sort((x, y) => String(x.created_at).localeCompare(String(y.created_at)));   // only the starred ones get asked
   const qList = qs.map(q => '- ' + q.question + ((q.speakers || []).length ? ' (for ' + q.speakers.join(', ') + ')' : '')).join('\n');
   const arr = MAIL_TEMPLATES.arrival[2];
   let park = arr.slice(arr.indexOf('## When to arrive'), arr.indexOf('\n\nSee you soon')).replace('15 to 20 minutes early', `${o.b} to ${o.a} minutes early`).replace('{arrive}', arriveWindow(e, o.a, o.b)).replace('[YOUR PHONE NUMBER]', o.phone);
@@ -4317,28 +4328,32 @@ This is one way to cover the four points above in about ${o.talk} minutes. Pleas
 ## What we’ll need from you
 - A headshot and a short bio, for our marketing materials
 - Any accommodations you need, and any dietary restrictions (we’ll have food)
+- Your permission to display a QR code to your LinkedIn profile on screen as students arrive, so they can connect with you. If that’s all right, please send your profile link
 - A first draft of your slides, if you’re using them, ${slides > todayIso() ? 'by ' + longDay(slides) + ' (two weeks before the event)' : 'as soon as you can'}
 
 Please reply to confirm that you are able to speak on this date. If the date or time doesn’t work, we would be glad to find one that does.
 
 We would be excited to host you.` };
   }
-  if (key === 'two_weeks') return { subject: '{event} is two weeks away', closing: 'Thank you,', body:
+  if (key === 'two_weeks'){
+    const got = o.got || [], have = GM_ASKS.filter(a => got.includes(a[0])).map(a => a[2]), missing = GM_ASKS.filter(a => !got.includes(a[0]));
+    const list = l => l.length > 2 ? l.slice(0, -1).join(', ') + ', and ' + l[l.length - 1] : l.join(' and ');
+    return { subject: '{event} is two weeks away', closing: 'Thank you,', body:
 `Hi {first},
 
-{event} is two weeks away, and we’re looking forward to having you. A quick check-in:
+{event} is two weeks away, and we’re looking forward to having you.
 
 ## The details
 - **Date and time:** ${when}
 - **Location:** ${loc}
 - **Format:** Presentation with Q&A
 
-## What we still need
-- **Slides:** if you’re using slides and haven’t sent a draft yet, please send one this week, so we can test it on the room’s system
-- **Headshot and short bio**, if you haven’t sent them
-- **Accommodations or dietary restrictions**, if there’s anything we should know
+${missing.length ? `## What we still need from you
+${have.length ? 'Thank you for sending ' + list(have) + '. We’re still missing:\n' : ''}${missing.map(a => '- ' + a[3]).join('\n')}` : `## We have everything we need
+Thank you for sending ${list(have)}. There’s nothing else we need from you right now.`}
 
-Next week we’ll send parking and arrival instructions, the name of the officer who will meet you, and the questions students have sent in so far.` };
+Next week we’ll send parking and arrival instructions, the name of the officer who will meet you, and the questions students will ask.` };
+  }
   if (key === 'one_week') return { subject: 'Parking and arrival for {event} on {date}', closing: 'See you soon,', body:
 `Hi {first},
 
@@ -4347,7 +4362,7 @@ Next week we’ll send parking and arrival instructions, the name of the officer
 ${park}
 
 ## Questions from students
-${qList ? 'Students have sent in these questions ahead of time:\n' + qList : 'We’ll send you the questions students submit ahead of time a few days before the event.'}
+${qList ? 'These are the questions students will ask you during the Q&A:\n' + qList : 'We’ll send you the questions students will ask during the Q&A a few days before the event.'}
 
 ## Slides
 If you’ve updated your slides, please send the final version by ${fmtDay(shiftDay(e.date, -3))}, so we can have them loaded and ready.` };
@@ -4359,7 +4374,7 @@ We’re looking forward to seeing you on ${weekday} for {event}. One last check-
 - **When:** ${when}. Please arrive about ${arriveWindow(e, o.a, o.b)}.
 - **Where:** ${loc}. Parking and arrival directions are in last week’s email. Once you’ve parked, text your license plate and zone number to **${o.phone}**.
 - **Slides:** if you’ve made changes, please send the final version by tomorrow so we can load it.
-${qList ? '\n## Questions from students\nHere’s the full list students have sent in:\n' + qList + '\n' : ''}
+${qList ? '\n## Questions from students\nThese are the questions students will ask you during the Q&A:\n' + qList + '\n' : ''}
 If anything comes up before then, reply to this email or text ${o.phone}.` };
   return { subject: 'Thank you for speaking at {event}', closing: 'With thanks,', body:
 `Hi {first},
@@ -4370,7 +4385,7 @@ Thank you for taking the time to speak with our members at {event}. Hearing firs
 
 We’d love to stay in touch:
 - Students may reach out to connect with you on LinkedIn
-- We’ll share photos from the event on our LinkedIn and Instagram
+- We’ll post an announcement about your visit for our members, and share photos from the event on our LinkedIn and Instagram
 - If your firm has internships or openings you’d like in front of our members, send them our way and we’ll post them on our job board: ${SITE_URL}/#partners
 
 Thank you again. We hope to host you again soon.` };
@@ -4390,7 +4405,7 @@ function guestMailGo(id){
   const noEmail = guests.find(g => !EMAIL_RE.test(g.email)); if (noEmail) return bad(`Check the email for ${noEmail.first || noEmail.last || 'each guest'}.`);
   if (need('phone')) try { localStorage.setItem('wfa-arrival-phone', phone); } catch(_){}
   const [a, b] = document.getElementById('ar-early').value.split('-').map(Number);
-  const m = guestMailText(key, e, { phone, a, b, talk, guide: document.getElementById('gm-guide').value.trim(), n: Math.max(guests.length, (e.speakers || []).length, 1) });
+  const m = guestMailText(key, e, { phone, a, b, talk, guide: document.getElementById('gm-guide').value.trim(), got: [...document.querySelectorAll('.gm-got:checked')].map(x => x.value), n: Math.max(guests.length, (e.speakers || []).length, 1) });
   const names = {}; guests.forEach(g => names[g.email] = { first: g.first, last: g.last });
   closeModal(); ui.mailDraftId = null;
   ui.mail = { ...MAIL_BLANK(), aud: 'custom', custom: guests.map(g => g.email).join(', '), ev: id, names, subject: m.subject, body: m.body, closing: m.closing + '\n\n' + sigFill(mySig()) };
@@ -6302,14 +6317,14 @@ const GUIDE_PEOPLE = [['Todd Aubin', 'Finance Department Administrative Assistan
 // [days from the event, when, what, details, guest email to write, extra: 'roles' | 'food']
 const GUIDE_STEPS = [
   [-42, 'As soon as the event is decided', 'Confirm the speaker, topic, and date', 'Get the place and time reserved through Todd, with an estimated guest count. That estimate is the starting RSVP maximum.'],
-  [-40, 'Once the speaker is confirmed', 'Email the official invitation', 'It confirms the date, time, topic, and location, shares the speech template and time limits, asks for a headshot, a short bio, and any accommodations or dietary restrictions, and gives the due date for first-draft slides (2 weeks before).', 'invite'],
+  [-40, 'Once the speaker is confirmed', 'Email the official invitation', 'It confirms the date, time, topic, and location, shares the speech template and time limits, asks for a headshot, a short bio, any accommodations or dietary restrictions, and permission to show a QR code to their LinkedIn as people arrive, and gives the due date for first-draft slides (2 weeks before).', 'invite'],
   [-35, 'Shortly after, ideally with the bio', 'Post the event on the site', 'Write the description, set the RSVP maximum, and post it.'],
   [-35, 'At the same time', 'Get the marketing materials made', 'Follow UVU design standards. Send them to Emmy for approval, with a 2160x3840 pixel version for the WSB screens and one the same size without QR codes for the WSB Instagram. Send the files to Todd to print: 4x5.5 mini flyers for tables and study spaces (about 100), 11x17 flyers for the flyer holders and the Fintech Center glass, and 8.5x11 flyers for the Fintech Center sign holders.'],
   [-21, '3 weeks before', 'Assign roles to officers', 'Start recruiting volunteers if needed.', '', 'roles'],
   [-14, '2 weeks before', 'Send the 2-week check-in', 'Request slides if they haven’t been provided yet. Start preparing the speaker gifts.', 'two_weeks'],
   [-10, '1.5 weeks before', 'Send Todd the food order', 'Order for the current RSVPs + 20, but never more than the RSVP maximum, and include any dietary restrictions. Then change the RSVP maximum to the number you ordered for, so nobody goes without food.', '', 'food'],
   [-7, '1 week before', 'Send the 1-week check-in', 'Parking instructions, the name of their guide, students’ pre-submitted questions, and a final call for updated slides. Also make sure the microphones and clicker work and are set aside.', 'one_week'],
-  [-3, '3 days before', 'Final preparations', 'Print the signage, finalize the PowerPoint and the host script, and send the final check-in with any last pre-submitted questions.', 'final'],
+  [-3, '3 days before', 'Final preparations', 'Print the signage, finalize the PowerPoint (with the speaker’s LinkedIn QR code on the arrival slide, if they agreed) and the host script, and send the final check-in with the starred questions.', 'final'],
   [1, 'After the event', 'Wrap up', 'Thank the speakers, post a recap with the photos, return the borrowed sign holders to UVUAS, and check that attendance is complete.', 'thanks']
 ];
 // What to bring. n = how many speakers (0 = not known).
@@ -7063,7 +7078,7 @@ function eventInner(id, page){
   if ((isToday(e) || openedEarly(e)) && !e.draft && !hostedElsewhere(e) && Date.now() < checkinClosesMs(e)){
     const pre = page ? decodeURIComponent(location.hash.slice(1).split('/')[2] || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) : '';
     if (!session) checkin = guestCheckin(e, pre);
-    else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e)}.</div>`;
+    else if (here) checkin = `<div class="notice"><strong>You’re checked in.</strong> ${ptsText(e)}.</div>` + pickedNote(e);
     else {
       const opens = checkinOpensMs(e), early = Date.now() < opens;
       checkin = `<form class="stack" id="f-checkin" data-id="${id}" style="gap:8px"><label for="ci-code">Check-in code <span class="hint">${pre ? 'Filled in from the QR code' : 'Shown on screen at the event'} · ${ptsText(e)}${mine ? '' : ' · No RSVP needed'}</span></label>
@@ -7188,14 +7203,19 @@ function qaBox(e){
   if (e.membersOnly && !session) return '';
   const mine = (db.evQuestions || []).filter(q => q.event_id === e.id && q.email === session);
   return `<div class="panel stack" style="gap:10px">
-    <div><strong>${(e.speakers || []).length > 1 ? 'Questions for the guests' : 'Questions for the speaker'}</strong><div class="hint">Send a question ahead of time. At the event, the emcee will call on you to ask it yourself, so ${(e.speakers || []).length > 1 ? 'the guests' : 'the speaker'} can put a face to the question. It’s a great way to make a connection. We’ll email you your questions the morning of the event so you have them ready.</div></div>
+    <div><strong>${(e.speakers || []).length > 1 ? 'Questions for the guests' : 'Questions for the speaker'}</strong><div class="hint">Send a question ahead of time. At the event, the emcee will call on you to ask it yourself, so ${(e.speakers || []).length > 1 ? 'the guests' : 'the speaker'} can put a face to the question. It’s a great way to make a connection. If your question is picked, we’ll email you the morning of the event so you have it ready.</div></div>
     <form class="stack" id="f-qa" data-id="${e.id}" style="gap:8px">
       ${session ? '' : '<label>Your name<input id="qa-name" autocomplete="name" required></label>'}
       ${(e.speakers || []).length > 1 ? `<fieldset class="rq-q"><legend>Who is it for?</legend><div class="row" style="gap:14px"><label class="check"><input type="checkbox" class="qa-sp" value="" checked> All of them</label>${e.speakers.map(sp => `<label class="check"><input type="checkbox" class="qa-sp" value="${esc(sp.name)}"> ${esc(sp.name)}</label>`).join('')}</div></fieldset>` : ''}
       <label>Your question<textarea id="qa-text" rows="2" maxlength="600" required></textarea></label>
       <div><button class="btn ghost" type="submit">Send question</button></div><div class="err" id="qa-err"></div></form>
-    ${mine.length && !can('officer') ? `<div class="stack" style="gap:4px"><span class="hint">Your questions:</span>${mine.map(q => `<div class="row" style="gap:8px;align-items:center"><span>${esc(q.question)}</span>${delBtn('qd-' + q.id, 'Delete', 'qa-del', q.id)}</div>`).join('')}</div>` : ''}
+    ${mine.length && !can('officer') ? `<div class="stack" style="gap:4px"><span class="hint">Your questions:</span>${mine.map(q => `<div class="row" style="gap:8px;align-items:center"><span>${esc(q.question)}</span>${q.starred ? '<span class="tag ok">Picked</span>' : ''}${delBtn('qd-' + q.id, 'Delete', 'qa-del', q.id)}</div>`).join('')}</div>` : ''}
   </div>`;
+}
+// After check-in: someone whose question was starred is reminded to have it ready.
+function pickedNote(e){
+  const qs = (db.evQuestions || []).filter(q => q.event_id === e.id && q.email === session && q.starred);
+  return qs.length ? `<div class="notice"><span><strong>Your question was picked.</strong> The emcee will call on you during the Q&A, so have ${qs.length === 1 ? 'it' : 'them'} ready:<ul style="margin:6px 0 0;padding-left:1.2rem">${qs.map(q => `<li>${esc(q.question)}</li>`).join('')}</ul></span></div>` : '';
 }
 // Officers: guest RSVPs and speaker questions for this event.
 // Officer roles for an event (95-event-roles.sql): the job, how early to arrive, how many people, and who's on it.
@@ -7313,7 +7333,7 @@ function eventOfficerExtras(e){
         ${qs.length ? `<button class="btn ghost small" data-act="copy-text" data-text="${esc(sorted.map((q, i) => (i + 1) + '. ' + q.question + ((q.speakers || []).length ? ' (for ' + q.speakers.join(', ') + ')' : '') + (q.starred ? ' ★' : '')).join('\n'))}">Copy all</button><button class="btn ghost small" data-act="qa-download" data-id="${e.id}">Download (Excel)</button>` : ''}</div>
       ${sorted.map(q => `<div class="row" style="gap:8px;align-items:start;justify-content:space-between"><div><div>${esc(q.question)}</div><div class="hint">${esc(q.name || 'Someone')} · ${fmtStamp(q.created_at)}${(q.speakers || []).length ? ' · For ' + esc(q.speakers.join(', ')) : (e.speakers || []).length > 1 ? ' · For all of them' : ''}</div></div>
         <span class="row" style="gap:6px"><button class="btn ghost small" data-act="qa-star" data-id="${q.id}" aria-pressed="${q.starred}" title="Star to ask">${q.starred ? '★ Starred' : '☆ Star'}</button>${delBtn('qd-' + q.id, 'Delete', 'qa-del', q.id)}</span></div>`).join('') || '<div class="empty">No questions yet.</div>'}
-      <span class="hint">Star the ones to ask. “Copy all” puts starred questions first, ready to send to the speaker.</span></div>`;
+      <span class="hint">Star the ones to ask. Only starred questions go in the speaker’s check-in emails, and the people who sent them are told to have them ready, in their email the morning of the event and when they check in.</span></div>`;
   }
   if (!hostedElsewhere(e) && e.cat !== 'officer_meeting' && (!isPast(e) || rolesOf(e.id).length)) h += rolesPanel(e);
   // Emails for external guests (speakers, firms, judges): invitation, check-ins with parking and arrival, thank-you.
