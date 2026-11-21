@@ -948,6 +948,7 @@ async function load(){
   db.recaps = (R.recaps || []).map(x => ({ id:x.id, eventId:x.event_id, title:x.title, body:x.body, photos:x.photos || [], date:iso(new Date(x.created_at)), author:x.author }));
   db.archive = (R.archive || []).map(a => ({ id:a.id, title:a.title, type:a.type, url:a.url || '', eventId:a.event_id, desc:a.descr || '', date:a.date }));
   db.tasks = (R.tasks || []).map(x => ({ id:x.id, title:x.title, eventId:x.event_id, who:x.owner, due:x.due, done:x.done }));
+  if (ui.evDateWas){ const w = ui.evDateWas, ev = db.events.find(x => x.id === w.id); ui.evDateWas = null; if (ev && ev.date !== w.date) setTimeout(() => planDateMoved(ev, w.date), 50); }   // an event's date just changed
   db.dues = {}; (R.dues || []).forEach(d => db.dues[d.email] = { status:d.status, date:d.updated });
   db.leader = R.leader || [];
   db.resources = R.resources || [];
@@ -6468,9 +6469,9 @@ const GUIDE_STEPS = [
     [['Settle the speaker, topic, and date'], ['Reserve the place and time through Todd, with an estimated guest count']]],
   [-40, 'Once the speaker has agreed informally', 'Email the official invitation', 'It gives the date, time, topic, and location, shares the speech template and time limits, asks for a headshot, a short bio, any accommodations or dietary restrictions, and permission to show a QR code to their LinkedIn as people arrive, and gives the due date for first-draft slides (2 weeks before). It asks them to reply to confirm.', 'invite', '',
     [['Email the speaker the official invitation']]],
-  [-35, 'Once they reply to confirm', 'Post the event on the site', 'Mark the speaker as confirmed in the list above. Then write the description, set the RSVP maximum, and post it, ideally with their bio.', '', '',
-    [['Write the description, set the RSVP maximum, and post the event']]],
-  [-35, 'At the same time', 'Get the marketing materials made', 'Follow UVU design standards. Send them to Emmy for approval, with a 2160x3840 pixel version for the WSB screens and one the same size without QR codes for the WSB Instagram. Send the files to Todd to print: 4x5.5 mini flyers for tables and study spaces (about 100), 11x17 flyers for the flyer holders and the Fintech Center glass, and 8.5x11 flyers for the Fintech Center sign holders.', '', '',
+  [-35, 'Once they reply to confirm', 'Post the event on the site', 'Mark the speaker as confirmed in the list above. Then write the description (ideally with their bio) and set the RSVP maximum on the event, and send it to a president. It’s posted as soon as one approves.', '', 'post',
+    [['Write the description, set the RSVP maximum, and send the event to a president to post']]],
+  [-35, 'At the same time', 'Get the marketing materials made', 'Follow the UVU design standards at the bottom of this page. Send them to Emmy for approval, with a 2160x3840 pixel version for the WSB screens and one the same size without QR codes for the WSB Instagram. Send the files to Todd to print: 4x5.5 mini flyers for tables and study spaces (about 100), 11x17 flyers for the flyer holders and the Fintech Center glass, and 8.5x11 flyers for the Fintech Center sign holders.', '', '',
     [['Get the marketing materials made; send them to Emmy for approval and to Todd for printing']]],
   [-21, '3 weeks before', 'Assign roles to officers', 'Start recruiting volunteers if needed.', '', 'roles',
     [['Assign roles to officers and recruit volunteers if needed']]],
@@ -6508,9 +6509,9 @@ const PANEL_STEPS = [
     [['Set the target date and how many panelists to aim for'], ['Reserve the place and time through Todd, with an estimated guest count']]],
   [-40, 'Once the room is reserved', 'Invite panelists for that date', 'Add everyone you’re asking to the list above. Each one gets their own invitation for the date you reserved: a two-hour panel, a short timed talk, and no slides. It asks for a headshot, a short bio, any accommodations or dietary restrictions, and permission to show a QR code to their LinkedIn.', 'invite', '',
     [['Invite panelists for that date']]],
-  [-35, 'Once three have confirmed', 'Post the event on the site', 'Mark each panelist as confirmed in the list above as they reply. Then write the description, set the RSVP maximum, and post it. Show the confirmed panelists on the event page, so members can choose who their question is for.', '', '',
-    [['Write the description, set the RSVP maximum, and post the event']]],
-  [-35, 'At the same time', 'Get the marketing materials made', 'Follow UVU design standards. Send them to Emmy for approval, with a 2160x3840 pixel version for the WSB screens and one the same size without QR codes for the WSB Instagram. Send the files to Todd to print: 4x5.5 mini flyers for tables and study spaces (about 100), 11x17 flyers for the flyer holders and the Fintech Center glass, and 8.5x11 flyers for the Fintech Center sign holders.', '', '',
+  [-35, 'Once three have confirmed', 'Post the event on the site', 'Mark each panelist as confirmed in the list above as they reply. With three confirmed, write the description and set the RSVP maximum on the event, and send it to a president. It’s posted as soon as one approves. Show the confirmed panelists on the event page, so members can choose who their question is for.', '', 'post',
+    [['Write the description, set the RSVP maximum, and send the event to a president to post']]],
+  [-35, 'At the same time', 'Get the marketing materials made', 'Follow the UVU design standards at the bottom of this page. Send them to Emmy for approval, with a 2160x3840 pixel version for the WSB screens and one the same size without QR codes for the WSB Instagram. Send the files to Todd to print: 4x5.5 mini flyers for tables and study spaces (about 100), 11x17 flyers for the flyer holders and the Fintech Center glass, and 8.5x11 flyers for the Fintech Center sign holders.', '', '',
     [['Get the marketing materials made; send them to Emmy for approval and to Todd for printing']]],
   [-21, '3 weeks before', 'Count the confirmed panelists', 'With three or more, the panel goes ahead: set the number of panelists to how many confirmed and the schedule resizes. With fewer than three, run it as a guest speaker event or move the date. Put the panelists in speaking order in the list above: it sets the seating, the name cards, and the slides.', '', 'count',
     [['Count the confirmed panelists: with fewer than three, run it as a guest speaker event or move the date']]],
@@ -6663,6 +6664,70 @@ async function gpSyncContact(p, evId){
   const upd = p.status === 'confirmed' ? { status: 'confirmed', event_id: evId } : p.status === 'declined' ? { status: 'declined' } : p.status === 'invited' ? { status: 'contacted', last_contacted: todayIso() } : null;
   if (upd) try { await sb.from('contacts').update({ ...upd, updated_at: new Date().toISOString() }).eq('id', p.contact); } catch(_){}
 }
+// Start an event from its guide: a draft, the officer in charge, and their checklist, in one step.
+function guideNewModal(type){
+  const panel = type === 'panel', staff = staffEmails();
+  showModal(`<div class="modal-in stack" style="gap:14px"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3 style="margin:0">Start a ${panel ? 'panel' : 'guest speaker event'}</h3>
+      <div class="hint">This makes a draft that only officers can see, and a checklist with due dates for the officer in charge. Everything can be changed later.</div></div>
+    <label>Working title<input id="gn-title" maxlength="120" placeholder="${panel ? 'Careers in Finance Panel' : 'Lunch with a guest speaker'}"></label>
+    <div class="row" style="gap:10px;flex-wrap:wrap"><label style="flex:1 1 10rem">Target date<input id="gn-date" type="date" min="${todayIso()}"></label><label style="flex:1 1 8rem">Start time<input id="gn-start" type="time" value="${panel ? '16:00' : '11:30'}"></label></div>
+    <label>Who’s in charge of planning it<select id="gn-lead">${staff.map(x => `<option value="${esc(x)}" ${x === session ? 'selected' : ''}>${esc(userName(x))}</option>`).join('')}</select>
+      <span class="hint">They own the checklist and get a reminder the day before each step is due.</span></label>
+    ${panel ? `<label style="max-width:16rem">Panelists to aim for<input id="gn-target" type="number" min="${PANEL_MIN}" max="${PANEL_MAX}" step="1" value="5"></label>` : ''}
+    <div class="err" id="gn-err"></div>
+    <div class="row" style="gap:8px"><button class="btn" data-act="gn-go" data-type="${type}">Create the draft</button><button class="btn ghost" data-act="close">Cancel</button></div></div>`);
+}
+// When an event's date moves, its unfinished checklist tasks move with it. Sooner: always. Later: the officer is asked.
+async function shiftPlan(evId, delta){
+  const today = todayIso(), list = db.tasks.filter(t => t.eventId === evId && !t.done), ev = evById(evId); if (!list.length) return;
+  await act(async () => { for (const t of list){ let due = shiftDay(t.due, delta); if (due < today) due = today; must(await sb.from('tasks').update({ due, reminded_at: null }).eq('id', t.id)); }
+    await logChange(`Moved ${list.length} checklist task${list.length === 1 ? '' : 's'} for “${ev ? ev.title : 'an event'}” to match its new date`); },
+    `${list.length} checklist task${list.length === 1 ? '' : 's'} moved to match the new date`);
+}
+function planDateMoved(ev, old){
+  const delta = Math.round((parseDay(ev.date) - parseDay(old)) / 864e5), n = db.tasks.filter(t => t.eventId === ev.id && !t.done).length;
+  if (!delta || !n) return;
+  if (delta < 0) return shiftPlan(ev.id, delta);
+  showModal(`<div class="modal-in stack" style="gap:14px"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3 style="margin:0">Move the checklist too?</h3></div>
+    <p class="muted" style="margin:0">“${esc(ev.title)}” is now ${delta} day${delta === 1 ? '' : 's'} later. Its ${n} unfinished checklist task${n === 1 ? ' still has its' : 's still have their'} old due date${n === 1 ? '' : 's'}.</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" data-act="plan-shift" data-id="${ev.id}" data-d="${delta}">Move ${n === 1 ? 'it' : 'them'} ${delta} day${delta === 1 ? '' : 's'} later</button><button class="btn ghost" data-act="close">Leave ${n === 1 ? 'it' : 'them'}</button></div></div>`);
+}
+// UVU design requirements for WFA materials (flyers, slides, social posts), with the checks to run before sending anything to Emmy.
+const DESIGN_COLORS = [['UVU Green', '#185C33', 'Lead with it'], ['White', '#FFFFFF', 'Lead with it'], ['Warm', '#F2F0EB', 'Support'], ['Wolverine Green', '#008A40', 'Support'], ['Legacy Gold', '#D2AC5F', 'Accent, 20% of a design at most']];
+const DESIGN_RULES = [
+  ['Logo', ['WFA is a department organization, so it can’t have its own logo. Use the official UVU logo with “Wolverine Finance Association” written in brand fonts. Don’t use the WFA crest or seal on official materials.',
+    'UVU Green on white, white on UVU Green, or black or gray. Keep clear space around it (about one “U” wide), at least ½ inch across, on a plain background.',
+    'Never recolor, stretch, rotate, crop, or add effects to it, combine it with another logo, or use the “U” alone. No wolverine or mascot imagery without written approval.']],
+  ['Colors and fonts', ['UVU Green and white (or Warm) lead. Legacy Gold is the only accent, and the same gold everywhere. Official colors only, with no darker or lighter shades.',
+    'Montserrat for headlines and body. No decorative, typewriter, or other display fonts.']],
+  ['What it says', ['The event name and what it’s about is the most visible thing. The WFA name comes second.',
+    'Include the event name, a short description, the speakers (name and title), date, time, location, food if there is any, and “Open to UVU students of any major.”',
+    'Nothing that reads like a loan or financial offer (“You’re approved,” “claim your seat”). No placeholder text left behind.',
+    'Write “Wolverine Finance Association at UVU,” not UVU inside the name. Describe speakers by role (“Fintech co-founder”) and keep sensitive company names out of headlines.',
+    'Get permission before using anyone’s headshot, and credit images whose license requires it.']],
+  ['QR codes', ['Put QR codes straight on the design with a label (“Scan to RSVP”), never inside a picture of a phone. Dark on light scans best.',
+    'With two QR codes, separate them (the UVU logo between them works). In PDFs, make them clickable links.']]
+];
+const DESIGN_SIZES = [['Small handout', '4 × 5.5 in', 'Bump small text up so it stays readable'], ['Standard flyer', '8.5 × 11 in', ''], ['Poster', '11 × 17 in', '300 dpi'],
+  ['Campus vertical screens', '2160 × 3840 px', 'With the QR code; sized to read from across a room'], ['Instagram story', '2160 × 3840 px', 'No QR code. Leave the bottom-left open for the link button, and send the link separately']];
+const DESIGN_CHECKS = [['d1', 'Official UVU logo, in the right color, with clear space, at least ½ inch, on a plain background'], ['d2', 'No WFA crest, wolverine, or custom marks'],
+  ['d3', 'Leads with UVU Green and white; one gold only, and no more than 20% of the design'], ['d4', 'Montserrat (or official brand fonts) throughout'],
+  ['d5', 'The event name is the most prominent thing, and every key detail is there'], ['d6', 'No misleading or placeholder text; sensitive company names out of the headline'],
+  ['d7', 'QR codes are labeled, scan correctly, and are separated if there are two; PDF links work'], ['d8', 'The right size for where it’s going, with nothing running off the page'], ['d9', 'Proofread, and approved by Emmy']];
+const DESIGN_LINKS = [['UVU Brand Guide (PDF)', 'https://www.uvu.edu/marketing/docs/uvu_brand-guide_2025.pdf'], ['Brand guidelines', 'https://www.uvu.edu/marketing/guidelines/'], ['Logo and asset downloads', 'https://www.uvu.edu/marketing/templates/'], ['Request a secondary mark', 'https://www.uvu.edu/marketing/create/']];
+function designSection(e){
+  const tick = e ? packed(e.id) : [], doneN = DESIGN_CHECKS.filter(([k]) => tick.includes(k)).length;
+  return `<section class="stack" style="gap:8px"><div class="section-head"><h3>UVU design standards</h3>${e ? `<span class="muted">${doneN} of ${DESIGN_CHECKS.length} checked</span>` : ''}</div>
+    <span class="hint">For flyers, slides, and social posts. Follow these unless UVU Marketing says otherwise.</span>
+    <div class="row" style="gap:8px;flex-wrap:wrap">${DESIGN_COLORS.map(([name, hex, use]) => `<div style="flex:1 1 8rem;min-width:0;border:1px solid var(--line, #d7dcd7);border-radius:6px;overflow:hidden"><div style="height:34px;background:${hex}"></div><div style="padding:6px 8px"><strong>${name}</strong><div class="hint">${hex} · ${use}</div></div></div>`).join('')}</div>
+    ${DESIGN_RULES.map(([h, list]) => `<div><strong>${h}</strong><ul style="margin:4px 0 0;padding-left:1.2rem">${list.map(x => `<li>${x}</li>`).join('')}</ul></div>`).join('')}
+    <div><strong>Sizes</strong><div class="table-wrap"><table><tbody>${DESIGN_SIZES.map(([use, size, note]) => `<tr><td>${use}</td><td style="white-space:nowrap">${size}</td><td>${note}</td></tr>`).join('')}</tbody></table></div>
+      <span class="hint">Name files with the size first, like “8.5x11 - Event Name - Flyer.pdf”.</span></div>
+    <div><strong>Before you send it to Emmy</strong>
+      ${e ? `<div class="stack" style="gap:6px;margin-top:4px">${DESIGN_CHECKS.map(([k, label]) => `<label style="display:flex;flex-direction:row;gap:10px;align-items:flex-start;font-weight:400"><input type="checkbox" class="pack-item" data-ev="${e.id}" data-k="${k}" ${tick.includes(k) ? 'checked' : ''} style="width:auto;flex:none;margin-top:4px"><span>${label}</span></label>`).join('')}</div><span class="hint">Ticks are saved on this device only.</span>`
+        : `<ul style="margin:4px 0 0;padding-left:1.2rem">${DESIGN_CHECKS.map(([, label]) => `<li>${label}</li>`).join('')}</ul>`}</div>
+    <div class="hint">Official sources: ${DESIGN_LINKS.map(([l, u]) => `<a href="${u}" target="_blank" rel="noopener">${l}</a>`).join(' · ')}. Brand questions: brand@uvu.edu.</div></section>`;
+}
 function packed(id){ try { return JSON.parse(localStorage.getItem('wfa-pack-' + id) || '[]'); } catch(_){ return []; } }
 document.addEventListener('input', ev => {
   if (ev.target.id !== 'gf-r' && ev.target.id !== 'gf-cap') return;
@@ -6697,6 +6762,12 @@ function guideBody(){
       <div class="stack" style="flex:1;min-width:0;gap:6px"><div><div class="ev-title">${what}</div><div class="ev-sub">${text}</div></div>
         ${extra === 'food' ? `<div class="panel stack" style="gap:8px;padding:10px 12px"><div class="row" style="gap:10px;flex-wrap:wrap"><label style="flex:1 1 8rem">RSVPs now<input id="gf-r" type="number" min="0" inputmode="numeric" value="${e ? rsvpCount(e.id) : 40}"></label><label style="flex:1 1 8rem">RSVP maximum<input id="gf-cap" type="number" min="0" inputmode="numeric" value="${e ? (e.cap || '') : 80}"></label></div>
           <div id="gf-out">${guideFood(e ? rsvpCount(e.id) : 40, e ? e.cap : 80)}</div>${e ? `<div><button class="btn ghost small" data-act="edit-event" data-id="${e.id}">Change the RSVP maximum</button></div>` : ''}</div>` : ''}
+        ${extra === 'post' && e ? (() => { const rq = rqOf(e.id), st = rq ? rq.status : '', need = isPanel ? PANEL_MIN : 1;
+          if (!e.draft) return '<div><span class="tag ok">Posted</span></div>';
+          if (st === 'signoff') return '<div class="hint"><strong>Waiting for a president to approve it.</strong> It’s posted as soon as one does.</div>';
+          const back = st === 'returned' && rq.note ? `<div class="notice"><span><strong>A president asked for changes:</strong> ${esc(rq.note)}</span></div>` : '';
+          if (n < need) return back + `<div class="hint"><strong>Locked.</strong> ${isPanel ? `It can go to a president once three panelists are marked confirmed (${n} so far).` : 'It can go to a president once the speaker is marked confirmed in the list above.'}</div>`;
+          return back + `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" data-act="signoff-send" data-id="${e.id}">${back ? 'Send it to a president again' : 'Send to a president'}</button><button class="btn ghost small" data-act="edit-event" data-id="${e.id}">Edit the event</button></div>`; })() : ''}
         ${extra === 'count' && e ? `<div class="hint"><strong>${n} panelist${n === 1 ? '' : 's'} confirmed</strong>, aiming for ${target}. ${n < PANEL_MIN ? 'That’s fewer than three.' : n < target ? 'Enough to go ahead.' : 'You’ve reached your number.'}</div>` : ''}
         ${extra === 'roles' && e ? `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost small" data-act="open-event" data-id="${e.id}">${mine.length ? 'See the roles' : 'Assign roles'}</button><span class="hint">${mine.length ? `${filled} of ${spots} spots filled` : 'No roles set up for this event yet.'}${isPanel && mine.length && guides < 2 ? ` <strong>${guides ? 'The second guide isn’t assigned yet.' : 'No guides are assigned yet. A panel needs two.'}</strong>` : ''}</span></div>` : ''}
         ${mail ? (e ? `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost small" data-act="guest-mail" data-id="${e.id}" data-tpl="${mail}">${isPanel ? 'Write these emails' : 'Write this email'}</button>${sentTo(mail) ? `<span class="hint">Sent to ${sentTo(mail)} so far</span>` : ''}</div>` : '<span class="hint">Pick an event above to write this email.</span>') : ''}
@@ -6706,7 +6777,8 @@ function guideBody(){
     <p class="muted" style="margin:0">How the WFA runs a ${who} event: what to send and when, who does what, and what to bring. Pick an event and the dates, numbers, and emails fill in for it.</p>
     <label style="max-width:16rem">Guide<select id="guide-type"><option value="guest_speaker" ${isPanel ? '' : 'selected'}>Guest speaker</option><option value="panel" ${isPanel ? 'selected' : ''}>Panel</option></select></label>
     <label style="max-width:40rem">Event<select id="guide-ev"><option value="">No event (just the guide)</option>${evs.map(x => `<option value="${x.id}" ${e && x.id === e.id ? 'selected' : ''}>${fmtDay(x.date)} · ${esc(x.title)}${x.draft ? ' (draft)' : ''}${isPast(x) ? ' (past)' : ''}</option>`).join('')}</select>
-      ${evs.length ? '' : `<span class="hint">No ${who} events are coming up. Create one under Events and it shows here.</span>`}</label>
+      ${evs.length ? '' : `<span class="hint">No ${who} events are coming up. Start one here and it shows in this list.</span>`}</label>
+    <div><button class="btn${e ? ' ghost' : ''} small" data-act="guide-new" data-type="${type}">Start a new ${isPanel ? 'panel' : 'guest speaker event'}</button></div>
     ${e ? `<section class="panel stack" style="gap:8px">
       <div><h3 style="margin:0">${esc(e.title)} ${e.draft ? '<span class="tag">Draft</span>' : ''}</h3>
         <div class="ev-sub">${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc) || 'No location yet'} · ${days === 0 ? 'Today' : days > 0 ? `In ${days} day${days === 1 ? '' : 's'}` : `${-days} day${days === -1 ? '' : 's'} ago`}${e.draft ? '' : ` · ${rsvpCount(e.id)} RSVP${rsvpCount(e.id) === 1 ? '' : 's'}${e.cap ? ' of ' + e.cap : ''}`}</div></div>
@@ -6729,6 +6801,7 @@ function guideBody(){
       <span class="hint">Officers on a role get their instructions by email the day before.</span></section>
     <section class="stack" style="gap:6px"><div class="section-head"><h3>People to know</h3></div>
       <div>${GUIDE_PEOPLE.map(([name, title, what]) => `<div class="list-row"><div style="min-width:0"><div class="ev-title">${name}</div><div class="ev-sub">${title}. ${what}</div></div></div>`).join('')}</div></section>
+    ${designSection(e)}
   </div>`;
 }
 function startBody(){
@@ -9415,7 +9488,7 @@ document.addEventListener('click', async ev => {
         if (String(r.data).startsWith('err:')) throw new Error(RQ_ERR[r.data] || r.data);
         pubNow = r.data === 'ok:published';
         await logChange((pubNow ? 'Published (quick scheduling): “' : 'Sent to the presidents: “') + e.title + '”');
-      }, () => pubNow ? 'Published. Quick scheduling is on, so it skipped the presidents.' : 'Sent to the presidents. It’s published once they approve.'); break; }
+      }, () => pubNow ? 'Published. Quick scheduling is on, so it skipped the presidents.' : 'Sent to the presidents. It’s posted as soon as one approves.'); break; }
     case 'ck-open-early': case 'ck-close-early': { const open = a === 'ck-open-early', e = evById(id);
       await act(async () => {
         if (open && !e.code) must(await sb.from('checkin_codes').upsert({ event_id: id, code: newCode() }));
@@ -9505,6 +9578,22 @@ document.addEventListener('click', async ev => {
     case 'ar-rm': { const r = t.closest('.ar-row'), w = document.getElementById('ar-guests'); if (w.children.length > 1) r.remove(); else r.querySelectorAll('input').forEach(i => i.value = ''); break; }
     case 'gm-go': guestMailGo(id); break;
     case 'gp-done': closeModal(); render(); break;
+    case 'guide-new': guideNewModal(t.dataset.type === 'panel' ? 'panel' : 'guest_speaker'); break;
+    case 'plan-shift': closeModal(); await shiftPlan(id, +t.dataset.d); break;
+    case 'gn-go': { const type = t.dataset.type === 'panel' ? 'panel' : 'guest_speaker', panel = type === 'panel', val = k => String((document.getElementById(k) || {}).value || '').trim(), errEl = document.getElementById('gn-err');
+      const title = val('gn-title'), date = val('gn-date'), start = val('gn-start'), lead = val('gn-lead') || session, target = panel ? panelPlan(val('gn-target')).n : 0;
+      if (!title){ errEl.textContent = 'Give it a working title.'; break; }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < todayIso()){ errEl.textContent = 'Pick a target date that hasn’t passed.'; break; }
+      if (!/^\d{2}:\d{2}/.test(start)){ errEl.textContent = 'Pick a start time.'; break; }
+      const [h, m] = start.split(':').map(Number), endMin = Math.min(23 * 60 + 59, h * 60 + m + (panel ? PANEL_LEN : 90)), end = String(Math.floor(endMin / 60)).padStart(2, '0') + ':' + String(endMin % 60).padStart(2, '0');
+      let evId = null; closeModal();
+      const made = await act(async () => {
+        evId = must(await sb.from('events').insert({ title, cat: type, date, start_time: start.slice(0, 5), end_time: end, loc: 'To be decided', cap: 0, descr: '', draft: true }).select('id').single()).id;
+        must(await sb.from('tasks').insert(PLAN_DEFAULTS[type].map(([tt, n]) => { let due = shiftDay(date, n); if (n < 0 && due < todayIso()) due = todayIso(); return { title: tt, event_id: evId, owner: lead, due, done: false }; })));
+        must(await sb.from('event_guides').upsert(guideRow(evId, { lead, ...(panel ? { target } : {}) })));
+        await logChange('Started planning “' + title + '”' + (lead === session ? '' : ', run by ' + userName(lead)));
+      }, () => `Draft created. ${lead === session ? 'You have' : userName(lead) + ' has'} the checklist.`);
+      if (made && evId){ ui.guideType = type; ui.guideEv = evId; render(); window.scrollTo(0, 0); } break; }
     case 'gp-preview': case 'gp-copy': case 'gp-outlook': {
       const pk = ui.gpack, p = pk && pk.people.find(x => x.id === t.dataset.pid); if (!p) break;
       const subject = packFill(document.getElementById('gp-subject').value, p, pk), md = packFill(document.getElementById('gp-body').value, p, pk);
@@ -10604,6 +10693,7 @@ async function handleSubmit(f, v, err){
   }
 
   if (f.id === 'f-event'){
+    { const was = evById(ui.editEvent); ui.evDateWas = was ? { id: was.id, date: was.date } : null; }
     const e = { title: v('ev-title'), cat: v('ev-cat'), points: v('ev-cat') === 'other' ? Math.max(0, Math.min(100, parseInt(v('ev-pts')) || 0)) : null, date: v('ev-date'), start_time: v('ev-start'), end_time: v('ev-end'), loc: v('ev-loc'), cap: Math.max(0, parseInt(v('ev-cap')) || 0), descr: v('ev-desc') };
     const waitFinal = evHideFinal(ui.editEvent ? evById(ui.editEvent) : null, e.cat), cur0 = evById(ui.editEvent) || {};
     // External guests shown on the event page: from the request (editable form, or the saved one once it's locked).
