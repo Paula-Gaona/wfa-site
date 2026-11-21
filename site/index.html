@@ -883,6 +883,8 @@ async function load(){
     evQuestions: signed && sb.from('event_questions').select('*').order('created_at'),
     eventRoles: off && t('event_roles'),
     eventGuides: off && t('event_guides'),
+    volBoard: signed && sb.rpc('volunteer_board'),
+    volLog: off && t('volunteer_log'),
     headcount: off && t('event_headcount'),
     claims: signed && t('attendance_claims'),
     visits: off && t('class_visits'),
@@ -971,6 +973,7 @@ async function load(){
   db.visits = (Array.isArray(R.visits) ? R.visits : []).sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time));
   db.headcount = {}; (Array.isArray(R.headcount) ? R.headcount : []).forEach(x => db.headcount[x.event_id] = +x.extra || 0);
   db.guides = {}; (Array.isArray(R.eventGuides) ? R.eventGuides : []).forEach(x => { db.guides[x.event_id] = x.data && typeof x.data === 'object' ? x.data : {}; });
+  db.vol = R.volBoard && typeof R.volBoard === 'object' && !Array.isArray(R.volBoard) ? R.volBoard : null; db.volLog = Array.isArray(R.volLog) ? R.volLog : [];
   db.roles = {}; db.roleSeats = {}; (Array.isArray(R.eventRoles) ? R.eventRoles : []).forEach(x => { db.roles[x.event_id] = Array.isArray(x.roles) ? x.roles : []; db.roleSeats[x.event_id] = !!x.count_seats; });
   db.guestRsvps = {}; (Array.isArray(R.guestRsvps) ? R.guestRsvps : []).forEach(g => (db.guestRsvps[g.event_id] = db.guestRsvps[g.event_id] || []).push(g));
   db.evQuestions = Array.isArray(R.evQuestions) ? R.evQuestions : [];
@@ -7543,6 +7546,7 @@ function eventInner(id, page){
     ${checkin}
     ${rsvpTimesNote(e)}
     ${!session && !isCase(e) && takesRsvps(e) && !hasStarted(e) && !e.draft ? (e.membersOnly ? (uvidRsvpDone(e.id) ? uvidRsvpNote(e.id) : uvidRsvp(e) + membersOnlyNote(e, 'RSVP')) : guestRsvpBox(e)) : ''}
+    ${volunteerBox(e)}
     ${e.qaEnabled && !isPast(e) && !e.draft ? (qaOpen(e) ? qaBox(e) : `<div class="panel"><span class="muted">Questions for the ${(e.speakers || []).length > 1 ? 'guests' : 'speaker'} open when RSVPs do.</span></div>`) : ''}
     <div class="row">${action}${can('officer') ? `<span style="margin-left:auto" class="row"><button class="btn ghost small" data-act="edit-event" data-id="${id}">Edit event</button></span>` : ''}</div>
     ${can('officer') ? linkClicksNote(e) : ''}
@@ -7657,17 +7661,50 @@ const ROLE_PRESETS = [
 // The usual roles officers have saved (role_presets), or the built-in list above.
 function usualRoles(){ return db.rolePresets || ROLE_PRESETS.map(([phase, name, arrive, qty, duties, guest]) => ({ phase, name, arrive, qty, duties, guest: !!guest })); }
 function rolesOf(id){ return (db.roles || {})[id] || []; }
+// Member volunteers. Roles that need officer access or represent the club to guests stay with officers.
+const VOL_OFFICER_ONLY = /check.?in|\bmc\b|guide|host|lead/i;
+const volBonus = r => r.phase !== 'after' && (+r.arrive || 0) >= 30 ? 25 : 15;
+const volLeft = r => Math.max(0, Math.min((+r.open || 0) - (r.vols || []).length, (+r.qty || 1) - (r.officers || []).filter(Boolean).length));
+const VOL_ERR = { 'err:member': 'Volunteering is for WFA members.', 'err:first': 'You can volunteer once you’ve attended your first event.',
+  'err:noshow': 'You missed an event you RSVP’d to this semester, so volunteering opens again for you next semester.',
+  'err:term': 'You gave up a volunteer spot less than 48 hours before an event, so volunteering opens again for you next semester.',
+  'err:year': 'You didn’t come for a volunteer spot, so volunteering is paused for a year. An officer can lift this.',
+  'err:full': 'That spot was just taken.', 'err:closed': 'That role isn’t open to volunteers anymore.', 'err:started': 'This event has already started.', 'err:already': 'You’re already volunteering at this event.',
+  'err:signin': 'Sign in first.', 'err:missing': 'That event isn’t available.', 'err:notsigned': 'You’re not signed up for this one.', 'err:early': 'You can mark this once the event has started.', 'err:notofficer': 'Only officers can do that.', 'err:officer': 'Officers take roles from the officer list.' };
+// The event page, for members: open volunteer spots, or the one they've taken.
+function volunteerBox(e){
+  const v = db.vol; if (!v || !session || can('officer') || e.draft || hasStarted(e)) return '';
+  const mine = (v.mine || []).find(x => x.event_id === e.id && x.status === 'signed'), roles = (v.events || {})[e.id] || [], open = roles.filter(r => r.left > 0);
+  if (!mine && !open.length) return '';
+  const late = evStartMs(e) - Date.now() < 48 * 36e5;
+  if (mine){ const r = roles.find(x => x.role === mine.role) || {};
+    return `<div class="panel stack" style="gap:8px"><div><strong>You’re volunteering: ${esc(mine.role)}</strong><div class="hint">Arrive by ${esc(roleArriveAt(e, r.arrive))}. You’ll get your instructions by email the day before, and ${mine.bonus} bonus points once an officer confirms you did the job.</div></div>
+      ${r.duties ? `<div class="ev-sub" style="white-space:pre-wrap">${esc(r.duties)}</div>` : ''}
+      <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost small" data-act="vol-cancel" data-id="${e.id}">Give up my spot</button><span class="hint">${late ? 'It’s less than 48 hours away. Giving it up now pauses volunteering for you until next semester, and not coming pauses it for a year.' : 'No penalty if you give it up at least 48 hours before the event.'}</span></div></div>`; }
+  const why = v.block && VOL_ERR[v.block];
+  return `<div class="panel stack" style="gap:10px"><div><strong>Volunteer at this event</strong><div class="hint">Help run it and earn bonus points on top of the event’s own. You’ll get instructions by email the day before.</div></div>
+    ${open.map(r => `<div class="role-card"><div class="row" style="justify-content:space-between;gap:4px 10px;align-items:baseline;flex-wrap:wrap"><strong>${esc(r.role)} <span class="hint">· +${r.bonus} points</span></strong><span class="hint">Arrive by ${esc(roleArriveAt(e, r.arrive))}${r.arrive ? ` (${r.arrive} min early)` : ''}</span></div>
+      ${r.duties ? `<div class="ev-sub" style="white-space:pre-wrap">${esc(r.duties)}</div>` : ''}
+      <div class="ev-sub row" style="gap:6px;align-items:center;flex-wrap:wrap"><span class="role-open">${r.left} spot${r.left === 1 ? '' : 's'} open</span>${v.block ? '' : `<button class="btn ghost small" data-act="vol-join" data-id="${e.id}" data-role="${esc(r.role)}">Volunteer</button>`}</div></div>`).join('')}
+    <span class="hint">${why ? `<strong>${why}</strong>` : 'If you can’t make it, give up your spot at least 48 hours before. Later than that pauses volunteering for you until next semester, and not coming pauses it for a year.'}</span></div>`;
+}
 function roleArriveAt(e, mins){
   const [h, m] = String(e.start || '00:00').split(':').map(Number), t = Math.max(0, h * 60 + m - (+mins || 0));
   return fmtTime(String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'));
 }
 function roleWhen(e, r){ return r.arrive ? `Arrive by ${roleArriveAt(e, r.arrive)} (${r.arrive} min early)` : `Arrive by ${fmtTime(e.start)} (the start)`; }
 function roleCard(e, r, i){
-  const who = (r.officers || []).filter(Boolean), qty = +r.qty || 1, open = Math.max(0, qty - who.length), me = who.includes(session), live = !isPast(e);
+  const who = (r.officers || []).filter(Boolean), qty = +r.qty || 1, open = Math.max(0, qty - who.length), me = who.includes(session), live = !isPast(e), vols = r.vols || [], vl = volLeft(r);
+  const log = x => (db.volLog || []).find(v => v.event_id === e.id && String(v.email).toLowerCase() === String(x).toLowerCase()) || {};
+  // Once the event starts, an officer says whether each volunteer did the job (that's what adds their bonus points).
+  const volRow = x => { const st = log(x).status, b = log(x).bonus || volBonus(r);
+    return `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap"><span>${esc(userName(x))}:</span>${st === 'done' ? `<span class="tag ok">Did the job · +${b} points</span>` : st === 'no_show' ? `<span class="tag bad">Didn’t come${log(x).forgiven ? ' · block lifted' : ' · paused for a year'}</span>${log(x).forgiven ? '' : `<button class="btn ghost small" data-act="vol-forgive" data-id="${e.id}" data-vid="${log(x).id}">Lift the block</button>`}` : ''}
+      <button class="btn ghost small" data-act="vol-mark" data-id="${e.id}" data-email="${esc(x)}" data-did="1">${st === 'done' ? 'Confirmed' : `Did the job (+${b})`}</button>${st === 'no_show' ? '' : `<button class="btn ghost small" data-act="vol-mark" data-id="${e.id}" data-email="${esc(x)}" data-did="0">Didn’t come</button>`}</div>`; };
   return `<div class="role-card${me ? ' mine' : ''}"><div class="row" style="justify-content:space-between;gap:4px 10px;align-items:baseline;flex-wrap:wrap"><strong>${esc(r.name)}${qty > 1 ? ` <span class="hint">· ${qty} people</span>` : ''}</strong><span class="hint">${esc(roleWhen(e, r))}</span></div>
     ${r.duties ? `<div class="ev-sub" style="white-space:pre-wrap">${esc(r.duties)}</div>` : ''}
-    <div class="ev-sub row" style="gap:6px;align-items:center;flex-wrap:wrap"><span>${who.map(x => esc(userName(x))).join(', ')}${open ? `${who.length ? ' · ' : ''}<span class="role-open">${open} open</span>` : ''}</span>
-      ${live && open && !me ? `<button class="btn ghost small" data-act="role-take" data-id="${e.id}" data-i="${i}">I’ll take it</button>` : ''}${live && me ? `<button class="btn ghost small" data-act="role-drop" data-id="${e.id}" data-i="${i}">Drop it</button>` : ''}</div></div>`;
+    <div class="ev-sub row" style="gap:6px;align-items:center;flex-wrap:wrap"><span>${who.map(x => esc(userName(x)) + (vols.includes(x) ? ' <span class="hint">(volunteer)</span>' : '')).join(', ')}${open ? `${who.length ? ' · ' : ''}<span class="role-open">${open} open${vl ? `, ${vl} to volunteers` : ''}</span>` : ''}</span>
+      ${live && open && !me ? `<button class="btn ghost small" data-act="role-take" data-id="${e.id}" data-i="${i}">I’ll take it</button>` : ''}${live && me ? `<button class="btn ghost small" data-act="role-drop" data-id="${e.id}" data-i="${i}">Drop it</button>` : ''}</div>
+    ${vols.length && hasStarted(e) ? `<div class="stack" style="gap:4px">${vols.filter(x => who.includes(x)).map(volRow).join('')}</div>` : ''}</div>`;
 }
 function rolesPanel(e){
   const rs = rolesOf(e.id), open = rs.reduce((n, r) => n + Math.max(0, (+r.qty || 1) - (r.officers || []).filter(Boolean).length), 0);
@@ -7675,6 +7712,7 @@ function rolesPanel(e){
       ${isPast(e) ? '' : `<button class="btn ghost small" data-act="roles-edit" data-id="${e.id}">${rs.length ? 'Edit roles' : 'Add roles'}</button>`}</div>
     ${rs.length ? ROLE_PHASES.map(([p, label]) => { const l = rs.map((r, i) => [r, i]).filter(([r]) => r.phase === p); return l.length ? `<div class="stack" style="gap:8px"><div class="hint" style="font-weight:600">${label}</div>${l.map(([r, i]) => roleCard(e, r, i)).join('')}</div>` : ''; }).join('')
       : '<span class="hint">List the jobs for this event (setup, check-in, MC, cleanup…), how early each one should arrive, and which officers are on them. Officers with a role get their instructions and arrival time in an email the day before.</span>'}
+    ${(db.volLog || []).filter(v => v.event_id === e.id && v.status === 'late_cancel').map(v => `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap"><span class="hint">${esc(userName(v.email))} gave up ${esc(v.role)} less than 48 hours before${v.forgiven ? ' (block lifted).' : ', so they can’t volunteer again this semester.'}</span>${v.forgiven ? '' : `<button class="btn ghost small" data-act="vol-forgive" data-id="${e.id}" data-vid="${v.id}">Lift the block</button>`}</div>`).join('')}
     ${rs.length && !isPast(e) ? `<span class="hint">Officers with a role are RSVP’d automatically${e.cap ? (db.roleSeats[e.id] ? ' and take seats from the seat limit' : ', without taking seats from the seat limit') : ''}, and get their instructions and arrival time in an email the day before.</span>` : ''}</div>`;
 }
 // The editor: ui.roleEd = { id, roles }. Structural changes (add, remove, move, how many) read the inputs, then redraw.
@@ -7682,7 +7720,7 @@ function rolesModal(keep){
   const { id, roles, preset } = ui.roleEd, e = preset ? null : evById(id); if (!preset && !e) return;
   const back = preset && ui.roleEdBack ? 'ro-back' : 'close';
   const staff = staffEmails().map(x => [x, userName(x)]).sort((a, b) => a[1].localeCompare(b[1]));
-  const who = sel => '<option value="">Open</option>' + staff.map(([em, n]) => `<option value="${esc(em)}" ${em === sel ? 'selected' : ''}>${esc(n)}</option>`).join('');
+  const who = sel => '<option value="">Open</option>' + (sel && !staff.some(([em]) => em === sel) ? `<option value="${esc(sel)}" selected>${esc(userName(sel))} (volunteer)</option>` : '') + staff.map(([em, n]) => `<option value="${esc(em)}" ${em === sel ? 'selected' : ''}>${esc(n)}</option>`).join('');
   const have = new Set(roles.map(r => String(r.name || '').trim().toLowerCase())), more = !preset && usualRoles().some(p => !have.has(String(p.name).toLowerCase()) && (!p.guest || GUEST_CATS.includes(e.cat)));
   const box = document.querySelector('#modal .modal'), top = keep && box ? box.scrollTop : 0;
   showModal(`<div class="modal-in stack" style="gap:14px"><div><button class="modal-x" data-act="${back}" aria-label="Close">×</button>${preset
@@ -7695,12 +7733,14 @@ function rolesModal(keep){
         <select class="ro-phase" aria-label="When" style="flex:1 1 9rem;min-width:0">${ROLE_PHASES.map(([p, l]) => `<option value="${p}" ${p === r.phase ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="row" style="gap:6px;flex-wrap:wrap;align-items:end">
         <label style="display:flex;flex-direction:column;gap:2px;flex:1 1 12rem;min-width:0">Arrive<select class="ro-arrive" style="min-width:0">${ROLE_ARRIVE.map(m => `<option value="${m}" ${m === +r.arrive ? 'selected' : ''}>${m ? `${m} min early${e ? ` (${roleArriveAt(e, m)})` : ''}` : `At the start${e ? ` (${fmtTime(e.start)})` : ''}`}</option>`).join('')}</select></label>
-        <label style="display:flex;flex-direction:column;gap:2px;flex:0 0 auto">People<input class="ro-qty" type="number" min="1" max="20" value="${+r.qty || 1}" style="width:4.5rem"></label></div>
+        <label style="display:flex;flex-direction:column;gap:2px;flex:0 0 auto">People<input class="ro-qty" type="number" min="1" max="20" value="${+r.qty || 1}" style="width:4.5rem"></label>
+        ${preset ? '' : `<label style="display:flex;flex-direction:column;gap:2px;flex:0 0 auto" title="How many of these spots members can sign up for on the event page">Open to volunteers<input class="ro-open" type="number" min="0" max="20" value="${+r.open || 0}" style="width:4.5rem"></label>`}</div>
       <textarea class="ro-duties" placeholder="What they do" aria-label="What they do" maxlength="600" style="min-height:64px">${esc(r.duties || '')}</textarea>
       ${preset ? `<label class="check"><input type="checkbox" class="ro-guest" ${r.guest ? 'checked' : ''}> Only for events with outside guests (guest speakers, case competitions, career fairs)</label>`
         : `<div class="row" style="gap:6px;flex-wrap:wrap">${Array.from({ length: Math.min(20, +r.qty || 1) }, (_, k) => `<select class="ro-who" aria-label="Officer ${k + 1}" style="flex:1 1 10rem;min-width:0">${who((r.officers || [])[k])}</select>`).join('')}</div>`}
       <div class="row" style="gap:6px;justify-content:flex-end">${i ? `<button type="button" class="btn ghost small" data-act="ro-move" data-i="${i}" data-d="-1" aria-label="Move up">↑</button>` : ''}${i < roles.length - 1 ? `<button type="button" class="btn ghost small" data-act="ro-move" data-i="${i}" data-d="1" aria-label="Move down">↓</button>` : ''}<button type="button" class="btn ghost small" data-act="ro-rm" data-i="${i}">Remove</button></div></div>`).join('')}</div>
     <div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn ghost small" data-act="ro-add">+ Add a role</button>${more ? '<button type="button" class="btn ghost small" data-act="ro-presets">Add the usual roles</button>' : ''}${preset ? (db.rolePresets ? '<button type="button" class="btn ghost small" data-act="ro-reset">Put back the original list</button>' : '') : '<button type="button" class="btn ghost small" data-act="ro-usual">Edit the usual roles</button>'}</div>
+    ${!preset ? '<span class="hint">Open to volunteers: how many of a role’s spots members can sign up for on the event page (setup, food, mic runner, photos, cleanup). They earn bonus points once you confirm they did the job. Check-in, MC, guide, and event lead stay with officers.</span>' : ''}
     ${!preset ? `<div class="stack" style="gap:4px">${e.cap ? `<label class="check"><input type="checkbox" id="ro-seats" ${ui.roleEd.seats ? 'checked' : ''}> Officers with roles take seats from the ${e.cap}-seat limit</label>` : ''}
       <span class="hint">Officers with a role are RSVP’d automatically, so the RSVP total (for food) includes them${e.cap ? '. Unchecked, they don’t take a member’s seat or push anyone onto the waitlist' : ''}.</span></div>` : ''}
     <div class="err" id="ro-err"></div>
@@ -7713,6 +7753,7 @@ function readRoles(){
     r.name = el.querySelector('.ro-name').value; r.phase = el.querySelector('.ro-phase').value; r.arrive = +el.querySelector('.ro-arrive').value;
     r.qty = Math.min(20, Math.max(1, Math.round(+el.querySelector('.ro-qty').value) || 1)); r.duties = el.querySelector('.ro-duties').value;
     if (el.querySelector('.ro-guest')) r.guest = el.querySelector('.ro-guest').checked; else r.officers = [...el.querySelectorAll('.ro-who')].map(x => x.value);
+    if (el.querySelector('.ro-open')) r.open = Math.max(0, Math.round(+el.querySelector('.ro-open').value) || 0);
   });
   const st = document.getElementById('ro-seats'); if (st) ui.roleEd.seats = st.checked;
 }
@@ -7721,6 +7762,8 @@ function cleanRoles(roles){
   return roles.map(r => { const qty = Math.min(20, Math.max(1, +r.qty || 1));
       return { phase: order.includes(r.phase) ? r.phase : 'during', name: String(r.name || '').trim().slice(0, 60), arrive: Math.max(0, Math.min(180, +r.arrive || 0)), qty,
         duties: String(r.duties || '').trim().slice(0, 600), officers: [...new Set((r.officers || []).filter(Boolean))].slice(0, qty) }; })
+    .map(r => { const src = roles.find(x => String(x.name || '').trim().slice(0, 60) === r.name) || {}, open = VOL_OFFICER_ONLY.test(r.name) ? 0 : Math.min(r.qty, Math.max(0, +src.open || 0)), vols = (src.vols || []).filter(x => r.officers.includes(x));
+      return { ...r, ...(open ? { open } : {}), ...(vols.length ? { vols } : {}) }; })
     .filter(r => r.name).sort((a, b) => order.indexOf(a.phase) - order.indexOf(b.phase));
 }
 async function savePresets(roles){
@@ -9578,6 +9621,17 @@ document.addEventListener('click', async ev => {
     case 'ar-rm': { const r = t.closest('.ar-row'), w = document.getElementById('ar-guests'); if (w.children.length > 1) r.remove(); else r.querySelectorAll('input').forEach(i => i.value = ''); break; }
     case 'gm-go': guestMailGo(id); break;
     case 'gp-done': closeModal(); render(); break;
+    case 'vol-join': case 'vol-cancel': case 'vol-mark': case 'vol-forgive': {
+      const a = t.dataset.act, e = evById(id); let res = '';
+      const done = await act(async () => {
+        const r = a === 'vol-join' ? await sb.rpc('volunteer_signup', { p_event: id, p_role: t.dataset.role }) : a === 'vol-cancel' ? await sb.rpc('volunteer_cancel', { p_event: id })
+          : a === 'vol-mark' ? await sb.rpc('volunteer_mark', { p_event: id, p_email: t.dataset.email, p_did: t.dataset.did === '1' }) : await sb.rpc('volunteer_forgive', { p_id: t.dataset.vid });
+        if (r.error) throw /volunteer_/.test(r.error.message || '') ? new Error('Volunteering isn’t set up yet. An admin needs to run 122-volunteers.sql.') : r.error;
+        res = String(r.data || ''); if (res.startsWith('err:')) throw new Error(VOL_ERR[res] || res);
+        if (a === 'vol-mark') await logChange((t.dataset.did === '1' ? 'Confirmed ' : 'Marked as a no-show: ') + userName(t.dataset.email) + ' volunteering at “' + (e ? e.title : '') + '”');
+        if (a === 'vol-forgive') await logChange('Lifted a volunteering block from “' + (e ? e.title : '') + '”');
+      }, () => a === 'vol-join' ? 'You’re volunteering. Thank you!' : a === 'vol-cancel' ? (res === 'ok:late' ? 'Spot given up. Volunteering is paused for you until next semester.' : 'Spot given up') : a === 'vol-mark' ? (t.dataset.did === '1' ? 'Confirmed. Their bonus points are added.' : 'Marked as a no-show') : 'Block lifted');
+      if (done && e && route() === 'event') refreshEvent(id); break; }
     case 'guide-new': guideNewModal(t.dataset.type === 'panel' ? 'panel' : 'guest_speaker'); break;
     case 'plan-shift': closeModal(); await shiftPlan(id, +t.dataset.d); break;
     case 'gn-go': { const type = t.dataset.type === 'panel' ? 'panel' : 'guest_speaker', panel = type === 'panel', val = k => String((document.getElementById(k) || {}).value || '').trim(), errEl = document.getElementById('gn-err');

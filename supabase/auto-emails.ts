@@ -505,6 +505,27 @@ ${lastNote}`
       }
     } catch (_) { /* not set up yet (119-task-reminders.sql) */ }
 
+    // Volunteers (see 122-volunteers.sql): when a member gives up a volunteer spot, the officer in charge of the
+    // event is told once, so they can fill it. Each cancellation is claimed first so it's only sent once.
+    try {
+      const claim = await db.from('volunteer_log').update({ told: true }).in('status', ['cancelled', 'late_cancel']).eq('told', false).select('event_id, email, role, status');
+      const gone = claim.error ? [] : (claim.data || []);
+      if (gone.length) {
+        const evIds = [...new Set(gone.map((x) => x.event_id))];
+        const { data: evs } = await db.from('events').select('id, title, date').in('id', evIds).gte('date', isoDay(Date.now()));
+        const { data: gds } = await db.from('event_guides').select('event_id, data').in('event_id', evIds);
+        const { data: ppl } = await db.from('members').select('email, first, last').in('email', gone.map((x) => x.email));
+        const nameOfVol = new Map((ppl || []).map((p) => [String(p.email).toLowerCase(), `${p.first || ''} ${p.last || ''}`.trim()]));
+        const lead = new Map((gds || []).map((g) => [g.event_id, String((g.data || {}).lead || '').toLowerCase()]));
+        for (const ev of (evs || [])) {
+          const to = lead.get(ev.id); if (!to) continue;
+          const list = gone.filter((x) => x.event_id === ev.id);
+          const lines = list.map((x) => `- ${nameOfVol.get(String(x.email).toLowerCase()) || x.email} gave up ${x.role}${x.status === 'late_cancel' ? ' (less than 48 hours before)' : ''}`).join('\n');
+          await tell([to], `A volunteer spot reopened for ${ev.title}`, `${lines}\n\nThe spot is open again on the event page for other members to take, or you can assign an officer.`, 'Open the event', `${site}/#event/${ev.id}`, `vol-${ev.id}`);
+        }
+      }
+    } catch (_) { /* not set up yet (122-volunteers.sql) */ }
+
     // Waitlists (see 62-rsvp-waitlist.sql): tell people who just got a seat. Works even when the event emails are off.
     const { data: promoted } = await db.from('waitlist').select('event_id, email').not('promoted_at', 'is', null).is('notified_at', null).limit(200);
     if (promoted?.length) {
