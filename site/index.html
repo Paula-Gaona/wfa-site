@@ -781,7 +781,7 @@ function buildTitle(tier, branch){
 // Officer tools, in groups (the menu shows the headings; the tab row puts a divider between groups).
 const OFFICER_GROUPS = [
   ['To do', [['approvals','Approvals'],['questions','Questions'],['tasks','Tasks'],['visits','Class visits']]],
-  ['Planning events', [['events','Events'],['scheduling','Scheduling'],['contacts','Contacts'],['eventplan','Semester plan'],['plan','Get started with an event'],['guide','Event guides'],['process','How scheduling works'],['availability','Availability']]],
+  ['Planning events', [['events','Events'],['contacts','Contacts'],['eventplan','Semester plan'],['plan','Get started with an event'],['guide','Event guides'],['availability','Availability']]],
   ['At the event', [['checkin','Check-in & attendance'],['qr','QR codes'],['surveys','Event surveys']]],
   ['Communications', [['announcements','Announcements'],['email','Email builder'],['forms','Survey builder'],['recaps','Recaps']]],
   ['People & data', [['members','Members'],['directory','Officer directory'],['resumes','Resume book'],...(DUES_ENABLED ? [['dues','Dues']] : []),['stats','Statistics'],['results','Survey results']]]
@@ -5000,8 +5000,8 @@ function thumbsHtml(){
 /* ---------- Event planning (Officer tools): a logistics checklist per event, drafts included ---------- */
 // Standard checklist for each event type: [task, days relative to the event (negative = before, 0 = day of)].
 // Admins can replace these from Event planning > Edit standard checklists; edits are saved in app_settings.plan_templates.
-// Every event except officer meetings is confirmed with UVU and signed off before it's published or advertised:
-// plan 3 months ahead for case competitions, 2 months for career fairs, 6 weeks for guest speakers, 3 weeks otherwise.
+// The standard checklists. Rooms are reserved through Todd; bigger events are posted once a president approves them.
+// Plan 3 months ahead for case competitions, 2 months for career fairs, 6 weeks for guest speakers and panels, 3 weeks otherwise.
 const PLAN_DEFAULTS = {
   guest_speaker: [
     ['Confirm the speaker, topic, and date', -42], ['Reserve the place and time through Todd, with an estimated guest count', -42],
@@ -5016,37 +5016,37 @@ const PLAN_DEFAULTS = {
     ['Gather everything on the What to bring list', -1],
     ['Send a thank-you to the speaker', 1], ['Return the borrowed sign holders', 1], ['Check that attendance is complete', 1], ['Post a recap with photos', 2]],
   workshop: [
-    ['Confirm the presenter, topic, and a few possible dates', -28], ['Fill out the scheduling request and send it on', -21],
-    ['Scheduler confirms it with UVU', -18], ['Scheduler finalizes the details; the presidents sign off and it’s published', -14],
-    ['Make a flyer and post it on social media (only once it’s published)', -10], ['Prepare slides, templates, and practice files', -7], ['Email members about the event', -7],
+    ['Confirm the presenter, topic, and a few possible dates', -28], ['Reserve the place and time through Todd, with an estimated guest count', -21],
+    ['Write the description, set the RSVP maximum, and post the event', -14],
+    ['Make a flyer and post it on social media (only once it’s posted)', -10], ['Prepare slides, templates, and practice files', -7], ['Email members about the event', -7],
     ['Order snacks', -5], ['Test the software and lab access', -3], ['Set the check-in code', -1], ['Send a reminder email', -1],
     ['Post a recap with photos', 2], ['Add the slides or recording to Recaps', 2]],
   case_competition: [
-    ['Set the format, team size, and a few possible dates', -98], ['Fill out the scheduling request and send it on', -91],
-    ['Scheduler confirms it with UVU', -84], ['Coordinate with the faculty advisor and department', -77], ['Recruit judges', -63],
+    ['Set the format, team size, and a few possible dates', -98], ['Reserve the place and time through Todd, with an estimated guest count', -91],
+    ['Coordinate with the faculty advisor and department', -77], ['Recruit judges', -63],
     ['Write or source the case', -49], ['Secure sponsors and prizes', -49],
-    ['Scheduler finalizes the details; the presidents sign off, it’s published, and team registration opens', -42],
-    ['Promote it (flyers, social media, class announcements; only once it’s published)', -35],
+    ['Write the description and send the event to a president to post; team registration opens once it’s posted', -42],
+    ['Promote it (flyers, social media, class announcements; only once it’s posted)', -35],
     ['Close team registration', -10], ['Release the case to teams', -7], ['Finalize the schedule and judging rubric', -7],
     ['Order food for teams and judges', -7], ['Confirm logistics with judges', -3], ['Set the check-in code', -1],
     ['Announce winners and award prizes', 1], ['Thank judges and sponsors', 2], ['Post a recap with photos', 3]],
   career_fair: [
-    ['Coordinate with the UVU Career Center and pick a few possible dates', -70], ['Fill out the scheduling request and send it on', -61],
-    ['Scheduler confirms it with UVU', -56], ['Confirm which firms are attending', -42], ['Coordinate with the faculty advisor', -35],
-    ['Scheduler finalizes the details; the presidents sign off and it’s published', -28], ['Collect each firm’s info and open roles', -21],
-    ['Hold a resume review session for members', -14], ['Make a flyer and post it on social media (only once it’s published)', -10], ['Email members about the event', -7],
+    ['Coordinate with the UVU Career Center and pick a few possible dates', -70], ['Reserve the place and time through Todd, with an estimated guest count', -61],
+    ['Confirm which firms are attending', -42], ['Coordinate with the faculty advisor', -35],
+    ['Write the description and send the event to a president to post', -28], ['Collect each firm’s info and open roles', -21],
+    ['Hold a resume review session for members', -14], ['Make a flyer and post it on social media (only once it’s posted)', -10], ['Email members about the event', -7],
     ['Print the firm list and name tags', -3], ['Set the check-in code', -1], ['Send a reminder email', -1], ['Set up tables and signage', 0],
     ['Send thank-yous to the firms', 1], ['Send firms the resume book for their area', 3], ['Post a recap with photos', 3]],
   excursion: [
-    ['Confirm the host firm and a few possible dates', -35], ['Fill out the scheduling request and send it on', -28],
-    ['Scheduler confirms it with UVU', -25], ['Coordinate with the faculty advisor and get UVU travel approval', -24],
-    ['Arrange transportation', -21], ['Scheduler finalizes the details; the presidents sign off, it’s published, and sign-ups open', -18],
+    ['Confirm the host firm and a few possible dates', -35], ['Agree the agenda, group size, and your contact for the day with the host', -28],
+    ['Coordinate with the faculty advisor and get UVU travel approval', -24],
+    ['Arrange transportation', -21], ['Write the description and send the event to a president to post; sign-ups open once it’s posted', -18],
     ['Collect waivers and travel forms', -10], ['Share the itinerary and dress code', -5], ['Confirm the headcount with the host', -3], ['Send a reminder email', -1],
     ['Set the check-in code', -1], ['Send a thank-you to the host', 1], ['Post a recap with photos', 2]],
   social: [
-    ['Pick the activity and a few possible dates', -28], ['Fill out the scheduling request and send it on', -21],
-    ['Scheduler confirms it with UVU', -18], ['Scheduler finalizes the details; the presidents sign off and it’s published', -14],
-    ['Plan activities', -10], ['Make a flyer and post it on social media (only once it’s published)', -10],
+    ['Pick the activity and a few possible dates', -28], ['Reserve the place and time through Todd, with an estimated guest count', -21],
+    ['Write the description, set the RSVP maximum, and post the event', -14],
+    ['Plan activities', -10], ['Make a flyer and post it on social media (only once it’s posted)', -10],
     ['Email members about the event', -7], ['Order food', -5], ['Buy supplies and decorations', -3], ['Set the check-in code', -1],
     ['Send a reminder email', -1], ['Post a recap with photos', 2]],
   officer_meeting: [
@@ -5404,6 +5404,8 @@ function officerProfileSection(){
 // lighter and the sender can still edit the request). The scheduler finalizes the details and the presidents sign
 // off before it's published (see 52-event-scheduling.sql and 61-department-scheduling.sql).
 const needsSched = cat => cat !== 'officer_meeting';
+// The UVU scheduling form (room, AV, food details for the event schedulers). Off: rooms are reserved through Todd. The code stays, so it can be turned back on.
+const SCHED_FORM = false;
 function isScheduler(){ return isStaff() && (db.schedulers || []).includes(session); }
 const rqFixing = r => !!r && r.status === 'branch' && r.returned_from === 'review';   // presidents sent it back to the branch leadership
 const RQ_STATUS = { draft: ['Not sent yet', ''], branch: ['Waiting for the branch president', 'warn'], fixing: ['Changes requested by the presidents', 'warn'], review: ['Presidents’ review', 'warn'], sent: ['Confirming with UVU', 'warn'],
@@ -5685,7 +5687,7 @@ function rqFirmsBox(d, n){
 // estimates on an external guest request (same questions, no guests or RSVP timing).
 function rqPanel(e, cat, opts = {}){
   const est = !!opts.est;
-  if (!est && !needsSched(cat)) return '';
+  if (!est && (!SCHED_FORM || !needsSched(cat))) return '';
   const r = est ? null : rqOf(e && e.id), st = r ? r.status : 'draft';
   const head = `<div class="row" style="justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">${est ? 'Rough estimates for the event' : 'Scheduling form <span class="hint" style="font-weight:400">Optional</span>'}</h3>${r ? rqTag(e.id) : ''}</div>`;
   if (!est && rqLocked(e && e.id)){
@@ -6233,7 +6235,7 @@ function evButtons(e, cat){
   const fromPres = st === 'returned' && r.returned_from === 'signoff';
   const main = !needsSignoff(cat) ? publishBtn
     : ['signoff', 'sent', 'submitted'].includes(st) ? '' : `<button class="btn" type="submit" data-mode="signoff">${signoffLabel(fromPres)}</button>`;
-  const form = ['draft', 'returned'].includes(st) ? `<button class="btn ghost" type="submit" data-mode="send">${st === 'returned' && !fromPres ? 'Send the form again' : rqSendLabel(cat)}</button>` : '';
+  const form = SCHED_FORM && ['draft', 'returned'].includes(st) ? `<button class="btn ghost" type="submit" data-mode="send">${st === 'returned' && !fromPres ? 'Send the form again' : rqSendLabel(cat)}</button>` : '';
   return main + draftBtn + form + cancel;
 }
 
@@ -6731,6 +6733,14 @@ function designSection(e){
         : `<ul style="margin:4px 0 0;padding-left:1.2rem">${DESIGN_CHECKS.map(([, label]) => `<li>${label}</li>`).join('')}</ul>`}</div>
     <div class="hint">Official sources: ${DESIGN_LINKS.map(([l, u]) => `<a href="${u}" target="_blank" rel="noopener">${l}</a>`).join(' · ')}. Brand questions: brand@uvu.edu.</div></section>`;
 }
+// Starting an event: the kind decides where it begins.
+const START_KINDS = [['guest_speaker', 'Guest speaker', 'Starts from its guide, with a checklist for the officer in charge'], ['panel', 'Panel', 'Three or more guests. Starts from its guide'],
+  ['workshop', 'Workshop', ''], ['social', 'Social', ''], ['career_fair', 'Career fair', ''], ['case_competition', 'Case competition', ''], ['excursion', 'Excursion', 'We’re taking members somewhere'],
+  ['hosted', 'Hosted by someone else', 'We’re only posting it: no planning steps, check-in, or points']];
+function startPickModal(){
+  showModal(`<div class="modal-in stack" style="gap:14px"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3 style="margin:0">Start an event</h3><div class="hint">What kind of event is it?</div></div>
+    <div class="stack" style="gap:8px">${START_KINDS.map(([k, name, hint]) => `<button type="button" class="btn ghost" data-act="start-type" data-cat="${k}" style="text-align:left;justify-content:flex-start;height:auto;padding:10px 14px"><span><strong>${name}</strong>${hint ? `<br><span class="hint" style="font-weight:400">${hint}</span>` : ''}</span></button>`).join('')}</div></div>`);
+}
 function packed(id){ try { return JSON.parse(localStorage.getItem('wfa-pack-' + id) || '[]'); } catch(_){ return []; } }
 document.addEventListener('input', ev => {
   if (ev.target.id !== 'gf-r' && ev.target.id !== 'gf-cap') return;
@@ -6811,10 +6821,9 @@ function startBody(){
   const card = (title, text, btn) => `<div class="panel stack" style="gap:8px;padding:16px"><strong style="font-size:1.05rem">${title}</strong><span class="muted">${text}</span><div style="margin-top:auto">${btn}</div></div>`;
   return `<div class="stack" style="gap:18px">
     <div class="start-grid">
-      ${card('Plan an event', 'Create the event, fill out its scheduling request, and send it on. Nothing is published or promoted until it’s confirmed with UVU and signed off.', '<button class="btn" data-act="start-event">Start an event</button>')}
+      ${card('Plan an event', 'Pick the kind of event and it takes you to the right place to start. Guest speakers and panels start from their guide, with a checklist for the officer in charge.', '<button class="btn" data-act="start-pick">Start an event</button>')}
       ${card('External guest form', 'A Word document to collect a speaker’s, judge’s, or panelist’s details (job title, topic, bio, contact info) before you plan the event.', '<button class="btn ghost" data-act="guest-doc">Download it</button>')}
       ${card('Event guides', 'For guest speakers and panels: what to bring, who does what, and what to send and when, with the dates worked out for your event.', '<button class="btn ghost" data-act="otab" data-tab="guide">Open the guide</button>')}
-      ${card('How scheduling works', 'How far ahead to plan, the reviews, and who does what.', '<button class="btn ghost" data-act="proc-tab" data-id="uvu">Read it</button>')}
     </div>
     <div class="section-head"><h3>Planning checklists</h3></div>
     ${planBody()}</div>`;
@@ -6955,7 +6964,7 @@ function viewOfficer(){
           <span class="row" style="gap:8px;flex-wrap:nowrap"><input id="ev-code" maxlength="8" autocomplete="off" value="${esc(e?.code || '')}" placeholder="e.g. BULL" style="font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;flex:1;min-width:0"><button type="button" class="btn ghost small" data-act="ev-gen-code">Generate</button></span>
           <span class="hint">Members type this at the event to check in. It only works on the event’s date. Leave blank to make one on the day.</span></label>
         ${rqFinalizing(e?.id) ? (rqQuickFor(e.id) ? `<div class="rq-warn"><strong>UVU approved this event.</strong> Set the final date, times, location, and RSVP timing, then send it to ${esc(rqSignerName(e.id))} for sign-off. (Quick scheduling is on and an admin sent it, so the presidents don’t sign off.)</div>` : '<div class="rq-warn"><strong>UVU approved this event.</strong> Set the final date, times, location, and RSVP timing, then send it to the presidents for sign-off. It publishes once they all approve, or after 2 business days.</div>') + (rqOf(e.id).signoff_note ? `<div class="rq-warn"><strong>${rqQuickFor(e.id) ? 'The admin' : 'A president'} requested changes:</strong><div style="white-space:pre-wrap">${esc(rqOf(e.id).signoff_note)}</div></div>` : '') : ''}
-        <label>Description <span class="hint">(required; for events that need scheduling, it also goes on UVU’s form)</span><textarea id="ev-desc" placeholder="What members will do or learn, who it’s for, and anything to bring">${esc(e?.desc)}</textarea></label><span id="ev-help-desc"></span>${descPreview('ev-desc-preview', e?.desc)}
+        <label>Description <span class="hint">(required)</span><textarea id="ev-desc" placeholder="What members will do or learn, who it’s for, and anything to bring">${esc(e?.desc)}</textarea></label><span id="ev-help-desc"></span>${descPreview('ev-desc-preview', e?.desc)}
         <div id="rq-box">${rqPanel(e, e?.cat || ui.evNewCat || Object.keys(CATS)[0])}</div>${(setTimeout(evHelpRefresh), '')}
         <div class="err" id="ev-err"></div>
         <div class="row" id="ev-btns">${evButtons(e, e?.cat || ui.evNewCat || Object.keys(CATS)[0])}</div>
@@ -9621,6 +9630,13 @@ document.addEventListener('click', async ev => {
     case 'ar-rm': { const r = t.closest('.ar-row'), w = document.getElementById('ar-guests'); if (w.children.length > 1) r.remove(); else r.querySelectorAll('input').forEach(i => i.value = ''); break; }
     case 'gm-go': guestMailGo(id); break;
     case 'gp-done': closeModal(); render(); break;
+    case 'start-pick': startPickModal(); break;
+    case 'start-type': { const c = t.dataset.cat; closeModal();
+      if (c === 'guest_speaker' || c === 'panel'){ ui.officerTab = 'guide'; ui.guideType = c; ui.guideEv = ''; if (route() !== 'officer') location.hash = 'officer/guide'; else { history.pushState(null, '', ui._hash = '#officer/guide'); render(); } window.scrollTo(0, 0); guideNewModal(c); break; }
+      ui.officerTab = 'events'; ui.editEvent = null; ui.guestForm = null; ui.rq = null; ui.evNewCat = c === 'hosted' ? 'other' : c; ui.ctLink = null;
+      if (route() !== 'officer') location.hash = 'officer'; else render(); window.scrollTo(0, 0);
+      if (c === 'hosted') setTimeout(() => { const box = document.getElementById('ev-host-on'); if (box && !box.checked){ box.checked = true; box.dispatchEvent(new Event('change')); } toast('Add who’s hosting it and their registration link, then post it.'); }, 80);
+      break; }
     case 'vol-join': case 'vol-cancel': case 'vol-mark': case 'vol-forgive': {
       const a = t.dataset.act, e = evById(id); let res = '';
       const done = await act(async () => {
