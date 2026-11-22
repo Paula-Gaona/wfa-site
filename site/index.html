@@ -6675,7 +6675,9 @@ function guideNewModal(type){
   showModal(`<div class="modal-in stack" style="gap:14px"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3 style="margin:0">Start a ${panel ? 'panel' : 'guest speaker event'}</h3>
       <div class="hint">This makes a draft that only officers can see, and a checklist with due dates for the officer in charge. Everything can be changed later.</div></div>
     <label>Working title<input id="gn-title" maxlength="120" placeholder="${panel ? 'Careers in Finance Panel' : 'Lunch with a guest speaker'}"></label>
-    <div class="row" style="gap:10px;flex-wrap:wrap"><label style="flex:1 1 10rem">Target date<input id="gn-date" type="date" min="${todayIso()}"></label><label style="flex:1 1 8rem">Start time<input id="gn-start" type="time" value="${panel ? '16:00' : '11:30'}"></label></div>
+    <div class="row" style="gap:10px;flex-wrap:wrap"><label style="flex:1 1 10rem">Target date<input id="gn-date" type="date" min="${todayIso()}"></label><label style="flex:1 1 8rem">Start time<input id="gn-start" type="time" value="${panel ? '16:00' : '11:30'}"></label>
+      <label style="flex:1 1 8rem">Length (minutes)<input id="gn-len" type="number" min="15" max="480" step="5" inputmode="numeric" value="${panel ? PANEL_LEN : 60}"></label></div>
+    <div class="hint" style="margin-top:-6px">The length is what gets posted. Networking afterward (up to ${GM_NETWORK} minutes) is extra and isn’t part of the posted time.</div>
     <label>Who’s in charge of planning it<select id="gn-lead">${staff.map(x => `<option value="${esc(x)}" ${x === session ? 'selected' : ''}>${esc(userName(x))}</option>`).join('')}</select>
       <span class="hint">They own the checklist and get a reminder the day before each step is due.</span></label>
     ${panel ? `<label style="max-width:16rem">Panelists to aim for<input id="gn-target" type="number" min="${PANEL_MIN}" max="${PANEL_MAX}" step="1" value="5"></label>` : ''}
@@ -9661,7 +9663,7 @@ document.addEventListener('click', async ev => {
       if (!title){ errEl.textContent = 'Give it a working title.'; break; }
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < todayIso()){ errEl.textContent = 'Pick a target date that hasn’t passed.'; break; }
       if (!/^\d{2}:\d{2}/.test(start)){ errEl.textContent = 'Pick a start time.'; break; }
-      const [h, m] = start.split(':').map(Number), endMin = Math.min(23 * 60 + 59, h * 60 + m + (panel ? PANEL_LEN : 90)), end = String(Math.floor(endMin / 60)).padStart(2, '0') + ':' + String(endMin % 60).padStart(2, '0');
+      const [h, m] = start.split(':').map(Number), len = Math.max(15, Math.min(480, Math.round(+val('gn-len')) || (panel ? PANEL_LEN : 60))), endMin = Math.min(23 * 60 + 59, h * 60 + m + len), end = String(Math.floor(endMin / 60)).padStart(2, '0') + ':' + String(endMin % 60).padStart(2, '0');
       let evId = null; closeModal();
       const made = await act(async () => {
         evId = must(await sb.from('events').insert({ title, cat: type, date, start_time: start.slice(0, 5), end_time: end, loc: 'To be decided', cap: 0, descr: '', draft: true }).select('id').single()).id;
