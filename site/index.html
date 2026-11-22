@@ -6737,6 +6737,12 @@ function designSection(e){
 const START_KINDS = [['guest_speaker', 'Guest speaker', 'Starts from its guide, with a checklist for the officer in charge'], ['panel', 'Panel', 'Three or more guests. Starts from its guide'],
   ['workshop', 'Workshop', ''], ['social', 'Social', ''], ['career_fair', 'Career fair', ''], ['case_competition', 'Case competition', ''], ['excursion', 'Excursion', 'We’re taking members somewhere'],
   ['hosted', 'Hosted by someone else', 'We’re only posting it: no planning steps, check-in, or points']];
+function startGuide(c, pre){
+  ui.officerTab = 'guide'; ui.guideType = c; ui.guideEv = ''; ui.editEvent = null; ui.evNewCat = null;
+  if (route() !== 'officer') location.hash = 'officer/guide'; else { history.pushState(null, '', ui._hash = '#officer/guide'); render(); }
+  window.scrollTo(0, 0); guideNewModal(c);
+  Object.entries(pre || {}).forEach(([k, v]) => { const el = document.getElementById(k); if (el && v) el.value = v; });
+}
 function startPickModal(){
   showModal(`<div class="modal-in stack" style="gap:14px"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3 style="margin:0">Start an event</h3><div class="hint">What kind of event is it?</div></div>
     <div class="stack" style="gap:8px">${START_KINDS.map(([k, name, hint]) => `<button type="button" class="btn ghost" data-act="start-type" data-cat="${k}" style="text-align:left;justify-content:flex-start;height:auto;padding:10px 14px"><span><strong>${name}</strong>${hint ? `<br><span class="hint" style="font-weight:400">${hint}</span>` : ''}</span></button>`).join('')}</div></div>`);
@@ -6909,7 +6915,7 @@ function viewOfficer(){
     body = `<div class="split">
       <form class="panel stack" id="f-event" novalidate>
         <h3>${e ? (e.draft ? 'Edit draft' : 'Edit event') : 'Create an event'}${e && e.draft ? ' <span class="tag">Draft</span>' : ''}</h3>
-        <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${(e ? e.cat : ui.evNewCat) === k ? 'selected' : ''}>${l} · ${k === 'other' ? 'you set the points' : PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select></label>
+        <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${(e ? e.cat : ui.evNewCat) === k ? 'selected' : ''}>${l} · ${k === 'other' ? 'you set the points' : PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select>${e ? '' : '<span class="hint">Picking Guest speaker or Panel takes you to its guide, where those start.</span>'}</label>
         <label id="ev-pts-wrap" ${(e ? e.cat : ui.evNewCat) === 'other' ? '' : 'hidden'}>Points for checking in<input id="ev-pts" type="number" min="0" max="100" value="${e && e.points != null ? e.points : 10}"></label>
         <div id="rq-guests-box">${rqGuestsBox(e, e?.cat || ui.evNewCat || Object.keys(CATS)[0])}</div>
         <label>Title<input id="ev-title" required value="${esc(e?.title)}" placeholder="e.g. DCF Valuation Workshop"><span id="ev-help-title"></span></label>
@@ -9632,7 +9638,7 @@ document.addEventListener('click', async ev => {
     case 'gp-done': closeModal(); render(); break;
     case 'start-pick': startPickModal(); break;
     case 'start-type': { const c = t.dataset.cat; closeModal();
-      if (c === 'guest_speaker' || c === 'panel'){ ui.officerTab = 'guide'; ui.guideType = c; ui.guideEv = ''; if (route() !== 'officer') location.hash = 'officer/guide'; else { history.pushState(null, '', ui._hash = '#officer/guide'); render(); } window.scrollTo(0, 0); guideNewModal(c); break; }
+      if (c === 'guest_speaker' || c === 'panel'){ startGuide(c); break; }
       ui.officerTab = 'events'; ui.editEvent = null; ui.guestForm = null; ui.rq = null; ui.evNewCat = c === 'hosted' ? 'other' : c; ui.ctLink = null;
       if (route() !== 'officer') location.hash = 'officer'; else render(); window.scrollTo(0, 0);
       if (c === 'hosted') setTimeout(() => { const box = document.getElementById('ev-host-on'); if (box && !box.checked){ box.checked = true; box.dispatchEvent(new Event('change')); } toast('Add who’s hosting it and their registration link, then post it.'); }, 80);
@@ -10107,7 +10113,12 @@ document.addEventListener('change', async e => {
     else { const [h, l] = v.slice(5).split('|'); ui.qr.text = SITE_URL + '/' + h; ui.qr.name = 'WFA ' + l; }
     render(); drawQrTool();
   }
-  if (id === 'ev-cat') syncCaseBox();
+  if (id === 'ev-cat'){
+    // A new guest speaker or panel starts from its guide, not this form. What's already typed comes along.
+    const c = e.target.value, val = k => (document.getElementById(k) || {}).value || '';
+    if (!ui.editEvent && !ui.ctLink && (c === 'guest_speaker' || c === 'panel')){ startGuide(c, { 'gn-title': val('ev-title'), 'gn-date': val('ev-date') >= todayIso() ? val('ev-date') : '', 'gn-start': val('ev-start') }); toast((c === 'panel' ? 'Panels' : 'Guest speakers') + ' start from their guide.'); return; }
+    syncCaseBox();
+  }
   if (e.target.classList && e.target.classList.contains('ct-own')){
     const box = e.target.closest('.ms'), picked = [...box.querySelectorAll('.ct-own:checked')].map(c => c.dataset.label);
     box.querySelector('summary').textContent = picked.length ? (picked.length > 1 ? picked.slice(0, -1).join(', ') + ' and ' + picked[picked.length - 1] : picked[0]) : 'No one yet';
