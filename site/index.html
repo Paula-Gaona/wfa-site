@@ -825,7 +825,18 @@ async function load(){
   const { data: { session: s } } = await sb.auth.getSession();
   authUser = s ? s.user : null;
   session = authUser ? authUser.email.toLowerCase() : null;
-  const r = await sb.rpc('my_role');
+  let r = await sb.rpc('my_role');
+  // The database says the sign-in expired while the browser still thinks it's good (a wrong computer clock does this).
+  // Renew it and carry on; if it can't be renewed, sign out here and say so, instead of showing an empty site.
+  if (s && r.error && (r.error.code === 'PGRST303' || /JWT expired/i.test(r.error.message || ''))){
+    let ok = false;
+    try { const nr = await sb.auth.refreshSession(); ok = !nr.error && !!(nr.data && nr.data.session); if (ok){ r = await sb.rpc('my_role'); ok = !r.error; } } catch (_) {}
+    if (!ok){
+      try { await sb.auth.signOut({ scope: 'local' }); } catch (_) {}
+      authUser = null; session = null; r = { data: null };
+      setTimeout(() => toast('Your sign-in expired. Please sign in again.'), 800);
+    }
+  }
   myRole = session ? (r.data || 'member') : 'guest';
   // Test accounts act as an admin or member here, but only inside the test world (see 33-test-accounts.sql).
   const tr = session ? await sb.rpc('my_test_role') : null;
