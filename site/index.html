@@ -6798,9 +6798,11 @@ function flyTime(a, b){
 // What's typed in the flyer maker (kept with the event's guide, so the next officer sees it too).
 function flyStart(e){
   const f = guideOf(e.id).flyer || {}, parts = String(e.title || '').split(/:\s+/);
-  return { head: f.head != null ? f.head : parts[0], sub: f.sub != null ? f.sub : parts.slice(1).join(': '), blurb: f.blurb || '', note: f.note || '', bio: f.bio || '', heads: f.heads !== false, labels: { ...(f.labels || {}) } };
+  return { head: f.head != null ? f.head : parts[0], sub: f.sub != null ? f.sub : parts.slice(1).join(': '), blurb: f.blurb || '', note: f.note || '', bio: f.bio || '', heads: typeof f.heads === 'boolean' ? f.heads : null, labels: { ...(f.labels || {}) } };
 }
 function flyData(e, f){
+  // Headshots are on unless someone turned them off, or there are seven or more guests (they get too small) and nobody turned them on.
+  const ppl0 = flyPeople(e); f = { ...f, heads: typeof f.heads === 'boolean' ? f.heads : ppl0.length < 7 };
   return { ...f, date: flyDate(e.date), time: flyTime(e.start, e.end), loc: e.loc && e.loc !== 'To be decided' && e.loc !== 'TBD' ? e.loc : 'Location to come', url: eventLink(e.id),
     people: flyPeople(e).map(p => ({ ...p, title: f.labels[p.id] != null ? f.labels[p.id] : p.title })) };
 }
@@ -6966,7 +6968,7 @@ function flyerModal(id){
         <label>What it’s about <span class="hint">One or two sentences</span><textarea class="fly-t" data-k="blurb" rows="3" maxlength="260">${esc(f.blurb)}</textarea></label>
         <label>Small note under the location <span class="hint">Optional</span><input class="fly-t" data-k="note" maxlength="40" value="${esc(f.note)}" placeholder="Lunch provided"></label>
         ${one ? `<label>Short bio <span class="hint">Optional. Two lines at most</span><textarea class="fly-t" data-k="bio" rows="2" maxlength="220">${esc(f.bio)}</textarea></label>` : ''}
-        ${ppl.length ? `<label class="check"><input type="checkbox" id="fly-heads" ${f.heads ? 'checked' : ''}> <span>Show headshots <span class="hint">Turn this off if anyone’s is missing; the flyer switches to a list of names.</span></span></label>` : `<div class="notice"><span>No guests are on this event’s list yet, so the flyer has none. Add them on the guide and they show up here.</span></div>`}
+        ${ppl.length ? `<label class="check"><input type="checkbox" id="fly-heads" ${(typeof f.heads === 'boolean' ? f.heads : ppl.length < 7) ? 'checked' : ''}> <span>Show headshots <span class="hint">${ppl.length >= 7 ? 'Off to start with, because with seven or more the headshots get too small; the flyer lists names, fields, and titles instead.' : 'Turn this off if anyone’s is missing; the flyer switches to a list of names.'}</span></span></label>` : `<div class="notice"><span>No guests are on this event’s list yet, so the flyer has none. Add them on the guide and they show up here.</span></div>`}
         ${ppl.map(person).join('')}
       </div>
       <div class="stack" style="gap:8px;position:sticky;top:0">
