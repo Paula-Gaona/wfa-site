@@ -1584,7 +1584,7 @@ function officerSections(staff, dir = false){
   const rest = staff.filter(e => !['president', 'vice_president', 'advisor'].includes(P(e).tier));
   const groups = [['Presidents', pres], [vps.length > 1 ? 'Vice Presidents' : 'Vice President', vps], [advisors.length > 1 ? 'Faculty advisors' : 'Faculty advisor', advisors], ...Object.entries(BRANCHES).map(([k,l]) => [l, rest.filter(e => P(e).branch === k)]), ['Officers', rest.filter(e => !BRANCHES[P(e).branch])]];
   if (dir) groups.push(['Honorary officers', honorary]);
-  const tags = e => dir ? [(db.schedulers || []).includes(e) ? '<span class="tag soon">Scheduler</span>' : '', P(e).tier === 'honorary' ? '<span class="tag">Honorary</span>' : ''].join('') : '';
+  const tags = e => dir ? [(db.schedulers || []).includes(e) ? '<span class="tag soon">Event lead</span>' : '', P(e).tier === 'honorary' ? '<span class="tag">Honorary</span>' : ''].join('') : '';
   return groups.filter(([,l]) => l.length).map(([label, l]) => `<section class="stack"><div class="section-head"><h2>${esc(label)}</h2><span class="muted">${l.length}</span></div><div class="officers">${l.map(e => officerCard(e, tags(e))).join('')}</div></section>`).join('');
 }
 function viewOfficers(){
@@ -6267,7 +6267,7 @@ function evButtons(e, cat){
   return main + draftBtn + form + cancel;
 }
 
-const RQ_ERR = { 'err:uvu': 'The scheduling form is with the schedulers. Wait for them to confirm it or send it back, then send the event to the presidents.', 'err:desc': 'Add a description first.', 'err:notscheduler': 'Only event schedulers can do that.', 'err:notyours': 'Only the officer who made it can change it.', 'err:window': 'The window has to be inside the semester.', 'err:notpresident': 'Only presidents can do that.', 'err:notreviewer': 'Only the branch president can do that.', 'err:state': 'This request changed since you opened it. Refresh and try again.', 'err:note': 'Write what needs to be fixed.', 'err:missing': 'That request doesn’t exist anymore.', 'err:notadmin': 'Only admins can do that.' };
+const RQ_ERR = { 'err:uvu': 'The scheduling form is with the schedulers. Wait for them to confirm it or send it back, then send the event to the presidents.', 'err:desc': 'Add a description first.', 'err:notscheduler': 'Only event leads can do that.', 'err:notyours': 'Only the officer who made it can change it.', 'err:window': 'The window has to be inside the semester.', 'err:notpresident': 'Only presidents can do that.', 'err:notreviewer': 'Only the branch president can do that.', 'err:state': 'This request changed since you opened it. Refresh and try again.', 'err:note': 'Write what needs to be fixed.', 'err:missing': 'That request doesn’t exist anymore.', 'err:notadmin': 'Only admins can do that.' };
 // Typing in the scheduling form keeps ui.rq up to date; some answers redraw the form (they show or hide questions).
 function rqSet(obj, path, val){
   const ks = path.split('.'); let o = obj;
@@ -6711,7 +6711,7 @@ function guideNewModal(type){
     <div class="row" style="gap:10px;flex-wrap:wrap"><label style="flex:1 1 10rem">Target date<input id="gn-date" type="date" min="${todayIso()}"></label><label style="flex:1 1 8rem">Start time<input id="gn-start" type="time" value="${panel ? '16:00' : '11:30'}"></label>
       <label style="flex:1 1 8rem">Length (minutes)<input id="gn-len" type="number" min="15" max="480" step="5" inputmode="numeric" value="${panel ? PANEL_LEN : 60}"></label></div>
     <div class="hint" style="margin-top:-6px">The length is what gets posted. Networking afterward (up to ${GM_NETWORK} minutes) is extra and isn’t part of the posted time.</div>
-    <label>Who’s in charge of planning it<select id="gn-lead">${staff.map(x => `<option value="${esc(x)}" ${x === session ? 'selected' : ''}>${esc(userName(x))}</option>`).join('')}</select>
+    <label>Who’s in charge of planning it<select id="gn-lead">${leadOptions(session)}</select>
       <span class="hint">They own the checklist and get a reminder the day before each step is due.</span></label>
     ${panel ? `<label style="max-width:16rem">Panelists to aim for<input id="gn-target" type="number" min="${PANEL_MIN}" max="${PANEL_MAX}" step="1" value="5"></label>` : ''}
     <div class="err" id="gn-err"></div>
@@ -6980,6 +6980,12 @@ document.addEventListener('change', ev => { const t = ev.target; if (!ui.fly || 
   if (t.classList.contains('fly-t') || t.classList.contains('fly-label')){ saveGuideQuiet(ui.fly.id, { flyer: ui.fly.f }); return; }
   if (t.classList.contains('fly-photo')){ const file = t.files && t.files[0], pid = t.dataset.pid; if (!file) return;
     const img = new Image(); img.onload = () => { flyImg[pid] = { img, x: .5, y: .3, z: 1 }; flyerModal(ui.fly.id); }; img.onerror = () => toast('That file isn’t a picture the browser can read. Try a JPG or PNG.'); img.src = URL.createObjectURL(file); } });
+// The "who's in charge" list: event leads first (admins choose them under Officers), then every other officer. Anyone can be picked.
+function leadOptions(sel){
+  const all = staffEmails().map(x => [x, userName(x)]).sort((a, b) => a[1].localeCompare(b[1])), leads = all.filter(([x]) => (db.schedulers || []).includes(x)), rest = all.filter(([x]) => !(db.schedulers || []).includes(x));
+  const opt = ([x, n]) => `<option value="${esc(x)}" ${x === sel ? 'selected' : ''}>${esc(n)}</option>`;
+  return leads.length && rest.length ? `<optgroup label="Event leads">${leads.map(opt).join('')}</optgroup><optgroup label="Other officers">${rest.map(opt).join('')}</optgroup>` : all.map(opt).join('');
+}
 // Who does what, edited right on the guide: pick who's on each role (saved as you pick), and change, add, or remove roles.
 function guideRolesSection(e, isPanel){
   const usual = usualRoles(), mine = e ? rolesOf(e.id) : [];
@@ -7132,9 +7138,9 @@ function guideBody(){
         <div class="ev-sub">${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc) || 'No location yet'} · ${days === 0 ? 'Today' : days > 0 ? `In ${days} day${days === 1 ? '' : 's'}` : `${-days} day${days === -1 ? '' : 's'} ago`}${e.draft ? '' : ` · ${rsvpCount(e.id)} RSVP${rsvpCount(e.id) === 1 ? '' : 's'}${e.cap ? ' of ' + e.cap : ''}`}</div></div>
       <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn small" data-act="guide-edit" data-id="${e.id}">Edit details</button>${e.draft ? '' : `<a class="btn ghost small" href="#event/${e.id}">See the event page</a>`}<button class="btn ghost small" data-act="guest-mail" data-id="${e.id}">${isPanel ? 'Panelist emails' : 'Guest emails'}</button><button class="btn ghost small" data-act="fly-open" data-id="${e.id}">Flyer maker</button>
         ${tasks.length ? `<button class="btn ghost small" data-act="guide-plan" data-id="${e.id}">Checklist: ${done} of ${tasks.length} done</button>` : ''}</div>
-      ${tasks.length ? `<label style="max-width:22rem">Who’s running this event<select id="guide-runner-change" data-ev="${e.id}">${staff.map(x => `<option value="${esc(x)}" ${x === runner ? 'selected' : ''}>${esc(userName(x))}</option>`).join('')}</select>
+      ${tasks.length ? `<label style="max-width:22rem">Who’s running this event<select id="guide-runner-change" data-ev="${e.id}">${leadOptions(runner)}</select>
           <span class="hint">They get a reminder the day before each step on the checklist is due. Changing this hands them every unfinished step.</span></label>`
-        : `<div class="row" style="gap:10px;align-items:end;flex-wrap:wrap"><label style="flex:1 1 14rem;max-width:22rem">Who’s running this event<select id="guide-runner">${staff.map(x => `<option value="${esc(x)}" ${x === session ? 'selected' : ''}>${esc(userName(x))}</option>`).join('')}</select></label>
+        : `<div class="row" style="gap:10px;align-items:end;flex-wrap:wrap"><label style="flex:1 1 14rem;max-width:22rem">Who’s running this event<select id="guide-runner">${leadOptions(session)}</select></label>
           <button class="btn small" data-act="plan-template" data-guide="1" data-id="${e.id}">Create the checklist</button></div>
           <span class="hint">This turns the steps below into a checklist with due dates, which you tick off right on each step. The officer running the event gets a reminder the day before each one is due.</span>`}
     </section>` : ''}
@@ -7228,7 +7234,7 @@ function viewOfficer(){
   else if (T === 'eventplan'){ body = Array.isArray(db.contacts) ? `<div class="stack" style="gap:16px">
       <div class="row" style="justify-content:space-between;align-items:center;gap:10px"><span class="muted">The events the club is planning, and who’s confirmed or being considered for each. Click a name to open their contact.</span>
         <button class="btn ghost small" data-act="otab" data-tab="contacts">Contacts →</button></div>${ctPlanPanel()}</div>` : contactsBody(); }
-  else if (T === 'directory'){ body = `<p class="hint" style="margin:0 0 4px">Every officer, including honorary officers (who aren’t on the public <a href="#officers">Officers page</a>). Only officers can see this page and who the event schedulers are.</p>${officerSections(staffEmails(), true)}`; }
+  else if (T === 'directory'){ body = `<p class="hint" style="margin:0 0 4px">Every officer, including honorary officers (who aren’t on the public <a href="#officers">Officers page</a>). Only officers can see this page and who the event leads are.</p>${officerSections(staffEmails(), true)}`; }
 
   else if (T === 'surveys'){ body = surveysBody(); }
 
@@ -7291,7 +7297,7 @@ function viewOfficer(){
         <label class="check" id="ev-mo-wrap" ${e?.cat === 'officer_meeting' ? 'hidden' : ''}><input type="checkbox" id="ev-members-only" ${e?.membersOnly ? 'checked' : ''}> Members only <span class="hint">Everyone can see it, but only members can RSVP and check in (a reason to join).</span></label>
         ${!e || e.draft ? (isScheduler() ? `<label class="check"><input type="checkbox" id="ev-soon" ${e?.comingSoon ? 'checked' : ''}> Coming-soon page <span class="hint">While this is a draft, anyone who opens its link sees only the title and the coming-soon description below (no date or other details) instead of “event not found.” Copy the link or QR code from the Drafts list after saving.</span></label>
           <label id="ev-soon-wrap" ${e?.comingSoon ? '' : 'hidden'}>Coming-soon description <span class="hint">Optional. A short teaser, like “Lunch with a Goldman Sachs VP. Seats are limited; RSVPs open soon.”</span><textarea id="ev-soon-desc" rows="3" maxlength="1000">${esc(e?.soonDesc || '')}</textarea></label>`
-          : e?.comingSoon ? '<span class="hint">This draft has a coming-soon page: its link shows the title and “coming soon” until it’s published. Only event schedulers can change that.</span>' : '') : ''}
+          : e?.comingSoon ? '<span class="hint">This draft has a coming-soon page: its link shows the title and “coming soon” until it’s published. Only event leads can change that.</span>' : '') : ''}
         <label class="check" id="ev-qa-wrap" ${SPEAKER_CATS.includes(e?.cat) ? '' : 'hidden'}><input type="checkbox" id="ev-qa" ${e?.qaEnabled ? 'checked' : ''}> Add Q&A <span class="hint">People can submit questions for the speaker ahead of time. Only officers see them.</span></label>
         <label>Check-in code <span class="hint">(optional)</span>
           <span class="row" style="gap:8px;flex-wrap:nowrap"><input id="ev-code" maxlength="8" autocomplete="off" value="${esc(e?.code || '')}" placeholder="e.g. BULL" style="font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;flex:1;min-width:0"><button type="button" class="btn ghost small" data-act="ev-gen-code">Generate</button></span>
@@ -7734,8 +7740,8 @@ function viewAdmin(){
           <input id="of-ctitle" maxlength="60" value="${esc(p.customTitle || '')}" placeholder="Leave blank to use: ${esc(buildTitle(p.tier || 'officer', p.branch || ''))}"></label>
         <label class="check"><input type="checkbox" id="of-publish" ${p.canPublish ? 'checked' : ''}> Can publish updates without approval</label>
         <span class="hint" style="margin-top:-8px">Announcements, recaps and their slides, resources, careers, the recruiting timeline, the About page, officer meetings, and edits to events that are already published. Presidents, vice presidents, faculty advisors, and admins always can; other officers’ changes go to the Approvals inbox unless this is checked. New events always go through Scheduling.</span>
-        <label class="check"><input type="checkbox" id="of-sched" ${ed && (db.schedulers || []).includes(ed) ? 'checked' : ''}> Event scheduler</label>
-        <span class="hint" style="margin-top:-8px">Gets every event’s scheduling request, submits it to UVU, and publishes events once UVU approves them. Only officers can see who’s a scheduler.</span>
+        <label class="check"><input type="checkbox" id="of-sched" ${ed && (db.schedulers || []).includes(ed) ? 'checked' : ''}> Event lead</label>
+        <span class="hint" style="margin-top:-8px">Listed first when choosing who’s in charge of an event, and can turn a draft’s coming-soon page on or off. Any officer can still be put in charge. Only officers can see who’s an event lead.</span>
         <fieldset class="pwset">
           <legend>Sign-in setup</legend>
           <select id="of-setup" aria-label="Sign-in setup">${setupOptions(acct ? 'skip' : 'password', !!acct)}</select>
