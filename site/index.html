@@ -6835,6 +6835,8 @@ async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
   track(0); font(700, c.sub); const sl = wrap(d.sub, inner); font(400, c.blurb); const bl = wrap(d.blurb, inner);
   let y = c.top; const yPre = y; y += c.pre + c.h1 * .22; const yH = y; y += hl.length * h1 * 1.04;
   let ySub = y, yBl = y; if (sl.length){ y += c.h1 * .2; ySub = y; y += sl.length * c.sub * 1.15; } if (bl.length){ y += c.h1 * .22; yBl = y; y += bl.length * c.blurb * 1.45; }
+  // The story has no RSVP row, so who it's for goes up here; the bottom-left stays clear for Instagram's link button.
+  let yAud = 0; if (c.noQr){ y += c.h1 * .2; yAud = y; y += c.blurb * 1.45; }
   y += c.h1 * .55;
   const ppl = d.people, n = ppl.length, tall = c.px[1] / c.px[0] > 1.6, cg = Math.min(up, n === 2 && c.cols === 3 ? 1.15 : 1.8), mode = !n ? 'none' : n <= 2 || (tall && n === 3) ? 'cards' : d.heads ? 'faces' : 'list';
 
@@ -6856,6 +6858,7 @@ async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
   font(800, h1); track(-h1 * .01); x.fillStyle = '#ffffff'; put(hl, pad, yH, h1 * 1.04); track(0);
   font(700, c.sub); x.fillStyle = FLY.GOLD; put(sl, pad, ySub, c.sub * 1.15);
   font(400, c.blurb); x.fillStyle = '#ffffff'; put(bl, pad, yBl, c.blurb * 1.45);
+  if (c.noQr){ font(700, c.blurb); x.fillStyle = '#ffffff'; x.fillText('Open to UVU students of any major.', pad, yAud); }
 
   // ----- the guests -----
   if (mode === 'cards'){
@@ -6901,7 +6904,7 @@ async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
   // ----- date, time, place; then the RSVP row; spare room is shared out between them -----
   const dp = c.vl * .85, fr = [1.1, 1, 1.2], frT = 3.3; font(400, c.nt); const noteL = wrap(d.note, inner * fr[2] / frT - dp);
   const detH = dp * 2 + c.lb + 4 * sc + c.vl * 1.15 + (noteL.length ? 3 * sc + noteL.length * c.nt * 1.3 : 0), rsH = Math.max(c.qr, c.logo);
-  const bandH = c.noQr ? (c.bottom || 0) + 72 : 0, floor = c.noQr ? H - bandH - 14 * sc : H - (c.ft || 0) - (c.bottom || 0), gap = Math.max(8 * sc, (floor - y - detH - rsH) / 3), yDet = y + gap, yRs = yDet + detH + gap;
+  const bandH = c.noQr ? (c.bottom || 0) + 14 : 0, floor = c.noQr ? H - bandH - 14 * sc : H - (c.ft || 0) - (c.bottom || 0), gap = Math.max(8 * sc, (floor - y - detH - rsH) / 3), yDet = y + gap, yRs = yDet + detH + gap;
   x.fillStyle = FLY.LINE; x.fillRect(pad, yDet, inner, 1); x.fillRect(pad, yDet + detH, inner, 1);
   let cx = pad; [['DATE', d.date], ['TIME', d.time], ['LOCATION', d.loc]].forEach(([lab, val], i) => { const cw = inner * fr[i] / frT, tx = cx + (i ? dp : 0), tw = cw - (i ? dp : 0) - 4 * sc;
     if (i){ x.fillStyle = FLY.LINE; x.fillRect(cx, yDet, 1, detH); }
@@ -6912,8 +6915,7 @@ async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
     cx += cw; });
   const lw = c.logo * FLY.LOGO_R; if (logo) x.drawImage(logo, W - pad - lw, yRs + (rsH - c.logo) / 2, lw, c.logo);
   if (c.noQr){
-    // No QR code on the story: the off-white band at the bottom is where Instagram's link button and reply bar go.
-    font(700, c.rp * 1.5); x.fillStyle = FLY.G; x.fillText('Open to UVU students', pad, yRs + rsH / 2 - c.rp * 1.75); x.fillText('of any major.', pad, yRs + rsH / 2 + c.rp * .1);
+    // No QR code on the story: the space left of the logo is for Instagram's link button, and the off-white band is where its reply bar sits.
     x.fillStyle = FLY.WARM; x.fillRect(0, H - bandH, W, bandH);
     font(600, 8); track(8 * .24); x.fillStyle = FLY.G; x.textAlign = 'center'; x.fillText('WOLVERINE FINANCE ASSOCIATION · WOODBURY SCHOOL OF BUSINESS', W / 2, H - bandH + 14); x.textAlign = 'left'; track(0); }
   else {
