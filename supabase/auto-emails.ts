@@ -351,7 +351,7 @@ ${lastNote}`
           const overdue = !auto && nowMs >= businessAdd(ms(r.status_at), 48);
           const vpsJustAdded0 = escalated && ms(r.nudged_at) < businessAdd(ms(r.status_at), 36);
           const what = r.status === 'review' ? 'every president\'s approval before it goes to UVU'
-            : small ? `one approval from a president${escalated ? ' or vice president' : ''} before it is published` : 'every president\'s approval before it is published';
+            : small ? `one approval from a president${escalated ? ' or vice president' : ''} before it is published` : 'one president\'s approval before it is published';
           subject = fresh ? `${r.status === 'review' ? 'Presidents\' review' : 'Sign-off'}: ${t}` : overdue ? `Overdue: ${t} is waiting for approval` : vpsJustAdded0 ? `Sign-off needed: ${t}` : `Reminder: ${t}`;
           body = `"${t}" needs ${what}. Approve it or request changes. `
             + (auto ? `If nobody objects, it moves on automatically on ${deadline(r)}.` : `It won't be published until someone approves it${ev.date ? ` (the event is ${fmtDay(mtMs(ev.date, '12:00'))})` : ''}.`);
