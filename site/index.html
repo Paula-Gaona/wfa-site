@@ -6808,8 +6808,8 @@ function flyData(e, f){
 async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
   // shr: when everything doesn't fit, the flyer is drawn again a little smaller (headline, photos, QR code, logo) until it does.
   // With room to spare (few guests), it's drawn again a little bigger instead, names and all. dir: -1 shrinking, 1 growing, 2 settled.
-  const c0 = FLY_SIZES[key], up = Math.max(1, shr), c = shr === 1 ? c0 : { ...c0, h1: c0.h1 * Math.min(shr, 1.12), sub: c0.sub * Math.min(shr, 1.12), face: c0.face * shr, qr: c0.qr * Math.min(shr, 1.25), logo: c0.logo * Math.min(shr, 1.25), top: c0.top * Math.min(shr, 1),
-    nm: c0.nm * up, ti: c0.ti * up, fl: c0.fl * up, blurb: c0.blurb * Math.min(up, 1.15), vl: c0.vl * Math.min(up, 1.2), lb: c0.lb * Math.min(up, 1.2), nt: c0.nt * Math.min(up, 1.2) }, k = (pxW || c.px[0]) / c.W, W = c.W, H = c.W * c.px[1] / c.px[0], pad = c.pad, inner = W - pad * 2, x = cv.getContext('2d'), sc = c.h1 / 50;
+  const c0 = FLY_SIZES[key], up = Math.max(1, shr), c = { ...c0, h1: c0.h1 * Math.min(shr, 1.12), sub: c0.sub * Math.min(shr, 1.12), face: c0.face * shr, qr: c0.qr * Math.min(shr, 1.25), logo: c0.logo * Math.min(shr, 1.25), top: c0.top * Math.min(shr, 1),
+    nm: c0.nm * Math.min(up, 1.7), ti: c0.ti * Math.min(up, 1.7), fl: c0.fl * Math.min(up, 1.5), blurb: c0.blurb * Math.min(up, 1.15), vl: c0.vl * Math.min(up, 1.2), lb: c0.lb * Math.min(up, 1.2), nt: c0.nt * Math.min(up, 1.2) }, k = (pxW || c.px[0]) / c.W, W = c.W, H = c.W * c.px[1] / c.px[0], pad = c.pad, inner = W - pad * 2, x = cv.getContext('2d'), sc = c.h1 / 50;
   try { await Promise.all([400, 600, 700, 800].map(w => document.fonts.load(`${w} 20px Montserrat`))); } catch (_) {}
   const logo = await flyLoadLogo();
   let qrLibNow = null; if (!c.noQr){ try { qrLibNow = await loadQr(); } catch (_) {} }
@@ -6817,6 +6817,8 @@ async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
   const font = (w, s) => { x.font = `${w} ${s}px Montserrat, Arial, sans-serif`; }, track = v => { try { x.letterSpacing = v + 'px'; } catch (_) {} };
   const wrap = (t, maxW) => { const out = []; String(t || '').split('\n').forEach(par => { let line = ''; par.split(/\s+/).filter(Boolean).forEach(w => { const tryL = line ? line + ' ' + w : w; if (line && x.measureText(tryL).width > maxW){ out.push(line); line = w; } else line = tryL; }); if (line) out.push(line); }); return out; };
   const put = (lines, xx, yy, lh, align) => { x.textAlign = align || 'left'; lines.forEach((l, i) => x.fillText(l, xx, yy + i * lh)); x.textAlign = 'left'; return yy + lines.length * lh; };
+  if (!c.noQr){ font(800, c.h2); const w1 = x.measureText('Scan to RSVP').width; font(700, c.rp); const tW = Math.max(w1, x.measureText('wolverinefinanceassociation.org').width), room = inner - tW - c.h2 - 12 * sc, need = c.qr + c.logo * FLY.LOGO_R;
+    if (need > room){ const f = Math.max(.5, room / need); c.qr *= f; c.logo *= f; } }
   // A headshot in a gold ring; initials on a plain disc when there's no photo yet.
   const photo = (p, cx, cy, r) => {
     const ph = flyImg[p.id];
@@ -6834,17 +6836,17 @@ async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
   let y = c.top; const yPre = y; y += c.pre + c.h1 * .22; const yH = y; y += hl.length * h1 * 1.04;
   let ySub = y, yBl = y; if (sl.length){ y += c.h1 * .2; ySub = y; y += sl.length * c.sub * 1.15; } if (bl.length){ y += c.h1 * .22; yBl = y; y += bl.length * c.blurb * 1.45; }
   y += c.h1 * .55;
-  const ppl = d.people, n = ppl.length, mode = !n ? 'none' : n <= 2 ? 'cards' : d.heads ? 'faces' : 'list';
+  const ppl = d.people, n = ppl.length, tall = c.px[1] / c.px[0] > 1.6, cg = Math.min(up, n === 2 && c.cols === 3 ? 1.15 : 1.8), mode = !n ? 'none' : n <= 2 || (tall && n === 3) ? 'cards' : d.heads ? 'faces' : 'list';
 
   // ----- cards (one or two guests): measured first, because the green ends halfway down the first card -----
   let cards = null;
   if (mode === 'cards'){
-    const one = n === 1, side = n === 2 && c.cols === 3, cw = side ? (inner - 14 * sc) / 2 : inner, cp = (one ? 26 : 16) * sc, ph = d.heads ? (one ? 108 : 62) * sc : 0, tx = cp + (ph ? ph + (one ? 24 : 14) * sc : 0), tw = cw - tx - cp;
-    const nmS = (one ? 24 : 15) * sc, tiS = (one ? 13 : 10.5) * sc, bioS = 10.5 * sc;
-    const rows = ppl.map(p => { font(700, nmS); const nl = wrap(p.name, tw); font(400, tiS); const tl = wrap(p.title, tw); font(400, bioS); const bioL = one ? wrap(d.bio, tw) : [];
-      return { p, nl, tl, bioL, h: nl.length * nmS * 1.15 + (tl.length ? 3 * sc + tl.length * tiS * 1.3 : 0) + (bioL.length ? 8 * sc + bioL.length * bioS * 1.45 : 0) }; });
-    const ch = Math.max(ph, ...rows.map(r => r.h)) + (one ? 42 : 30) * sc;
-    cards = { side, cw, cp, ph, tx, nmS, tiS, bioS, rows, ch };
+    const one = n === 1, side = n === 2 && c.cols === 3, cw = side ? (inner - 14 * sc) / 2 : inner, cp = (one ? 26 : 16) * sc * cg, ph = d.heads ? (one ? 108 : 62) * sc * cg : 0, tx = cp + (ph ? ph + (one ? 24 : 14) * sc * cg : 0), tw = cw - tx - cp;
+    const nmS = (one ? 24 : 15) * sc * cg, tiS = (one ? 13 : 10.5) * sc * cg, bioS = 10.5 * sc * cg, cflS = c0.fl * 1.15 * cg;
+    const rows = ppl.map(p => { font(600, cflS); track(cflS * .14); const fl = wrap((p.field || '').toUpperCase(), tw); track(0); font(700, nmS); const nl = wrap(p.name, tw); font(400, tiS); const tl = wrap(p.title, tw); font(400, bioS); const bioL = one ? wrap(d.bio, tw) : [];
+      return { p, fl, nl, tl, bioL, h: (fl.length ? fl.length * cflS * 1.35 + 2 * sc : 0) + nl.length * nmS * 1.15 + (tl.length ? 3 * sc + tl.length * tiS * 1.3 : 0) + (bioL.length ? 8 * sc + bioL.length * bioS * 1.45 : 0) }; });
+    const ch = Math.max(ph, ...rows.map(r => r.h)) + (one ? 42 : 30) * sc * cg;
+    cards = { side, cw, cp, ph, tx, nmS, tiS, bioS, cflS, rows, ch };
   }
   const greenH = mode === 'cards' ? y + cards.ch / 2 : y;
 
@@ -6857,19 +6859,20 @@ async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
 
   // ----- the guests -----
   if (mode === 'cards'){
-    const { side, cw, cp, ph, tx, nmS, tiS, bioS, rows, ch } = cards;
+    const { side, cw, cp, ph, tx, nmS, tiS, bioS, cflS, rows, ch } = cards;
     rows.forEach((r, i) => { const cx = pad + (side ? i * (cw + 14 * sc) : 0), cy = y + (side ? 0 : i * (ch + 12 * sc));
       x.save(); x.shadowColor = 'rgba(0,0,0,.14)'; x.shadowBlur = 12 * k; x.shadowOffsetY = 4 * k; x.fillStyle = '#ffffff'; x.fillRect(cx, cy, cw, ch); x.restore();
       x.fillStyle = FLY.GOLD; x.fillRect(cx, cy, cw, 3 * sc);
       if (ph) photo(r.p, cx + cp + ph / 2, cy + ch / 2, ph / 2);
       let ty = cy + (ch - r.h) / 2 + 1.5 * sc;
+      if (r.fl.length){ font(600, cflS); track(cflS * .14); x.fillStyle = FLY.LABEL; ty = put(r.fl, cx + tx, ty, cflS * 1.35) + 2 * sc; track(0); }
       font(700, nmS); x.fillStyle = FLY.G; ty = put(r.nl, cx + tx, ty, nmS * 1.15);
       if (r.tl.length){ font(400, tiS); x.fillStyle = FLY.INK; ty = put(r.tl, cx + tx, ty + 3 * sc, tiS * 1.3); }
       if (r.bioL.length){ font(400, bioS); x.fillStyle = FLY.LABEL; put(r.bioL, cx + tx, ty + 8 * sc, bioS * 1.45); } });
     y += (side ? ch : n * ch + (n - 1) * 12 * sc);
   } else if (mode === 'faces'){
     y += c.h1 * .5;
-    const cols = n === 4 ? (c.cols === 3 ? 4 : 2) : n <= 6 ? 3 : 4, D = c.face * (cols === 4 ? .8 : cols === 2 ? 1.15 : 1), cellW = inner / cols, nmS = c.nm * 1.15 * (cols === 4 ? .9 : 1), flS = c.fl * 1.1;
+    const cols = tall ? (n >= 7 ? 3 : 2) : n === 4 ? (c.cols === 3 ? 4 : 2) : n <= 6 ? 3 : 4, D = c.face * (cols === 4 ? .8 : cols === 2 ? 1.15 : 1), cellW = inner / cols, nmS = c.nm * 1.15 * (cols === 4 ? .9 : 1), flS = c.fl * 1.1;
     for (let r0 = 0; r0 < n; r0 += cols){ const row = ppl.slice(r0, r0 + cols), off = (inner - row.length * cellW) / 2;
       const meas = row.map(p => { font(700, nmS); return wrap(p.name, cellW - 8 * sc); }), flL = row.map(p => { font(600, flS); track(flS * .14); const l = wrap((p.field || '').toUpperCase(), cellW - 8 * sc); track(0); return l; });
       // With three or fewer there's room for each person's title too.
@@ -6924,7 +6927,7 @@ async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
   const spare = floor - y - detH - rsH, fits = spare >= 18 * sc;
   if (!fits && dir === 1) return flyDraw(cv, key, d, pxW, shr - .07, 2);
   if (!fits && dir <= 0 && shr > .7) return flyDraw(cv, key, d, pxW, shr - .06, -1);
-  if (fits && dir >= 0 && dir < 2 && n && spare > H * .17 && shr < 1.6) return flyDraw(cv, key, d, pxW, shr + .07, 1);
+  if (fits && dir >= 0 && dir < 2 && n && spare > H * .1 && shr < 2.2) return flyDraw(cv, key, d, pxW, shr + .07, 1);
   return { fits };
 }
 // Which of the five versions an event has: made in the flyer maker (downloaded), or uploaded by hand.
