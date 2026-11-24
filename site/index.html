@@ -825,16 +825,21 @@ const db = { settings:{ semester:'', dues:0 }, adminEmails:[], officerEmails:[],
   rsvps:{}, attendance:{}, announcements:[], recaps:[], archive:[], tasks:[], dues:{}, leader:[], log:[],
   app:{ open:false, branches:[], deadline:'', opened_at:null }, apps:[], avail:{}, pending:[], questions:[], schedulers:[], requests:{}, guestReqs:[] };
 
+// Speed: who you are is remembered for five minutes, and three big, rarely-changing lists for one, so the reload after every
+// click isn't waiting on them. A fresh page load, signing in or out, or opening a page about those lists always fetches them.
+let roleCache = null; const loadHeavy = { at: 0, who: null, data: {} };
 async function load(){
   const { data: { session: s } } = await sb.auth.getSession();
   authUser = s ? s.user : null;
   session = authUser ? authUser.email.toLowerCase() : null;
-  let r = await sb.rpc('my_role');
+  const who0 = s ? s.user.email.toLowerCase() : null, rc = roleCache && roleCache.who === who0 && Date.now() - roleCache.at < 300000 ? roleCache : null;
+  let r, tr = null;
+  if (rc){ r = { data: rc.role }; tr = { data: rc.test }; } else [r, tr] = await Promise.all([sb.rpc('my_role'), s ? sb.rpc('my_test_role') : null]);
   // The database says the sign-in expired while the browser still thinks it's good (a wrong computer clock does this).
   // Renew it and carry on; if it can't be renewed, sign out here and say so, instead of showing an empty site.
   if (s && r.error && (r.error.code === 'PGRST303' || /JWT expired/i.test(r.error.message || ''))){
     let ok = false;
-    try { const nr = await sb.auth.refreshSession(); ok = !nr.error && !!(nr.data && nr.data.session); if (ok){ r = await sb.rpc('my_role'); ok = !r.error; } } catch (_) {}
+    try { const nr = await sb.auth.refreshSession(); ok = !nr.error && !!(nr.data && nr.data.session); if (ok){ [r, tr] = await Promise.all([sb.rpc('my_role'), sb.rpc('my_test_role')]); ok = !r.error; } } catch (_) {}
     if (!ok){
       try { await sb.auth.signOut({ scope: 'local' }); } catch (_) {}
       authUser = null; session = null; r = { data: null };
@@ -843,8 +848,9 @@ async function load(){
   }
   myRole = session ? (r.data || 'member') : 'guest';
   // Test accounts act as an admin or member here, but only inside the test world (see 33-test-accounts.sql).
-  const tr = session ? await sb.rpc('my_test_role') : null;
+  if (!session) tr = null;
   testRole = (tr && !tr.error && tr.data) || null;
+  if (!rc && !r.error) roleCache = { who: session, role: r.data, test: testRole, at: Date.now() };
   if (testRole) myRole = testRole;
   const signed = !!session, off = myRole === 'officer' || myRole === 'admin';
   const t = name => sb.from(name).select('*');
@@ -920,10 +926,15 @@ async function load(){
     guestReqs: off && t('guest_requests'),
     log: myRole === 'admin' && sb.from('change_log').select('*').order('ts', { ascending:false }).limit(500)
   };
+  const HEAVY = ['jobs', 'firms', 'log'], heavyOk = loadHeavy.at && Date.now() - loadHeavy.at < 60000 && loadHeavy.who === session && !/job|firm|log/i.test(location.hash);
+  if (heavyOk) HEAVY.forEach(k => { if (reqs[k]) reqs[k] = Promise.resolve({ data: loadHeavy.data[k] }); });
   const keys = Object.keys(reqs);
   const res = await Promise.all(keys.map(k => reqs[k] || Promise.resolve({ data:null })));
+  // The remembered sign-in can hide an expired one: if the database says so, forget it and load again the careful way.
+  if (rc && res.some(x => x && x.error && (x.error.code === 'PGRST303' || /JWT expired/i.test(x.error.message || '')))){ roleCache = null; return load(); }
   const R = {};
   keys.forEach((k, i) => { if (res[i].error) console.warn(k, res[i].error.message); R[k] = res[i].data; });
+  if (!heavyOk){ loadHeavy.at = Date.now(); loadHeavy.who = session; loadHeavy.data = Object.fromEntries(HEAVY.map(k => [k, R[k]])); }
 
   db.settings = { semester: R.settings?.semester || '', dues: Number(R.settings?.dues || 0), about: R.settings?.about || {}, lbSince: R.settings?.lb_since || null, autoEmail: R.settings?.auto_email || null, pushKey: R.settings?.push_public_key || '', lbPrize: R.settings?.lb_prize ?? null, quick: !!R.settings?.quick_scheduling, nlIntro: R.settings?.newsletter_intro || '' };
   db.autoLog = Array.isArray(R.autoLog) ? R.autoLog : [];
