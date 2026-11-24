@@ -6918,8 +6918,8 @@ async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
   const lw = c.logo * FLY.LOGO_R; if (logo) x.drawImage(logo, W - pad - lw, yRs + (rsH - c.logo) / 2, lw, c.logo);
   if (c.noQr){
     // No QR code on the story: the space left of the logo is for Instagram's link button, and the off-white band is where its reply bar sits.
-    x.fillStyle = FLY.WARM; x.fillRect(0, H - bandH, W, bandH);
-    font(600, 8); track(8 * .24); x.fillStyle = FLY.G; x.textAlign = 'center'; x.fillText('WOLVERINE FINANCE ASSOCIATION · WOODBURY SCHOOL OF BUSINESS', W / 2, H - bandH + 14); x.textAlign = 'left'; track(0); }
+    x.fillStyle = d.band === 'green' ? FLY.G : FLY.WARM; x.fillRect(0, H - bandH, W, bandH);
+    font(600, 8); track(8 * .24); x.fillStyle = d.band === 'green' ? '#ffffff' : FLY.G; x.textAlign = 'center'; x.fillText('WOLVERINE FINANCE ASSOCIATION · WOODBURY SCHOOL OF BUSINESS', W / 2, H - bandH + 14); x.textAlign = 'left'; track(0); }
   else {
     const qx = pad, qy = yRs + (rsH - c.qr) / 2;
     if (qrLibNow){ const qr = qrLibNow(0, 'M'); qr.addData(d.url); qr.make(); const m = qr.getModuleCount(), cell = c.qr / m; x.fillStyle = FLY.G;
