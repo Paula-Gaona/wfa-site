@@ -5085,8 +5085,8 @@ PLAN_DEFAULTS.panel = [
   ['Set the target date and how many panelists to aim for', -42], ['Reserve the place and time through Todd, with an estimated guest count', -42],
   ['Invite panelists for that date', -40], ['Write the description, set the RSVP maximum, and post the event', -35],
   ['Get the marketing materials made; send them to Emmy for approval and to Todd for printing', -35],
-  ['Count the confirmed panelists: with fewer than three, run it as a guest speaker event or move the date', -21],
   ['Assign roles to officers and recruit volunteers if needed', -21],
+  ['Lock the lineup: the final number of panelists and their speaking order', -21],
   ['Send the panelists the 2-week check-in for anything still missing', -14], ['Start preparing the panelist gifts', -14],
   ['Send Todd the food order (RSVPs + 20, up to the RSVP maximum) and dietary restrictions', -10], ['Set the RSVP maximum to the number of people food was ordered for', -10],
   ['Send the panelists the 1-week check-in: parking, their guide, the host questions, who else is on the panel', -7],
@@ -6546,10 +6546,10 @@ const PANEL_STEPS = [
     [['Write the description, set the RSVP maximum, and send the event to a president to post']]],
   [-35, 'At the same time', 'Get the marketing materials made', 'Follow the UVU design standards at the bottom of this page. Send them to Emmy for approval, with a 2160x3840 pixel version for the WSB screens and one the same size without QR codes for the WSB Instagram. Send the files to Todd to print: 4x5.5 mini flyers for tables and study spaces (about 100), 11x17 flyers for the flyer holders and the Fintech Center glass, and 8.5x11 flyers for the Fintech Center sign holders.', '', 'flyer',
     [['Get the marketing materials made; send them to Emmy for approval and to Todd for printing']]],
-  [-21, '3 weeks before', 'Count the confirmed panelists', 'With three or more, the panel goes ahead: set the number of panelists to how many confirmed and the schedule resizes. With fewer than three, run it as a guest speaker event or move the date. Put the panelists in speaking order in the list above: it sets the seating, the name cards, and the slides.', '', 'count',
-    [['Count the confirmed panelists: with fewer than three, run it as a guest speaker event or move the date']]],
-  [-21, 'At the same time', 'Assign roles to officers', 'The MC is the host: they introduce the panelists, keep each talk to time, and ask the questions. A panel needs two guides at the door. Start recruiting volunteers if needed.', '', 'roles',
+  [-21, '3 weeks before', 'Assign roles to officers', 'The MC is the host: they introduce the panelists, keep each talk to time, and ask the questions. A panel needs two guides at the door. Open a few spots to volunteers if you need more hands.', '', 'roles',
     [['Assign roles to officers and recruit volunteers if needed']]],
+  [-21, 'At the same time', 'Lock the lineup', 'Stop inviting. Set the number of panelists to how many confirmed, so the schedule resizes, and put them in speaking order in the list above: that order sets the seating, the name cards, and the slides. If anyone confirmed after the flyers were made, make the flyers again.', '', 'count',
+    [['Lock the lineup: the final number of panelists and their speaking order']]],
   [-14, '2 weeks before', 'Send the 2-week check-in', 'Tick what each panelist has already sent in the list above, and each one is asked only for what’s missing. Start making the club’s slide for each panelist (name, title, field, and their LinkedIn QR code if they agreed), and start preparing the gifts.', 'two_weeks', '',
     [['Send the panelists the 2-week check-in for anything still missing'], ['Start preparing the panelist gifts']]],
   [-10, '1.5 weeks before', 'Send Todd the food order', 'Order for the current RSVPs + 20, but never more than the RSVP maximum, and include any dietary restrictions. Then change the RSVP maximum to the number you ordered for, so nobody goes without food.', '', 'food',
@@ -6805,9 +6805,11 @@ function flyData(e, f){
     people: flyPeople(e).map(p => ({ ...p, title: f.labels[p.id] != null ? f.labels[p.id] : p.title })) };
 }
 // Draws one version onto a canvas. pxW is the canvas width in pixels (the full size when it's left out).
-async function flyDraw(cv, key, d, pxW, shr = 1){
+async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
   // shr: when everything doesn't fit, the flyer is drawn again a little smaller (headline, photos, QR code, logo) until it does.
-  const c0 = FLY_SIZES[key], c = shr === 1 ? c0 : { ...c0, h1: c0.h1 * shr, sub: c0.sub * shr, face: c0.face * shr, qr: c0.qr * shr, logo: c0.logo * shr, top: c0.top * shr }, k = (pxW || c.px[0]) / c.W, W = c.W, H = c.W * c.px[1] / c.px[0], pad = c.pad, inner = W - pad * 2, x = cv.getContext('2d'), sc = c.h1 / 50;
+  // With room to spare (few guests), it's drawn again a little bigger instead, names and all. dir: -1 shrinking, 1 growing, 2 settled.
+  const c0 = FLY_SIZES[key], up = Math.max(1, shr), c = shr === 1 ? c0 : { ...c0, h1: c0.h1 * Math.min(shr, 1.12), sub: c0.sub * Math.min(shr, 1.12), face: c0.face * shr, qr: c0.qr * Math.min(shr, 1.25), logo: c0.logo * Math.min(shr, 1.25), top: c0.top * Math.min(shr, 1),
+    nm: c0.nm * up, ti: c0.ti * up, fl: c0.fl * up, blurb: c0.blurb * Math.min(up, 1.15), vl: c0.vl * Math.min(up, 1.2), lb: c0.lb * Math.min(up, 1.2), nt: c0.nt * Math.min(up, 1.2) }, k = (pxW || c.px[0]) / c.W, W = c.W, H = c.W * c.px[1] / c.px[0], pad = c.pad, inner = W - pad * 2, x = cv.getContext('2d'), sc = c.h1 / 50;
   try { await Promise.all([400, 600, 700, 800].map(w => document.fonts.load(`${w} 20px Montserrat`))); } catch (_) {}
   const logo = await flyLoadLogo();
   let qrLibNow = null; if (!c.noQr){ try { qrLibNow = await loadQr(); } catch (_) {} }
@@ -6870,11 +6872,14 @@ async function flyDraw(cv, key, d, pxW, shr = 1){
     const cols = n === 4 ? (c.cols === 3 ? 4 : 2) : n <= 6 ? 3 : 4, D = c.face * (cols === 4 ? .8 : cols === 2 ? 1.15 : 1), cellW = inner / cols, nmS = c.nm * 1.15 * (cols === 4 ? .9 : 1), flS = c.fl * 1.1;
     for (let r0 = 0; r0 < n; r0 += cols){ const row = ppl.slice(r0, r0 + cols), off = (inner - row.length * cellW) / 2;
       const meas = row.map(p => { font(700, nmS); return wrap(p.name, cellW - 8 * sc); }), flL = row.map(p => { font(600, flS); track(flS * .14); const l = wrap((p.field || '').toUpperCase(), cellW - 8 * sc); track(0); return l; });
+      // With three or fewer there's room for each person's title too.
+      const tiS = c.ti * 1.15, tiL = row.map(p => { if (n > 3) return []; font(400, tiS); return wrap(p.title, cellW - 8 * sc); }), tiH = Math.max(...tiL.map(l => l.length)) * tiS * 1.3 + (n > 3 ? 0 : 2 * sc);
       const nameH = Math.max(...meas.map(l => l.length)) * nmS * 1.15, flH = Math.max(...flL.map(l => l.length)) * flS * 1.35;
       row.forEach((p, i) => { const cx = pad + off + i * cellW + cellW / 2; photo(p, cx, y + D / 2, D / 2);
         font(700, nmS); x.fillStyle = FLY.G; put(meas[i], cx, y + D + c.nm * .65, nmS * 1.15, 'center');
-        font(600, flS); track(flS * .14); x.fillStyle = FLY.LABEL; put(flL[i], cx, y + D + c.nm * .65 + nameH + 3 * sc, flS * 1.35, 'center'); track(0); });
-      y += D + c.nm * .65 + nameH + 3 * sc + flH + (r0 + cols < n ? c.nm * 1.3 : 0); }
+        if (tiL[i].length){ font(400, tiS); x.fillStyle = FLY.INK; put(tiL[i], cx, y + D + c.nm * .65 + nameH + 2 * sc, tiS * 1.3, 'center'); }
+        font(600, flS); track(flS * .14); x.fillStyle = FLY.LABEL; put(flL[i], cx, y + D + c.nm * .65 + nameH + tiH + 3 * sc, flS * 1.35, 'center'); track(0); });
+      y += D + c.nm * .65 + nameH + tiH + 3 * sc + flH + (r0 + cols < n ? c.nm * 1.3 : 0); }
   } else if (mode === 'list'){
     y += c.h1 * .5;
     font(600, c.lb * 1.1); track(c.lb * .2); x.fillStyle = FLY.LABEL; x.fillText(n > 2 ? 'THE PANEL' : 'WITH', pad, y); track(0); y += c.lb * 1.1 + c.nm;
@@ -6916,9 +6921,23 @@ async function flyDraw(cv, key, d, pxW, shr = 1){
   }
   if (c.ft){ x.fillStyle = FLY.WARM; x.fillRect(0, H - c.ft, W, c.ft); font(600, c.ftF); track(c.ftF * .24); x.fillStyle = FLY.G; x.textAlign = 'center'; x.textBaseline = 'middle';
     x.fillText('WOLVERINE FINANCE ASSOCIATION · WOODBURY SCHOOL OF BUSINESS', W / 2, H - c.ft / 2); x.textAlign = 'left'; x.textBaseline = 'top'; track(0); }
-  const fits = floor - y - detH - rsH >= 18 * sc;
-  if (!fits && shr > .7) return flyDraw(cv, key, d, pxW, shr - .06);
+  const spare = floor - y - detH - rsH, fits = spare >= 18 * sc;
+  if (!fits && dir === 1) return flyDraw(cv, key, d, pxW, shr - .07, 2);
+  if (!fits && dir <= 0 && shr > .7) return flyDraw(cv, key, d, pxW, shr - .06, -1);
+  if (fits && dir >= 0 && dir < 2 && n && spare > H * .17 && shr < 1.6) return flyDraw(cv, key, d, pxW, shr + .07, 1);
   return { fits };
+}
+// Which of the five versions an event has: made in the flyer maker (downloaded), or uploaded by hand.
+const flyLabel = k => { const f = FLY_SIZES[k].file; return f[0] === '2160x3840' ? `${f[1]} (${f[0]})` : `${f[0].replace('x', ' × ')} ${f[1].toLowerCase()}`; };
+const flyMissing = id => { const have = guideOf(id).flyers || {}; return Object.keys(FLY_SIZES).filter(k => !have[k]); };
+function flyerChecklist(e){
+  const have = guideOf(e.id).flyers || {}, miss = flyMissing(e.id);
+  return `<div class="panel stack" style="gap:6px;padding:10px 12px"><div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" data-act="fly-open" data-id="${e.id}">Make the flyers</button><span class="hint">Downloading a version from the flyer maker counts it here. Made them somewhere else? Upload each one.</span></div>
+    ${Object.keys(FLY_SIZES).map(k => { const h = have[k];
+      return `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span style="flex:1 1 12rem;min-width:0">${h ? '✓' : '○'} ${flyLabel(k)}</span>${h
+        ? `<span class="hint">${h.path ? 'Uploaded: ' + esc(h.name || 'file') : 'Made in the flyer maker' + (h.made ? ' · ' + fmtDay(h.made) : '')}</span>${h.path ? `<button class="btn ghost small" data-act="rq-open-file" data-id="${esc(h.path)}">Open</button>` : ''}<button class="btn ghost small" data-act="fly-clear" data-id="${e.id}" data-k="${k}">Remove</button>`
+        : `<label class="btn ghost small" style="cursor:pointer;margin:0">Upload<input type="file" accept="image/*,application/pdf" class="fly-up" data-ev="${e.id}" data-k="${k}" hidden></label>`}</div>`; }).join('')}
+    ${miss.length ? `<span class="hint"><strong>${miss.length} of 5 still needed</strong> before this step can be marked done.</span>` : '<span class="hint"><strong>All five versions are here.</strong></span>'}</div>`;
 }
 function flyerModal(id){
   const e = evById(id); if (!e) return;
@@ -6944,6 +6963,8 @@ function flyerModal(id){
       <div class="stack" style="gap:8px;position:sticky;top:0">
         <label>Version<select id="fly-size">${Object.entries(FLY_SIZES).map(([k, v]) => `<option value="${k}" ${ui.fly.size === k ? 'selected' : ''}>${v.name}</option>`).join('')}</select></label>
         <canvas id="fly-cv" style="width:100%;height:auto;border:1px solid var(--line,#ddd);background:#fff"></canvas>
+        <div class="stack" style="gap:4px"><div class="eyebrow">All five versions <span class="hint" style="text-transform:none;letter-spacing:0">· click one to see it bigger</span></div>
+          <div class="row" id="fly-thumbs" style="gap:8px;align-items:flex-end;flex-wrap:wrap">${Object.entries(FLY_SIZES).map(([k, v]) => `<button type="button" data-act="fly-pick" data-k="${k}" title="${esc(v.name)}" style="padding:0;border:2px solid ${ui.fly.size === k ? 'var(--brand,#185C33)' : 'var(--line,#ddd)'};background:#fff;cursor:pointer;line-height:0;flex:1 1 0;min-width:64px;max-width:120px"><canvas class="fly-th" data-k="${k}" style="width:100%;height:auto;pointer-events:none"></canvas><span class="hint" style="display:block;line-height:1.3;padding:3px 2px;font-size:.7rem">${v.file[0] === '2160x3840' ? v.file[1] : v.file[0]}</span></button>`).join('')}</div></div>
         <div class="hint" id="fly-warn"></div>
         <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" data-act="fly-dl">Download this version</button><button class="btn ghost" data-act="fly-all">Download all five</button></div>
         <span class="hint">Files are named with the size first, the way Todd and Emmy expect them. Run the pre-send checks on the guide and get Emmy’s approval before anything is printed or posted.</span>
@@ -6951,12 +6972,13 @@ function flyerModal(id){
     </div></div>`, null, 'fly');
   flyRefresh();
 }
-let flyBusy = false, flyAgain = false;
+let flyBusy = false, flyAgain = false, flyThumbT = 0;
 async function flyRefresh(){
   const cv = document.getElementById('fly-cv'), e = ui.fly && evById(ui.fly.id); if (!cv || !e) return;
   if (flyBusy){ flyAgain = true; return; } flyBusy = true;
   try {
-    const d = flyData(e, ui.fly.f), r = await flyDraw(cv, ui.fly.size, d, 1100), warn = document.getElementById('fly-warn'), miss = d.heads ? d.people.filter(p => !flyImg[p.id]).length : 0;
+    const d = flyData(e, ui.fly.f), r = await flyDraw(cv, ui.fly.size, d, 1100); clearTimeout(flyThumbT); flyThumbT = setTimeout(async () => { for (const th of document.querySelectorAll('.fly-th')){ try { await flyDraw(th, th.dataset.k, d, 240); } catch (_) {} } }, 350);
+    const warn = document.getElementById('fly-warn'), miss = d.heads ? d.people.filter(p => !flyImg[p.id]).length : 0;
     if (warn) warn.innerHTML = [miss ? `<strong>${miss} headshot${miss === 1 ? ' is' : 's are'} missing.</strong> Add ${miss === 1 ? 'it' : 'them'}, or turn off “Show headshots”.` : '', r.fits ? '' : '<strong>It’s too full for this size.</strong> Shorten the headline or the sentences.', !d.blurb ? 'Add a sentence about what the event covers.' : ''].filter(Boolean).join(' ');
   } finally { flyBusy = false; if (flyAgain){ flyAgain = false; flyRefresh(); } }
 }
@@ -6968,6 +6990,7 @@ async function flyDownload(keys){
     const blob = await new Promise(res => cv.toBlob(res, 'image/png')); if (!blob){ toast('That version couldn’t be made. Try a different browser.'); return; }
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = flyFileName(e, key); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     await new Promise(res => setTimeout(res, 400)); }
+  { const have = { ...(guideOf(e.id).flyers || {}) }; keys.forEach(k => { have[k] = { made: todayIso() }; }); await saveGuideQuiet(e.id, { flyers: have }); }
   toast(keys.length > 1 ? 'All five versions downloaded' : 'Downloaded');
 }
 document.addEventListener('input', ev => { const t = ev.target; if (!ui.fly || !t.classList) return;
@@ -6975,7 +6998,7 @@ document.addEventListener('input', ev => { const t = ev.target; if (!ui.fly || !
   if (t.classList.contains('fly-label')){ ui.fly.f.labels[t.dataset.pid] = t.value; flyRefresh(); }
   if (t.classList.contains('fly-pos') && flyImg[t.dataset.pid]){ flyImg[t.dataset.pid][t.dataset.k] = +t.value; flyRefresh(); } });
 document.addEventListener('change', ev => { const t = ev.target; if (!ui.fly || !t.classList) return;
-  if (t.id === 'fly-size'){ ui.fly.size = t.value; flyRefresh(); return; }
+  if (t.id === 'fly-size'){ ui.fly.size = t.value; document.querySelectorAll('#fly-thumbs button').forEach(b => { b.style.borderColor = b.dataset.k === ui.fly.size ? 'var(--brand,#185C33)' : 'var(--line,#ddd)'; }); flyRefresh(); return; }
   if (t.id === 'fly-heads'){ ui.fly.f.heads = t.checked; saveGuideQuiet(ui.fly.id, { flyer: ui.fly.f }); flyRefresh(); return; }
   if (t.classList.contains('fly-t') || t.classList.contains('fly-label')){ saveGuideQuiet(ui.fly.id, { flyer: ui.fly.f }); return; }
   if (t.classList.contains('fly-photo')){ const file = t.files && t.files[0], pid = t.dataset.pid; if (!file) return;
@@ -7120,12 +7143,12 @@ function guideBody(){
           const back = st === 'returned' && rq.note ? `<div class="notice"><span><strong>A president asked for changes:</strong> ${esc(rq.note)}</span></div>` : '';
           if (n < need) return back + `<div class="hint"><strong>Locked.</strong> ${isPanel ? `It can go to a president once three panelists are marked confirmed (${n} so far).` : 'It can go to a president once the speaker is marked confirmed in the list above.'}</div><div><button class="btn ghost small" data-act="guide-edit" data-id="${e.id}">Write the description and RSVP maximum now</button></div>`;
           return back + `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" data-act="post-preview" data-id="${e.id}">${presidentsList().includes(session) ? 'Preview and post it' : back ? 'Preview and send it to a president again' : 'Preview and send to a president'}</button><button class="btn ghost small" data-act="guide-edit" data-id="${e.id}">Edit the details and description</button></div>`; })() : ''}
-        ${extra === 'flyer' ? (e ? `<div><button class="btn ghost small" data-act="fly-open" data-id="${e.id}">Make the flyers</button> <span class="hint">All five sizes in the standard design.</span></div>` : '<span class="hint">Pick an event above to make its flyers.</span>') : ''}
-        ${extra === 'count' && e ? `<div class="hint"><strong>${n} panelist${n === 1 ? '' : 's'} confirmed</strong>, aiming for ${target}. ${n < PANEL_MIN ? 'That’s fewer than three.' : n < target ? 'Enough to go ahead.' : 'You’ve reached your number.'}</div>` : ''}
+        ${extra === 'flyer' ? (e ? flyerChecklist(e) : '<span class="hint">Pick an event above to make its flyers.</span>') : ''}
+        ${extra === 'count' && e ? `<div class="hint"><strong>${n} panelist${n === 1 ? '' : 's'} confirmed</strong>, aiming for ${target}. ${n < PANEL_MIN ? 'That’s fewer than three: run it as a guest speaker event, or move the date.' : n < target ? 'Enough to go ahead. Set the number of panelists to ' + n + ' once you stop inviting.' : 'You’ve reached your number.'}</div>` : ''}
         ${extra === 'roles' && e ? `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost small" data-act="gr-go">${mine.length ? 'Go to the roles' : 'Assign roles'}</button><span class="hint">${mine.length ? `${filled} of ${spots} spots filled` : 'No roles set up for this event yet.'}${isPanel && mine.length && guides < 2 ? ` <strong>${guides ? 'The second guide isn’t assigned yet.' : 'No guides are assigned yet. A panel needs two.'}</strong>` : ''}</span></div>` : ''}
         ${mail ? (e ? `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost small" data-act="guest-mail" data-id="${e.id}" data-tpl="${mail}">${isPanel ? 'Write these emails' : 'Write this email'}</button>${sentTo(mail) ? `<span class="hint">Sent to ${sentTo(mail)} so far</span>` : ''}</div>` : '<span class="hint">Pick an event above to write this email.</span>') : ''}
-        ${l.length ? `<div class="stack" style="gap:4px">${l.map(t => `<label style="display:flex;flex-direction:row;gap:10px;align-items:flex-start;font-weight:400"><input type="checkbox" class="guide-task" data-id="${t.id}" ${(extra === 'post' ? fin : t.done) ? 'checked' : ''} ${extra === 'post' ? 'disabled' : ''} style="width:auto;flex:none;margin-top:4px"><span${(extra === 'post' ? fin : t.done) ? ' style="text-decoration:line-through"' : ''}>${esc(t.title)}${t.who && t.who !== runner ? ` <span class="hint">· ${esc(userName(t.who))}</span>` : ''}</span></label>`).join('')}</div>` : ''}
-        ${e && extra === 'post' ? (fin ? '' : '<span class="hint">This step marks itself done when a president posts the event.</span>') : e ? `<div><button class="btn ${fin ? 'ghost ' : ''}small" data-act="step-done" data-id="${e.id}" data-i="${i}" data-on="${fin ? 0 : 1}">${fin ? 'Mark as not done' : 'Mark as done'}</button></div>` : ''}
+        ${l.length ? `<div class="stack" style="gap:4px">${l.map(t => `<label style="display:flex;flex-direction:row;gap:10px;align-items:flex-start;font-weight:400"><input type="checkbox" class="guide-task" data-id="${t.id}" ${(extra === 'post' ? fin : t.done) ? 'checked' : ''} ${extra === 'post' || (extra === 'flyer' && !t.done && flyMissing(e.id).length) ? 'disabled' : ''} style="width:auto;flex:none;margin-top:4px"><span${(extra === 'post' ? fin : t.done) ? ' style="text-decoration:line-through"' : ''}>${esc(t.title)}${t.who && t.who !== runner ? ` <span class="hint">· ${esc(userName(t.who))}</span>` : ''}</span></label>`).join('')}</div>` : ''}
+        ${e && extra === 'post' ? (fin ? '' : '<span class="hint">This step marks itself done when a president posts the event.</span>') : e && extra === 'flyer' && !fin && flyMissing(e.id).length ? '' : e ? `<div><button class="btn ${fin ? 'ghost ' : ''}small" data-act="step-done" data-id="${e.id}" data-i="${i}" data-on="${fin ? 0 : 1}">${fin ? 'Mark as not done' : 'Mark as done'}</button></div>` : ''}
       </div></div>`; };
   return `<div class="stack" style="gap:18px">
     <p class="muted" style="margin:0">How the WFA runs a ${who} event: what to send and when, who does what, and what to bring. Pick an event and the dates, numbers, and emails fill in for it.</p>
@@ -9993,6 +10016,10 @@ document.addEventListener('click', async ev => {
       r.open = Math.max(0, Math.round(+f.querySelector('.gr-open').value) || 0); r.duties = f.querySelector('.gr-duties').value; ui.grEdit = null;
       if (await saveRoles(id, roles, 'Role saved')) await logChange(`Updated the role ${name} for “${(evById(id) || {}).title}”`); break; }
     case 'fly-open': flyerModal(id); break;
+    case 'fly-clear': { const have = { ...(guideOf(id).flyers || {}) }, h = have[t.dataset.k]; delete have[t.dataset.k];
+      if (h && h.path){ try { await sb.storage.from('event-files').remove([h.path]); } catch (_) {} }
+      await saveGuide(id, { flyers: have }, 'Removed'); break; }
+    case 'fly-pick': ui.fly.size = t.dataset.k; { const sel = document.getElementById('fly-size'); if (sel) sel.value = ui.fly.size; } document.querySelectorAll('#fly-thumbs button').forEach(b => { b.style.borderColor = b.dataset.k === ui.fly.size ? 'var(--brand,#185C33)' : 'var(--line,#ddd)'; }); flyRefresh(); break;
     case 'fly-rm': delete flyImg[t.dataset.pid]; flyerModal(ui.fly.id); break;
     case 'fly-dl': await flyDownload([ui.fly.size]); break;
     case 'fly-all': await flyDownload(Object.keys(FLY_SIZES)); break;
@@ -10010,6 +10037,7 @@ document.addEventListener('click', async ev => {
       break; }
     case 'step-done': { const ev = evById(id), i = +t.dataset.i, on = t.dataset.on === '1'; if (!ev) break;
       const st = (ev.cat === 'panel' ? PANEL_STEPS : GUIDE_STEPS)[i]; if (!st) break;
+      if (on && st[5] === 'flyer' && flyMissing(id).length){ toast('All five flyer versions are needed first: make them in the flyer maker, or upload them.'); break; }
       const l = db.tasks.filter(x => x.eventId === id && (st[6] || []).some(([title]) => title === x.title)), ids = l.filter(x => !!x.done !== on).map(x => x.id);
       if (l.length){ if (ids.length) await act(async () => { must(await sb.from('tasks').update({ done: on }).in('id', ids)); await logChange((on ? 'Completed' : 'Reopened') + ' the step “' + st[2] + '” for ' + ev.title); }, on ? 'Step marked done' : 'Step reopened'); }
       else { const done = { ...(guideOf(id).done || {}) }; if (on) done[i] = todayIso(); else delete done[i]; await saveGuide(id, { done }, on ? 'Step marked done' : 'Step reopened'); }
@@ -10527,6 +10555,14 @@ document.addEventListener('change', async e => {
     const evId = e.target.dataset.ev, k = e.target.dataset.k, v = Math.max(0, Math.min(300, Math.round(+e.target.value || 0)));
     const sched = { ...(evById(evId) ? guideOf(evId).sched : ui.guideSched), [k]: v };
     if (!evById(evId)){ ui.guideSched = sched; render(); } else await saveGuide(evId, { sched }, 'Schedule updated');
+  }
+  if (e.target.classList.contains('fly-up')){
+    const file = e.target.files && e.target.files[0], evId = e.target.dataset.ev, k = e.target.dataset.k; if (!file) return;
+    if (file.size > 25 * 1024 * 1024){ toast('That file is over 25 MB. Export a smaller one.'); return; }
+    const path = `flyers/${evId}/${k}-${Date.now()}-${file.name.replace(/[^\w.-]+/g, '_').slice(-60)}`;
+    const up = await sb.storage.from('event-files').upload(path, file, { contentType: file.type || undefined });
+    if (up.error){ toast('The upload didn’t work: ' + errMsg(up.error)); return; }
+    await saveGuide(evId, { flyers: { ...(guideOf(evId).flyers || {}), [k]: { path, name: file.name } } }, flyLabel(k) + ' uploaded'); return;
   }
   if (e.target.classList.contains('gr-who')){
     const evId = e.target.dataset.ev, i = +e.target.dataset.i, roles = JSON.parse(JSON.stringify(rolesOf(evId))), r = roles[i];
