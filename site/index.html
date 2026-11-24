@@ -6510,7 +6510,7 @@ const GUIDE_STEPS = [
     [['Assign roles to officers and recruit volunteers if needed']]],
   [-14, '2 weeks before', 'Send the 2-week check-in', 'Tick what the speaker has already sent in the list above, and the email asks only for the rest. Start preparing the speaker gifts.', 'two_weeks', '',
     [['Send the speaker the 2-week check-in and request slides'], ['Start preparing the speaker gifts']]],
-  [-10, '1.5 weeks before', 'Send Todd the food order', 'Order for the current RSVPs + 20, but never more than the RSVP maximum, and include any dietary restrictions. Then change the RSVP maximum to the number you ordered for, so nobody goes without food.', '', 'food',
+  [-10, '1.5 weeks before', 'Send Todd the food order', 'Order for the current RSVPs + 20, rounded to the nearest 5, but never more than the RSVP maximum, and include any dietary restrictions. Then change the RSVP maximum to the number you ordered for, so nobody goes without food.', '', 'food',
     [['Send Todd the food order (RSVPs + 20, up to the RSVP maximum) and dietary restrictions'], ['Set the RSVP maximum to the number of people food was ordered for']]],
   [-7, '1 week before', 'Send the 1-week check-in', 'Parking instructions, where their guide will meet them, students’ starred questions, and a final call for updated slides. Also make sure the microphones and clicker work and are set aside.', 'one_week', '',
     [['Send the speaker the 1-week check-in: parking, their guide, students’ questions, final call for slides'], ['Make sure the microphones and clicker work and are set aside']]],
@@ -6529,14 +6529,17 @@ function guideItems(n){
     ['plates', 'Cutlery, plates, and napkins'], ['gifts', n ? `${n} gift${n === 1 ? '' : 's'} and thank-you card${n === 1 ? '' : 's'} (1 per speaker)` : '1 gift and thank-you card per speaker']];
 }
 // How much food to order: RSVPs + 20, but never more than the RSVP maximum.
+// The food order: RSVPs + 20, rounded to the nearest 5 so it's an easy number to order, and never more than the RSVP maximum.
+function foodOrder(r){ return Math.round((Math.max(0, Math.round(+r || 0)) + 20) / 5) * 5; }
 // What the RSVP maximum should be once the food is ordered: the number ordered for.
-function foodCap(r, cap){ r = Math.max(0, Math.round(+r || 0)); cap = Math.max(0, Math.round(+cap || 0)); return !cap ? r + 20 : Math.min(cap, r + 20); }
+function foodCap(r, cap){ cap = Math.max(0, Math.round(+cap || 0)); return !cap ? foodOrder(r) : Math.min(cap, foodOrder(r)); }
 function guideFood(r, cap){
   r = Math.max(0, Math.round(+r || 0)); cap = Math.max(0, Math.round(+cap || 0));
-  if (!cap) return `With no RSVP maximum: order for <strong>${r + 20}</strong> (${r} RSVPs + 20), then set the RSVP maximum to ${r + 20}.`;
+  const n = foodOrder(r), how = n === r + 20 ? `${r} RSVPs + 20` : `${r} RSVPs + 20 is ${r + 20}, rounded to the nearest 5`;
+  if (!cap) return `With no RSVP maximum: order for <strong>${n}</strong> (${how}), then set the RSVP maximum to ${n}.`;
   if (r >= cap) return `The event is full. Order for <strong>${cap}</strong>, or see if the event can be expanded.`;
-  if (r + 20 >= cap) return `${r} RSVPs + 20 ${r + 20 === cap ? 'is exactly' : 'is more than'} the maximum of ${cap}. Order for <strong>${cap}</strong> and leave the RSVP maximum where it is.`;
-  return `${r} RSVPs + 20 = <strong>${r + 20}</strong>. Order for ${r + 20}, then lower the RSVP maximum from ${cap} to ${r + 20}.`;
+  if (n >= cap) return `${how}, which ${n === cap ? 'is exactly' : 'is more than'} the maximum of ${cap}. Order for <strong>${cap}</strong> and leave the RSVP maximum where it is.`;
+  return `${how}: <strong>${n}</strong>. Order for ${n}, then lower the RSVP maximum from ${cap} to ${n}.`;
 }
 // The panel guide. Same shape as GUIDE_STEPS; extra: 'count' | 'roles' | 'food'.
 const PANEL_STEPS = [
@@ -6554,7 +6557,7 @@ const PANEL_STEPS = [
     [['Lock the lineup: the final number of panelists and their speaking order']]],
   [-14, '2 weeks before', 'Send the 2-week check-in', 'Tick what each panelist has already sent in the list above, and each one is asked only for what’s missing. Start making the club’s slide for each panelist (name, title, field, and their LinkedIn QR code if they agreed), and start preparing the gifts.', 'two_weeks', '',
     [['Send the panelists the 2-week check-in for anything still missing'], ['Start preparing the panelist gifts']]],
-  [-10, '1.5 weeks before', 'Send Todd the food order', 'Order for the current RSVPs + 20, but never more than the RSVP maximum, and include any dietary restrictions. Then change the RSVP maximum to the number you ordered for, so nobody goes without food.', '', 'food',
+  [-10, '1.5 weeks before', 'Send Todd the food order', 'Order for the current RSVPs + 20, rounded to the nearest 5, but never more than the RSVP maximum, and include any dietary restrictions. Then change the RSVP maximum to the number you ordered for, so nobody goes without food.', '', 'food',
     [['Send Todd the food order (RSVPs + 20, up to the RSVP maximum) and dietary restrictions'], ['Set the RSVP maximum to the number of people food was ordered for']]],
   [-7, '1 week before', 'Send the 1-week check-in', 'Each panelist gets their talk length and speaking position, how the timekeeper’s cards work, the host questions, who else is on the panel, and parking and arrival. Also make sure the microphones and the clicker (for the club’s slides) work and are set aside.', 'one_week', '',
     [['Send the panelists the 1-week check-in: their talk, the host questions, who else is on the panel, parking'], ['Make sure the microphones and clicker work and are set aside']]],
