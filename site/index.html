@@ -365,6 +365,10 @@ main{padding-block:36px 64px}
 .modal{background:var(--surface);color:var(--ink);border-radius:var(--radius);max-width:35rem;width:100%;max-height:90vh;overflow:auto;border-top:6px solid var(--c,var(--brand))}
 .modal.wide{max-width:56.25rem}
 .modal-in{padding:24px;display:flex;flex-direction:column;gap:16px}
+@font-face{font-family:Montserrat;src:url(fonts/montserrat.woff2) format('woff2');font-weight:100 900;font-display:swap}
+.modal.fly{max-width:min(96vw,72rem);width:96vw}
+.fly-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+@media(max-width:820px){.fly-grid{grid-template-columns:1fr}}
 .modal-x{float:right;font:inherit;font-size:1.4rem;line-height:1;background:none;border:0;color:var(--muted);cursor:pointer;padding:4px 8px}
 .facts{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:.95rem}
 .facts dt{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding-top:3px}
@@ -2737,10 +2741,13 @@ function surveyResultsListBody(){
   if (ui.svResults && svById(ui.svResults)) return svResultsBody(svById(ui.svResults));
   const list = (db.surveys || []).filter(sv => sv.status !== 'draft'), n = id => (db.svCounts || {})[id] || 0;
   return `<div class="stack" style="gap:16px">
-    <span class="muted">Results from surveys made in the Survey builder. Ratings from after events are under <a href="#officer/surveys">Event surveys</a>.</span>
+    <span class="muted">Every survey’s results: the ones made in the Survey builder, then the ratings members give after each event.</span>
+    <div class="section-head"><h3>Surveys</h3></div>
     <div>${list.map(sv => `<div class="list-row"><div><div class="ev-title">${esc(sv.title)} ${svOpen(sv) ? '<span class="tag ok">Open</span>' : '<span class="tag warn">Closed</span>'}</div>
       <div class="ev-sub">${n(sv.id)} response${n(sv.id) === 1 ? '' : 's'}${sv.closes_at ? ' · closes ' + fmtMtStamp(Date.parse(sv.closes_at)) : ''}</div></div>
-      <button class="btn ${n(sv.id) ? '' : 'ghost '}small" data-act="sv-results" data-id="${sv.id}">View results</button></div>`).join('') || '<div class="empty">No surveys have been opened yet. Make one in Officer tools → Survey builder.</div>'}</div></div>`;
+      <button class="btn ${n(sv.id) ? '' : 'ghost '}small" data-act="sv-results" data-id="${sv.id}">View results</button></div>`).join('') || '<div class="empty">No surveys have been opened yet. Make one in Officer tools → Survey builder.</div>'}</div>
+    <div class="section-head"><h3>Event surveys</h3></div>
+    ${surveysBody()}</div>`;
 }
 function surveyBuilderBody(){
   if (ui.svDraft) return svEditor();
@@ -4248,12 +4255,12 @@ const ORD_WORDS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seve
 const PANEL_PARTS_YOU = { 'Introduction': 'A brief introduction', 'What their field is, in a sentence or two': 'What your field is, in a sentence or two', 'A brief description of the day to day': 'What the day to day looks like', 'Their career path': 'Your career path', 'What mattered most in getting there': 'What mattered most in getting there' };
 // A panelist's version of each guest email. {position}, {missing}, and the questions are filled in per person.
 function panelMailText(key, e, o, c){
-  const g = guideOf(e.id), ok = guidePeople(e.id).filter(p => p.status === 'confirmed'), N = panelPlan(g.target || ok.length).n, T = panelTimes(N, g.sched), t = T.m.talk, n = NUM_WORDS[N] || N;
+  const g = guideOf(e.id), ok = guidePeople(e.id).filter(p => p.status === 'confirmed'), N = panelPlan(g.target || ok.length).n, T = panelTimes(N, g.sched, evDur(e)), t = T.m.talk, n = NUM_WORDS[N] || N;
   let at = 0;
   const sched = panelRows(T).map(([k, m, label]) => { const l = `- **${clockAt(e, at)}:** ${k === 'intro' ? 'The host welcomes everyone and introduces the panel' : k === 'talk' ? `Panelist talks, ${t} minutes each` : k === 'arrive' ? 'Students arrive and get food' : label} (${m} min)`; at += m; return l; }).join('\n')
     + `\n- **${clockAt(e, at)}:** Networking with students (up to ${GM_NETWORK} minutes; please stay as long as your schedule allows)`;
   const parts = panelParts(t).map(([l]) => '- ' + (PANEL_PARTS_YOU[l] || l)).join('\n'), hostQs = PANEL_HOST_QS.map(q => '- ' + q).join('\n');
-  const len = T.total === 120 ? 'Two hours' : `${T.total} minutes`;
+  const len = T.total === 120 ? 'Two hours' : T.total === 90 ? 'An hour and a half' : T.total === 60 ? 'One hour' : `${T.total} minutes`;
   if (key === 'invite') return { subject: 'Invitation to join our panel: {event}', closing: 'Sincerely,', body:
 `Dear {first},
 
@@ -4554,13 +4561,22 @@ function guestPackModal(){
   showModal(`<div class="modal-in stack" style="gap:14px"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3 style="margin:0">${name}</h3><div class="hint">${esc(e.title)} · one email per person, sent from your own inbox so replies come back to you.</div></div>
     <label>Subject<input id="gp-subject" maxlength="200" value="${esc(pk.subject)}"></label>
     <label>Message <span class="hint">Edit it once here and it changes for everyone. The parts in {braces} are filled in for each person.</span><textarea id="gp-body" style="min-height:220px">${esc(pk.body)}</textarea></label>
+    <div class="stack" style="gap:4px"><div class="eyebrow">Preview</div><div id="gp-preview" class="panel" style="padding:12px 14px;max-height:22rem;overflow:auto"></div></div>
     <div>${pk.people.map(p => `<div class="list-row" style="gap:8px;flex-wrap:wrap;align-items:center"><div style="flex:1 1 12rem;min-width:0"><div class="ev-title">${esc(gpName(p))}</div><div class="ev-sub">${esc(p.email)}</div></div>
       <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center"><button type="button" class="btn ghost small" data-act="gp-preview" data-pid="${p.id}">Preview</button><button type="button" class="btn ghost small" data-act="gp-copy" data-pid="${p.id}">Copy message</button><button type="button" class="btn small" data-act="gp-outlook" data-pid="${p.id}">Open in Outlook</button>
         <label class="check" style="font-weight:400"><input type="checkbox" class="gp-sent" data-pid="${p.id}" ${sent[p.id] ? 'checked' : ''}> <span>${sent[p.id] ? 'Sent ' + fmtDay(sent[p.id]) : 'Sent'}</span></label></div></div>`).join('')}</div>
     <span class="hint">Open in Outlook starts a new message to that person with the subject filled in, and copies their message. Click in the message body and press Ctrl+V (⌘V on Mac) to paste it with its formatting. Tick Sent once it’s gone, so you and the other officers can see who’s left.</span>
-    <div id="gp-preview" hidden class="panel" style="padding:12px 14px"></div>
     <div class="row" style="gap:8px"><button class="btn ghost" data-act="gp-done">Done</button></div></div>`);
+  gpPreviewDraw();
 }
+// The preview under the message: what one person will get, redrawn as you type. "Preview" on a person's row switches it to them.
+function gpPreviewDraw(){
+  const pk = ui.gpack, box = document.getElementById('gp-preview'), sub = document.getElementById('gp-subject'), body = document.getElementById('gp-body'); if (!pk || !box || !sub || !body) return;
+  const p = pk.people.find(x => x.id === pk.prev) || pk.people[0];
+  if (!p){ box.innerHTML = `<div class="hint" style="margin-bottom:8px"><strong>${esc(sub.value)}</strong></div>` + mdToHtml(body.value); return; }
+  box.innerHTML = `<div class="hint" style="margin-bottom:8px">To ${esc(gpName(p))} (${esc(p.email)}) · <strong>${esc(packFill(sub.value, p, pk))}</strong></div>` + mdToHtml(packFill(body.value, p, pk));
+}
+document.addEventListener('input', e => { if (e.target.id === 'gp-body' || e.target.id === 'gp-subject') gpPreviewDraw(); });
 function fillMerge(s){
   const [, id] = ui.mail.aud.split(':');
   const e = evById(ui.mail.ev || (id || ''));
@@ -6487,7 +6503,7 @@ const GUIDE_STEPS = [
     [['Email the speaker the official invitation']]],
   [-35, 'Once they reply to confirm', 'Post the event on the site', 'Mark the speaker as confirmed in the list above. Then write the description (ideally with their bio) and set the RSVP maximum on the event, and send it to a president. It’s posted as soon as one approves.', '', 'post',
     [['Write the description, set the RSVP maximum, and send the event to a president to post']]],
-  [-35, 'At the same time', 'Get the marketing materials made', 'Follow the UVU design standards at the bottom of this page. Send them to Emmy for approval, with a 2160x3840 pixel version for the WSB screens and one the same size without QR codes for the WSB Instagram. Send the files to Todd to print: 4x5.5 mini flyers for tables and study spaces (about 100), 11x17 flyers for the flyer holders and the Fintech Center glass, and 8.5x11 flyers for the Fintech Center sign holders.', '', '',
+  [-35, 'At the same time', 'Get the marketing materials made', 'Follow the UVU design standards at the bottom of this page. Send them to Emmy for approval, with a 2160x3840 pixel version for the WSB screens and one the same size without QR codes for the WSB Instagram. Send the files to Todd to print: 4x5.5 mini flyers for tables and study spaces (about 100), 11x17 flyers for the flyer holders and the Fintech Center glass, and 8.5x11 flyers for the Fintech Center sign holders.', '', 'flyer',
     [['Get the marketing materials made; send them to Emmy for approval and to Todd for printing']]],
   [-21, '3 weeks before', 'Assign roles to officers', 'Start recruiting volunteers if needed.', '', 'roles',
     [['Assign roles to officers and recruit volunteers if needed']]],
@@ -6527,7 +6543,7 @@ const PANEL_STEPS = [
     [['Invite panelists for that date']]],
   [-35, 'Once three have confirmed', 'Post the event on the site', 'Mark each panelist as confirmed in the list above as they reply. With three confirmed, write the description and set the RSVP maximum on the event, and send it to a president. It’s posted as soon as one approves. Show the confirmed panelists on the event page, so members can choose who their question is for.', '', 'post',
     [['Write the description, set the RSVP maximum, and send the event to a president to post']]],
-  [-35, 'At the same time', 'Get the marketing materials made', 'Follow the UVU design standards at the bottom of this page. Send them to Emmy for approval, with a 2160x3840 pixel version for the WSB screens and one the same size without QR codes for the WSB Instagram. Send the files to Todd to print: 4x5.5 mini flyers for tables and study spaces (about 100), 11x17 flyers for the flyer holders and the Fintech Center glass, and 8.5x11 flyers for the Fintech Center sign holders.', '', '',
+  [-35, 'At the same time', 'Get the marketing materials made', 'Follow the UVU design standards at the bottom of this page. Send them to Emmy for approval, with a 2160x3840 pixel version for the WSB screens and one the same size without QR codes for the WSB Instagram. Send the files to Todd to print: 4x5.5 mini flyers for tables and study spaces (about 100), 11x17 flyers for the flyer holders and the Fintech Center glass, and 8.5x11 flyers for the Fintech Center sign holders.', '', 'flyer',
     [['Get the marketing materials made; send them to Emmy for approval and to Todd for printing']]],
   [-21, '3 weeks before', 'Count the confirmed panelists', 'With three or more, the panel goes ahead: set the number of panelists to how many confirmed and the schedule resizes. With fewer than three, run it as a guest speaker event or move the date. Put the panelists in speaking order in the list above: it sets the seating, the name cards, and the slides.', '', 'count',
     [['Count the confirmed panelists: with fewer than three, run it as a guest speaker event or move the date']]],
@@ -6556,20 +6572,25 @@ function panelItems(n){
 // Talks are 5 minutes each with a minute between, and the host questions get 4 minutes per panelist. Live questions get what's left, up to 25 minutes:
 // past that, the talks lengthen (to 8 minutes at most), then the host questions. With 7 or 8 panelists everything is shortened to fit.
 const PANEL_MIN = 3, PANEL_MAX = 8, PANEL_LEN = 120, PANEL_ARRIVE = 15, PANEL_INTRO = 5, PANEL_STUDENT = 25, PANEL_WRAP = 5;
-function panelPlan(n){
+function panelPlan(n, len){
   n = Math.min(PANEL_MAX, Math.max(PANEL_MIN, Math.round(+n || 0) || 4));
-  let t = 5, host = 4 * n;
+  len = Math.max(45, Math.min(300, Math.round(+len || 0) || PANEL_LEN));
+  let t = 5, host = 4 * n, student = PANEL_STUDENT;
   if (n >= 7){ t = Math.max(3, Math.floor(40 / n) - 1); host = 3 * n; }
-  const left = () => PANEL_LEN - PANEL_ARRIVE - PANEL_INTRO - PANEL_STUDENT - PANEL_WRAP - n * (t + 1) - host;
+  const left = () => len - PANEL_ARRIVE - PANEL_INTRO - student - PANEL_WRAP - n * (t + 1) - host;
+  // A shorter event: trim the talks, then the host's questions, then the questions sent ahead, until live questions fit.
+  while (left() < 5 && t > 3) t--;
+  while (left() < 5 && host > 2 * n) host -= n;
+  while (left() < 5 && student > 10) student -= 5;
   while (left() > 25 && t < 8) t++;
-  let live = left(); if (live > 25){ host += live - 25; live = 25; }
-  return { n, t, talks: n * (t + 1), host, live };
+  let live = Math.max(0, left()); if (live > 25){ host += live - 25; live = 25; }
+  return { n, t, talks: n * (t + 1), host, student, live };
 }
 // The minutes for each part: the suggestion for n panelists, with any numbers the officers set by hand on top.
 const PANEL_KEYS = ['arrive', 'intro', 'talk', 'host', 'student', 'live', 'wrap'];
-function panelTimes(n, sched){
-  const p = panelPlan(n), base = { arrive: PANEL_ARRIVE, intro: PANEL_INTRO, talk: p.t, host: p.host, student: PANEL_STUDENT, live: p.live, wrap: PANEL_WRAP }, set = {};
-  PANEL_KEYS.forEach(k => { const v = Math.round(+((sched || {})[k])); if ((sched || {})[k] != null && (sched || {})[k] !== '' && v >= 0 && v <= 120 && v !== base[k]) set[k] = v; });
+function panelTimes(n, sched, len){
+  const p = panelPlan(n, len), base = { arrive: PANEL_ARRIVE, intro: PANEL_INTRO, talk: p.t, host: p.host, student: p.student, live: p.live, wrap: PANEL_WRAP }, set = {};
+  PANEL_KEYS.forEach(k => { const v = Math.round(+((sched || {})[k])); if ((sched || {})[k] != null && (sched || {})[k] !== '' && v >= 0 && v <= 300 && v !== base[k]) set[k] = v; });
   const m = { ...base, ...set };
   return { n: p.n, base, set, m, talks: p.n * (m.talk + 1), total: m.arrive + m.intro + p.n * (m.talk + 1) + m.host + m.student + m.live + m.wrap };
 }
@@ -6589,7 +6610,7 @@ function panelParts(t){
 }
 const PANEL_HOST_QS = ['Typical pay at entry level and a few years in', 'Hours and lifestyle', 'What students should be doing now'];
 function panelSchedule(e, n){
-  const sched = e ? guideOf(e.id).sched : ui.guideSched, T = panelTimes(n, sched), dur = e ? evDur(e) : 0, len = dur || PANEL_LEN, edited = Object.keys(T.set).length;
+  const dur = e ? evDur(e) : 0, len = dur || PANEL_LEN, sched = e ? guideOf(e.id).sched : ui.guideSched, T = panelTimes(n, sched, len), edited = Object.keys(T.set).length;
   const per = Math.max(1, Math.round(T.m.host / (PANEL_HOST_QS.length * T.n)));
   let at = 0;
   const tr = ([k, m, label]) => { const from = at; at += m; const v = k === 'talk' ? T.m.talk : m;
@@ -6599,7 +6620,7 @@ function panelSchedule(e, n){
     <label style="max-width:16rem">Panelists<input id="guide-target" type="number" min="${PANEL_MIN}" max="${PANEL_MAX}" step="1" inputmode="numeric" value="${T.n}"${e ? ` data-ev="${e.id}"` : ''}>
       <span class="hint">How many you’re aiming for (${PANEL_MIN} to ${PANEL_MAX}). Change it if a different number confirms, and the schedule resizes.</span></label>
     <div class="table-wrap"><table><tbody>${panelRows(T).map(tr).join('')}<tr><td style="white-space:nowrap">Afterward</td><td>Networking. Panelists stay by their name card or field sign, so students can find them</td><td style="white-space:nowrap">up to 30 min</td></tr></tbody></table></div>
-    <div class="${T.total === len ? 'hint' : 'notice'}"><span><strong>${T.total} of ${len} minutes.</strong> ${T.total === len ? 'Change any number to adjust the schedule by hand.' : T.total > len ? `That’s ${T.total - len} over. Shorten a part, or make the event longer.` : `That leaves ${len - T.total} spare. Lengthen a part, or end early.`}${dur && dur !== PANEL_LEN ? ` This event is set for ${dur} minutes; a panel is usually planned for two hours.` : ''}</span></div>
+    <div class="${T.total === len ? 'hint' : 'notice'}"><span><strong>${T.total} of ${len} minutes.</strong> ${T.total === len ? 'Change any number to adjust the schedule by hand.' : T.total > len ? `That’s ${T.total - len} over. Shorten a part, or make the event longer.` : `That leaves ${len - T.total} spare. Lengthen a part, or end early.`}${dur && dur !== PANEL_LEN ? ` Sized for this event’s ${dur} minutes; a panel is usually planned for two hours.` : ''}</span></div>
     <div class="panel stack" style="gap:8px;padding:12px 14px">
       <div><strong>Each panelist’s ${T.m.talk} minutes</strong><ul style="margin:4px 0 0;padding-left:1.2rem">${panelParts(T.m.talk).map(([l, m]) => `<li>${l} <span class="hint">· about ${halves(m)} min</span></li>`).join('')}</ul>
         <span class="hint">Panelists don’t bring slides. The club shows one slide for each: their name, title, field, and a QR code to their LinkedIn if they agreed.</span></div>
@@ -6750,6 +6771,229 @@ function designSection(e){
 const START_KINDS = [['guest_speaker', 'Guest speaker', 'Starts from its guide, with a checklist for the officer in charge'], ['panel', 'Panel', 'Three or more guests. Starts from its guide'],
   ['workshop', 'Workshop', ''], ['social', 'Social', ''], ['career_fair', 'Career fair', ''], ['case_competition', 'Case competition', ''], ['excursion', 'Excursion', 'We’re taking members somewhere'],
   ['hosted', 'Hosted by someone else', 'We’re only posting it: no planning steps, check-in, or points']];
+/* ---------- Flyer maker: the standard WFA flyer, drawn in the browser from the event's details ---------- */
+// Five versions of one design (see "UVU design standards" on the guide). Sizes below are in design units; each is scaled up to its real pixels.
+const FLY = { G: '#185C33', GOLD: '#D2AC5F', WARM: '#F2F0EB', INK: '#1a1a1a', LABEL: '#4a4a4a', LINE: '#dddddd', HAZE: '#C4D6C1', LOGO_R: 530 / 465 };
+const FLY_SIZES = {
+  letter:  { name: '8.5 × 11 flyer', file: ['8.5x11', 'Flyer'], px: [2550, 3300], W: 612, pad: 48, top: 40, pre: 10, h1: 50, sub: 24, blurb: 12.5, cols: 3, nm: 11.5, ti: 8.5, fl: 6.5, lb: 8, vl: 16, nt: 10, qr: 104, logo: 98, h2: 22, rp: 10.5, ft: 34, ftF: 8.5, face: 74 },
+  half:    { name: '4 × 5.5 handout', file: ['4x5.5', 'Handout'], px: [1200, 1650], W: 440, pad: 30, top: 26, pre: 8.5, h1: 36, sub: 18, blurb: 11, cols: 2, nm: 11.5, ti: 8.5, fl: 6.5, lb: 7.5, vl: 14, nt: 9.5, qr: 84, logo: 70, h2: 18, rp: 9.5, ft: 24, ftF: 6.5, face: 52 },
+  tabloid: { name: '11 × 17 poster', file: ['11x17', 'Poster'], px: [3300, 5100], W: 612, pad: 48, top: 48, pre: 10.5, h1: 56, sub: 26, blurb: 13.5, cols: 3, nm: 12.5, ti: 9, fl: 7, lb: 9, vl: 19, nt: 11, qr: 136, logo: 120, h2: 28, rp: 12, ft: 38, ftF: 9, face: 92 },
+  screen:  { name: 'Campus screen, 2160 × 3840 (with QR code)', file: ['2160x3840', 'Campus Screen'], px: [2160, 3840], W: 540, pad: 40, top: 70, pre: 10, h1: 52, sub: 25, blurb: 13.5, cols: 2, nm: 14, ti: 10, fl: 7, lb: 9, vl: 18, nt: 11, qr: 132, logo: 88, h2: 21, rp: 10.5, ft: 0, ftF: 0, bottom: 50, face: 72 },
+  story:   { name: 'Instagram story, 2160 × 3840 (no QR code)', file: ['2160x3840', 'Instagram Story'], px: [2160, 3840], W: 540, pad: 40, top: 130, pre: 10, h1: 52, sub: 25, blurb: 13.5, cols: 2, nm: 14, ti: 10, fl: 7, lb: 9, vl: 18, nt: 11, qr: 0, logo: 104, h2: 21, rp: 10.5, ft: 0, ftF: 0, bottom: 110, face: 72, noQr: true }
+};
+const flyImg = {};   // headshots stay in this browser tab only: { personId: { img, x, y, z } }
+let flyLogo = null;
+function flyLoadLogo(){ return flyLogo || (flyLogo = new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = 'uvu-logo-square-green.png'; })); }
+function flyPeople(e){
+  const all = guidePeople(e.id), ok = all.filter(p => p.status === 'confirmed'), list = ok.length ? ok : all.filter(p => p.status !== 'declined');
+  if (list.length) return list.map(p => ({ id: p.id, name: gpName(p), title: p.title || '', field: p.field || '' }));
+  return (e.speakers || []).map((sp, i) => ({ id: 'sp' + i, name: sp.name || '', title: sp.title || '', field: sp.field || '' })).filter(p => p.name);
+}
+function flyDate(d){ return parseDay(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); }
+function flyTime(a, b){
+  const p = t => { const [h, m] = String(t || '0:0').split(':').map(Number); return { h: h % 12 || 12, m: m || 0, ap: h < 12 ? 'AM' : 'PM' }; }, f = t => t.h + (t.m ? ':' + String(t.m).padStart(2, '0') : '');
+  const s = p(a), e = p(b); return s.ap === e.ap ? `${f(s)}–${f(e)} ${e.ap}` : `${f(s)} ${s.ap}–${f(e)} ${e.ap}`;
+}
+// What's typed in the flyer maker (kept with the event's guide, so the next officer sees it too).
+function flyStart(e){
+  const f = guideOf(e.id).flyer || {}, parts = String(e.title || '').split(/:\s+/);
+  return { head: f.head != null ? f.head : parts[0], sub: f.sub != null ? f.sub : parts.slice(1).join(': '), blurb: f.blurb || '', note: f.note || '', bio: f.bio || '', heads: f.heads !== false, labels: { ...(f.labels || {}) } };
+}
+function flyData(e, f){
+  return { ...f, date: flyDate(e.date), time: flyTime(e.start, e.end), loc: e.loc && e.loc !== 'To be decided' && e.loc !== 'TBD' ? e.loc : 'Location to come', url: eventLink(e.id),
+    people: flyPeople(e).map(p => ({ ...p, title: f.labels[p.id] != null ? f.labels[p.id] : p.title })) };
+}
+// Draws one version onto a canvas. pxW is the canvas width in pixels (the full size when it's left out).
+async function flyDraw(cv, key, d, pxW, shr = 1){
+  // shr: when everything doesn't fit, the flyer is drawn again a little smaller (headline, photos, QR code, logo) until it does.
+  const c0 = FLY_SIZES[key], c = shr === 1 ? c0 : { ...c0, h1: c0.h1 * shr, sub: c0.sub * shr, face: c0.face * shr, qr: c0.qr * shr, logo: c0.logo * shr, top: c0.top * shr }, k = (pxW || c.px[0]) / c.W, W = c.W, H = c.W * c.px[1] / c.px[0], pad = c.pad, inner = W - pad * 2, x = cv.getContext('2d'), sc = c.h1 / 50;
+  try { await Promise.all([400, 600, 700, 800].map(w => document.fonts.load(`${w} 20px Montserrat`))); } catch (_) {}
+  const logo = await flyLoadLogo();
+  let qrLibNow = null; if (!c.noQr){ try { qrLibNow = await loadQr(); } catch (_) {} }
+  cv.width = Math.round(W * k); cv.height = Math.round(H * k); x.setTransform(k, 0, 0, k, 0, 0); x.textBaseline = 'top';
+  const font = (w, s) => { x.font = `${w} ${s}px Montserrat, Arial, sans-serif`; }, track = v => { try { x.letterSpacing = v + 'px'; } catch (_) {} };
+  const wrap = (t, maxW) => { const out = []; String(t || '').split('\n').forEach(par => { let line = ''; par.split(/\s+/).filter(Boolean).forEach(w => { const tryL = line ? line + ' ' + w : w; if (line && x.measureText(tryL).width > maxW){ out.push(line); line = w; } else line = tryL; }); if (line) out.push(line); }); return out; };
+  const put = (lines, xx, yy, lh, align) => { x.textAlign = align || 'left'; lines.forEach((l, i) => x.fillText(l, xx, yy + i * lh)); x.textAlign = 'left'; return yy + lines.length * lh; };
+  // A headshot in a gold ring; initials on a plain disc when there's no photo yet.
+  const photo = (p, cx, cy, r) => {
+    const ph = flyImg[p.id];
+    x.save(); x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.closePath(); x.fillStyle = FLY.HAZE; x.fill(); x.clip();
+    if (ph && ph.img){ const iw = ph.img.naturalWidth, ih = ph.img.naturalHeight, s = Math.max(2 * r / iw, 2 * r / ih) * (ph.z || 1), dw = iw * s, dh = ih * s;
+      x.drawImage(ph.img, cx - r - (dw - 2 * r) * ph.x, cy - r - (dh - 2 * r) * ph.y, dw, dh); }
+    else { font(700, r * .7); x.fillStyle = FLY.G; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(p.name.split(/\s+/).map(w => w[0] || '').slice(0, 2).join('').toUpperCase(), cx, cy + r * .04); x.textAlign = 'left'; x.textBaseline = 'top'; }
+    x.restore(); x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.lineWidth = 2 * sc; x.strokeStyle = FLY.GOLD; x.stroke();
+  };
+
+  // ----- measure the top block -----
+  let h1 = c.h1, hl; const maxLines = c.cols === 2 ? 3 : 2;
+  for (;;){ font(800, h1); track(-h1 * .01); hl = wrap(d.head, inner); if (hl.length <= maxLines || h1 <= c.h1 * .6) break; h1 -= 1; }
+  track(0); font(700, c.sub); const sl = wrap(d.sub, inner); font(400, c.blurb); const bl = wrap(d.blurb, inner);
+  let y = c.top; const yPre = y; y += c.pre + c.h1 * .22; const yH = y; y += hl.length * h1 * 1.04;
+  let ySub = y, yBl = y; if (sl.length){ y += c.h1 * .2; ySub = y; y += sl.length * c.sub * 1.15; } if (bl.length){ y += c.h1 * .22; yBl = y; y += bl.length * c.blurb * 1.45; }
+  y += c.h1 * .55;
+  const ppl = d.people, n = ppl.length, mode = !n ? 'none' : n <= 2 ? 'cards' : d.heads ? 'faces' : 'list';
+
+  // ----- cards (one or two guests): measured first, because the green ends halfway down the first card -----
+  let cards = null;
+  if (mode === 'cards'){
+    const one = n === 1, side = n === 2 && c.cols === 3, cw = side ? (inner - 14 * sc) / 2 : inner, cp = (one ? 26 : 16) * sc, ph = d.heads ? (one ? 108 : 62) * sc : 0, tx = cp + (ph ? ph + (one ? 24 : 14) * sc : 0), tw = cw - tx - cp;
+    const nmS = (one ? 24 : 15) * sc, tiS = (one ? 13 : 10.5) * sc, bioS = 10.5 * sc;
+    const rows = ppl.map(p => { font(700, nmS); const nl = wrap(p.name, tw); font(400, tiS); const tl = wrap(p.title, tw); font(400, bioS); const bioL = one ? wrap(d.bio, tw) : [];
+      return { p, nl, tl, bioL, h: nl.length * nmS * 1.15 + (tl.length ? 3 * sc + tl.length * tiS * 1.3 : 0) + (bioL.length ? 8 * sc + bioL.length * bioS * 1.45 : 0) }; });
+    const ch = Math.max(ph, ...rows.map(r => r.h)) + (one ? 42 : 30) * sc;
+    cards = { side, cw, cp, ph, tx, nmS, tiS, bioS, rows, ch };
+  }
+  const greenH = mode === 'cards' ? y + cards.ch / 2 : y;
+
+  // ----- background and the top block -----
+  x.fillStyle = '#ffffff'; x.fillRect(0, 0, W, H); x.fillStyle = FLY.G; x.fillRect(0, 0, W, greenH);
+  font(600, c.pre); track(c.pre * .26); x.fillStyle = FLY.GOLD; x.fillText('WOLVERINE FINANCE ASSOCIATION PRESENTS', pad, yPre);
+  font(800, h1); track(-h1 * .01); x.fillStyle = '#ffffff'; put(hl, pad, yH, h1 * 1.04); track(0);
+  font(700, c.sub); x.fillStyle = FLY.GOLD; put(sl, pad, ySub, c.sub * 1.15);
+  font(400, c.blurb); x.fillStyle = '#ffffff'; put(bl, pad, yBl, c.blurb * 1.45);
+
+  // ----- the guests -----
+  if (mode === 'cards'){
+    const { side, cw, cp, ph, tx, nmS, tiS, bioS, rows, ch } = cards;
+    rows.forEach((r, i) => { const cx = pad + (side ? i * (cw + 14 * sc) : 0), cy = y + (side ? 0 : i * (ch + 12 * sc));
+      x.save(); x.shadowColor = 'rgba(0,0,0,.14)'; x.shadowBlur = 12 * k; x.shadowOffsetY = 4 * k; x.fillStyle = '#ffffff'; x.fillRect(cx, cy, cw, ch); x.restore();
+      x.fillStyle = FLY.GOLD; x.fillRect(cx, cy, cw, 3 * sc);
+      if (ph) photo(r.p, cx + cp + ph / 2, cy + ch / 2, ph / 2);
+      let ty = cy + (ch - r.h) / 2 + 1.5 * sc;
+      font(700, nmS); x.fillStyle = FLY.G; ty = put(r.nl, cx + tx, ty, nmS * 1.15);
+      if (r.tl.length){ font(400, tiS); x.fillStyle = FLY.INK; ty = put(r.tl, cx + tx, ty + 3 * sc, tiS * 1.3); }
+      if (r.bioL.length){ font(400, bioS); x.fillStyle = FLY.LABEL; put(r.bioL, cx + tx, ty + 8 * sc, bioS * 1.45); } });
+    y += (side ? ch : n * ch + (n - 1) * 12 * sc);
+  } else if (mode === 'faces'){
+    y += c.h1 * .5;
+    const cols = n === 4 ? (c.cols === 3 ? 4 : 2) : n <= 6 ? 3 : 4, D = c.face * (cols === 4 ? .8 : cols === 2 ? 1.15 : 1), cellW = inner / cols, nmS = c.nm * 1.15 * (cols === 4 ? .9 : 1), flS = c.fl * 1.1;
+    for (let r0 = 0; r0 < n; r0 += cols){ const row = ppl.slice(r0, r0 + cols), off = (inner - row.length * cellW) / 2;
+      const meas = row.map(p => { font(700, nmS); return wrap(p.name, cellW - 8 * sc); }), flL = row.map(p => { font(600, flS); track(flS * .14); const l = wrap((p.field || '').toUpperCase(), cellW - 8 * sc); track(0); return l; });
+      const nameH = Math.max(...meas.map(l => l.length)) * nmS * 1.15, flH = Math.max(...flL.map(l => l.length)) * flS * 1.35;
+      row.forEach((p, i) => { const cx = pad + off + i * cellW + cellW / 2; photo(p, cx, y + D / 2, D / 2);
+        font(700, nmS); x.fillStyle = FLY.G; put(meas[i], cx, y + D + c.nm * .65, nmS * 1.15, 'center');
+        font(600, flS); track(flS * .14); x.fillStyle = FLY.LABEL; put(flL[i], cx, y + D + c.nm * .65 + nameH + 3 * sc, flS * 1.35, 'center'); track(0); });
+      y += D + c.nm * .65 + nameH + 3 * sc + flH + (r0 + cols < n ? c.nm * 1.3 : 0); }
+  } else if (mode === 'list'){
+    y += c.h1 * .5;
+    font(600, c.lb * 1.1); track(c.lb * .2); x.fillStyle = FLY.LABEL; x.fillText(n > 2 ? 'THE PANEL' : 'WITH', pad, y); track(0); y += c.lb * 1.1 + c.nm;
+    const cols = n === 4 ? 2 : c.cols === 3 ? 3 : 2, gapX = c.nm * 1.2, cellW = (inner - gapX * (cols - 1)) / cols, tw = cellW - c.nm - 3 * sc, flS = c.fl * 1.15, nmS = c.nm * 1.45, tiS = c.ti * 1.25;
+    for (let r0 = 0; r0 < n; r0 += cols){ const row = ppl.slice(r0, r0 + cols);
+      const m = row.map(p => { font(600, flS); track(flS * .14); const fl = wrap((p.field || '').toUpperCase(), tw); track(0); font(700, nmS); const nl = wrap(p.name, tw); font(400, tiS); const tl = wrap(p.title, tw);
+        return { p, fl, nl, tl, h: fl.length * flS * 1.35 + nl.length * nmS * 1.15 + (tl.length ? 2 * sc + tl.length * tiS * 1.3 : 0) }; });
+      const rh = Math.max(...m.map(v => v.h));
+      m.forEach((v, i) => { const cx = pad + i * (cellW + gapX); x.fillStyle = FLY.GOLD; x.fillRect(cx, y, 3 * sc, rh); let ty = y;
+        font(600, flS); track(flS * .14); x.fillStyle = FLY.LABEL; ty = put(v.fl, cx + c.nm, ty, flS * 1.35); track(0);
+        font(700, nmS); x.fillStyle = FLY.G; ty = put(v.nl, cx + c.nm, ty, nmS * 1.15);
+        if (v.tl.length){ font(400, tiS); x.fillStyle = FLY.INK; put(v.tl, cx + c.nm, ty + 2 * sc, tiS * 1.3); } });
+      y += rh + (r0 + cols < n ? c.nm * 1.7 : 0); }
+  }
+
+  // ----- date, time, place; then the RSVP row; spare room is shared out between them -----
+  const dp = c.vl * .85, fr = [1.1, 1, 1.2], frT = 3.3; font(400, c.nt); const noteL = wrap(d.note, inner * fr[2] / frT - dp);
+  const detH = dp * 2 + c.lb + 4 * sc + c.vl * 1.15 + (noteL.length ? 3 * sc + noteL.length * c.nt * 1.3 : 0), rsH = Math.max(c.qr, c.logo);
+  const floor = H - (c.ft || 0) - (c.bottom || 0), gap = Math.max(8 * sc, (floor - y - detH - rsH) / 3), yDet = y + gap, yRs = yDet + detH + gap;
+  x.fillStyle = FLY.LINE; x.fillRect(pad, yDet, inner, 1); x.fillRect(pad, yDet + detH, inner, 1);
+  let cx = pad; [['DATE', d.date], ['TIME', d.time], ['LOCATION', d.loc]].forEach(([lab, val], i) => { const cw = inner * fr[i] / frT, tx = cx + (i ? dp : 0), tw = cw - (i ? dp : 0) - 4 * sc;
+    if (i){ x.fillStyle = FLY.LINE; x.fillRect(cx, yDet, 1, detH); }
+    font(600, c.lb); track(c.lb * .18); x.fillStyle = FLY.LABEL; x.fillText(lab, tx, yDet + dp); track(0);
+    let vs = c.vl; for (;;){ font(800, vs); if (x.measureText(val).width <= tw || vs <= c.vl * .55) break; vs -= .5; }
+    x.fillStyle = FLY.G; x.fillText(val, tx, yDet + dp + c.lb + 4 * sc + (c.vl - vs) * .5);
+    if (i === 2 && noteL.length){ font(400, c.nt); x.fillStyle = FLY.INK; put(noteL, tx, yDet + dp + c.lb + 4 * sc + c.vl * 1.15 + 3 * sc, c.nt * 1.3); }
+    cx += cw; });
+  const lw = c.logo * FLY.LOGO_R; if (logo) x.drawImage(logo, W - pad - lw, yRs + (rsH - c.logo) / 2, lw, c.logo);
+  if (c.noQr){ font(400, c.rp); x.fillStyle = FLY.INK; x.fillText('Open to UVU students of any major.', pad, yRs + rsH - c.rp * 1.2); }
+  else {
+    const qx = pad, qy = yRs + (rsH - c.qr) / 2;
+    if (qrLibNow){ const qr = qrLibNow(0, 'M'); qr.addData(d.url); qr.make(); const m = qr.getModuleCount(), cell = c.qr / m; x.fillStyle = FLY.G;
+      for (let r = 0; r < m; r++) for (let q = 0; q < m; q++) if (qr.isDark(r, q)) x.fillRect(qx + q * cell, qy + r * cell, cell + .03, cell + .03); }
+    else { x.strokeStyle = FLY.LINE; x.lineWidth = 1; x.strokeRect(qx, qy, c.qr, c.qr); font(400, c.rp); x.fillStyle = FLY.LABEL; x.textAlign = 'center'; x.fillText('QR code', qx + c.qr / 2, qy + c.qr / 2 - c.rp / 2); x.textAlign = 'left'; }
+    const tx = pad + c.qr + c.h2, bh = c.h2 * 1.15 + c.rp * 1.75 * 2; let ty = yRs + (rsH - bh) / 2;
+    font(800, c.h2); x.fillStyle = FLY.G; x.fillText('Scan to RSVP', tx, ty); ty += c.h2 * 1.15 + c.rp * .45;
+    font(400, c.rp); x.fillStyle = FLY.INK; const ol = wrap('Open to UVU students of any major.', W - pad - lw - tx - 8 * sc); ty = put(ol, tx, ty, c.rp * 1.4) + c.rp * .35;
+    font(700, c.rp); x.fillStyle = FLY.G; x.fillText('wolverinefinanceassociation.org', tx, ty);
+  }
+  if (c.ft){ x.fillStyle = FLY.WARM; x.fillRect(0, H - c.ft, W, c.ft); font(600, c.ftF); track(c.ftF * .24); x.fillStyle = FLY.G; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText('WOLVERINE FINANCE ASSOCIATION · WOODBURY SCHOOL OF BUSINESS', W / 2, H - c.ft / 2); x.textAlign = 'left'; x.textBaseline = 'top'; track(0); }
+  const fits = floor - y - detH - rsH >= 18 * sc;
+  if (!fits && shr > .7) return flyDraw(cv, key, d, pxW, shr - .06);
+  return { fits };
+}
+function flyerModal(id){
+  const e = evById(id); if (!e) return;
+  if (!ui.fly || ui.fly.id !== id) ui.fly = { id, size: 'letter', f: flyStart(e) };
+  const f = ui.fly.f, ppl = flyPeople(e), one = ppl.length === 1;
+  const person = p => { const ph = flyImg[p.id], lab = f.labels[p.id] != null ? f.labels[p.id] : p.title;
+    return `<div class="panel stack" style="gap:6px;padding:10px 12px"><strong>${esc(p.name)}</strong>
+      <label style="font-weight:400">Line under the name<input class="fly-label" data-pid="${esc(p.id)}" maxlength="60" value="${esc(lab)}" placeholder="Fintech co-founder"></label>
+      <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><label class="btn ghost small" style="cursor:pointer;margin:0">${ph ? 'Change the headshot' : 'Add a headshot'}<input type="file" accept="image/*" class="fly-photo" data-pid="${esc(p.id)}" hidden></label>${ph ? `<button type="button" class="btn ghost small" data-act="fly-rm" data-pid="${esc(p.id)}">Remove</button>` : '<span class="hint">No headshot yet</span>'}</div>
+      ${ph ? `<div class="row" style="gap:10px;flex-wrap:wrap">${[['z', 'Zoom', 1, 3, ph.z], ['x', 'Left–right', 0, 1, ph.x], ['y', 'Up–down', 0, 1, ph.y]].map(([k, l, a, b, v]) => `<label style="flex:1 1 7rem;font-weight:400">${l}<input type="range" class="fly-pos" data-pid="${esc(p.id)}" data-k="${k}" min="${a}" max="${b}" step="0.01" value="${v}"></label>`).join('')}</div>` : ''}</div>`; };
+  showModal(`<div class="modal-in stack" style="gap:14px"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3 style="margin:0">Flyer maker</h3>
+      <div class="hint">${esc(e.title)} · the date, time, place, guests, and QR code come from the event. Headshots stay on this device; they aren’t uploaded or saved.</div></div>
+    <div class="fly-grid">
+      <div class="stack" style="gap:10px">
+        <label>Headline<input id="fly-head" class="fly-t" data-k="head" maxlength="80" value="${esc(f.head)}"></label>
+        <label>Gold line under it <span class="hint">Optional</span><input id="fly-sub" class="fly-t" data-k="sub" maxlength="90" value="${esc(f.sub)}" placeholder="Fintech entrepreneurship & corporate finance"></label>
+        <label>What it’s about <span class="hint">One or two sentences</span><textarea class="fly-t" data-k="blurb" rows="3" maxlength="260">${esc(f.blurb)}</textarea></label>
+        <label>Small note under the location <span class="hint">Optional</span><input class="fly-t" data-k="note" maxlength="40" value="${esc(f.note)}" placeholder="Lunch provided"></label>
+        ${one ? `<label>Short bio <span class="hint">Optional. Two lines at most</span><textarea class="fly-t" data-k="bio" rows="2" maxlength="220">${esc(f.bio)}</textarea></label>` : ''}
+        ${ppl.length ? `<label class="check"><input type="checkbox" id="fly-heads" ${f.heads ? 'checked' : ''}> <span>Show headshots <span class="hint">Turn this off if anyone’s is missing; the flyer switches to a list of names.</span></span></label>` : `<div class="notice"><span>No guests are on this event’s list yet, so the flyer has none. Add them on the guide and they show up here.</span></div>`}
+        ${ppl.map(person).join('')}
+      </div>
+      <div class="stack" style="gap:8px;position:sticky;top:0">
+        <label>Version<select id="fly-size">${Object.entries(FLY_SIZES).map(([k, v]) => `<option value="${k}" ${ui.fly.size === k ? 'selected' : ''}>${v.name}</option>`).join('')}</select></label>
+        <canvas id="fly-cv" style="width:100%;height:auto;border:1px solid var(--line,#ddd);background:#fff"></canvas>
+        <div class="hint" id="fly-warn"></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" data-act="fly-dl">Download this version</button><button class="btn ghost" data-act="fly-all">Download all five</button></div>
+        <span class="hint">Files are named with the size first, the way Todd and Emmy expect them. Run the pre-send checks on the guide and get Emmy’s approval before anything is printed or posted.</span>
+      </div>
+    </div></div>`, null, 'fly');
+  flyRefresh();
+}
+let flyBusy = false, flyAgain = false;
+async function flyRefresh(){
+  const cv = document.getElementById('fly-cv'), e = ui.fly && evById(ui.fly.id); if (!cv || !e) return;
+  if (flyBusy){ flyAgain = true; return; } flyBusy = true;
+  try {
+    const d = flyData(e, ui.fly.f), r = await flyDraw(cv, ui.fly.size, d, 1100), warn = document.getElementById('fly-warn'), miss = d.heads ? d.people.filter(p => !flyImg[p.id]).length : 0;
+    if (warn) warn.innerHTML = [miss ? `<strong>${miss} headshot${miss === 1 ? ' is' : 's are'} missing.</strong> Add ${miss === 1 ? 'it' : 'them'}, or turn off “Show headshots”.` : '', r.fits ? '' : '<strong>It’s too full for this size.</strong> Shorten the headline or the sentences.', !d.blurb ? 'Add a sentence about what the event covers.' : ''].filter(Boolean).join(' ');
+  } finally { flyBusy = false; if (flyAgain){ flyAgain = false; flyRefresh(); } }
+}
+function flyFileName(e, key){ const c = FLY_SIZES[key], t = String(ui.fly.f.head || e.title).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim(); return `${c.file[0]} - ${t} - ${c.file[1]}.png`; }
+async function flyDownload(keys){
+  const e = evById(ui.fly.id); if (!e) return; const d = flyData(e, ui.fly.f);
+  if (d.heads && d.people.some(p => !flyImg[p.id])) return toast('Add the missing headshots, or turn off “Show headshots”, before downloading.');
+  for (const key of keys){ const cv = document.createElement('canvas'); await flyDraw(cv, key, d);
+    const blob = await new Promise(res => cv.toBlob(res, 'image/png')); if (!blob){ toast('That version couldn’t be made. Try a different browser.'); return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = flyFileName(e, key); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    await new Promise(res => setTimeout(res, 400)); }
+  toast(keys.length > 1 ? 'All five versions downloaded' : 'Downloaded');
+}
+document.addEventListener('input', ev => { const t = ev.target; if (!ui.fly || !t.classList) return;
+  if (t.classList.contains('fly-t')){ ui.fly.f[t.dataset.k] = t.value; flyRefresh(); }
+  if (t.classList.contains('fly-label')){ ui.fly.f.labels[t.dataset.pid] = t.value; flyRefresh(); }
+  if (t.classList.contains('fly-pos') && flyImg[t.dataset.pid]){ flyImg[t.dataset.pid][t.dataset.k] = +t.value; flyRefresh(); } });
+document.addEventListener('change', ev => { const t = ev.target; if (!ui.fly || !t.classList) return;
+  if (t.id === 'fly-size'){ ui.fly.size = t.value; flyRefresh(); return; }
+  if (t.id === 'fly-heads'){ ui.fly.f.heads = t.checked; saveGuideQuiet(ui.fly.id, { flyer: ui.fly.f }); flyRefresh(); return; }
+  if (t.classList.contains('fly-t') || t.classList.contains('fly-label')){ saveGuideQuiet(ui.fly.id, { flyer: ui.fly.f }); return; }
+  if (t.classList.contains('fly-photo')){ const file = t.files && t.files[0], pid = t.dataset.pid; if (!file) return;
+    const img = new Image(); img.onload = () => { flyImg[pid] = { img, x: .5, y: .3, z: 1 }; flyerModal(ui.fly.id); }; img.onerror = () => toast('That file isn’t a picture the browser can read. Try a JPG or PNG.'); img.src = URL.createObjectURL(file); } });
+// The event's own details, edited from the guide so nobody has to leave the checklist.
+function guideEditModal(id){
+  const e = evById(id); if (!e) return;
+  const locked = !e.draft && !canPublish();
+  showModal(`<div class="modal-in stack" style="gap:14px"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3 style="margin:0">Event details</h3><div class="hint">${e.draft ? 'This is a draft only officers can see.' : 'This event is posted, so changes show to members right away.'}</div></div>
+    ${locked ? `<div class="notice"><span>This event is posted. Changes to a posted event need a president’s approval, so they’re made in the event editor.</span></div><div class="row" style="gap:8px"><button class="btn" data-act="edit-event" data-id="${e.id}">Open the event editor</button><button class="btn ghost" data-act="close">Cancel</button></div>` : `
+    <label>Title<input id="ge-title" maxlength="120" value="${esc(e.title)}"></label>
+    <div class="row" style="gap:10px;flex-wrap:wrap"><label style="flex:1 1 10rem">Date<input id="ge-date" type="date" value="${esc(e.date)}"></label><label style="flex:1 1 8rem">Start time<input id="ge-start" type="time" value="${esc(String(e.start || '').slice(0, 5))}"></label>
+      <label style="flex:1 1 8rem">Length (minutes)<input id="ge-len" type="number" min="15" max="480" step="5" inputmode="numeric" value="${evDur(e) || (e.cat === 'panel' ? PANEL_LEN : 60)}"></label></div>
+    <div class="hint" style="margin-top:-6px">The length is what gets posted. Networking afterward (up to ${GM_NETWORK} minutes) is extra.${e.cat === 'panel' ? ' The panel schedule resizes to fit it.' : ''}</div>
+    <div class="row" style="gap:10px;flex-wrap:wrap"><label style="flex:2 1 14rem">Location<input id="ge-loc" maxlength="200" value="${esc(e.loc)}" placeholder="Building and room"></label><label style="flex:1 1 8rem">RSVP maximum<input id="ge-cap" type="number" min="0" inputmode="numeric" value="${e.cap || 0}"><span class="hint">0 means no limit</span></label></div>
+    <label>Description <span class="hint">What members read on the event page.</span><textarea id="ge-desc" style="min-height:130px" maxlength="4000">${esc(e.desc || '')}</textarea></label>
+    <div class="err" id="ge-err"></div>
+    <div class="row" style="gap:8px"><button class="btn" data-act="ge-save" data-id="${e.id}">Save</button><button class="btn ghost" data-act="close">Cancel</button></div>`}</div>`);
+}
 function startGuide(c, pre){
   ui.officerTab = 'guide'; ui.guideType = c; ui.guideEv = ''; ui.editEvent = null; ui.evNewCat = null;
   if (route() !== 'officer') location.hash = 'officer/guide'; else { history.pushState(null, '', ui._hash = '#officer/guide'); render(); }
@@ -6782,28 +7026,32 @@ function guideBody(){
   const days = e ? Math.round((parseDay(e.date) - parseDay(today)) / 864e5) : 0;
   // Each step's checklist tasks. With a checklist, "You are here" is the first step with something left to do; without one, it goes by the date.
   const tasksOf = st => tasks.filter(t => (st[6] || []).some(([title]) => title === t.title));
+  // A step is done when its checklist tasks are all ticked, or, if it has none, when it was marked done by hand.
+  const marked = g.done || {}, finOf = (st, i) => { const l = tasksOf(st); return l.length ? l.every(t => t.done) : !!marked[i]; };
   let here = -1;
-  if (e){ if (tasks.length) here = STEPS.findIndex(st => tasksOf(st).some(t => !t.done)); else STEPS.forEach(([d], i) => { if (shiftDay(e.date, d) <= today) here = i; }); }
+  if (e){ if (tasks.length || Object.keys(marked).length) here = STEPS.findIndex((st, i) => !finOf(st, i)); else STEPS.forEach(([d], i) => { if (shiftDay(e.date, d) <= today) here = i; }); }
   const roles = usualRoles(), mine = e ? rolesOf(e.id) : [], spots = mine.reduce((a, r) => a + (+r.qty || 1), 0), filled = mine.reduce((a, r) => a + (r.officers || []).filter(Boolean).length, 0);
   const guides = mine.filter(r => /guide/i.test(r.name)).reduce((a, r) => a + (r.officers || []).filter(Boolean).length, 0);
   const tick = e ? packed(e.id) : [];
   const sentTo = key => Object.keys((g.sent || {})[key] || {}).filter(pid => people.some(p => p.id === pid)).length;
-  const step = (st, i) => { const [d, when, what, text, mail, extra] = st, l = tasksOf(st), fin = l.length > 0 && l.every(t => t.done);
+  const step = (st, i) => { const [d, when, what, text, mail, extra] = st, l = tasksOf(st), fin = finOf(st, i);
     return `<div class="list-row" style="align-items:flex-start;gap:14px;justify-content:flex-start${fin ? ';opacity:.7' : ''}">
       <div style="flex:0 0 9.5rem;max-width:36%"><strong>${when}</strong>${e ? `<div class="hint">${d > 0 ? 'From ' : ''}${fmtDay(shiftDay(e.date, d))}</div>` : ''}${fin ? '<div><span class="tag ok">Done</span></div>' : i === here ? '<div><span class="tag ok">You are here</span></div>' : ''}</div>
       <div class="stack" style="flex:1;min-width:0;gap:6px"><div><div class="ev-title">${what}</div><div class="ev-sub">${text}</div></div>
         ${extra === 'food' ? `<div class="panel stack" style="gap:8px;padding:10px 12px"><div class="row" style="gap:10px;flex-wrap:wrap"><label style="flex:1 1 8rem">RSVPs now<input id="gf-r" type="number" min="0" inputmode="numeric" value="${e ? rsvpCount(e.id) : 40}"></label><label style="flex:1 1 8rem">RSVP maximum<input id="gf-cap" type="number" min="0" inputmode="numeric" value="${e ? (e.cap || '') : 80}"></label></div>
-          <div id="gf-out">${guideFood(e ? rsvpCount(e.id) : 40, e ? e.cap : 80)}</div>${e ? `<div><button class="btn ghost small" data-act="edit-event" data-id="${e.id}">Change the RSVP maximum</button></div>` : ''}</div>` : ''}
+          <div id="gf-out">${guideFood(e ? rsvpCount(e.id) : 40, e ? e.cap : 80)}</div>${e ? `<div><button class="btn ghost small" data-act="guide-edit" data-id="${e.id}">Change the RSVP maximum</button></div>` : ''}</div>` : ''}
         ${extra === 'post' && e ? (() => { const rq = rqOf(e.id), st = rq ? rq.status : '', need = isPanel ? PANEL_MIN : 1;
           if (!e.draft) return '<div><span class="tag ok">Posted</span></div>';
           if (st === 'signoff') return '<div class="hint"><strong>Waiting for a president to approve it.</strong> It’s posted as soon as one does.</div>';
           const back = st === 'returned' && rq.note ? `<div class="notice"><span><strong>A president asked for changes:</strong> ${esc(rq.note)}</span></div>` : '';
           if (n < need) return back + `<div class="hint"><strong>Locked.</strong> ${isPanel ? `It can go to a president once three panelists are marked confirmed (${n} so far).` : 'It can go to a president once the speaker is marked confirmed in the list above.'}</div>`;
-          return back + `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" data-act="signoff-send" data-id="${e.id}">${back ? 'Send it to a president again' : 'Send to a president'}</button><button class="btn ghost small" data-act="edit-event" data-id="${e.id}">Edit the event</button></div>`; })() : ''}
+          return back + `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" data-act="signoff-send" data-id="${e.id}">${back ? 'Send it to a president again' : 'Send to a president'}</button><button class="btn ghost small" data-act="guide-edit" data-id="${e.id}">Edit the details and description</button></div>`; })() : ''}
+        ${extra === 'flyer' ? (e ? `<div><button class="btn ghost small" data-act="fly-open" data-id="${e.id}">Make the flyers</button> <span class="hint">All five sizes in the standard design.</span></div>` : '<span class="hint">Pick an event above to make its flyers.</span>') : ''}
         ${extra === 'count' && e ? `<div class="hint"><strong>${n} panelist${n === 1 ? '' : 's'} confirmed</strong>, aiming for ${target}. ${n < PANEL_MIN ? 'That’s fewer than three.' : n < target ? 'Enough to go ahead.' : 'You’ve reached your number.'}</div>` : ''}
         ${extra === 'roles' && e ? `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost small" data-act="open-event" data-id="${e.id}">${mine.length ? 'See the roles' : 'Assign roles'}</button><span class="hint">${mine.length ? `${filled} of ${spots} spots filled` : 'No roles set up for this event yet.'}${isPanel && mine.length && guides < 2 ? ` <strong>${guides ? 'The second guide isn’t assigned yet.' : 'No guides are assigned yet. A panel needs two.'}</strong>` : ''}</span></div>` : ''}
         ${mail ? (e ? `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost small" data-act="guest-mail" data-id="${e.id}" data-tpl="${mail}">${isPanel ? 'Write these emails' : 'Write this email'}</button>${sentTo(mail) ? `<span class="hint">Sent to ${sentTo(mail)} so far</span>` : ''}</div>` : '<span class="hint">Pick an event above to write this email.</span>') : ''}
         ${l.length ? `<div class="stack" style="gap:4px">${l.map(t => `<label style="display:flex;flex-direction:row;gap:10px;align-items:flex-start;font-weight:400"><input type="checkbox" class="guide-task" data-id="${t.id}" ${t.done ? 'checked' : ''} style="width:auto;flex:none;margin-top:4px"><span${t.done ? ' style="text-decoration:line-through"' : ''}>${esc(t.title)}${t.who && t.who !== runner ? ` <span class="hint">· ${esc(userName(t.who))}</span>` : ''}</span></label>`).join('')}</div>` : ''}
+        ${e ? `<div><button class="btn ${fin ? 'ghost ' : ''}small" data-act="step-done" data-id="${e.id}" data-i="${i}" data-on="${fin ? 0 : 1}">${fin ? 'Mark as not done' : 'Mark as done'}</button></div>` : ''}
       </div></div>`; };
   return `<div class="stack" style="gap:18px">
     <p class="muted" style="margin:0">How the WFA runs a ${who} event: what to send and when, who does what, and what to bring. Pick an event and the dates, numbers, and emails fill in for it.</p>
@@ -6814,7 +7062,7 @@ function guideBody(){
     ${e ? `<section class="panel stack" style="gap:8px">
       <div><h3 style="margin:0">${esc(e.title)} ${e.draft ? '<span class="tag">Draft</span>' : ''}</h3>
         <div class="ev-sub">${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc) || 'No location yet'} · ${days === 0 ? 'Today' : days > 0 ? `In ${days} day${days === 1 ? '' : 's'}` : `${-days} day${days === -1 ? '' : 's'} ago`}${e.draft ? '' : ` · ${rsvpCount(e.id)} RSVP${rsvpCount(e.id) === 1 ? '' : 's'}${e.cap ? ' of ' + e.cap : ''}`}</div></div>
-      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn ghost small" data-act="open-event" data-id="${e.id}">Open the event</button><button class="btn ghost small" data-act="guest-mail" data-id="${e.id}">${isPanel ? 'Panelist emails' : 'Guest emails'}</button>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn small" data-act="guide-edit" data-id="${e.id}">Edit details</button>${e.draft ? '' : `<a class="btn ghost small" href="#event/${e.id}">See the event page</a>`}<button class="btn ghost small" data-act="guest-mail" data-id="${e.id}">${isPanel ? 'Panelist emails' : 'Guest emails'}</button><button class="btn ghost small" data-act="fly-open" data-id="${e.id}">Flyer maker</button>
         ${tasks.length ? `<button class="btn ghost small" data-act="guide-plan" data-id="${e.id}">Checklist: ${done} of ${tasks.length} done</button>` : ''}</div>
       ${tasks.length ? `<label style="max-width:22rem">Who’s running this event<select id="guide-runner-change" data-ev="${e.id}">${staff.map(x => `<option value="${esc(x)}" ${x === runner ? 'selected' : ''}>${esc(userName(x))}</option>`).join('')}</select>
           <span class="hint">They get a reminder the day before each step on the checklist is due. Changing this hands them every unfinished step.</span></label>`
@@ -9649,6 +9897,29 @@ document.addEventListener('click', async ev => {
     case 'ar-rm': { const r = t.closest('.ar-row'), w = document.getElementById('ar-guests'); if (w.children.length > 1) r.remove(); else r.querySelectorAll('input').forEach(i => i.value = ''); break; }
     case 'gm-go': guestMailGo(id); break;
     case 'gp-done': closeModal(); render(); break;
+    case 'guide-edit': guideEditModal(id); break;
+    case 'fly-open': flyerModal(id); break;
+    case 'fly-rm': delete flyImg[t.dataset.pid]; flyerModal(ui.fly.id); break;
+    case 'fly-dl': await flyDownload([ui.fly.size]); break;
+    case 'fly-all': await flyDownload(Object.keys(FLY_SIZES)); break;
+    case 'ge-save': { const ev = evById(id), val = k => String((document.getElementById(k) || {}).value || '').trim(), errEl = document.getElementById('ge-err'); if (!ev) break;
+      const title = val('ge-title'), date = val('ge-date'), start = val('ge-start'), loc = val('ge-loc') || 'To be decided', len = Math.max(15, Math.min(480, Math.round(+val('ge-len')) || 60));
+      if (!title){ errEl.textContent = 'The event needs a title.'; break; }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)){ errEl.textContent = 'Pick a date.'; break; }
+      if (!/^\d{2}:\d{2}/.test(start)){ errEl.textContent = 'Pick a start time.'; break; }
+      const [h, m] = start.split(':').map(Number), endMin = Math.min(23 * 60 + 59, h * 60 + m + len), end = String(Math.floor(endMin / 60)).padStart(2, '0') + ':' + String(endMin % 60).padStart(2, '0'), old = ev.date;
+      const cap = Math.max(0, parseInt(val('ge-cap')) || 0), descr = val('ge-desc');
+      closeModal();
+      const ok = await act(async () => { must(await sb.from('events').update({ title, date, start_time: start.slice(0, 5), end_time: end, loc, cap, descr }).eq('id', id));
+        await logChange('Edited the details of “' + title + '”'); }, 'Event details saved');
+      const now = evById(id); if (ok && now && now.date !== old) planDateMoved(now, old);
+      break; }
+    case 'step-done': { const ev = evById(id), i = +t.dataset.i, on = t.dataset.on === '1'; if (!ev) break;
+      const st = (ev.cat === 'panel' ? PANEL_STEPS : GUIDE_STEPS)[i]; if (!st) break;
+      const l = db.tasks.filter(x => x.eventId === id && (st[6] || []).some(([title]) => title === x.title)), ids = l.filter(x => !!x.done !== on).map(x => x.id);
+      if (l.length){ if (ids.length) await act(async () => { must(await sb.from('tasks').update({ done: on }).in('id', ids)); await logChange((on ? 'Completed' : 'Reopened') + ' the step “' + st[2] + '” for ' + ev.title); }, on ? 'Step marked done' : 'Step reopened'); }
+      else { const done = { ...(guideOf(id).done || {}) }; if (on) done[i] = todayIso(); else delete done[i]; await saveGuide(id, { done }, on ? 'Step marked done' : 'Step reopened'); }
+      break; }
     case 'start-pick': startPickModal(); break;
     case 'start-type': { const c = t.dataset.cat; closeModal();
       if (c === 'guest_speaker' || c === 'panel'){ startGuide(c); break; }
@@ -9686,7 +9957,7 @@ document.addEventListener('click', async ev => {
     case 'gp-preview': case 'gp-copy': case 'gp-outlook': {
       const pk = ui.gpack, p = pk && pk.people.find(x => x.id === t.dataset.pid); if (!p) break;
       const subject = packFill(document.getElementById('gp-subject').value, p, pk), md = packFill(document.getElementById('gp-body').value, p, pk);
-      if (t.dataset.act === 'gp-preview'){ const box = document.getElementById('gp-preview'); box.hidden = false; box.innerHTML = `<div class="hint" style="margin-bottom:8px">To ${esc(p.email)} · <strong>${esc(subject)}</strong></div>` + mdToHtml(md); box.scrollIntoView({ block: 'nearest' }); break; }
+      if (t.dataset.act === 'gp-preview'){ pk.prev = p.id; gpPreviewDraw(); document.getElementById('gp-preview').scrollIntoView({ block: 'nearest' }); break; }
       let ok = true;
       try { await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([mdToHtml(md)], { type: 'text/html' }), 'text/plain': new Blob([mdToPlain(md)], { type: 'text/plain' }) })]); } catch(_){ ok = false; }
       if (t.dataset.act === 'gp-outlook') window.open('https://outlook.office.com/mail/deeplink/compose?to=' + encodeURIComponent(p.email) + '&subject=' + encodeURIComponent(subject), '_blank', 'noopener');
@@ -10159,7 +10430,7 @@ document.addEventListener('change', async e => {
   }
   if (e.target.classList.contains('ps-min')){
     // A schedule number changed by hand. Back at the suggested number, it stops counting as changed.
-    const evId = e.target.dataset.ev, k = e.target.dataset.k, v = Math.max(0, Math.min(120, Math.round(+e.target.value || 0)));
+    const evId = e.target.dataset.ev, k = e.target.dataset.k, v = Math.max(0, Math.min(300, Math.round(+e.target.value || 0)));
     const sched = { ...(evById(evId) ? guideOf(evId).sched : ui.guideSched), [k]: v };
     if (!evById(evId)){ ui.guideSched = sched; render(); } else await saveGuide(evId, { sched }, 'Schedule updated');
   }
