@@ -7033,7 +7033,7 @@ function postPreviewModal(id){
         : `<strong>It goes to ${esc(list)}.</strong> ${others.length === 1 ? 'They get' : 'Each gets'} an email within about ten minutes, and it shows under their approvals. It’s posted as soon as one of them approves it; they can also send it back to you with notes.`}</div></div>
     ${noDesc ? '<div class="notice"><span><strong>It has no description yet.</strong> Write one before it goes out.</span></div>' : ''}
     <div class="eyebrow">What members will see</div>
-    <div class="panel" style="padding:16px;pointer-events:none;max-height:26rem;overflow:auto" aria-hidden="true">${eventInner(id, false)}</div>
+    <div class="panel" style="padding:16px;max-height:60vh;overflow:auto" tabindex="0"><div style="pointer-events:none">${eventInner(id, false)}</div></div>
     <div class="row" style="gap:8px;flex-wrap:wrap">${noDesc ? '' : `<button class="btn" data-act="signoff-send" data-id="${e.id}">${mine ? 'Post it now' : 'Send to a president'}</button>`}<button class="btn ${noDesc ? '' : 'ghost'}" data-act="guide-edit" data-id="${e.id}">Edit the details and description</button><button class="btn ghost" data-act="close">Cancel</button></div></div>`, null, 'fly', catVar(e.cat));
 }
 // Confirmed guests show on the event page by themselves (123-guide-speakers.sql lets any officer do it, posted or not).
