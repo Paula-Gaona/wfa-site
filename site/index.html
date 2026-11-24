@@ -7896,7 +7896,7 @@ function eventInner(id, page){
     ${!session && !isCase(e) && takesRsvps(e) && !hasStarted(e) && !e.draft ? (e.membersOnly ? (uvidRsvpDone(e.id) ? uvidRsvpNote(e.id) : uvidRsvp(e) + membersOnlyNote(e, 'RSVP')) : guestRsvpBox(e)) : ''}
     ${volunteerBox(e)}
     ${e.qaEnabled && !isPast(e) && !e.draft ? (qaOpen(e) ? qaBox(e) : `<div class="panel"><span class="muted">Questions for the ${(e.speakers || []).length > 1 ? 'guests' : 'speaker'} open when RSVPs do.</span></div>`) : ''}
-    <div class="row">${action}${can('officer') ? `<span style="margin-left:auto" class="row"><button class="btn ghost small" data-act="edit-event" data-id="${id}">Edit event</button></span>` : ''}</div>
+    <div class="row">${action}${can('officer') ? `<span style="margin-left:auto;gap:6px" class="row">${['guest_speaker', 'panel'].includes(e.cat) ? `<button class="btn ghost small" data-act="run-go" data-id="${id}">Event guide</button>` : db.tasks.some(t => t.eventId === id) ? `<button class="btn ghost small" data-act="run-go" data-id="${id}">Checklist</button>` : ''}<button class="btn ghost small" data-act="edit-event" data-id="${id}">Edit event</button></span>` : ''}</div>
     ${can('officer') ? linkClicksNote(e) : ''}
     ${codeBox}
     ${soonBox}
@@ -9971,7 +9971,7 @@ document.addEventListener('click', async ev => {
     case 'gp-done': closeModal(); render(); break;
     case 'guide-edit': guideEditModal(id); break;
     case 'post-preview': postPreviewModal(id); break;
-    case 'run-go': { const ev = evById(id); if (!ev) break;
+    case 'run-go': { const ev = evById(id); if (!ev) break; closeModal();
       if (['guest_speaker', 'panel'].includes(ev.cat)){ ui.officerTab = 'guide'; ui.guideType = ev.cat; ui.guideEv = id; location.hash = 'officer/guide'; }
       else { ui.planEv = id; ui.officerTab = 'plan'; location.hash = 'officer/plan'; }
       render(); window.scrollTo(0, 0); break; }
