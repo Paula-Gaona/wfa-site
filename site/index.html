@@ -6529,6 +6529,8 @@ function guideItems(n){
     ['plates', 'Cutlery, plates, and napkins'], ['gifts', n ? `${n} gift${n === 1 ? '' : 's'} and thank-you card${n === 1 ? '' : 's'} (1 per speaker)` : '1 gift and thank-you card per speaker']];
 }
 // How much food to order: RSVPs + 20, but never more than the RSVP maximum.
+// What the RSVP maximum should be once the food is ordered: the number ordered for.
+function foodCap(r, cap){ r = Math.max(0, Math.round(+r || 0)); cap = Math.max(0, Math.round(+cap || 0)); return !cap ? r + 20 : Math.min(cap, r + 20); }
 function guideFood(r, cap){
   r = Math.max(0, Math.round(+r || 0)); cap = Math.max(0, Math.round(+cap || 0));
   if (!cap) return `With no RSVP maximum: order for <strong>${r + 20}</strong> (${r} RSVPs + 20), then set the RSVP maximum to ${r + 20}.`;
@@ -7113,6 +7115,7 @@ function packed(id){ try { return JSON.parse(localStorage.getItem('wfa-pack-' + 
 document.addEventListener('input', ev => {
   if (ev.target.id !== 'gf-r' && ev.target.id !== 'gf-cap') return;
   const out = document.getElementById('gf-out'); if (out) out.innerHTML = guideFood(document.getElementById('gf-r').value, document.getElementById('gf-cap').value);
+  const setB = document.getElementById('gf-set'); if (setB){ const want = foodCap(document.getElementById('gf-r').value, document.getElementById('gf-cap').value), ev = evById(setB.dataset.id); setB.textContent = 'Set the RSVP maximum to ' + want; setB.hidden = !!ev && want === (ev.cap || 0); }
 });
 function guideBody(){
   const today = todayIso();
@@ -7147,7 +7150,7 @@ function guideBody(){
       <div style="flex:0 0 9.5rem;max-width:36%"><strong>${when}</strong>${e ? `<div class="hint">${d > 0 ? 'From ' : ''}${fmtDay(shiftDay(e.date, d))}</div>` : ''}${fin ? '<div><span class="tag ok">Done</span></div>' : i === here ? '<div><span class="tag ok">You are here</span></div>' : ''}</div>
       <div class="stack" style="flex:1;min-width:0;gap:6px"><div><div class="ev-title">${what}</div><div class="ev-sub">${text}</div></div>
         ${extra === 'food' ? `<div class="panel stack" style="gap:8px;padding:10px 12px"><div class="row" style="gap:10px;flex-wrap:wrap"><label style="flex:1 1 8rem">RSVPs now<input id="gf-r" type="number" min="0" inputmode="numeric" value="${e ? rsvpCount(e.id) : 40}"></label><label style="flex:1 1 8rem">RSVP maximum<input id="gf-cap" type="number" min="0" inputmode="numeric" value="${e ? (e.cap || '') : 80}"></label></div>
-          <div id="gf-out">${guideFood(e ? rsvpCount(e.id) : 40, e ? e.cap : 80)}</div>${e ? `<div><button class="btn ghost small" data-act="guide-edit" data-id="${e.id}">Change the RSVP maximum</button></div>` : ''}</div>` : ''}
+          <div id="gf-out">${guideFood(e ? rsvpCount(e.id) : 40, e ? e.cap : 80)}</div>${e ? `<div><button class="btn small" id="gf-set" data-act="gf-set" data-id="${e.id}" ${foodCap(rsvpCount(e.id), e.cap) === (e.cap || 0) ? 'hidden' : ''}>Set the RSVP maximum to ${foodCap(rsvpCount(e.id), e.cap)}</button></div>` : ''}</div>` : ''}
         ${extra === 'post' && e ? (() => { const rq = rqOf(e.id), st = rq ? rq.status : '', need = isPanel ? PANEL_MIN : 1;
           if (!e.draft) return '<div><span class="tag ok">Posted</span></div>';
           if (st === 'signoff') return '<div class="hint"><strong>Waiting for a president to approve it.</strong> It’s posted as soon as one does.</div>';
@@ -10004,6 +10007,12 @@ document.addEventListener('click', async ev => {
     case 'gm-go': guestMailGo(id); break;
     case 'gp-done': closeModal(); render(); break;
     case 'guide-edit': guideEditModal(id); break;
+    case 'gf-set': { const ev = evById(id), want = foodCap((document.getElementById('gf-r') || {}).value, (document.getElementById('gf-cap') || {}).value); if (!ev) break;
+      if (want < rsvpCount(id)){ toast(`${rsvpCount(id)} people have already RSVP’d, so the maximum can’t go below that.`); break; }
+      let none = false;
+      await act(async () => { const r = await sb.from('events').update({ cap: want }).eq('id', id).select('id'); if (r.error) throw r.error; none = Array.isArray(r.data) && !r.data.length;
+        if (!none) await logChange(`Set the RSVP maximum for “${ev.title}” to ${want} (the number food was ordered for)`); }, () => none ? 'Only a president can change a posted event. Ask one to press this.' : 'RSVP maximum set to ' + want);
+      break; }
     case 'post-preview': postPreviewModal(id); break;
     case 'run-go': { const ev = evById(id); if (!ev) break; closeModal();
       if (['guest_speaker', 'panel'].includes(ev.cat)){ ui.officerTab = 'guide'; ui.guideType = ev.cat; ui.guideEv = id; location.hash = 'officer/guide'; }
