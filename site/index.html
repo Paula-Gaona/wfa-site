@@ -4266,6 +4266,67 @@ function guestMailDue(e){
 const ORD_WORDS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth'], NUM_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
 const PANEL_PARTS_YOU = { 'Introduction': 'A brief introduction', 'What their field is, in a sentence or two': 'What your field is, in a sentence or two', 'A brief description of the day to day': 'What the day to day looks like', 'Their career path': 'Your career path', 'What mattered most in getting there': 'What mattered most in getting there' };
 // A panelist's version of each guest email. {position}, {missing}, and the questions are filled in per person.
+// What an outside workshop presenter is asked for: a headshot and bio straight away, an outline and files a week ahead.
+const WS_ASKS = [
+  ['headshot', 'Headshot', 'your headshot', '**A headshot**, for our flyers and the event page'],
+  ['bio', 'Short bio', 'your bio', '**A short bio** (three or four sentences), for our flyers and the event page'],
+  ['outline', 'Outline of the workshop', 'your outline', '**An outline** of what you’ll cover, so we can describe it accurately'],
+  ['files', 'Files students will use (or there aren’t any)', 'your files', '**Any files students will use**, so we can test them on the room’s computers before the day']
+];
+// The emails to an outside workshop presenter. Same shape as the panel's: { subject, closing, body }.
+function wsMailText(key, e, o, c){
+  const g = guideOf(e.id), lab = wsKind(e) === 'lab', sw = String(g.software || '').trim(), dur = evDur(e), len = dur === 60 ? 'One hour' : dur === 90 ? 'An hour and a half' : dur === 120 ? 'Two hours' : dur ? dur + ' minutes' : 'About an hour and a half';
+  const size = e.cap ? `Up to ${e.cap} students` : 'A small group of students', comp = lab ? `, each at a computer${sw ? ' with ' + sw : ''}` : '';
+  const rs = e.draft ? 0 : rsvpCount(e.id), signed = rs ? `\n- ${rs} student${rs === 1 ? ' has' : 's have'} signed up so far` : '';
+  if (key === 'invite') return { subject: 'Invitation to lead a workshop: {event}', closing: 'Sincerely,', body:
+`Dear {first},
+The Wolverine Finance Association would like to invite you to lead a workshop for our members at Utah Valley University.
+
+The Association serves UVU finance students at every level, from first-year students exploring the field to seniors recruiting for internships and full-time roles. Our workshops are small and hands-on: students follow along, and leave able to do something they couldn’t before.
+
+## Workshop details
+- **Topic:** {event}
+- **Date and time:** ${c.when}
+- **Location:** ${c.loc}
+- **Length:** ${len}
+- **Group size:** ${size}${comp}
+
+## What we’d ask of you
+- **Now:** a headshot and a short bio (three or four sentences), for our flyers and the event page
+- **By ${fmtDay(shiftDay(e.date, -7))}:** an outline of what you’ll cover, and any files students will use${lab ? ', so we can test them on the lab computers' : ''}
+
+An officer will be in the room with you to help with setup and any technical problems.
+
+Please reply to let us know whether this works for you.` };
+  if (key === 'one_week') return { subject: '{event} is next week: parking and what to expect', closing: 'See you soon,', body:
+`Hi {first},
+We’re looking forward to your workshop on ${c.weekday}. Here is what to expect on the day.
+
+## The room
+- A computer connected to the screen${lab ? `, and ${e.cap ? e.cap + ' ' : ''}student computers${sw ? ' with ' + sw + ' ready' : ''}` : ''}
+- If you’d rather present from your own laptop, tell us what connection it has and we’ll have the right adapter${signed}
+
+{missing}
+
+${c.park}` };
+  if (key === 'final') return { subject: `See you ${c.weekday}: {event}`, closing: 'See you soon,', body:
+`Hi {first},
+A quick note before ${c.weekday}.
+
+- **When:** ${c.when}
+- **Where:** ${c.loc}${signed}
+
+{missing}
+
+${c.park}` };
+  return { subject: 'Thank you for leading {event}', closing: 'With thanks,', body:
+`Hi {first},
+Thank you for leading {event}.${attended(e.id).length ? ` ${attended(e.id).length} students attended.` : ''}
+
+If you’re willing, we’d like to share your slides or files with members who couldn’t make it. Reply with them attached and we’ll post them on our site.
+
+We would be glad to have you back.` };
+}
 function panelMailText(key, e, o, c){
   const g = guideOf(e.id), ok = guidePeople(e.id).filter(p => p.status === 'confirmed'), N = panelPlan(g.target || ok.length).n, T = panelTimes(N, g.sched, evDur(e)), t = T.m.talk, n = NUM_WORDS[N] || N;
   let at = 0;
@@ -4387,15 +4448,15 @@ function guestMailModal(id, key){
   const e = evById(id); if (!e) return;
   if (!GUEST_MAILS.some(m => m[0] === key)) key = guestMailDue(e);
   let phone = ''; try { phone = localStorage.getItem('wfa-arrival-phone') || ''; } catch(_){}
-  const panel = e.cat === 'panel', n = Math.max(1, guidePeople(id).filter(p => p.status === 'confirmed').length || (e.speakers || []).length);
+  const panel = e.cat === 'panel', ws = e.cat === 'workshop', n = Math.max(1, guidePeople(id).filter(p => p.status === 'confirmed').length || (e.speakers || []).length);
   // With two guides, the second one keeps the door, so theirs is the name guests are given.
   const gr = rolesOf(id).filter(r => /guide/i.test(r.name)).flatMap(r => (r.officers || []).filter(Boolean)), early = panel ? 25 : 20;
   const show = k => GM_NEEDS[k].includes(key) ? '' : ' hidden', due = guestMailDue(e);
   showModal(`<div class="modal-in stack" style="gap:14px"><button class="modal-x" data-act="close" aria-label="Close" style="float:right">×</button>
-    <div><h3 style="margin:0">${panel ? 'Panelist emails' : 'Guest emails'}</h3><div class="hint">${esc(e.title)} · ${fmtDay(e.date)} at ${fmtTime(e.start)}</div></div>
-    <label>Which email<select id="gm-tpl" data-id="${id}">${GUEST_MAILS.map(([k, name, when]) => `<option value="${k}" ${k === key ? 'selected' : ''}>${name} (${when})${k === due ? ' · due now' : ''}</option>`).join('')}</select>
+    <div><h3 style="margin:0">${panel ? 'Panelist emails' : ws ? 'Presenter emails' : 'Guest emails'}</h3><div class="hint">${esc(e.title)} · ${fmtDay(e.date)} at ${fmtTime(e.start)}</div></div>
+    <label>Which email<select id="gm-tpl" data-id="${id}">${GUEST_MAILS.filter(m => !ws || m[0] !== 'two_weeks').map(([k, name, when]) => `<option value="${k}" ${k === key ? 'selected' : ''}>${name} (${when})${k === due ? ' · due now' : ''}</option>`).join('')}</select>
       <span class="hint">Each person gets their own email, which you send from your own inbox so replies come back to you.</span></label>
-    ${panel ? '' : `<label data-gm="talk"${show('talk')}>Speech length <span class="hint">Minutes each speaker talks</span><input id="gm-talk" type="number" min="5" max="90" step="1" value="${talkDefault(e, n)}">
+    ${panel || ws ? '' : `<label data-gm="talk"${show('talk')}>Speech length <span class="hint">Minutes each speaker talks</span><input id="gm-talk" type="number" min="5" max="90" step="1" value="${talkDefault(e, n)}">
       <span class="hint">The schedule and the speaker outline in the invitation are sized to this. ${evDur(e) ? `The event is ${evDur(e)} minutes: ${GM_ARRIVE} for people to arrive, ${GM_INTRO} for the introduction, and ${GM_WRAP} to wrap up. What’s left after the speech is Q&A.` : ''}</span></label>`}
     <label data-gm="phone"${show('phone')}>${gr.length > 1 ? 'Phone number of the guide at the door' : 'Your phone number'}<input id="ar-phone" type="tel" data-vcheck="phone" maxlength="20" placeholder="(801) 555-0123" value="${esc(phone)}">
       <span class="hint">Guests text this number when they’ve parked or if they’re running late. It only goes in this email (and is remembered on this device).</span></label>
@@ -4422,6 +4483,7 @@ function guestMailText(key, e, o){
   let park = arr.slice(arr.indexOf('## When to arrive'), arr.indexOf('\n\nSee you soon')).replace('15 to 20 minutes early', `${o.b} to ${o.a} minutes early`).replace(/\{arrive\}/g, arriveWindow(e, o.a, o.b)).replace('[YOUR PHONE NUMBER]', o.phone).replace('text us and', `text ${o.phone} and`);
   if (o.guide) park = park.replace('One of our club officers will be waiting', `${o.guide}, one of our officers, will be waiting`);
   if (e.cat === 'panel') return panelMailText(key, e, o, { when, loc, weekday, park });
+  if (e.cat === 'workshop') return wsMailText(key, e, o, { when, loc, weekday, park });
   if (key === 'invite'){
     const t = talkSplit(o.talk), slides = shiftDay(e.date, -14), qa = dur ? Math.max(0, dur - GM_FIXED - o.talk * o.n) : 15;
     // The schedule, with clock times counted from the event's start.
@@ -4537,19 +4599,19 @@ We’d love to stay in touch:
 Thank you again. We hope to host you again soon.` };
 }
 function guestMailGo(id){
-  const e = evById(id), errEl = document.getElementById('ar-err'), bad = m => { errEl.textContent = m; }, key = document.getElementById('gm-tpl').value, panel = e.cat === 'panel';
+  const e = evById(id), errEl = document.getElementById('ar-err'), bad = m => { errEl.textContent = m; }, key = document.getElementById('gm-tpl').value, panel = e.cat === 'panel', ws = e.cat === 'workshop';
   const need = k => GM_NEEDS[k].includes(key), to = gmRecipients(id, key);
   if (!to.length) return bad(guidePeople(id).length ? (key === 'invite' ? 'There’s nobody left to invite.' : 'Mark who’s confirmed on the guide first.') : 'Add the people this goes to first.');
   const noEmail = to.find(p => !EMAIL_RE.test(p.email || '')); if (noEmail) return bad(`Add an email address for ${gpName(noEmail) || 'everyone on the list'} first.`);
   const phone = fmtPhone(String(document.getElementById('ar-phone').value || '').trim());
   if (need('phone') && String(phone).replace(/\D/g, '').length < 10) return bad('Enter the phone number guests should text when they’ve parked.');
   const n = Math.max(1, guidePeople(id).filter(p => p.status === 'confirmed').length || to.length), talkEl = document.getElementById('gm-talk'), talk = talkEl ? Math.round(+talkEl.value || 0) : 0;
-  if (!panel && need('talk') && (talk < 5 || talk > 90)) return bad('Enter how many minutes each speaker talks (5 to 90).');
-  if (!panel && need('talk') && evDur(e) && talk * n > evDur(e) - GM_FIXED - 5) return bad(`That leaves no time for Q&A. The event is ${evDur(e)} minutes, and ${GM_FIXED} of them go to arriving, the introduction, and the wrap-up${n > 1 ? `, with ${n} speakers` : ''}.`);
+  if (!panel && !ws && need('talk') && (talk < 5 || talk > 90)) return bad('Enter how many minutes each speaker talks (5 to 90).');
+  if (!panel && !ws && need('talk') && evDur(e) && talk * n > evDur(e) - GM_FIXED - 5) return bad(`That leaves no time for Q&A. The event is ${evDur(e)} minutes, and ${GM_FIXED} of them go to arriving, the introduction, and the wrap-up${n > 1 ? `, with ${n} speakers` : ''}.`);
   if (need('phone')) try { localStorage.setItem('wfa-arrival-phone', phone); } catch(_){}
   const [a, b] = document.getElementById('ar-early').value.split('-').map(Number);
   const m = guestMailText(key, e, { phone, a, b, talk, guide: document.getElementById('gm-guide').value.trim(), n });
-  ui.gpack = { id, key, panel, subject: m.subject, body: m.body + '\n\n' + m.closing + '\n\n' + sigFill(mySig()), people: to, order: guidePeople(id).filter(p => p.status === 'confirmed').map(p => p.id) };
+  ui.gpack = { id, key, panel, ws, subject: m.subject, body: m.body + '\n\n' + m.closing + '\n\n' + sigFill(mySig()), people: to, order: guidePeople(id).filter(p => p.status === 'confirmed').map(p => p.id) };
   guestPackModal();
 }
 // One person's copy of the email: their name, their place in the speaking order, what they still owe, and their questions.
@@ -4558,7 +4620,7 @@ function packFill(tpl, p, pk){
   const qs = (db.evQuestions || []).filter(q => q.event_id === pk.id && q.starred && (all < 2 || !(q.speakers || []).length || q.speakers.some(x => String(x).trim().toLowerCase() === nm)))
     .sort((x, y) => String(x.created_at).localeCompare(String(y.created_at)));
   const list = qs.map(q => '- ' + q.question).join('\n'), join = l => l.length > 2 ? l.slice(0, -1).join(', ') + ', and ' + l[l.length - 1] : l.join(' and ');
-  const asks = gpAsks(pk.panel), got = p.got || [], have = asks.filter(a => got.includes(a[0])).map(a => a[2]), missing = asks.filter(a => !got.includes(a[0]));
+  const asks = pk.ws ? WS_ASKS : gpAsks(pk.panel), got = p.got || [], have = asks.filter(a => got.includes(a[0])).map(a => a[2]), missing = asks.filter(a => !got.includes(a[0]));
   const vals = { first: p.first || 'there', event: e.title, date: fmtDay(e.date), time: fmtTime(e.start), location: e.loc || '', site: SITE_URL,
     position: pos >= 0 ? `${ORD_WORDS[pos] || 'number ' + (pos + 1)} of ${NUM_WORDS[pk.order.length] || pk.order.length}` : 'one of the panelists',
     missing: missing.length ? `## What we still need from you\n${have.length ? 'Thank you for sending ' + join(have) + '. We’re still missing:\n' : ''}${missing.map(a => '- ' + a[3]).join('\n')}`
@@ -6672,7 +6734,7 @@ function gpFromContact(c){
 }
 // The list, on the guide: status and what they've sent are changed right here; names and order in the editor.
 function guidePeopleSection(e, isPanel){
-  const people = guidePeople(e.id), ok = people.filter(p => p.status === 'confirmed'), asks = gpAsks(isPanel), noun = isPanel ? 'panelist' : 'guest';
+  const people = guidePeople(e.id), ok = people.filter(p => p.status === 'confirmed'), asks = e.cat === 'workshop' ? WS_ASKS : gpAsks(isPanel), noun = isPanel ? 'panelist' : e.cat === 'workshop' ? 'presenter' : 'guest';
   const shown = (e.speakers || []).map(sp => sp.name).join('|'), want = ok.map(gpName).join('|');
   const row = (p, i) => { const pos = p.status === 'confirmed' ? ok.indexOf(p) : -1;
     return `<div class="list-row" style="align-items:flex-start;gap:10px;flex-wrap:wrap"><div style="flex:1 1 14rem;min-width:0">
@@ -7146,11 +7208,11 @@ const GUIDE_CATS = ['guest_speaker', 'panel', 'workshop'];
 const WS_EXTRA = 5;   // a lab workshop can take this many more than its RSVP maximum, sharing a terminal
 const wsKind = e => (e && guideOf(e.id).kind) || (e ? (/lab|bloomberg|129/i.test(e.loc || '') ? 'lab' : 'soft') : 'lab');
 const WS_FLYER = 'Follow the UVU design standards at the bottom of this page. Send them to Emmy for approval, with a 2160x3840 pixel version for the WSB screens and one the same size without QR codes for the WSB Instagram. Send the files to Todd to print.';
-function wsSteps(kind){
+function wsSteps(kind, outside){
   const lab = kind !== 'soft';
   return [
-    [-28, 'As soon as it’s decided', 'Settle the presenter, topic, and date', lab ? `Reserve the lab through Todd (the Bloomberg Lab is KB 129). The RSVP maximum is the number of seats: 20 works well for a Bloomberg workshop, and up to ${WS_EXTRA} more can come in and share a terminal.` : 'Reserve the room through Todd, with an estimated guest count. Set the RSVP maximum to what the room and the activity can handle.', '', '',
-      [['Confirm the presenter, topic, and date'], ['Reserve the room through Todd']]],
+    [-28, 'As soon as it’s decided', 'Settle the presenter, topic, and date', lab ? `Reserve the lab through Todd (the Bloomberg Lab is KB 129). The RSVP maximum is the number of seats: 20 works well for a Bloomberg workshop, and up to ${WS_EXTRA} more can come in and share a terminal.` : 'Reserve the room through Todd, with an estimated guest count. Set the RSVP maximum to what the room and the activity can handle.', outside ? 'invite' : '', '',
+      [['Confirm the presenter, topic, and date'], ['Reserve the room through Todd'], ...(outside ? [['Send the presenter the invitation']] : [])]],
     [-14, '2 weeks before', 'Post the event on the site', 'Write the description: what people will be able to do by the end, and anything they should bring. Set the RSVP maximum, then post it.', '', 'post',
       [['Write the description, set the RSVP maximum, and post the event']]],
     [-10, 'A week and a half before', 'Get the marketing materials made', WS_FLYER, '', 'flyer',
@@ -7159,19 +7221,23 @@ function wsSteps(kind){
       [['Finish the slides and practice files'], ['Presenter does a full run-through, timed']]],
     [-7, 'At the same time', 'Assign roles to officers', 'Someone has to be on the door: each person scans the check-in QR code, then shows their screen before going in. Without that, people sit down without checking in.', '', 'roles',
       [['Assign roles to officers, with someone on the door']]],
+    ...(outside ? [[-7, 'Also 1 week before', 'Send the presenter the 1-week check-in', 'Parking, arrival, what’s in the room, and anything they still owe: tick what they’ve sent in the list above first. Their outline and files are due now.', 'one_week', '',
+      [['Send the presenter the 1-week check-in: parking, the room, what’s still needed']]]] : []),
+    ...(outside ? [[-3, '3 days before', 'Send the presenter the final check-in', 'A short reminder with the time, the room, and parking again. Prepare their gift and thank-you card.', 'final', '',
+      [['Send the presenter the final check-in'], ['Prepare the presenter’s gift and thank-you card']]]] : []),
     ...(lab ? [[-3, '3 days before', 'Test everything in the lab', 'On a lab computer, sign in, open the software, and run the practice file from start to finish. Check that a member’s sign-in works too, not only an officer’s.', '', '',
       [['Test the software, sign-ins, and practice files on the lab computers']]]] : []),
     [-1, 'The day before', 'Final preparations', 'Print the check-in and direction signs, put the practice files where attendees can get them, and gather everything on the What to bring list.', '', '',
       [['Print the check-in and direction signs'], ['Put the practice files where attendees can get them'], ['Gather everything on the What to bring list']]],
-    [1, 'After the event', 'Wrap up', 'Check that attendance is complete, post a recap with the photos, and add the slides or recording to Recaps for people who missed it.', '', '',
-      [['Check that attendance is complete'], ['Post a recap with photos', 2], ['Add the slides or recording to Recaps', 2]]]
+    [1, 'After the event', 'Wrap up', 'Check that attendance is complete, post a recap with the photos, and add the slides or recording to Recaps for people who missed it.' + (outside ? ' Thank the presenter.' : ''), outside ? 'thanks' : '', '',
+      [...(outside ? [['Send a thank-you to the presenter']] : []), ['Check that attendance is complete'], ['Post a recap with photos', 2], ['Add the slides or recording to Recaps', 2]]]
   ];
 }
-function wsItems(kind){
+function wsItems(kind, outside){
   return [['signs', '2 sign holders'], ['checkin', '2 printed check-in pages (one for the door)'], ['directions', '2 printed direction pages'], ['computer', 'Computer with the slides, and the adapter for the room’s screen'],
-    ['clicker', 'Clicker'], ...(kind !== 'soft' ? [['files', 'The practice files on a USB drive, as a backup']] : []), ['photos', 'A phone or camera for recap photos']];
+    ['clicker', 'Clicker'], ...(kind !== 'soft' ? [['files', 'The practice files on a USB drive, as a backup']] : []), ['photos', 'A phone or camera for recap photos'], ...(outside ? [['gifts', 'A gift and thank-you card for the presenter']] : [])];
 }
-const stepsFor = e => e.cat === 'panel' ? PANEL_STEPS : e.cat === 'workshop' ? wsSteps(wsKind(e)) : GUIDE_STEPS;
+const stepsFor = e => e.cat === 'panel' ? PANEL_STEPS : e.cat === 'workshop' ? wsSteps(wsKind(e), !!guideOf(e.id).outside) : GUIDE_STEPS;
 const wsDoorDuties = e => `Stand at the door. Each person scans the check-in QR code and checks in, then shows you their screen saying they’re checked in before they go in. People who RSVP’d go first${wsKind(e) === 'lab' && e.cap ? `; there are ${e.cap} seats, and up to ${WS_EXTRA} more people can share a terminal` : ''}.`;
 const roleFits = (p, e) => (!p.guest || GUEST_CATS.includes(e.cat)) && !(e.cat === 'workshop' && /food|mic runner/i.test(p.name || ''));
 // The workshop's own settings, on its guide.
@@ -7180,7 +7246,8 @@ function wsBox(e){
   return `<section class="panel stack" style="gap:10px"><h3 style="margin:0">The workshop</h3>
     <div class="row" style="gap:10px;flex-wrap:wrap;align-items:end"><label style="flex:1 1 12rem">Kind<select id="ws-kind" data-ev="${e.id}"><option value="lab" ${kind === 'lab' ? 'selected' : ''}>Lab workshop (Bloomberg, Excel)</option><option value="soft" ${kind === 'soft' ? 'selected' : ''}>Soft skills (networking, interviewing)</option></select></label>
       <label style="flex:1 1 12rem">Who’s presenting<select id="ws-presenter" data-ev="${e.id}" ${g.outside ? 'disabled' : ''}><option value="">Not decided yet</option>${leadOptions(g.presenter || '')}</select></label></div>
-    <label class="check"><input type="checkbox" id="ws-outside" data-ev="${e.id}" ${g.outside ? 'checked' : ''}> <span>The presenter is from outside the WFA <span class="hint">Adds a list for them below, with emails you can send: the invitation, a check-in with parking, and a thank-you.</span></span></label>
+    ${kind === 'lab' ? `<label style="max-width:28rem">Software the lab needs <span class="hint">Optional. Named in the presenter’s emails and worth checking in the lab test.</span><input id="ws-software" data-ev="${e.id}" maxlength="80" value="${esc(g.software || '')}" placeholder="Bloomberg and Excel"></label>` : ''}
+    <label class="check"><input type="checkbox" id="ws-outside" data-ev="${e.id}" ${g.outside ? 'checked' : ''}> <span>The presenter is from outside the WFA <span class="hint">Adds a list for them below, the emails to send them, and a gift and card to the list.</span></span></label>
     <label class="check"><input type="checkbox" id="ws-laptop" data-ev="${e.id}" ${g.laptop ? 'checked' : ''}> <span>Attendees should bring a laptop</span></label>
     ${g.laptop && !/laptop/i.test(e.desc || '') ? `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span class="hint">The description doesn’t mention a laptop yet.</span><button class="btn ghost small" data-act="ws-laptop-add" data-id="${e.id}">Add “Please bring a laptop.” to the description</button></div>` : ''}
     <span class="hint">${e.cap ? `RSVP maximum: <strong>${e.cap}</strong>.` : 'No RSVP maximum set yet.'}${kind === 'lab' ? ` At the door, up to ${WS_EXTRA} more can come in and share a terminal${e.cap ? ` (${e.cap + WS_EXTRA} in the room at most)` : ''}.` : ''}${hasStarted(e) ? ` <strong>${n} checked in so far.</strong>` : ''}</span></section>`;
@@ -7193,7 +7260,7 @@ function guideBody(){
   const e = ui.guideEv === '' ? null : (picked || evs.find(x => !isPast(x)) || evs[0] || null);
   const g = e ? guideOf(e.id) : {}, people = e ? guidePeople(e.id) : [], confirmed = people.filter(p => p.status === 'confirmed');
   const n = e ? (people.length ? confirmed.length : (e.speakers || []).length || eventGuests(e.id).length) : 0;
-  const kind = isWs ? (e ? wsKind(e) : 'lab') : '', STEPS = isPanel ? PANEL_STEPS : isWs ? wsSteps(kind) : GUIDE_STEPS, items = isPanel ? panelItems(n) : isWs ? wsItems(kind) : guideItems(n), who = isPanel ? 'panel' : isWs ? 'workshop' : 'guest speaker';
+  const kind = isWs ? (e ? wsKind(e) : 'lab') : '', STEPS = isPanel ? PANEL_STEPS : isWs ? wsSteps(kind, !!g.outside) : GUIDE_STEPS, items = isPanel ? panelItems(n) : isWs ? wsItems(kind, !!g.outside) : guideItems(n), who = isPanel ? 'panel' : isWs ? 'workshop' : 'guest speaker';
   const target = isPanel ? panelPlan(e ? (g.target || n) : ui.guideTarget).n : 0;
   const tasks = e ? db.tasks.filter(t => t.eventId === e.id) : [], done = tasks.filter(t => t.done).length;
   // Who runs the event: whoever owns most of its unfinished steps.
@@ -9834,7 +9901,7 @@ document.addEventListener('click', async ev => {
       toast(reset ? 'Back to the default checklist' : catName(d.cat) + ' checklist saved'); break; }
     case 'plan-template': {
       const e = evById(id), owner = (t.dataset.guide && (document.getElementById('guide-runner') || {}).value) || session;
-      const rows = (t.dataset.guide ? (e.cat === 'workshop' ? stepTasks(wsSteps(wsKind(e))) : PLAN_DEFAULTS[e.cat === 'panel' ? 'panel' : 'guest_speaker']) : planTemplate(e.cat)).map(([title, n]) => { let due = shiftDay(e.date, n); if (n < 0 && due < todayIso()) due = todayIso();
+      const rows = (t.dataset.guide ? (e.cat === 'workshop' ? stepTasks(stepsFor(e)) : PLAN_DEFAULTS[e.cat === 'panel' ? 'panel' : 'guest_speaker']) : planTemplate(e.cat)).map(([title, n]) => { let due = shiftDay(e.date, n); if (n < 0 && due < todayIso()) due = todayIso();
         return { title, event_id: id, owner, due, done: false }; });
       await act(async () => { must(await sb.from('tasks').insert(rows)); await logChange('Added the planning checklist for “' + e.title + '”' + (owner === session ? '' : ', run by ' + userName(owner))); },
         t.dataset.guide ? `Checklist created. ${owner === session ? 'You' : userName(owner)} will get a reminder the day before each step is due.` : 'Checklist added. Assign owners below.');
@@ -10164,7 +10231,7 @@ document.addEventListener('click', async ev => {
       let evId = null; closeModal();
       const made = await act(async () => {
         evId = must(await sb.from('events').insert({ title, cat: type, date, start_time: start.slice(0, 5), end_time: end, loc: ws && wsData.kind === 'lab' ? 'KB 129 (Fintech Center/Bloomberg Lab)' : 'To be decided', cap: cap0, descr: '', draft: true }).select('id').single()).id;
-        must(await sb.from('tasks').insert((ws ? stepTasks(wsSteps(wsData.kind)) : PLAN_DEFAULTS[type]).map(([tt, n]) => { let due = shiftDay(date, n); if (n < 0 && due < todayIso()) due = todayIso(); return { title: tt, event_id: evId, owner: lead, due, done: false }; })));
+        must(await sb.from('tasks').insert((ws ? stepTasks(wsSteps(wsData.kind, wsData.outside)) : PLAN_DEFAULTS[type]).map(([tt, n]) => { let due = shiftDay(date, n); if (n < 0 && due < todayIso()) due = todayIso(); return { title: tt, event_id: evId, owner: lead, due, done: false }; })));
         must(await sb.from('event_guides').upsert(guideRow(evId, { lead, ...(panel ? { target } : {}), ...(ws ? wsData : {}) })));
         await logChange('Started planning “' + title + '”' + (lead === session ? '' : ', run by ' + userName(lead)));
       }, () => `Draft created. ${lead === session ? 'You have' : userName(lead) + ' has'} the checklist.`);
@@ -10643,6 +10710,7 @@ document.addEventListener('change', async e => {
   if (id === 'ws-presenter') await saveGuide(e.target.dataset.ev, { presenter: e.target.value }, e.target.value ? userName(e.target.value) + ' is presenting' : 'Saved');
   if (id === 'ws-outside') await saveGuide(e.target.dataset.ev, { outside: e.target.checked }, 'Saved');
   if (id === 'ws-laptop') await saveGuide(e.target.dataset.ev, { laptop: e.target.checked }, 'Saved');
+  if (id === 'ws-software') await saveGuide(e.target.dataset.ev, { software: e.target.value.trim() }, 'Saved');
   if (id === 'gn-kind'){ const cap = document.getElementById('gn-cap'), hint = document.getElementById('gn-cap-hint'), lab = e.target.value !== 'soft';
     if (cap && (cap.value === '20' || cap.value === '')) cap.value = lab ? '20' : ''; if (hint) hint.textContent = lab ? `A lab workshop works best at 20. Up to ${WS_EXTRA} more can share a terminal at the door.` : 'Set it to what the room and the activity can handle. Blank means no limit.'; }
   if (id === 'guide-target'){
