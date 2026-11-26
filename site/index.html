@@ -6826,14 +6826,16 @@ function flyData(e, f){
   // Headshots are on unless someone turned them off, or there are seven or more guests (they get too small) and nobody turned them on.
   const ppl0 = flyPeople(e), own = e.cat === 'workshop' && !guideOf(e.id).outside; f = { ...f, heads: own ? false : typeof f.heads === 'boolean' ? f.heads : ppl0.length < 7 };   // an officer presenting a workshop is named, without a photo
   return { ...f, date: flyDate(e.date), time: flyTime(e.start, e.end), loc: e.loc && e.loc !== 'To be decided' && e.loc !== 'TBD' ? e.loc.split(' (')[0] : 'Location to come', url: eventLink(e.id),
-    people: flyPeople(e).map(p => ({ ...p, title: f.labels[p.id] != null ? f.labels[p.id] : p.title })) };
+    people: own ? [] : ppl0.map(p => ({ ...p, title: f.labels[p.id] != null ? f.labels[p.id] : p.title })),
+    // An officer leading a workshop gets one quiet line under the description; the workshop itself is what the flyer is about.
+    led: own && ppl0[0] ? (t => `Led by ${ppl0[0].name}${t ? ', ' + t : ''}`)(f.labels.pres != null ? f.labels.pres : ppl0[0].title) : '' };
 }
 // Draws one version onto a canvas. pxW is the canvas width in pixels (the full size when it's left out).
 async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
   // shr: when everything doesn't fit, the flyer is drawn again a little smaller (headline, photos, QR code, logo) until it does.
   // With room to spare (few guests), it's drawn again a little bigger instead, names and all. dir: -1 shrinking, 1 growing, 2 settled.
-  const c0 = FLY_SIZES[key], up = Math.max(1, shr), c = { ...c0, h1: c0.h1 * Math.min(shr, 1.12), sub: c0.sub * Math.min(shr, 1.12), face: c0.face * shr, qr: c0.qr * Math.min(shr, 1.25), logo: c0.logo * Math.min(shr, 1.25), top: c0.top * Math.min(shr, 1),
-    nm: c0.nm * Math.min(up, 1.7), ti: c0.ti * Math.min(up, 1.7), fl: c0.fl * Math.min(up, 1.5), blurb: c0.blurb * Math.min(up, 1.15), vl: c0.vl * Math.min(up, 1.2), lb: c0.lb * Math.min(up, 1.2), nt: c0.nt * Math.min(up, 1.2) }, k = (pxW || c.px[0]) / c.W, W = c.W, H = c.W * c.px[1] / c.px[0], pad = c.pad, inner = W - pad * 2, x = cv.getContext('2d'), sc = c.h1 / 50;
+  const c0 = FLY_SIZES[key], up = Math.max(1, shr), solo = !d.people.length, c = { ...c0, h1: c0.h1 * Math.min(shr, solo ? 1.4 : 1.12), sub: c0.sub * Math.min(shr, solo ? 1.4 : 1.12), face: c0.face * shr, qr: c0.qr * Math.min(shr, solo ? 1.5 : 1.25), logo: c0.logo * Math.min(shr, solo ? 1.5 : 1.25), top: c0.top * Math.min(shr, 1),
+    nm: c0.nm * Math.min(up, 1.7), ti: c0.ti * Math.min(up, 1.7), fl: c0.fl * Math.min(up, 1.5), blurb: c0.blurb * Math.min(up, solo ? 1.6 : 1.15), vl: c0.vl * Math.min(up, solo ? 1.5 : 1.2), lb: c0.lb * Math.min(up, solo ? 1.4 : 1.2), nt: c0.nt * Math.min(up, solo ? 1.4 : 1.2), h2: c0.h2 * Math.min(up, solo ? 1.15 : 1), rp: c0.rp * Math.min(up, solo ? 1.1 : 1) }, k = (pxW || c.px[0]) / c.W, W = c.W, H = c.W * c.px[1] / c.px[0], pad = c.pad, inner = W - pad * 2, x = cv.getContext('2d'), sc = c.h1 / 50;
   try { await Promise.all([400, 600, 700, 800].map(w => document.fonts.load(`${w} 20px Montserrat`))); } catch (_) {}
   const logo = await flyLoadLogo();
   let qrLibNow = null; if (!c.noQr){ try { qrLibNow = await loadQr(); } catch (_) {} }
@@ -6842,7 +6844,7 @@ async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
   const wrap = (t, maxW) => { const out = []; String(t || '').split('\n').forEach(par => { let line = ''; par.split(/\s+/).filter(Boolean).forEach(w => { const tryL = line ? line + ' ' + w : w; if (line && x.measureText(tryL).width > maxW){ out.push(line); line = w; } else line = tryL; }); if (line) out.push(line); }); return out; };
   const put = (lines, xx, yy, lh, align) => { x.textAlign = align || 'left'; lines.forEach((l, i) => x.fillText(l, xx, yy + i * lh)); x.textAlign = 'left'; return yy + lines.length * lh; };
   if (!c.noQr){ font(800, c.h2); const w1 = x.measureText('Scan to RSVP').width; font(700, c.rp); const tW = Math.max(w1, x.measureText('wolverinefinanceassociation.org').width), room = inner - tW - c.h2 - 12 * sc, need = c.qr + c.logo * FLY.LOGO_R;
-    if (need > room){ const f = Math.max(.5, room / need); c.qr *= f; c.logo *= f; } }
+    if (need > room){ const f = Math.max(.4, room / need); c.qr *= f; c.logo *= f; } }
   // A headshot in a gold ring; initials on a plain disc when there's no photo yet.
   const photo = (p, cx, cy, r) => {
     const ph = flyImg[p.id];
@@ -6860,6 +6862,7 @@ async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
   let y = c.top; const yPre = y; y += c.pre + c.h1 * .22; const yH = y; y += hl.length * h1 * 1.04;
   let ySub = y, yBl = y; if (sl.length){ y += c.h1 * .2; ySub = y; y += sl.length * c.sub * 1.15; } if (bl.length){ y += c.h1 * .22; yBl = y; y += bl.length * c.blurb * 1.45; }
   // The story has no RSVP row, so who it's for goes up here; the bottom-left stays clear for Instagram's link button.
+  let yLed = 0; if (d.led){ y += c.h1 * .22; yLed = y; y += c.blurb * 1.45; }
   let yAud = 0; if (c.noQr){ y += c.h1 * .2; yAud = y; y += c.blurb * 1.45; }
   y += c.h1 * .55;
   const ppl = d.people, n = ppl.length, tall = c.px[1] / c.px[0] > 1.6, cg = Math.min(up, n === 2 && c.cols === 3 ? 1.15 : 1.8), mode = !n ? 'none' : n <= 2 || (tall && n === 3) ? 'cards' : d.heads ? 'faces' : 'list';
@@ -6882,6 +6885,7 @@ async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
   font(800, h1); track(-h1 * .01); x.fillStyle = '#ffffff'; put(hl, pad, yH, h1 * 1.04); track(0);
   font(700, c.sub); x.fillStyle = FLY.GOLD; put(sl, pad, ySub, c.sub * 1.15);
   font(400, c.blurb); x.fillStyle = '#ffffff'; put(bl, pad, yBl, c.blurb * 1.45);
+  if (d.led){ font(600, c.blurb); x.fillStyle = '#ffffff'; x.fillText(d.led, pad, yLed); }
   if (c.noQr){ font(700, c.blurb); x.fillStyle = '#ffffff'; x.fillText('Open to UVU students of any major.', pad, yAud); }
 
   // ----- the guests -----
@@ -6957,7 +6961,7 @@ async function flyDraw(cv, key, d, pxW, shr = 1, dir = 0){
   const spare = floor - y - detH - rsH, fits = spare >= 18 * sc;
   if (!fits && dir === 1) return flyDraw(cv, key, d, pxW, shr - .07, 2);
   if (!fits && dir <= 0 && shr > .58) return flyDraw(cv, key, d, pxW, shr - .06, -1);
-  if (fits && dir >= 0 && dir < 2 && n && spare > H * .1 && shr < 2.2) return flyDraw(cv, key, d, pxW, shr + .07, 1);
+  if (fits && dir >= 0 && dir < 2 && spare > H * .1 && shr < (n ? 2.2 : 1.6)) return flyDraw(cv, key, d, pxW, shr + .07, 1);
   return { fits };
 }
 // Which of the five versions an event has: made in the flyer maker (downloaded), or uploaded by hand.
@@ -6990,7 +6994,7 @@ function flyerModal(id){
         <label>What it’s about <span class="hint">One or two sentences</span><textarea class="fly-t" data-k="blurb" rows="3" maxlength="260">${esc(f.blurb)}</textarea></label>
         <label>Small note under the location <span class="hint">Optional</span><input class="fly-t" data-k="note" maxlength="40" value="${esc(f.note)}" placeholder="Lunch provided"></label>
         ${one ? `<label>Short bio <span class="hint">Optional. Two lines at most</span><textarea class="fly-t" data-k="bio" rows="2" maxlength="220">${esc(f.bio)}</textarea></label>` : ''}
-        ${ppl.length && e.cat === 'workshop' && !guideOf(e.id).outside ? '<span class="hint">An officer is presenting, so the flyer names them without a headshot. Headshots are for outside guests.</span>' : ppl.length ? `<label class="check"><input type="checkbox" id="fly-heads" ${(typeof f.heads === 'boolean' ? f.heads : ppl.length < 7) ? 'checked' : ''}> <span>Show headshots <span class="hint">${ppl.length >= 7 ? 'Off to start with, because with seven or more the headshots get too small; the flyer lists names, fields, and titles instead.' : 'Turn this off if anyone’s is missing; the flyer switches to a list of names.'}</span></span></label>` : `<div class="notice"><span>No guests are on this event’s list yet, so the flyer has none. Add them on the guide and they show up here.</span></div>`}
+        ${ppl.length && e.cat === 'workshop' && !guideOf(e.id).outside ? '<span class="hint">An officer is presenting, so the flyer names them in one line under the description, with no headshot. Headshots are for outside guests.</span>' : ppl.length ? `<label class="check"><input type="checkbox" id="fly-heads" ${(typeof f.heads === 'boolean' ? f.heads : ppl.length < 7) ? 'checked' : ''}> <span>Show headshots <span class="hint">${ppl.length >= 7 ? 'Off to start with, because with seven or more the headshots get too small; the flyer lists names, fields, and titles instead.' : 'Turn this off if anyone’s is missing; the flyer switches to a list of names.'}</span></span></label>` : `<div class="notice"><span>No guests are on this event’s list yet, so the flyer has none. Add them on the guide and they show up here.</span></div>`}
         ${ppl.map(person).join('')}
       </div>
       <div class="stack" style="gap:8px;position:sticky;top:0">
