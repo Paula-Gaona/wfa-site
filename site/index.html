@@ -6720,16 +6720,21 @@ async function gpSyncContact(p, evId){
 }
 // Start an event from its guide: a draft, the officer in charge, and their checklist, in one step.
 function guideNewModal(type){
-  const panel = type === 'panel', staff = staffEmails();
-  showModal(`<div class="modal-in stack" style="gap:14px"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3 style="margin:0">Start a ${panel ? 'panel' : 'guest speaker event'}</h3>
+  const panel = type === 'panel', ws = type === 'workshop';
+  showModal(`<div class="modal-in stack" style="gap:14px"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3 style="margin:0">Start a ${panel ? 'panel' : ws ? 'workshop' : 'guest speaker event'}</h3>
       <div class="hint">This makes a draft that only officers can see, and a checklist with due dates for the officer in charge. Everything can be changed later.</div></div>
-    <label>Working title<input id="gn-title" maxlength="120" placeholder="${panel ? 'Careers in Finance Panel' : 'Lunch with a guest speaker'}"></label>
-    <div class="row" style="gap:10px;flex-wrap:wrap"><label style="flex:1 1 10rem">Target date<input id="gn-date" type="date" min="${todayIso()}"></label><label style="flex:1 1 8rem">Start time<input id="gn-start" type="time" value="${panel ? '16:00' : '11:30'}"></label>
-      <label style="flex:1 1 8rem">Length (minutes)<input id="gn-len" type="number" min="15" max="480" step="5" inputmode="numeric" value="${panel ? PANEL_LEN : 60}"></label></div>
-    <div class="hint" style="margin-top:-6px">The length is what gets posted. Networking afterward (up to ${GM_NETWORK} minutes) is extra and isn’t part of the posted time.</div>
+    <label>Working title<input id="gn-title" maxlength="120" placeholder="${panel ? 'Careers in Finance Panel' : ws ? 'Ratio Analysis using Bloomberg' : 'Lunch with a guest speaker'}"></label>
+    ${ws ? `<label>Kind<select id="gn-kind"><option value="lab">Lab workshop (Bloomberg, Excel)</option><option value="soft">Soft skills (networking, interviewing)</option></select></label>` : ''}
+    <div class="row" style="gap:10px;flex-wrap:wrap"><label style="flex:1 1 10rem">Target date<input id="gn-date" type="date" min="${todayIso()}"></label><label style="flex:1 1 8rem">Start time<input id="gn-start" type="time" value="${panel || ws ? '16:00' : '11:30'}"></label>
+      <label style="flex:1 1 8rem">Length (minutes)<input id="gn-len" type="number" min="15" max="480" step="5" inputmode="numeric" value="${panel ? PANEL_LEN : ws ? 90 : 60}"></label></div>
+    ${ws ? '' : `<div class="hint" style="margin-top:-6px">The length is what gets posted. Networking afterward (up to ${GM_NETWORK} minutes) is extra and isn’t part of the posted time.</div>`}
     <label>Who’s in charge of planning it<select id="gn-lead">${leadOptions(session)}</select>
       <span class="hint">They own the checklist and get a reminder the day before each step is due.</span></label>
     ${panel ? `<label style="max-width:16rem">Panelists to aim for<input id="gn-target" type="number" min="${PANEL_MIN}" max="${PANEL_MAX}" step="1" value="5"></label>` : ''}
+    ${ws ? `<label>Who’s presenting<select id="gn-presenter"><option value="">Not decided yet</option>${leadOptions(session)}</select></label>
+      <label class="check"><input type="checkbox" id="gn-outside"> <span>The presenter is from outside the WFA</span></label>
+      <label class="check"><input type="checkbox" id="gn-laptop"> <span>Attendees should bring a laptop</span></label>
+      <label style="max-width:16rem">RSVP maximum<input id="gn-cap" type="number" min="0" inputmode="numeric" value="20"><span class="hint" id="gn-cap-hint">A lab workshop works best at 20. Up to ${WS_EXTRA} more can share a terminal at the door.</span></label>` : ''}
     <div class="err" id="gn-err"></div>
     <div class="row" style="gap:8px"><button class="btn" data-act="gn-go" data-type="${type}">Create the draft</button><button class="btn ghost" data-act="close">Cancel</button></div></div>`);
 }
@@ -6786,7 +6791,7 @@ function designSection(e){
 }
 // Starting an event: the kind decides where it begins.
 const START_KINDS = [['guest_speaker', 'Guest speaker', 'Starts from its guide, with a checklist for the officer in charge'], ['panel', 'Panel', 'Three or more guests. Starts from its guide'],
-  ['workshop', 'Workshop', ''], ['social', 'Social', ''], ['career_fair', 'Career fair', ''], ['case_competition', 'Case competition', ''], ['excursion', 'Excursion', 'We’re taking members somewhere'],
+  ['workshop', 'Workshop', 'Starts from its guide'], ['social', 'Social', ''], ['career_fair', 'Career fair', ''], ['case_competition', 'Case competition', ''], ['excursion', 'Excursion', 'We’re taking members somewhere'],
   ['hosted', 'Hosted by someone else', 'We’re only posting it: no planning steps, check-in, or points']];
 /* ---------- Flyer maker: the standard WFA flyer, drawn in the browser from the event's details ---------- */
 // Five versions of one design (see "UVU design standards" on the guide). Sizes below are in design units; each is scaled up to its real pixels.
@@ -6802,6 +6807,7 @@ const flyImg = {};   // headshots stay in this browser tab only: { personId: { i
 let flyLogo = null;
 function flyLoadLogo(){ return flyLogo || (flyLogo = new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = 'uvu-logo-square-green.png'; })); }
 function flyPeople(e){
+  if (e.cat === 'workshop' && !guideOf(e.id).outside){ const p = guideOf(e.id).presenter; return p ? [{ id: 'pres', name: userName(p), title: (db.profiles[p] || {}).title || '', field: '' }] : []; }
   const all = guidePeople(e.id), ok = all.filter(p => p.status === 'confirmed'), list = ok.length ? ok : all.filter(p => p.status !== 'declined');
   if (list.length) return list.map(p => ({ id: p.id, name: gpName(p), title: p.title || '', field: p.field || '' }));
   return (e.speakers || []).map((sp, i) => ({ id: 'sp' + i, name: sp.name || '', title: sp.title || '', field: sp.field || '' })).filter(p => p.name);
@@ -6819,7 +6825,7 @@ function flyStart(e){
 function flyData(e, f){
   // Headshots are on unless someone turned them off, or there are seven or more guests (they get too small) and nobody turned them on.
   const ppl0 = flyPeople(e); f = { ...f, heads: typeof f.heads === 'boolean' ? f.heads : ppl0.length < 7 };
-  return { ...f, date: flyDate(e.date), time: flyTime(e.start, e.end), loc: e.loc && e.loc !== 'To be decided' && e.loc !== 'TBD' ? e.loc : 'Location to come', url: eventLink(e.id),
+  return { ...f, date: flyDate(e.date), time: flyTime(e.start, e.end), loc: e.loc && e.loc !== 'To be decided' && e.loc !== 'TBD' ? e.loc.split(' (')[0] : 'Location to come', url: eventLink(e.id),
     people: flyPeople(e).map(p => ({ ...p, title: f.labels[p.id] != null ? f.labels[p.id] : p.title })) };
 }
 // Draws one version onto a canvas. pxW is the canvas width in pixels (the full size when it's left out).
@@ -7041,12 +7047,12 @@ function guideRolesSection(e, isPanel){
   const usual = usualRoles(), mine = e ? rolesOf(e.id) : [];
   if (!e || !mine.length) return `<section class="stack" style="gap:6px" id="guide-roles"><div class="section-head"><h3>Who does what</h3></div>
       ${e ? `<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn small" data-act="gr-usual" data-id="${e.id}">Use these roles for this event</button><button class="btn ghost small" data-act="gr-add" data-id="${e.id}">+ Add a role</button><span class="hint">Then pick who’s on each one, right here.</span></div>` : ''}
-      ${ROLE_PHASES.map(([ph, label]) => { const rs = usual.filter(r => r.phase === ph && (!e || !r.guest || GUEST_CATS.includes(e.cat))); return rs.length ? `<div class="eyebrow" style="margin-top:6px">${label}</div><div>${rs.map(r => { const two = isPanel && /guide/i.test(r.name); return `<div class="list-row" style="align-items:flex-start"><div style="min-width:0"><div class="ev-title">${esc(r.name)} <span class="hint">· ${two ? '2 people · ' : (+r.qty || 1) > 1 ? r.qty + ' people · ' : ''}${e ? 'arrive by ' + esc(roleArriveAt(e, r.arrive)) : (r.arrive ? r.arrive + ' min early' : 'at the start')}</span></div><div class="ev-sub">${esc(two ? PANEL_GUIDE_DUTIES : r.duties || '')}</div></div></div>`; }).join('')}</div>` : ''; }).join('')}
+      ${ROLE_PHASES.map(([ph, label]) => { const rs = usual.filter(r => r.phase === ph && (!e || roleFits(r, e))); return rs.length ? `<div class="eyebrow" style="margin-top:6px">${label}</div><div>${rs.map(r => { const two = isPanel && /guide/i.test(r.name); return `<div class="list-row" style="align-items:flex-start"><div style="min-width:0"><div class="ev-title">${esc(r.name)} <span class="hint">· ${two ? '2 people · ' : (+r.qty || 1) > 1 ? r.qty + ' people · ' : ''}${e ? 'arrive by ' + esc(roleArriveAt(e, r.arrive)) : (r.arrive ? r.arrive + ' min early' : 'at the start')}</span></div><div class="ev-sub">${esc(two ? PANEL_GUIDE_DUTIES : r.duties || '')}</div></div></div>`; }).join('')}</div>` : ''; }).join('')}
       <span class="hint">Officers on a role get their instructions by email the day before.</span></section>`;
   const staff = staffEmails().map(x => [x, userName(x)]).sort((a, b) => a[1].localeCompare(b[1]));
   const who = sel => '<option value="">Open</option>' + (sel && !staff.some(([em]) => em === sel) ? `<option value="${esc(sel)}" selected>${esc(userName(sel))} (volunteer)</option>` : '') + staff.map(([em, n]) => `<option value="${esc(em)}" ${em === sel ? 'selected' : ''}>${esc(n)}</option>`).join('');
   const spots = mine.reduce((a, r) => a + (+r.qty || 1), 0), filled = mine.reduce((a, r) => a + (r.officers || []).filter(Boolean).length, 0);
-  const have = new Set(mine.map(r => String(r.name || '').trim().toLowerCase())), more = usual.some(p => !have.has(String(p.name).toLowerCase()) && (!p.guest || GUEST_CATS.includes(e.cat)));
+  const have = new Set(mine.map(r => String(r.name || '').trim().toLowerCase())), more = usual.some(p => !have.has(String(p.name).toLowerCase()) && roleFits(p, e));
   const ed = ui.grEdit && ui.grEdit.id === e.id ? ui.grEdit.i : -1;
   const row = (r, i) => i === ed
     ? `<div class="panel stack gr-form" data-i="${i}" style="gap:8px;padding:12px 14px;margin:6px 0">
@@ -7077,7 +7083,7 @@ function myRunning(){
 function runningBanner(){
   return myRunning().map(e => { const open = db.tasks.filter(t => t.eventId === e.id && !t.done && t.who === session).sort((a, b) => String(a.due).localeCompare(String(b.due))), nx = open[0], late = nx && nx.due < todayIso();
     return `<div class="notice row" style="justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><span><strong>You’re running ${esc(e.title)}</strong> · ${fmtDay(e.date)}${e.draft ? ' · draft' : ''}${nx ? `<br><span class="hint">Next: ${esc(nx.title)} · ${late ? '<strong>overdue</strong>, was due ' : 'due '}${fmtDay(nx.due)}</span>` : ''}</span>
-      <button class="btn small" data-act="run-go" data-id="${e.id}">${['guest_speaker', 'panel'].includes(e.cat) ? 'Open its guide' : 'Open its checklist'}</button></div>`; }).join('');
+      <button class="btn small" data-act="run-go" data-id="${e.id}">${GUIDE_CATS.includes(e.cat) ? 'Open its guide' : 'Open its checklist'}</button></div>`; }).join('');
 }
 // Before an event goes to a president: what members will see, and who it's going to.
 function postPreviewModal(id){
@@ -7131,15 +7137,59 @@ document.addEventListener('input', ev => {
   const out = document.getElementById('gf-out'); if (out) out.innerHTML = guideFood(document.getElementById('gf-r').value, document.getElementById('gf-cap').value);
   const setB = document.getElementById('gf-set'); if (setB){ const want = foodCap(document.getElementById('gf-r').value, document.getElementById('gf-cap').value), ev = evById(setB.dataset.id); setB.textContent = 'Set the RSVP maximum to ' + want; setB.hidden = !!ev && want === (ev.cap || 0); }
 });
+// Event types that have a guide. Workshops are the third: one presenter (usually an officer), a room with a seat count, and materials that have to work.
+const GUIDE_CATS = ['guest_speaker', 'panel', 'workshop'];
+const WS_EXTRA = 5;   // a lab workshop can take this many more than its RSVP maximum, sharing a terminal
+const wsKind = e => (e && guideOf(e.id).kind) || (e ? (/lab|bloomberg|129/i.test(e.loc || '') ? 'lab' : 'soft') : 'lab');
+const WS_FLYER = 'Follow the UVU design standards at the bottom of this page. Send them to Emmy for approval, with a 2160x3840 pixel version for the WSB screens and one the same size without QR codes for the WSB Instagram. Send the files to Todd to print.';
+function wsSteps(kind){
+  const lab = kind !== 'soft';
+  return [
+    [-28, 'As soon as it’s decided', 'Settle the presenter, topic, and date', lab ? `Reserve the lab through Todd (the Bloomberg Lab is KB 129). The RSVP maximum is the number of seats: 20 works well for a Bloomberg workshop, and up to ${WS_EXTRA} more can come in and share a terminal.` : 'Reserve the room through Todd, with an estimated guest count. Set the RSVP maximum to what the room and the activity can handle.', '', '',
+      [['Confirm the presenter, topic, and date'], ['Reserve the room through Todd']]],
+    [-14, '2 weeks before', 'Post the event on the site', 'Write the description: what people will be able to do by the end, and anything they should bring. Set the RSVP maximum, then post it.', '', 'post',
+      [['Write the description, set the RSVP maximum, and post the event']]],
+    [-10, 'A week and a half before', 'Get the marketing materials made', WS_FLYER, '', 'flyer',
+      [['Get the marketing materials made; send them to Emmy for approval and to Todd for printing']]],
+    [-7, '1 week before', 'Finish the slides and practice files', 'The presenter runs through the whole thing start to finish, at the pace of someone seeing it for the first time. A workshop that runs long loses people, so time it.', '', '',
+      [['Finish the slides and practice files'], ['Presenter does a full run-through, timed']]],
+    [-7, 'At the same time', 'Assign roles to officers', 'Someone has to be on the door: each person scans the check-in QR code, then shows their screen before going in. Without that, people sit down without checking in.', '', 'roles',
+      [['Assign roles to officers, with someone on the door']]],
+    ...(lab ? [[-3, '3 days before', 'Test everything in the lab', 'On a lab computer, sign in, open the software, and run the practice file from start to finish. Check that a member’s sign-in works too, not only an officer’s.', '', '',
+      [['Test the software, sign-ins, and practice files on the lab computers']]]] : []),
+    [-1, 'The day before', 'Final preparations', 'Print the check-in and direction signs, put the practice files where attendees can get them, and gather everything on the What to bring list.', '', '',
+      [['Print the check-in and direction signs'], ['Put the practice files where attendees can get them'], ['Gather everything on the What to bring list']]],
+    [1, 'After the event', 'Wrap up', 'Check that attendance is complete, post a recap with the photos, and add the slides or recording to Recaps for people who missed it.', '', '',
+      [['Check that attendance is complete'], ['Post a recap with photos', 2], ['Add the slides or recording to Recaps', 2]]]
+  ];
+}
+function wsItems(kind){
+  return [['signs', '2 sign holders'], ['checkin', '2 printed check-in pages (one for the door)'], ['directions', '2 printed direction pages'], ['computer', 'Computer with the slides, and the adapter for the room’s screen'],
+    ['clicker', 'Clicker'], ...(kind !== 'soft' ? [['files', 'The practice files on a USB drive, as a backup']] : []), ['photos', 'A phone or camera for recap photos']];
+}
+const stepsFor = e => e.cat === 'panel' ? PANEL_STEPS : e.cat === 'workshop' ? wsSteps(wsKind(e)) : GUIDE_STEPS;
+const wsDoorDuties = e => `Stand at the door. Each person scans the check-in QR code and checks in, then shows you their screen saying they’re checked in before they go in. People who RSVP’d go first${wsKind(e) === 'lab' && e.cap ? `; there are ${e.cap} seats, and up to ${WS_EXTRA} more people can share a terminal` : ''}.`;
+const roleFits = (p, e) => (!p.guest || GUEST_CATS.includes(e.cat)) && !(e.cat === 'workshop' && /food|mic runner/i.test(p.name || ''));
+// The workshop's own settings, on its guide.
+function wsBox(e){
+  const g = guideOf(e.id), kind = wsKind(e), n = hasStarted(e) ? attended(e.id).length : 0;
+  return `<section class="panel stack" style="gap:10px"><h3 style="margin:0">The workshop</h3>
+    <div class="row" style="gap:10px;flex-wrap:wrap;align-items:end"><label style="flex:1 1 12rem">Kind<select id="ws-kind" data-ev="${e.id}"><option value="lab" ${kind === 'lab' ? 'selected' : ''}>Lab workshop (Bloomberg, Excel)</option><option value="soft" ${kind === 'soft' ? 'selected' : ''}>Soft skills (networking, interviewing)</option></select></label>
+      <label style="flex:1 1 12rem">Who’s presenting<select id="ws-presenter" data-ev="${e.id}" ${g.outside ? 'disabled' : ''}><option value="">Not decided yet</option>${leadOptions(g.presenter || '')}</select></label></div>
+    <label class="check"><input type="checkbox" id="ws-outside" data-ev="${e.id}" ${g.outside ? 'checked' : ''}> <span>The presenter is from outside the WFA <span class="hint">Adds a list for them below, with emails you can send: the invitation, a check-in with parking, and a thank-you.</span></span></label>
+    <label class="check"><input type="checkbox" id="ws-laptop" data-ev="${e.id}" ${g.laptop ? 'checked' : ''}> <span>Attendees should bring a laptop</span></label>
+    ${g.laptop && !/laptop/i.test(e.desc || '') ? `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span class="hint">The description doesn’t mention a laptop yet.</span><button class="btn ghost small" data-act="ws-laptop-add" data-id="${e.id}">Add “Please bring a laptop.” to the description</button></div>` : ''}
+    <span class="hint">${e.cap ? `RSVP maximum: <strong>${e.cap}</strong>.` : 'No RSVP maximum set yet.'}${kind === 'lab' ? ` At the door, up to ${WS_EXTRA} more can come in and share a terminal${e.cap ? ` (${e.cap + WS_EXTRA} in the room at most)` : ''}.` : ''}${hasStarted(e) ? ` <strong>${n} checked in so far.</strong>` : ''}</span></section>`;
+}
 function guideBody(){
   const today = todayIso();
-  const all = db.events.filter(x => ['guest_speaker', 'panel'].includes(x.cat) && shiftDay(x.date, 14) >= today).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
-  const picked = all.find(x => x.id === ui.guideEv), type = picked ? picked.cat : (ui.guideType === 'panel' ? 'panel' : 'guest_speaker'), isPanel = type === 'panel';
+  const all = db.events.filter(x => GUIDE_CATS.includes(x.cat) && shiftDay(x.date, 14) >= today).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  const picked = all.find(x => x.id === ui.guideEv), type = picked ? picked.cat : (GUIDE_CATS.includes(ui.guideType) ? ui.guideType : 'guest_speaker'), isPanel = type === 'panel', isWs = type === 'workshop';
   const evs = all.filter(x => x.cat === type);
   const e = ui.guideEv === '' ? null : (picked || evs.find(x => !isPast(x)) || evs[0] || null);
   const g = e ? guideOf(e.id) : {}, people = e ? guidePeople(e.id) : [], confirmed = people.filter(p => p.status === 'confirmed');
   const n = e ? (people.length ? confirmed.length : (e.speakers || []).length || eventGuests(e.id).length) : 0;
-  const STEPS = isPanel ? PANEL_STEPS : GUIDE_STEPS, items = isPanel ? panelItems(n) : guideItems(n), who = isPanel ? 'panel' : 'guest speaker';
+  const kind = isWs ? (e ? wsKind(e) : 'lab') : '', STEPS = isPanel ? PANEL_STEPS : isWs ? wsSteps(kind) : GUIDE_STEPS, items = isPanel ? panelItems(n) : isWs ? wsItems(kind) : guideItems(n), who = isPanel ? 'panel' : isWs ? 'workshop' : 'guest speaker';
   const target = isPanel ? panelPlan(e ? (g.target || n) : ui.guideTarget).n : 0;
   const tasks = e ? db.tasks.filter(t => t.eventId === e.id) : [], done = tasks.filter(t => t.done).length;
   // Who runs the event: whoever owns most of its unfinished steps.
@@ -7167,27 +7217,28 @@ function guideBody(){
           <div id="gf-out">${guideFood(e ? rsvpCount(e.id) : 40, e ? e.cap : 80)}</div>${e ? `<div><button class="btn small" id="gf-set" data-act="gf-set" data-id="${e.id}" ${foodCap(rsvpCount(e.id), e.cap) === (e.cap || 0) ? 'hidden' : ''}>Set the RSVP maximum to ${foodCap(rsvpCount(e.id), e.cap)}</button></div>` : ''}</div>` : ''}
         ${extra === 'post' && e ? (() => { const rq = rqOf(e.id), st = rq ? rq.status : '', need = isPanel ? PANEL_MIN : 1;
           if (!e.draft) return '<div><span class="tag ok">Posted</span></div>';
+          if (isWs) return `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" data-act="guide-edit" data-id="${e.id}">Write the description and RSVP maximum</button><button class="btn ghost small" data-act="edit-event" data-id="${e.id}">Post it from the event editor</button></div><span class="hint">Workshops are posted from the event editor${canPublish() ? '' : ', where it goes to a president or vice president for one approval'}.</span>`;
           if (st === 'signoff') return '<div class="hint"><strong>Waiting for a president to approve it.</strong> It’s posted as soon as one does.</div>';
           const back = st === 'returned' && rq.note ? `<div class="notice"><span><strong>A president asked for changes:</strong> ${esc(rq.note)}</span></div>` : '';
           if (n < need) return back + `<div class="hint"><strong>Locked.</strong> ${isPanel ? `It can go to a president once three panelists are marked confirmed (${n} so far).` : 'It can go to a president once the speaker is marked confirmed in the list above.'}</div><div><button class="btn ghost small" data-act="guide-edit" data-id="${e.id}">Write the description and RSVP maximum now</button></div>`;
           return back + `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn small" data-act="post-preview" data-id="${e.id}">${presidentsList().includes(session) ? 'Preview and post it' : back ? 'Preview and send it to a president again' : 'Preview and send to a president'}</button><button class="btn ghost small" data-act="guide-edit" data-id="${e.id}">Edit the details and description</button></div>`; })() : ''}
         ${extra === 'flyer' ? (e ? flyerChecklist(e) : '<span class="hint">Pick an event above to make its flyers.</span>') : ''}
         ${extra === 'count' && e ? `<div class="hint"><strong>${n} panelist${n === 1 ? '' : 's'} confirmed</strong>, aiming for ${target}. ${n < PANEL_MIN ? 'That’s fewer than three: run it as a guest speaker event, or move the date.' : n < target ? 'Enough to go ahead. Set the number of panelists to ' + n + ' once you stop inviting.' : 'You’ve reached your number.'}</div>` : ''}
-        ${extra === 'roles' && e ? `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost small" data-act="gr-go">${mine.length ? 'Go to the roles' : 'Assign roles'}</button><span class="hint">${mine.length ? `${filled} of ${spots} spots filled` : 'No roles set up for this event yet.'}${isPanel && mine.length && guides < 2 ? ` <strong>${guides ? 'The second guide isn’t assigned yet.' : 'No guides are assigned yet. A panel needs two.'}</strong>` : ''}</span></div>` : ''}
+        ${extra === 'roles' && e ? `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost small" data-act="gr-go">${mine.length ? 'Go to the roles' : 'Assign roles'}</button><span class="hint">${mine.length ? `${filled} of ${spots} spots filled` : 'No roles set up for this event yet.'}${isPanel && mine.length && guides < 2 ? ` <strong>${guides ? 'The second guide isn’t assigned yet.' : 'No guides are assigned yet. A panel needs two.'}</strong>` : ''}${isWs && !mine.some(r => /check.?in|door/i.test(r.name) && (r.officers || []).filter(Boolean).length) ? ' <strong>Nobody is on the door yet.</strong>' : ''}</span></div>` : ''}
         ${mail ? (e ? `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost small" data-act="guest-mail" data-id="${e.id}" data-tpl="${mail}">${isPanel ? 'Write these emails' : 'Write this email'}</button>${sentTo(mail) ? `<span class="hint">Sent to ${sentTo(mail)} so far</span>` : ''}</div>` : '<span class="hint">Pick an event above to write this email.</span>') : ''}
         ${l.length ? `<div class="stack" style="gap:4px">${l.map(t => `<label style="display:flex;flex-direction:row;gap:10px;align-items:flex-start;font-weight:400"><input type="checkbox" class="guide-task" data-id="${t.id}" ${(extra === 'post' ? fin : t.done) ? 'checked' : ''} ${extra === 'post' || (extra === 'flyer' && !t.done && flyMissing(e.id).length) ? 'disabled' : ''} style="width:auto;flex:none;margin-top:4px"><span${(extra === 'post' ? fin : t.done) ? ' style="text-decoration:line-through"' : ''}>${esc(t.title)}${t.who && t.who !== runner ? ` <span class="hint">· ${esc(userName(t.who))}</span>` : ''}</span></label>`).join('')}</div>` : ''}
         ${e && extra === 'post' ? (fin ? '' : '<span class="hint">This step marks itself done when a president posts the event.</span>') : e && extra === 'flyer' && !fin && flyMissing(e.id).length ? '' : e ? `<div><button class="btn ${fin ? 'ghost ' : ''}small" data-act="step-done" data-id="${e.id}" data-i="${i}" data-on="${fin ? 0 : 1}">${fin ? 'Mark as not done' : 'Mark as done'}</button></div>` : ''}
       </div></div>`; };
   return `<div class="stack" style="gap:18px">
-    <p class="muted" style="margin:0">How the WFA runs a ${who} event: what to send and when, who does what, and what to bring. Pick an event and the dates, numbers, and emails fill in for it.</p>
-    <label style="max-width:16rem">Guide<select id="guide-type"><option value="guest_speaker" ${isPanel ? '' : 'selected'}>Guest speaker</option><option value="panel" ${isPanel ? 'selected' : ''}>Panel</option></select></label>
+    <p class="muted" style="margin:0">How the WFA runs a ${isWs ? 'workshop' : who + ' event'}: what to send and when, who does what, and what to bring. Pick an event and the dates, numbers, and emails fill in for it.</p>
+    <label style="max-width:16rem">Guide<select id="guide-type"><option value="guest_speaker" ${type === 'guest_speaker' ? 'selected' : ''}>Guest speaker</option><option value="panel" ${isPanel ? 'selected' : ''}>Panel</option><option value="workshop" ${isWs ? 'selected' : ''}>Workshop</option></select></label>
     <label style="max-width:40rem">Event<select id="guide-ev"><option value="">New event</option>${evs.map(x => `<option value="${x.id}" ${e && x.id === e.id ? 'selected' : ''}>${fmtDay(x.date)} · ${esc(x.title)}${x.draft ? ' (draft)' : ''}${isPast(x) ? ' (past)' : ''}</option>`).join('')}</select>
-      ${evs.length ? '' : `<span class="hint">No ${who} events are coming up. Start one here and it shows in this list.</span>`}</label>
-    <div><button class="btn${e ? ' ghost' : ''} small" data-act="guide-new" data-type="${type}">Start a new ${isPanel ? 'panel' : 'guest speaker event'}</button></div>
+      ${evs.length ? '' : `<span class="hint">No ${isWs ? 'workshops' : who + ' events'} are coming up. Start one here and it shows in this list.</span>`}</label>
+    <div><button class="btn${e ? ' ghost' : ''} small" data-act="guide-new" data-type="${type}">Start a new ${isPanel ? 'panel' : isWs ? 'workshop' : 'guest speaker event'}</button></div>
     ${e ? `<section class="panel stack" style="gap:8px">
       <div><h3 style="margin:0">${esc(e.title)} ${e.draft ? '<span class="tag">Draft</span>' : ''}</h3>
         <div class="ev-sub">${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc) || 'No location yet'} · ${days === 0 ? 'Today' : days > 0 ? `In ${days} day${days === 1 ? '' : 's'}` : `${-days} day${days === -1 ? '' : 's'} ago`}${e.draft ? '' : ` · ${rsvpCount(e.id)} RSVP${rsvpCount(e.id) === 1 ? '' : 's'}${e.cap ? ' of ' + e.cap : ''}`}</div></div>
-      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn small" data-act="guide-edit" data-id="${e.id}">Edit details</button>${e.draft ? '' : `<a class="btn ghost small" href="#event/${e.id}">See the event page</a>`}<button class="btn ghost small" data-act="guest-mail" data-id="${e.id}">${isPanel ? 'Panelist emails' : 'Guest emails'}</button><button class="btn ghost small" data-act="fly-open" data-id="${e.id}">Flyer maker</button>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center"><button class="btn small" data-act="guide-edit" data-id="${e.id}">Edit details</button>${e.draft ? '' : `<a class="btn ghost small" href="#event/${e.id}">See the event page</a>`}${isWs && !g.outside ? '' : `<button class="btn ghost small" data-act="guest-mail" data-id="${e.id}">${isPanel ? 'Panelist emails' : isWs ? 'Presenter emails' : 'Guest emails'}</button>`}<button class="btn ghost small" data-act="fly-open" data-id="${e.id}">Flyer maker</button>
         ${tasks.length ? `<button class="btn ghost small" data-act="guide-plan" data-id="${e.id}">Checklist: ${done} of ${tasks.length} done</button>` : ''}</div>
       ${tasks.length ? `<label style="max-width:22rem">Who’s running this event<select id="guide-runner-change" data-ev="${e.id}">${leadOptions(runner)}</select>
           <span class="hint">They get a reminder the day before each step on the checklist is due. Changing this hands them every unfinished step.</span></label>`
@@ -7195,7 +7246,8 @@ function guideBody(){
           <button class="btn small" data-act="plan-template" data-guide="1" data-id="${e.id}">Create the checklist</button></div>
           <span class="hint">This turns the steps below into a checklist with due dates, which you tick off right on each step. The officer running the event gets a reminder the day before each one is due.</span>`}
     </section>` : ''}
-    ${e ? guidePeopleSection(e, isPanel) : ''}
+    ${e && isWs ? wsBox(e) : ''}
+    ${e && (!isWs || g.outside) ? guidePeopleSection(e, isPanel) : ''}
     ${isPanel ? panelSchedule(e, target) : ''}
     <section class="stack" style="gap:6px"><div class="section-head"><h3>How to plan</h3></div><div>${STEPS.map(step).join('')}</div></section>
     <section class="stack" style="gap:6px"><div class="section-head"><h3>What to bring</h3>${e ? `<span class="muted">${items.filter(([k]) => tick.includes(k)).length} of ${items.length} packed</span>` : ''}</div>
@@ -7299,7 +7351,7 @@ function viewOfficer(){
     body = `<div class="split">
       <form class="panel stack" id="f-event" novalidate>
         <h3>${e ? (e.draft ? 'Edit draft' : 'Edit event') : 'Create an event'}${e && e.draft ? ' <span class="tag">Draft</span>' : ''}</h3>
-        <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${(e ? e.cat : ui.evNewCat) === k ? 'selected' : ''}>${l} · ${k === 'other' ? 'you set the points' : PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select>${e ? '' : '<span class="hint">Picking Guest speaker or Panel takes you to its guide, where those start.</span>'}</label>
+        <label>Type<select id="ev-cat">${Object.entries(CATS).map(([k,[l]]) => `<option value="${k}" ${(e ? e.cat : ui.evNewCat) === k ? 'selected' : ''}>${l} · ${k === 'other' ? 'you set the points' : PTS[k] ? PTS[k] + ' pts' : 'officers only, no points'}</option>`).join('')}</select>${e ? '' : '<span class="hint">Picking Guest speaker, Panel, or Workshop takes you to its guide, where those start.</span>'}</label>
         <label id="ev-pts-wrap" ${(e ? e.cat : ui.evNewCat) === 'other' ? '' : 'hidden'}>Points for checking in<input id="ev-pts" type="number" min="0" max="100" value="${e && e.points != null ? e.points : 10}"></label>
         <div id="rq-guests-box">${rqGuestsBox(e, e?.cat || ui.evNewCat || Object.keys(CATS)[0])}</div>
         <label>Title<input id="ev-title" required value="${esc(e?.title)}" placeholder="e.g. DCF Valuation Workshop"><span id="ev-help-title"></span></label>
@@ -7947,7 +7999,7 @@ function eventInner(id, page){
     ${!session && !isCase(e) && takesRsvps(e) && !hasStarted(e) && !e.draft ? (e.membersOnly ? (uvidRsvpDone(e.id) ? uvidRsvpNote(e.id) : uvidRsvp(e) + membersOnlyNote(e, 'RSVP')) : guestRsvpBox(e)) : ''}
     ${volunteerBox(e)}
     ${e.qaEnabled && !isPast(e) && !e.draft ? (qaOpen(e) ? qaBox(e) : `<div class="panel"><span class="muted">Questions for the ${(e.speakers || []).length > 1 ? 'guests' : 'speaker'} open when RSVPs do.</span></div>`) : ''}
-    <div class="row">${action}${can('officer') ? `<span style="margin-left:auto;gap:6px" class="row">${['guest_speaker', 'panel'].includes(e.cat) ? `<button class="btn ghost small" data-act="run-go" data-id="${id}">Event guide</button>` : db.tasks.some(t => t.eventId === id) ? `<button class="btn ghost small" data-act="run-go" data-id="${id}">Checklist</button>` : ''}<button class="btn ghost small" data-act="edit-event" data-id="${id}">Edit event</button></span>` : ''}</div>
+    <div class="row">${action}${can('officer') ? `<span style="margin-left:auto;gap:6px" class="row">${GUIDE_CATS.includes(e.cat) ? `<button class="btn ghost small" data-act="run-go" data-id="${id}">Event guide</button>` : db.tasks.some(t => t.eventId === id) ? `<button class="btn ghost small" data-act="run-go" data-id="${id}">Checklist</button>` : ''}<button class="btn ghost small" data-act="edit-event" data-id="${id}">Edit event</button></span>` : ''}</div>
     ${can('officer') ? linkClicksNote(e) : ''}
     ${codeBox}
     ${soonBox}
@@ -9778,7 +9830,7 @@ document.addEventListener('click', async ev => {
       toast(reset ? 'Back to the default checklist' : catName(d.cat) + ' checklist saved'); break; }
     case 'plan-template': {
       const e = evById(id), owner = (t.dataset.guide && (document.getElementById('guide-runner') || {}).value) || session;
-      const rows = (t.dataset.guide ? PLAN_DEFAULTS[e.cat === 'panel' ? 'panel' : 'guest_speaker'] : planTemplate(e.cat)).map(([title, n]) => { let due = shiftDay(e.date, n); if (n < 0 && due < todayIso()) due = todayIso();
+      const rows = (t.dataset.guide ? (e.cat === 'workshop' ? stepTasks(wsSteps(wsKind(e))) : PLAN_DEFAULTS[e.cat === 'panel' ? 'panel' : 'guest_speaker']) : planTemplate(e.cat)).map(([title, n]) => { let due = shiftDay(e.date, n); if (n < 0 && due < todayIso()) due = todayIso();
         return { title, event_id: id, owner, due, done: false }; });
       await act(async () => { must(await sb.from('tasks').insert(rows)); await logChange('Added the planning checklist for “' + e.title + '”' + (owner === session ? '' : ', run by ' + userName(owner))); },
         t.dataset.guide ? `Checklist created. ${owner === session ? 'You' : userName(owner)} will get a reminder the day before each step is due.` : 'Checklist added. Assign owners below.');
@@ -10021,6 +10073,8 @@ document.addEventListener('click', async ev => {
     case 'gm-go': guestMailGo(id); break;
     case 'gp-done': closeModal(); render(); break;
     case 'guide-edit': guideEditModal(id); break;
+    case 'ws-laptop-add': { const ev = evById(id); if (!ev) break; const descr = ((ev.desc || '').trim() + '\n\nPlease bring a laptop.').trim(); let none = false;
+      await act(async () => { const r = await sb.from('events').update({ descr }).eq('id', id).select('id'); if (r.error) throw r.error; none = Array.isArray(r.data) && !r.data.length; }, () => none ? 'Only a president can change a posted event. Ask one to add it.' : 'Added to the description'); break; }
     case 'gf-set': { const ev = evById(id), want = foodCap((document.getElementById('gf-r') || {}).value, (document.getElementById('gf-cap') || {}).value); if (!ev) break;
       if (want < rsvpCount(id)){ toast(`${rsvpCount(id)} people have already RSVP’d, so the maximum can’t go below that.`); break; }
       let none = false;
@@ -10029,14 +10083,14 @@ document.addEventListener('click', async ev => {
       break; }
     case 'post-preview': postPreviewModal(id); break;
     case 'run-go': { const ev = evById(id); if (!ev) break; closeModal();
-      if (['guest_speaker', 'panel'].includes(ev.cat)){ ui.officerTab = 'guide'; ui.guideType = ev.cat; ui.guideEv = id; location.hash = 'officer/guide'; }
+      if (GUIDE_CATS.includes(ev.cat)){ ui.officerTab = 'guide'; ui.guideType = ev.cat; ui.guideEv = id; location.hash = 'officer/guide'; }
       else { ui.planEv = id; ui.officerTab = 'plan'; location.hash = 'officer/plan'; }
       render(); window.scrollTo(0, 0); break; }
     case 'gr-go': { const el = document.getElementById('guide-roles'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); break; }
     case 'gr-edit': ui.grEdit = { id, i: +t.dataset.i }; render(); break;
     case 'gr-cancel': ui.grEdit = null; render(); break;
     case 'gr-usual': { const ev = evById(id), roles = JSON.parse(JSON.stringify(rolesOf(id))), have = new Set(roles.map(r => String(r.name || '').trim().toLowerCase())); if (!ev) break;
-      usualRoles().filter(p => !have.has(String(p.name).toLowerCase()) && (!p.guest || GUEST_CATS.includes(ev.cat))).forEach(({ phase, name, arrive, qty, duties }) => { const two = ev.cat === 'panel' && /guide/i.test(name); roles.push({ phase, name, arrive, qty: two ? 2 : qty, duties: two ? PANEL_GUIDE_DUTIES : duties, officers: [] }); });
+      usualRoles().filter(p => !have.has(String(p.name).toLowerCase()) && roleFits(p, ev)).forEach(({ phase, name, arrive, qty, duties }) => { const two = ev.cat === 'panel' && /guide/i.test(name), door = ev.cat === 'workshop' && /check.?in/i.test(name); roles.push({ phase, name, arrive, qty: two ? 2 : qty, duties: two ? PANEL_GUIDE_DUTIES : door ? wsDoorDuties(ev) : duties, officers: [] }); });
       if (await saveRoles(id, roles, 'Roles added. Pick who’s on each one.')) await logChange(`Added the usual roles to “${ev.title}”`); break; }
     case 'gr-add': { const roles = JSON.parse(JSON.stringify(rolesOf(id))); let name = 'New role', k = 2; while (roles.some(r => r.name === name)) name = 'New role ' + k++;
       roles.push({ phase: 'during', name, arrive: 15, qty: 1, duties: '', officers: [] });
@@ -10070,7 +10124,7 @@ document.addEventListener('click', async ev => {
       const now = evById(id); if (ok && now && now.date !== old) planDateMoved(now, old);
       break; }
     case 'step-done': { const ev = evById(id), i = +t.dataset.i, on = t.dataset.on === '1'; if (!ev) break;
-      const st = (ev.cat === 'panel' ? PANEL_STEPS : GUIDE_STEPS)[i]; if (!st) break;
+      const st = stepsFor(ev)[i]; if (!st) break;
       if (on && st[5] === 'flyer' && flyMissing(id).length){ toast('All five flyer versions are needed first: make them in the flyer maker, or upload them.'); break; }
       const l = db.tasks.filter(x => x.eventId === id && (st[6] || []).some(([title]) => title === x.title)), ids = l.filter(x => !!x.done !== on).map(x => x.id);
       if (l.length){ if (ids.length) await act(async () => { must(await sb.from('tasks').update({ done: on }).in('id', ids)); await logChange((on ? 'Completed' : 'Reopened') + ' the step “' + st[2] + '” for ' + ev.title); }, on ? 'Step marked done' : 'Step reopened'); }
@@ -10078,7 +10132,7 @@ document.addEventListener('click', async ev => {
       break; }
     case 'start-pick': startPickModal(); break;
     case 'start-type': { const c = t.dataset.cat; closeModal();
-      if (c === 'guest_speaker' || c === 'panel'){ startGuide(c); break; }
+      if (GUIDE_CATS.includes(c)){ startGuide(c); break; }
       ui.officerTab = 'events'; ui.editEvent = null; ui.guestForm = null; ui.rq = null; ui.evNewCat = c === 'hosted' ? 'other' : c; ui.ctLink = null;
       if (route() !== 'officer') location.hash = 'officer'; else render(); window.scrollTo(0, 0);
       if (c === 'hosted') setTimeout(() => { const box = document.getElementById('ev-host-on'); if (box && !box.checked){ box.checked = true; box.dispatchEvent(new Event('change')); } toast('Add who’s hosting it and their registration link, then post it.'); }, 80);
@@ -10094,19 +10148,20 @@ document.addEventListener('click', async ev => {
         if (a === 'vol-forgive') await logChange('Lifted a volunteering block from “' + (e ? e.title : '') + '”');
       }, () => a === 'vol-join' ? 'You’re volunteering. Thank you!' : a === 'vol-cancel' ? (res === 'ok:late' ? 'Spot given up. Volunteering is paused for you until next semester.' : 'Spot given up') : a === 'vol-mark' ? (t.dataset.did === '1' ? 'Confirmed. Their bonus points are added.' : 'Marked as a no-show') : 'Block lifted');
       if (done && e && route() === 'event') refreshEvent(id); break; }
-    case 'guide-new': guideNewModal(t.dataset.type === 'panel' ? 'panel' : 'guest_speaker'); break;
+    case 'guide-new': guideNewModal(GUIDE_CATS.includes(t.dataset.type) ? t.dataset.type : 'guest_speaker'); break;
     case 'plan-shift': closeModal(); await shiftPlan(id, +t.dataset.d); break;
-    case 'gn-go': { const type = t.dataset.type === 'panel' ? 'panel' : 'guest_speaker', panel = type === 'panel', val = k => String((document.getElementById(k) || {}).value || '').trim(), errEl = document.getElementById('gn-err');
+    case 'gn-go': { const type = GUIDE_CATS.includes(t.dataset.type) ? t.dataset.type : 'guest_speaker', panel = type === 'panel', ws = type === 'workshop', val = k => String((document.getElementById(k) || {}).value || '').trim(), errEl = document.getElementById('gn-err');
       const title = val('gn-title'), date = val('gn-date'), start = val('gn-start'), lead = val('gn-lead') || session, target = panel ? panelPlan(val('gn-target')).n : 0;
       if (!title){ errEl.textContent = 'Give it a working title.'; break; }
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < todayIso()){ errEl.textContent = 'Pick a target date that hasn’t passed.'; break; }
       if (!/^\d{2}:\d{2}/.test(start)){ errEl.textContent = 'Pick a start time.'; break; }
-      const [h, m] = start.split(':').map(Number), len = Math.max(15, Math.min(480, Math.round(+val('gn-len')) || (panel ? PANEL_LEN : 60))), endMin = Math.min(23 * 60 + 59, h * 60 + m + len), end = String(Math.floor(endMin / 60)).padStart(2, '0') + ':' + String(endMin % 60).padStart(2, '0');
+      const [h, m] = start.split(':').map(Number), len = Math.max(15, Math.min(480, Math.round(+val('gn-len')) || (panel ? PANEL_LEN : ws ? 90 : 60))), endMin = Math.min(23 * 60 + 59, h * 60 + m + len), end = String(Math.floor(endMin / 60)).padStart(2, '0') + ':' + String(endMin % 60).padStart(2, '0');
+      const wsData = ws ? { kind: val('gn-kind') === 'soft' ? 'soft' : 'lab', presenter: val('gn-presenter'), outside: !!(document.getElementById('gn-outside') || {}).checked, laptop: !!(document.getElementById('gn-laptop') || {}).checked } : null, cap0 = ws ? Math.max(0, parseInt(val('gn-cap')) || 0) : 0;
       let evId = null; closeModal();
       const made = await act(async () => {
-        evId = must(await sb.from('events').insert({ title, cat: type, date, start_time: start.slice(0, 5), end_time: end, loc: 'To be decided', cap: 0, descr: '', draft: true }).select('id').single()).id;
-        must(await sb.from('tasks').insert(PLAN_DEFAULTS[type].map(([tt, n]) => { let due = shiftDay(date, n); if (n < 0 && due < todayIso()) due = todayIso(); return { title: tt, event_id: evId, owner: lead, due, done: false }; })));
-        must(await sb.from('event_guides').upsert(guideRow(evId, { lead, ...(panel ? { target } : {}) })));
+        evId = must(await sb.from('events').insert({ title, cat: type, date, start_time: start.slice(0, 5), end_time: end, loc: ws && wsData.kind === 'lab' ? 'KB 129 (Fintech Center/Bloomberg Lab)' : 'To be decided', cap: cap0, descr: '', draft: true }).select('id').single()).id;
+        must(await sb.from('tasks').insert((ws ? stepTasks(wsSteps(wsData.kind)) : PLAN_DEFAULTS[type]).map(([tt, n]) => { let due = shiftDay(date, n); if (n < 0 && due < todayIso()) due = todayIso(); return { title: tt, event_id: evId, owner: lead, due, done: false }; })));
+        must(await sb.from('event_guides').upsert(guideRow(evId, { lead, ...(panel ? { target } : {}), ...(ws ? wsData : {}) })));
         await logChange('Started planning “' + title + '”' + (lead === session ? '' : ', run by ' + userName(lead)));
       }, () => `Draft created. ${lead === session ? 'You have' : userName(lead) + ' has'} the checklist.`);
       if (made && evId){ ui.guideType = type; ui.guideEv = evId; render(); window.scrollTo(0, 0); } break; }
@@ -10556,7 +10611,7 @@ document.addEventListener('change', async e => {
   if (id === 'ev-cat'){
     // A new guest speaker or panel starts from its guide, not this form. What's already typed comes along.
     const c = e.target.value, val = k => (document.getElementById(k) || {}).value || '';
-    if (!ui.editEvent && !ui.ctLink && (c === 'guest_speaker' || c === 'panel')){ startGuide(c, { 'gn-title': val('ev-title'), 'gn-date': val('ev-date') >= todayIso() ? val('ev-date') : '', 'gn-start': val('ev-start') }); toast((c === 'panel' ? 'Panels' : 'Guest speakers') + ' start from their guide.'); return; }
+    if (!ui.editEvent && !ui.ctLink && GUIDE_CATS.includes(c)){ startGuide(c, { 'gn-title': val('ev-title'), 'gn-date': val('ev-date') >= todayIso() ? val('ev-date') : '', 'gn-start': val('ev-start') }); toast((c === 'panel' ? 'Panels' : c === 'workshop' ? 'Workshops' : 'Guest speakers') + ' start from their guide.'); return; }
     syncCaseBox();
   }
   if (e.target.classList && e.target.classList.contains('ct-own')){
@@ -10580,6 +10635,12 @@ document.addEventListener('change', async e => {
   if (id === 'plan-ev'){ ui.planEv = e.target.value; render(); }
   if (id === 'guide-ev'){ ui.guideEv = e.target.value; render(); }
   if (id === 'guide-type'){ ui.guideType = e.target.value; ui.guideEv = undefined; render(); }
+  if (id === 'ws-kind') await saveGuide(e.target.dataset.ev, { kind: e.target.value === 'soft' ? 'soft' : 'lab' }, 'Saved');
+  if (id === 'ws-presenter') await saveGuide(e.target.dataset.ev, { presenter: e.target.value }, e.target.value ? userName(e.target.value) + ' is presenting' : 'Saved');
+  if (id === 'ws-outside') await saveGuide(e.target.dataset.ev, { outside: e.target.checked }, 'Saved');
+  if (id === 'ws-laptop') await saveGuide(e.target.dataset.ev, { laptop: e.target.checked }, 'Saved');
+  if (id === 'gn-kind'){ const cap = document.getElementById('gn-cap'), hint = document.getElementById('gn-cap-hint'), lab = e.target.value !== 'soft';
+    if (cap && (cap.value === '20' || cap.value === '')) cap.value = lab ? '20' : ''; if (hint) hint.textContent = lab ? `A lab workshop works best at 20. Up to ${WS_EXTRA} more can share a terminal at the door.` : 'Set it to what the room and the activity can handle. Blank means no limit.'; }
   if (id === 'guide-target'){
     const evId = e.target.dataset.ev, num = panelPlan(e.target.value).n;
     if (!evById(evId)){ ui.guideTarget = num; render(); } else await saveGuide(evId, { target: num }, 'Schedule resized for ' + num + ' panelists');
