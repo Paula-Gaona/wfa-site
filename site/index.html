@@ -4275,7 +4275,7 @@ const WS_ASKS = [
 ];
 // The emails to an outside workshop presenter. Same shape as the panel's: { subject, closing, body }.
 function wsMailText(key, e, o, c){
-  const g = guideOf(e.id), lab = wsKind(e) === 'lab', sw = String(g.software || '').trim(), dur = evDur(e), len = dur === 60 ? 'One hour' : dur === 90 ? 'An hour and a half' : dur === 120 ? 'Two hours' : dur ? dur + ' minutes' : 'About an hour and a half';
+  const g = guideOf(e.id), lab = wsKind(e) === 'lab', sw = String(g.software || '').trim(), dur = evDur(e), len = dur === 60 ? 'One hour' : dur === 90 ? 'An hour and a half' : dur === 120 ? 'Two hours' : dur ? dur + ' minutes' : 'About an hour';
   const size = e.cap ? `Up to ${e.cap} students` : 'A small group of students', comp = lab ? `, each at a computer${sw ? ' with ' + sw : ''}` : '';
   const rs = e.draft ? 0 : rsvpCount(e.id), signed = rs ? `\n- ${rs} student${rs === 1 ? ' has' : 's have'} signed up so far` : '';
   if (key === 'invite') return { subject: 'Invitation to lead a workshop: {event}', closing: 'Sincerely,', body:
@@ -6788,7 +6788,7 @@ function guideNewModal(type){
     <label>Working title<input id="gn-title" maxlength="120" placeholder="${panel ? 'Careers in Finance Panel' : ws ? 'Ratio Analysis using Bloomberg' : 'Lunch with a guest speaker'}"></label>
     ${ws ? `<label>Kind<select id="gn-kind"><option value="lab">Lab workshop (Bloomberg, Excel)</option><option value="soft">Soft skills (networking, interviewing)</option></select></label>` : ''}
     <div class="row" style="gap:10px;flex-wrap:wrap"><label style="flex:1 1 10rem">Target date<input id="gn-date" type="date" min="${todayIso()}"></label><label style="flex:1 1 8rem">Start time<input id="gn-start" type="time" value="${panel || ws ? '16:00' : '11:30'}"></label>
-      <label style="flex:1 1 8rem">Length (minutes)<input id="gn-len" type="number" min="15" max="480" step="5" inputmode="numeric" value="${panel ? PANEL_LEN : ws ? 90 : 60}"></label></div>
+      <label style="flex:1 1 8rem">Length (minutes)<input id="gn-len" type="number" min="15" max="480" step="5" inputmode="numeric" value="${panel ? PANEL_LEN : 60}"></label></div>
     ${ws ? '' : `<div class="hint" style="margin-top:-6px">The length is what gets posted. Networking afterward (up to ${GM_NETWORK} minutes) is extra and isn’t part of the posted time.</div>`}
     <label>Who’s in charge of planning it<select id="gn-lead">${leadOptions(session)}</select>
       <span class="hint">They own the checklist and get a reminder the day before each step is due.</span></label>
@@ -7227,15 +7227,15 @@ function wsSteps(kind, outside){
       [['Send the presenter the final check-in'], ['Prepare the presenter’s gift and thank-you card']]]] : []),
     ...(lab ? [[-3, '3 days before', 'Test everything in the lab', 'On a lab computer, sign in, open the software, and run the practice file from start to finish. Check that a member’s sign-in works too, not only an officer’s.', '', '',
       [['Test the software, sign-ins, and practice files on the lab computers']]]] : []),
-    [-1, 'The day before', 'Final preparations', 'Print the check-in and direction signs, put the practice files where attendees can get them, and gather everything on the What to bring list.', '', '',
-      [['Print the check-in and direction signs'], ['Put the practice files where attendees can get them'], ['Gather everything on the What to bring list']]],
+    [-1, 'The day before', 'Final preparations', 'Print the two check-in signs, put the practice files where attendees can get them, and gather everything on the What to bring list. Keep the files in an email you can open from any computer, in case yours has a problem.', '', '',
+      [['Print the two check-in signs'], ['Put the practice files where attendees can get them'], ['Gather everything on the What to bring list']]],
     [1, 'After the event', 'Wrap up', 'Check that attendance is complete, post a recap with the photos, and add the slides or recording to Recaps for people who missed it.' + (outside ? ' Thank the presenter.' : ''), outside ? 'thanks' : '', '',
       [...(outside ? [['Send a thank-you to the presenter']] : []), ['Check that attendance is complete'], ['Post a recap with photos', 2], ['Add the slides or recording to Recaps', 2]]]
   ];
 }
 function wsItems(kind, outside){
-  return [['signs', '2 sign holders'], ['checkin', '2 printed check-in pages (one for the door)'], ['directions', '2 printed direction pages'], ['computer', 'Computer with the slides, and the adapter for the room’s screen'],
-    ['clicker', 'Clicker'], ...(kind !== 'soft' ? [['files', 'The practice files on a USB drive, as a backup']] : []), ['photos', 'A phone or camera for recap photos'], ...(outside ? [['gifts', 'A gift and thank-you card for the presenter']] : [])];
+  return [['signs', '2 sign holders'], ['checkin', '2 printed check-in pages with the header, one for each holder'], ['computer', 'Computer with the slides, and the adapter for the room’s screen'],
+    ['clicker', 'Clicker'], ['photos', 'A phone or camera for recap photos'], ...(outside ? [['gifts', 'A gift and thank-you card for the presenter']] : [])];
 }
 const stepsFor = e => e.cat === 'panel' ? PANEL_STEPS : e.cat === 'workshop' ? wsSteps(wsKind(e), !!guideOf(e.id).outside) : GUIDE_STEPS;
 const wsDoorDuties = e => `Stand at the door. Each person scans the check-in QR code and checks in, then shows you their screen saying they’re checked in before they go in. People who RSVP’d go first${wsKind(e) === 'lab' && e.cap ? `; there are ${e.cap} seats, and up to ${WS_EXTRA} more people can share a terminal` : ''}.`;
@@ -10226,7 +10226,7 @@ document.addEventListener('click', async ev => {
       if (!title){ errEl.textContent = 'Give it a working title.'; break; }
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < todayIso()){ errEl.textContent = 'Pick a target date that hasn’t passed.'; break; }
       if (!/^\d{2}:\d{2}/.test(start)){ errEl.textContent = 'Pick a start time.'; break; }
-      const [h, m] = start.split(':').map(Number), len = Math.max(15, Math.min(480, Math.round(+val('gn-len')) || (panel ? PANEL_LEN : ws ? 90 : 60))), endMin = Math.min(23 * 60 + 59, h * 60 + m + len), end = String(Math.floor(endMin / 60)).padStart(2, '0') + ':' + String(endMin % 60).padStart(2, '0');
+      const [h, m] = start.split(':').map(Number), len = Math.max(15, Math.min(480, Math.round(+val('gn-len')) || (panel ? PANEL_LEN : 60))), endMin = Math.min(23 * 60 + 59, h * 60 + m + len), end = String(Math.floor(endMin / 60)).padStart(2, '0') + ':' + String(endMin % 60).padStart(2, '0');
       const wsData = ws ? { kind: val('gn-kind') === 'soft' ? 'soft' : 'lab', presenter: val('gn-presenter'), outside: !!(document.getElementById('gn-outside') || {}).checked, laptop: !!(document.getElementById('gn-laptop') || {}).checked } : null, cap0 = ws ? Math.max(0, parseInt(val('gn-cap')) || 0) : 0;
       let evId = null; closeModal();
       const made = await act(async () => {
