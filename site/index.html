@@ -6824,7 +6824,7 @@ function flyStart(e){
 }
 function flyData(e, f){
   // Headshots are on unless someone turned them off, or there are seven or more guests (they get too small) and nobody turned them on.
-  const ppl0 = flyPeople(e); f = { ...f, heads: typeof f.heads === 'boolean' ? f.heads : ppl0.length < 7 };
+  const ppl0 = flyPeople(e), own = e.cat === 'workshop' && !guideOf(e.id).outside; f = { ...f, heads: own ? false : typeof f.heads === 'boolean' ? f.heads : ppl0.length < 7 };   // an officer presenting a workshop is named, without a photo
   return { ...f, date: flyDate(e.date), time: flyTime(e.start, e.end), loc: e.loc && e.loc !== 'To be decided' && e.loc !== 'TBD' ? e.loc.split(' (')[0] : 'Location to come', url: eventLink(e.id),
     people: flyPeople(e).map(p => ({ ...p, title: f.labels[p.id] != null ? f.labels[p.id] : p.title })) };
 }
@@ -6979,7 +6979,7 @@ function flyerModal(id){
   const person = p => { const ph = flyImg[p.id], lab = f.labels[p.id] != null ? f.labels[p.id] : p.title;
     return `<div class="panel stack" style="gap:6px;padding:10px 12px"><strong>${esc(p.name)}</strong>
       <label style="font-weight:400">Line under the name<input class="fly-label" data-pid="${esc(p.id)}" maxlength="60" value="${esc(lab)}" placeholder="Fintech co-founder"></label>
-      <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><label class="btn ghost small" style="cursor:pointer;margin:0">${ph ? 'Change the headshot' : 'Add a headshot'}<input type="file" accept="image/*" class="fly-photo" data-pid="${esc(p.id)}" hidden></label>${ph ? `<button type="button" class="btn ghost small" data-act="fly-rm" data-pid="${esc(p.id)}">Remove</button>` : '<span class="hint">No headshot yet</span>'}</div>
+      <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap" ${e.cat === 'workshop' && !guideOf(e.id).outside ? 'hidden' : ''}><label class="btn ghost small" style="cursor:pointer;margin:0">${ph ? 'Change the headshot' : 'Add a headshot'}<input type="file" accept="image/*" class="fly-photo" data-pid="${esc(p.id)}" hidden></label>${ph ? `<button type="button" class="btn ghost small" data-act="fly-rm" data-pid="${esc(p.id)}">Remove</button>` : '<span class="hint">No headshot yet</span>'}</div>
       ${ph ? `<div class="row" style="gap:10px;flex-wrap:wrap">${[['z', 'Zoom', 1, 3, ph.z], ['x', 'Left–right', 0, 1, ph.x], ['y', 'Up–down', 0, 1, ph.y]].map(([k, l, a, b, v]) => `<label style="flex:1 1 7rem;font-weight:400">${l}<input type="range" class="fly-pos" data-pid="${esc(p.id)}" data-k="${k}" min="${a}" max="${b}" step="0.01" value="${v}"></label>`).join('')}</div>` : ''}</div>`; };
   showModal(`<div class="modal-in stack" style="gap:14px"><div><button class="modal-x" data-act="close" aria-label="Close">×</button><h3 style="margin:0">Flyer maker</h3>
       <div class="hint">${esc(e.title)} · the date, time, place, guests, and QR code come from the event. Headshots stay on this device; they aren’t uploaded or saved.</div></div>
@@ -6990,7 +6990,7 @@ function flyerModal(id){
         <label>What it’s about <span class="hint">One or two sentences</span><textarea class="fly-t" data-k="blurb" rows="3" maxlength="260">${esc(f.blurb)}</textarea></label>
         <label>Small note under the location <span class="hint">Optional</span><input class="fly-t" data-k="note" maxlength="40" value="${esc(f.note)}" placeholder="Lunch provided"></label>
         ${one ? `<label>Short bio <span class="hint">Optional. Two lines at most</span><textarea class="fly-t" data-k="bio" rows="2" maxlength="220">${esc(f.bio)}</textarea></label>` : ''}
-        ${ppl.length ? `<label class="check"><input type="checkbox" id="fly-heads" ${(typeof f.heads === 'boolean' ? f.heads : ppl.length < 7) ? 'checked' : ''}> <span>Show headshots <span class="hint">${ppl.length >= 7 ? 'Off to start with, because with seven or more the headshots get too small; the flyer lists names, fields, and titles instead.' : 'Turn this off if anyone’s is missing; the flyer switches to a list of names.'}</span></span></label>` : `<div class="notice"><span>No guests are on this event’s list yet, so the flyer has none. Add them on the guide and they show up here.</span></div>`}
+        ${ppl.length && e.cat === 'workshop' && !guideOf(e.id).outside ? '<span class="hint">An officer is presenting, so the flyer names them without a headshot. Headshots are for outside guests.</span>' : ppl.length ? `<label class="check"><input type="checkbox" id="fly-heads" ${(typeof f.heads === 'boolean' ? f.heads : ppl.length < 7) ? 'checked' : ''}> <span>Show headshots <span class="hint">${ppl.length >= 7 ? 'Off to start with, because with seven or more the headshots get too small; the flyer lists names, fields, and titles instead.' : 'Turn this off if anyone’s is missing; the flyer switches to a list of names.'}</span></span></label>` : `<div class="notice"><span>No guests are on this event’s list yet, so the flyer has none. Add them on the guide and they show up here.</span></div>`}
         ${ppl.map(person).join('')}
       </div>
       <div class="stack" style="gap:8px;position:sticky;top:0">
