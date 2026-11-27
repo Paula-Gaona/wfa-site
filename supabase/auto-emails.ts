@@ -526,6 +526,26 @@ ${lastNote}`
       }
     } catch (_) { /* not set up yet (122-volunteers.sql) */ }
 
+    // Put in charge of an event (see 120-event-guides.sql): the officer is told once, with a link to the guides. The
+    // guide remembers who it has told, so handing the event to someone else tells the new person. Someone who put
+    // themselves in charge is marked as told by the site, and gets nothing.
+    try {
+      const { data: gds } = await db.from('event_guides').select('event_id, data');
+      const due = (gds || []).filter((g) => { const d = g.data || {}, l = String(d.lead || '').toLowerCase(); return l && String(d.lead_told || '').toLowerCase() !== l; });
+      if (due.length) {
+        const { data: evs } = await db.from('events').select('id, title, date').in('id', due.map((g) => g.event_id)).gte('date', isoDay(Date.now()));
+        const evOfGuide = new Map((evs || []).map((x) => [x.id, x]));
+        for (const g of due) {
+          const lead = String(g.data.lead).toLowerCase(), ev = evOfGuide.get(g.event_id);
+          const claim = await db.from('event_guides').update({ data: { ...g.data, lead_told: lead } }).eq('event_id', g.event_id).select('event_id');
+          if (claim.error || !(claim.data || []).length || !ev) continue;
+          await tell([lead], `You're running ${ev.title}`, `You've been put in charge of planning "${ev.title}" on ${fmtDay(mtMs(ev.date, '12:00'))}.
+
+Its guide lists every step with a due date, and you'll get a reminder the day before each one is due.`, 'Open the event guides', `${site}/#officer/guide`, `lead-${ev.id}`);
+        }
+      }
+    } catch (_) { /* not set up yet (120-event-guides.sql) */ }
+
     // Waitlists (see 62-rsvp-waitlist.sql): tell people who just got a seat. Works even when the event emails are off.
     const { data: promoted } = await db.from('waitlist').select('event_id, email').not('promoted_at', 'is', null).is('notified_at', null).limit(200);
     if (promoted?.length) {

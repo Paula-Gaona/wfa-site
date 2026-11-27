@@ -6791,9 +6791,9 @@ function guideNewModal(type){
       <label style="flex:1 1 8rem">Length (minutes)<input id="gn-len" type="number" min="15" max="480" step="5" inputmode="numeric" value="${panel ? PANEL_LEN : 60}"></label></div>
     ${ws ? '' : `<div class="hint" style="margin-top:-6px">The length is what gets posted. Networking afterward (up to ${GM_NETWORK} minutes) is extra and isn’t part of the posted time.</div>`}
     <label>Who’s in charge of planning it<select id="gn-lead">${leadOptions(session)}</select>
-      <span class="hint">They own the checklist and get a reminder the day before each step is due.</span></label>
+      <span class="hint">They own the checklist, are told by email that they’re in charge, and get a reminder the day before each step is due.</span></label>
     ${panel ? `<label style="max-width:16rem">Panelists to aim for<input id="gn-target" type="number" min="${PANEL_MIN}" max="${PANEL_MAX}" step="1" value="5"></label>` : ''}
-    ${ws ? `<label>Who’s presenting<select id="gn-presenter"><option value="">Not decided yet</option>${leadOptions(session)}</select></label>
+    ${ws ? `<label>Who’s presenting<select id="gn-presenter"><option value="">Not decided yet</option>${leadOptions('')}</select></label>
       <label class="check"><input type="checkbox" id="gn-outside"> <span>The presenter is from outside the WFA</span></label>
       <label class="check"><input type="checkbox" id="gn-laptop"> <span>Attendees should bring a laptop</span></label>
       <label style="max-width:16rem">RSVP maximum<input id="gn-cap" type="number" min="0" inputmode="numeric" value="20"><span class="hint" id="gn-cap-hint">A lab workshop works best at 20. Up to ${WS_EXTRA} more can share a terminal at the door.</span></label>` : ''}
@@ -9903,7 +9903,7 @@ document.addEventListener('click', async ev => {
       const e = evById(id), owner = (t.dataset.guide && (document.getElementById('guide-runner') || {}).value) || session;
       const rows = (t.dataset.guide ? (e.cat === 'workshop' ? stepTasks(stepsFor(e)) : PLAN_DEFAULTS[e.cat === 'panel' ? 'panel' : 'guest_speaker']) : planTemplate(e.cat)).map(([title, n]) => { let due = shiftDay(e.date, n); if (n < 0 && due < todayIso()) due = todayIso();
         return { title, event_id: id, owner, due, done: false }; });
-      await act(async () => { must(await sb.from('tasks').insert(rows)); await logChange('Added the planning checklist for “' + e.title + '”' + (owner === session ? '' : ', run by ' + userName(owner))); },
+      await act(async () => { must(await sb.from('tasks').insert(rows)); if (t.dataset.guide){ const gd = { ...guideOf(id), lead: owner, ...(owner === session ? { lead_told: owner } : {}) }; (db.guides || (db.guides = {}))[id] = gd; must(await sb.from('event_guides').upsert(guideRow(id, gd))); } await logChange('Added the planning checklist for “' + e.title + '”' + (owner === session ? '' : ', run by ' + userName(owner))); },
         t.dataset.guide ? `Checklist created. ${owner === session ? 'You' : userName(owner)} will get a reminder the day before each step is due.` : 'Checklist added. Assign owners below.');
       break; }
     case 'about-edit': { const a = aboutContent(); ui.aboutDraft = { ...a, pillars: a.pillars.map(p => ({ ...p })), steps: a.steps.map(p => ({ ...p })) }; render(); window.scrollTo(0, 0); break; }
@@ -10232,7 +10232,7 @@ document.addEventListener('click', async ev => {
       const made = await act(async () => {
         evId = must(await sb.from('events').insert({ title, cat: type, date, start_time: start.slice(0, 5), end_time: end, loc: ws && wsData.kind === 'lab' ? 'KB 129 (Fintech Center/Bloomberg Lab)' : 'To be decided', cap: cap0, descr: '', draft: true }).select('id').single()).id;
         must(await sb.from('tasks').insert((ws ? stepTasks(wsSteps(wsData.kind, wsData.outside)) : PLAN_DEFAULTS[type]).map(([tt, n]) => { let due = shiftDay(date, n); if (n < 0 && due < todayIso()) due = todayIso(); return { title: tt, event_id: evId, owner: lead, due, done: false }; })));
-        must(await sb.from('event_guides').upsert(guideRow(evId, { lead, ...(panel ? { target } : {}), ...(ws ? wsData : {}) })));
+        must(await sb.from('event_guides').upsert(guideRow(evId, { lead, ...(lead === session ? { lead_told: lead } : {}), ...(panel ? { target } : {}), ...(ws ? wsData : {}) })));
         await logChange('Started planning “' + title + '”' + (lead === session ? '' : ', run by ' + userName(lead)));
       }, () => `Draft created. ${lead === session ? 'You have' : userName(lead) + ' has'} the checklist.`);
       if (made && evId){ ui.guideType = type; ui.guideEv = evId; render(); window.scrollTo(0, 0); } break; }
@@ -10762,6 +10762,8 @@ document.addEventListener('change', async e => {
     // Hand the event to another officer: every unfinished step becomes theirs.
     const evId = e.target.dataset.ev, who = e.target.value, ev = evById(evId);
     await act(async () => { must(await sb.from('tasks').update({ owner: who }).eq('event_id', evId).eq('done', false));
+      // The guide records who's in charge, which is what tells them by email (unless you picked yourself).
+      const gd = { ...guideOf(evId), lead: who, ...(who === session ? { lead_told: who } : {}) }; (db.guides || (db.guides = {}))[evId] = gd; must(await sb.from('event_guides').upsert(guideRow(evId, gd)));
       await logChange(userName(who) + ' now runs “' + (ev ? ev.title : 'an event') + '”'); }, userName(who) + ' now runs this event and gets its reminders');
   }
   if (e.target.classList.contains('pack-item')){
