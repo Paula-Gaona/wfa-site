@@ -865,7 +865,7 @@ async function load(){
     pstats: sb.rpc('public_stats'),
     wait: sb.rpc('waitlist_info'),
     surveys: t('surveys'),
-    jobs: t('job_postings'),
+    jobs: { then: (res, rej) => (async () => { let out = []; for (let i = 0; i < 20000; i += 1000){ const r = await sb.from('job_postings').select('*').range(i, i + 999); if (r.error) return r; out = out.concat(r.data || []); if ((r.data || []).length < 1000) break; } return { data: out }; })().then(res, rej) },   // the database returns 1,000 rows at most per request
     firms: t('notable_firms'),
     programs: t('early_programs'),
     svResp: signed && t('survey_responses'),
@@ -2289,7 +2289,12 @@ const JOB_EMP_MAX = 6;
 // Off: the page lists actual openings only, now that they're kept up to date. The employer rows stay in the database, and this turns the section back on.
 const JOB_EMPLOYERS = false;
 // Openings show this many at a time, with a "Show more" button.
-const JOB_PAGE = 20;
+const JOB_PAGE = 40;
+// More openings load by themselves as you scroll toward the end of the list (no button to press).
+const jobMoreWatch = typeof IntersectionObserver === 'function' ? new IntersectionObserver(es => { if (!es.some(x => x.isIntersecting)) return;
+  ui.jobShown = (ui.jobShown || JOB_PAGE) + JOB_PAGE; const box = document.getElementById('job-lists'); if (box){ box.innerHTML = jobLists(); jobMoreArm(); } }, { rootMargin: '600px' }) : null;
+function jobMoreArm(){ if (!jobMoreWatch) return; jobMoreWatch.disconnect(); const el = document.getElementById('job-more-auto'); if (el) jobMoreWatch.observe(el); }
+new MutationObserver(() => { const el = document.getElementById('job-more-auto'); if (el && !el.dataset.armed){ el.dataset.armed = '1'; jobMoreArm(); } }).observe(document.documentElement, { childList: true, subtree: true });
 function jobLists(){
   const f = jobFilters(), all = db.jobs || [], off = can('officer'), today = todayIso();
   const isPast = j => !!j.closes_on && j.closes_on < today, inUtah = j => (j.states || []).includes('UT');
@@ -2306,7 +2311,7 @@ function jobLists(){
       ${empLong ? `<div><button class="btn ghost small" data-act="job-emp-toggle">${ui.jobEmpAll ? 'Show fewer employers' : `Show all ${employers.length} employers`}</button></div>` : ''}</section>` : ''}
     <section class="stack" style="gap:10px"><div class="section-head"><h2>Openings</h2><span class="muted">${jobs.length} ${jobs.length === 1 ? 'listing' : 'listings'}${filtered ? ' · <button class="btn ghost small" data-act="job-clear">Clear filters</button>' : ''}</span></div>
       ${jobs.slice(0, ui.jobShown || JOB_PAGE).map(jobRow).join('') || `<div class="empty">${filtered ? 'No openings match right now.' : 'No openings posted yet. Check back soon.'}</div>`}
-      ${jobs.length > (ui.jobShown || JOB_PAGE) ? `<div class="row" style="gap:10px;align-items:center"><button class="btn ghost" data-act="job-more">Show ${Math.min(JOB_PAGE, jobs.length - (ui.jobShown || JOB_PAGE))} more</button><span class="muted">Showing ${ui.jobShown || JOB_PAGE} of ${jobs.length}. Search or filter to narrow it down.</span></div>` : ''}</section>`;
+      ${jobs.length > (ui.jobShown || JOB_PAGE) ? `<div id="job-more-auto" class="muted" style="padding:8px 0 24px">Showing ${ui.jobShown || JOB_PAGE} of ${jobs.length}. More load as you scroll; search or filter to narrow it down.</div>` : ''}</section>`;
 }
 document.addEventListener('input', e => { if (e.target.id === 'job-q'){ ui.jobShown = JOB_PAGE; jobFilters().q = e.target.value; const box = document.getElementById('job-lists'); if (box) box.innerHTML = jobLists(); } });
 function viewJobs(){
