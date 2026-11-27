@@ -6857,7 +6857,7 @@ const START_KINDS = [['guest_speaker', 'Guest speaker', 'Starts from its guide, 
   ['hosted', 'Hosted by someone else', 'We’re only posting it: no planning steps, check-in, or points']];
 /* ---------- Flyer maker: the standard WFA flyer, drawn in the browser from the event's details ---------- */
 // Five versions of one design (see "UVU design standards" on the guide). Sizes below are in design units; each is scaled up to its real pixels.
-const FLY = { G: '#185C33', GOLD: '#D2AC5F', WARM: '#F2F0EB', INK: '#1a1a1a', LABEL: '#4a4a4a', LINE: '#dddddd', HAZE: '#C4D6C1', LOGO_R: 530 / 465 };
+const FLY = { G: '#185C33', GOLD: '#D2AC5F', WARM: '#F2F0EB', INK: '#1a1a1a', LABEL: '#4a4a4a', LINE: '#dddddd', HAZE: '#C4D6C1', LOGO_R: 648.206 / 562.563 };
 const FLY_SIZES = {
   letter:  { name: '8.5 × 11 flyer', file: ['8.5x11', 'Flyer'], px: [2550, 3300], W: 612, pad: 48, top: 40, pre: 10, h1: 50, sub: 24, blurb: 12.5, cols: 3, nm: 11.5, ti: 8.5, fl: 6.5, lb: 8, vl: 16, nt: 10, qr: 104, logo: 98, h2: 22, rp: 10.5, ft: 34, ftF: 8.5, face: 74 },
   half:    { name: '4 × 5.5 handout', file: ['4x5.5', 'Handout'], px: [1200, 1650], W: 440, pad: 30, top: 26, pre: 8.5, h1: 36, sub: 18, blurb: 11, cols: 2, nm: 11.5, ti: 8.5, fl: 6.5, lb: 7.5, vl: 14, nt: 9.5, qr: 84, logo: 70, h2: 18, rp: 9.5, ft: 24, ftF: 6.5, face: 52 },
@@ -6867,7 +6867,7 @@ const FLY_SIZES = {
 };
 const flyImg = {};   // headshots stay in this browser tab only: { personId: { img, x, y, z } }
 let flyLogo = null;
-function flyLoadLogo(){ return flyLogo || (flyLogo = new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = 'uvu-logo-square-green.png'; })); }
+function flyLoadLogo(){ return flyLogo || (flyLogo = new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = 'uvu-logo-square-green.svg'; })); }
 function flyPeople(e){
   if (e.cat === 'workshop' && !guideOf(e.id).outside){ const p = guideOf(e.id).presenter; return p ? [{ id: 'pres', name: userName(p), title: (db.profiles[p] || {}).title || '', field: '' }] : []; }
   const all = guidePeople(e.id), ok = all.filter(p => p.status === 'confirmed'), list = ok.length ? ok : all.filter(p => p.status !== 'declined');
