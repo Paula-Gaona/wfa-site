@@ -2286,6 +2286,8 @@ function jobImportTable(){
 const jobFindText = j => [j.title, j.company, j.descr, j.officer_notes, JOB_KINDS[j.kind], j.remote ? 'Remote' : '', ...(j.careers || []).map(jobCareerName), ...(j.semesters || []), ...(j.states || []).flatMap(x => [x, JOB_STATES[x]])].filter(Boolean).join(' ').toLowerCase();
 // Past this many year-round employers the list shortens to the first few (fewer on phones) with a button to show them all.
 const JOB_EMP_MAX = 6;
+// Off: the page lists actual openings only, now that they're kept up to date. The employer rows stay in the database, and this turns the section back on.
+const JOB_EMPLOYERS = false;
 // Openings show this many at a time, with a "Show more" button.
 const JOB_PAGE = 20;
 function jobLists(){
@@ -2296,7 +2298,7 @@ function jobLists(){
   const inPlace = j => !f.loc.length || (j.remote && f.loc.includes('remote')) || (j.states || []).some(x => f.loc.includes(x));
   const jobs = all.filter(j => j.kind !== 'employer' && (off || !isPast(j)) && inCareer(j) && (!f.sem.length || (j.semesters || []).some(x => f.sem.includes(x))) && (!f.type.length || f.type.includes(j.kind)) && inPlace(j) && inSearch(j))
     .sort((a, b) => isPast(a) - isPast(b) || inUtah(b) - inUtah(a) || b.created_at.localeCompare(a.created_at) || a.company.localeCompare(b.company));
-  const employers = all.filter(j => j.kind === 'employer' && inCareer(j) && inSearch(j)).sort((a, b) => a.company.localeCompare(b.company));
+  const employers = JOB_EMPLOYERS ? all.filter(j => j.kind === 'employer' && inCareer(j) && inSearch(j)).sort((a, b) => a.company.localeCompare(b.company)) : [];
   const empLong = employers.length > JOB_EMP_MAX && !words.length;   // a search shows every match
   return `${employers.length ? `<section class="stack" style="gap:10px"><div class="section-head"><h2>Employers hiring year-round</h2></div>
       <p class="hint" style="margin:0">These firms recruit all year, so check their careers pages directly.</p>
@@ -2316,7 +2318,7 @@ function viewJobs(){
       <p class="muted">Finance openings for UVU students, picked out by our officers. Select a listing for the details and the link to apply. Freshman or sophomore? See <a href="#programs">Early programs</a>.</p></section>
     ${session ? '' : `<div class="notice row" style="justify-content:space-between;align-items:center;gap:10px"><span><strong>Get openings matched to you.</strong> Members get an email every Monday with new listings picked for their year and career interests. Joining is free.</span><a class="btn small" href="#signup">Join the WFA</a></div>`}
     ${off ? `<section class="panel stack" style="gap:10px"><h3 style="margin:0">Add listings</h3>
-      <div class="row" style="gap:8px"><button class="btn small" data-act="job-new">+ Add a job</button><button class="btn ghost small" data-act="job-new" data-kind="employer">+ Add a year-round employer</button>
+      <div class="row" style="gap:8px"><button class="btn small" data-act="job-new">+ Add a job</button>${JOB_EMPLOYERS ? '<button class="btn ghost small" data-act="job-new" data-kind="employer">+ Add a year-round employer</button>' : ''}
         <button class="btn ghost small" data-act="job-template">Download template (Excel)</button>
         <label class="btn ghost small" style="flex-direction:row;cursor:pointer">Upload Excel file<input id="job-file" type="file" accept=".xlsx,.csv,text/csv" hidden></label></div>
       ${jobImportTable()}</section>${ui.jobDraft ? jobForm() : ''}` : ''}
@@ -2396,7 +2398,7 @@ async function downloadJobTemplate(){
     }
     const how = wb.addWorksheet('How to fill this out');
     how.columns = [{ width: 24 }, { width: 90 }];
-    [['Column', 'What to enter'], ['Type', 'Internship, Full-time, or Employer website (a firm that recruits year-round).'], ['Company', 'Required.'], ['Job title', 'Required, except for an Employer website row.'], ['Description', 'Optional.'],
+    [['Column', 'What to enter'], ['Type', 'Internship or Full-time.'], ['Company', 'Required.'], ['Job title', 'Required.'], ['Description', 'Optional.'],
       ['Link', 'Required. The job posting, or the careers page for an Employer website row.'], ['Opens, Deadline', 'Optional dates, like 1/15/2027. Jobs are hidden from members after the deadline. Ignored for an Employer website row.'],
       ['Officer notes', 'Optional. Shown on the listing.'], ['Career paths', 'Optional. Check the box for every career path that applies. If you see TRUE and FALSE instead of boxes, your version of Excel doesn’t have checkboxes: type TRUE for each one that applies.'],
       ['Semesters', 'Optional. Check every semester that applies, the same way. Ignored for an Employer website row.'], ['Location', 'Optional. Check Remote, and every state the job is in. Ignored for an Employer website row.'], ['Another semester', 'To tag a semester that isn’t listed, add a column named like Summer 2028.']
@@ -6662,7 +6664,7 @@ function panelPlan(n, len){
   while (left() < 5 && host > 2 * n) host -= n;
   while (left() < 5 && student > 10) student -= 5;
   while (left() > 25 && t < 8) t++;
-  let live = Math.max(0, left()); if (live > 25){ host += live - 25; live = 25; }
+  let live = Math.max(0, left()); if (live > 25){ student += live - 25; live = 25; }   // spare time on a small panel goes to the questions students sent in
   return { n, t, talks: n * (t + 1), host, student, live };
 }
 // The minutes for each part: the suggestion for n panelists, with any numbers the officers set by hand on top.
