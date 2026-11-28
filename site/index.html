@@ -1329,7 +1329,7 @@ function evRow(e){
     ${datebox(e.date)}
     <div style="min-width:0"><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)}</div>
       <div class="ev-title">${esc(e.title)} ${statusTag(e)}</div>
-      <div class="ev-sub">${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc)}${hostLabel(e) ? ' · ' + esc(hostLabel(e)) : ''}</div></div>
+      <div class="ev-sub">${fmtTime(e.start)}–${fmtTime(e.end)} · ${esc(e.loc)}${hostLabel(e) ? ' · ' + esc(hostLabel(e)) : ''}${signupBy(e, true) ? ` · <strong>${signupBy(e, true)}</strong>` : ''}</div></div>
     <div class="rsvp-count">${status}${showRsvps(e) ? `<span class="up">▲</span> ${e.cap ? `${seatsTaken(e.id)} / ${e.cap}` : n}` : isPast(e) || e.cat === 'officer_meeting' || !takesRsvps(e) ? '' : seatTag(e)}</div>
   </button>`;
 }
@@ -3019,7 +3019,7 @@ function adminSeasonsBody(){
 // every 10 minutes (see supabase/auto-emails.ts and 39-automatic-emails.sql).
 const AUTO_REMINDERS = [['7d', '1 week before'], ['1d', '1 day before'], ['same', 'The day of']];
 const SAME_DAY = { '9am': '9 AM that morning', '2h': '2 hours before', '1h': '1 hour before' };
-const AUTO_KINDS = { crew_1d: 'Officer roles, 1 day before', remind_7d: 'Reminder, 1 week before', remind_1d: 'Reminder, 1 day before', remind_same: 'Reminder, day of', remind_2h: 'Reminder, day of', survey: 'Survey request', checkin_open: 'Check-in is open (notification)' };
+const AUTO_KINDS = { crew_1d: 'Officer roles, 1 day before', remind_7d: 'Reminder, 1 week before', remind_1d: 'Reminder, 1 day before', remind_same: 'Reminder, day of', remind_2h: 'Reminder, day of', survey: 'Survey request', checkin_open: 'Check-in is open (notification)', deadline: 'Last day to sign up' };
 function autoCfg(){
   const c = db.settings.autoEmail || { enabled: false, reminders: [{ key: '7d', on: true, to: 'all' }, { key: '1d', on: true, to: 'all' }, { key: 'same', on: true, to: 'all', at: '2h' }], survey: true, daily_cap: 500, case_teams_only: true };
   // Older settings called the day-of reminder "2h".
@@ -8004,6 +8004,11 @@ window.addEventListener('scroll', () => { if (window.innerWidth > 760) closeNavM
 // A check-in QR adds the code (#event/<id>/<code>) so it's filled in for people who scan it at the event.
 // RSVPs closed early: past the "RSVPs close" time officers set (null = open until the event starts).
 const rsvpClosed = e => !!(e.rsvpCloses && Date.now() >= Date.parse(e.rsvpCloses));
+// The last moment to sign up, when an event has one: when RSVPs close, or the registration deadline for a case competition.
+const signupCloses = e => { const t = e.cat === 'case_competition' ? e.regDeadline : (e.regMode === 'link' || e.regMode === 'none' ? null : e.rsvpCloses); return t ? Date.parse(t) : 0; };
+// "RSVP by Mon, Nov 30 at 4:00 PM", while that's still ahead. Shown on the event page and in event lists.
+function signupBy(e, short){ const t = signupCloses(e); if (!t || Date.now() >= t || hasStarted(e)) return ''; const verb = e.cat === 'case_competition' ? 'Register' : 'RSVP';
+  return short ? `${verb} by ${fmtDay(mtDateIso(t))}` : `${verb} by ${fmtMtStamp(t)}`; }
 function eventLink(id, code){ return SITE_URL + '/#event/' + id + (code ? '/' + encodeURIComponent(code) : ''); }
 function eventInner(id, page){
   const e = evById(id); if (!e) return '';
@@ -8065,6 +8070,7 @@ function eventInner(id, page){
   return `<div><div class="cat" style="--c:${catVar(e.cat)}">${catName(e.cat)} · ${hostLabel(e) ? esc(hostLabel(e)) : evPts(e) ? evPts(e) + ' pts' : 'officers only'}${e.draft ? ' · <span class="tag">Draft</span>' : ''}${e.membersOnly ? ' · <span class="tag">Members only</span>' : ''}</div></div>
     <h2>${esc(e.title)}</h2>
     <dl class="facts"><dt>When</dt><dd>${fmtDay(e.date)}, ${fmtTime(e.start)}–${fmtTime(e.end)} <span class="hint">Mountain Time</span></dd>
+      ${signupBy(e) ? `<dt>${e.cat === 'case_competition' ? 'Register by' : 'RSVP by'}</dt><dd><strong>${fmtMtStamp(signupCloses(e))}</strong>${signupCloses(e) - Date.now() < 2 * 864e5 ? ' <span class="tag warn">Closing soon</span>' : ''}</dd>` : ''}
       <dt>Status</dt><dd>${{ upcoming: 'Upcoming', live: '<strong>Happening now</strong>', over: 'Over' }[evStatus(e)]}</dd>
       <dt>Where</dt><dd>${esc(e.loc)}</dd>${dressFacts(e)}${e.cat === 'officer_meeting' ? `<dt>Who</dt><dd>${meetingFor(e)}${session && can('officer') ? `<br><strong>${{ required: 'You’re required.', invited: 'You’re invited (optional).', '': 'You’re not expected at this one.' }[myMeetingStatus(e)]}</strong>` : ''}</dd>` : ''}${isCase(e) ? `<dt>Teams</dt><dd class="num">${teamsIn(id).length}${e.teamLimit ? ` of ${e.teamLimit}` : ''} registered` : showRsvps(e) ? `<dt>Going</dt><dd class="num">${n}${e.cap ? (seats !== n ? ` · ${seats} of ${e.cap} seats taken` : ` of ${e.cap} seats`) : ''}` : !takesRsvps(e) ? `<dt>Registration</dt><dd>${e.regMode === 'link' ? 'On the host’s site' : 'None needed'}` : isPast(e) ? `<dt>Seats</dt><dd>${e.cap || 'No limit'}` : `<dt>Availability</dt><dd>${seatTag(e)}`}${hasStarted(e) && showRsvps(e) ?` · ${attCount(id)} checked in`:''}${can('officer') && (db.guests[id] || []).length ? ` · ${db.guests[id].length} guest${db.guests[id].length === 1 ? '' : 's'}` : ''}</dd></dl>
     ${e.cap && !isCase(e) && showRsvps(e) ? `<div class="meter"><span style="width:${Math.min(100,seats/e.cap*100)}%"></span></div>` : ''}

@@ -742,9 +742,16 @@ Its guide lists every step with a due date, and you'll get a reminder the day be
     let used = await sentToday();
     const cap = Math.max(0, Math.min(5000, Number(cfg.daily_cap ?? 500)));
 
-    const { data: events } = await db.from('events').select('id, title, cat, date, start_time, end_time, loc, descr, draft, test, reg_mode, dress_code, dress_note, qa_enabled, speakers')
+    const EV_COLS = 'id, title, cat, date, start_time, end_time, loc, descr, draft, test, reg_mode, dress_code, dress_note, qa_enabled, speakers, rsvp_closes, reg_deadline';
+    const { data: events0 } = await db.from('events').select(EV_COLS)
       .eq('draft', false).eq('test', false).neq('cat', 'officer_meeting')
       .gte('date', isoDay(now - 2 * DAY)).lte('date', isoDay(now + 8 * DAY));
+    // Events further out whose sign-up closes in the next two days, for the "last day to sign up" message.
+    const soonIso = new Date(now + 2 * DAY).toISOString(), nowIso = new Date(now).toISOString();
+    const { data: closing1 } = await db.from('events').select(EV_COLS).eq('draft', false).eq('test', false).neq('cat', 'officer_meeting').gt('rsvp_closes', nowIso).lte('rsvp_closes', soonIso);
+    const { data: closing2 } = await db.from('events').select(EV_COLS).eq('draft', false).eq('test', false).eq('cat', 'case_competition').gt('reg_deadline', nowIso).lte('reg_deadline', soonIso);
+    const seenEv = new Set<string>();
+    const events = [...(events0 || []), ...(closing1 || []), ...(closing2 || [])].filter((e) => { if (seenEv.has(e.id)) return false; seenEv.add(e.id); return true; });
     if (!events?.length) return json({ ok: true, sent: 0, chat_alerts: chatAlerts });
     const ids = events.map((e) => e.id);
     const { data: done } = await db.from('auto_email_log').select('event_id, kind').in('event_id', ids);
@@ -843,8 +850,11 @@ Its guide lists every step with a due date, and you'll get a reminder the day be
         const phrase = r.key === '7d' ? `is coming up next week, on ${fmtDay(start)}` : r.key === '1d' ? `is tomorrow at ${fmtTime(start)}` : `starts today at ${fmtTime(start)}`;
         const subject = r.key === '7d' ? `Coming up: ${ev.title} on ${fmtDay(start)}` : r.key === '1d' ? `Tomorrow: ${ev.title}` : `Today at ${fmtTime(start)}: ${ev.title}`;
         const toEveryone = !teamsOnly && r.to !== 'rsvp';
-        const lead = teamsOnly ? `Just a reminder that ${ev.title}, which your team is competing in, ${phrase}.`
-          : toEveryone ? `${ev.title} ${phrase}.` : `Just a reminder that ${ev.title}, which you signed up for, ${phrase}.`;
+        // When sign-ups close before the event starts, a reminder sent to everyone says so.
+        const closesAt = ev.cat === 'case_competition' ? 0 : (ev.rsvp_closes ? Date.parse(ev.rsvp_closes) : 0);
+        const closeNote = toEveryone && ev.reg_mode !== 'none' && closesAt && now < closesAt && closesAt < start ? ` RSVPs close ${fmtDay(closesAt)} at ${fmtTime(closesAt)}.` : '';
+        const lead = (teamsOnly ? `Just a reminder that ${ev.title}, which your team is competing in, ${phrase}.`
+          : toEveryone ? `${ev.title} ${phrase}.` : `Just a reminder that ${ev.title}, which you signed up for, ${phrase}.`) + closeNote;
         const label = toEveryone && ev.reg_mode !== 'none' ? 'View the event and RSVP' : 'View the event';
         // Guests who RSVP'd without an account and asked for reminders about this event.
         let guestTo: string[] = [];
@@ -873,6 +883,27 @@ Its guide lists every step with a due date, and you'll get a reminder the day be
           text: (g, email) => `${g}\n\n${lead}${qaText(email)}\n\n${when}\n${ev.loc || ''}\n\n${ev.descr || ''}` +
             (r.key === '1d' ? prepText() : dressShort ? `\n\nDress: ${dressShort}` : '') + `\n\n${label}: ${link}`,
           push: { title: subject, body: `${fmtTime(start)}${ev.loc ? ' - ' + ev.loc : ''}`, url: link } });
+      }
+
+      // Last day to sign up: one message the morning RSVPs (or a case competition's team registration) close, to members
+      // who haven't signed up yet. A closing time early in the day is announced the evening before instead.
+      const closeIso = ev.cat === 'case_competition' ? ev.reg_deadline : ev.rsvp_closes;
+      if (closeIso && cfg.deadline !== false && ev.reg_mode !== 'none' && !already.has(ev.id + '|deadline')) {
+        const closes = Date.parse(closeIso), nine = mtMs(isoDay(closes), '09:00');
+        const sendAt = closes - nine >= 3 * HOUR ? nine : closes - 15 * HOUR;
+        if (closes < start && now >= sendAt && now < closes - 30 * 60000 && now - sendAt <= STALE) {
+          const inSet = new Set(await signedUp(ev));
+          const base = real((members || []).map((m) => m.email)).filter((e) => !inSet.has(e));
+          const team = ev.cat === 'case_competition', dayWord = isoDay(now) === isoDay(closes) ? 'today' : 'tomorrow';
+          const subject = `Last day to ${team ? 'register' : 'RSVP'}: ${ev.title}`;
+          const lead = `${team ? 'Team registration' : 'RSVPs'} for ${ev.title} close${team ? 's' : ''} ${dayWord} at ${fmtTime(closes)}.`;
+          const label = team ? 'View the event and register' : 'View the event and RSVP';
+          jobs.push({ ev, kind: 'deadline', subject, emailTo: base.filter((e) => getsEmail(e, 'events')), pushTo: base.filter((e) => getsPush(e, 'events')),
+            html: (g) => htmlEmail(`<p style="margin:0 0 12px">${escHtml(g)}</p><p style="margin:0 0 16px">${escHtml(lead)}</p>${details}` +
+              (dressShort ? `<p style="margin:0 0 6px"><strong>Dress:</strong> ${escHtml(dressShort)}</p>` : ''), { label, url: link }, footer),
+            text: (g) => `${g}\n\n${lead}\n\n${when}\n${ev.loc || ''}\n\n${ev.descr || ''}` + (dressShort ? `\n\nDress: ${dressShort}` : '') + `\n\n${label}: ${link}`,
+            push: { title: subject, body: `Closes ${dayWord} at ${fmtTime(closes)}`, url: link } });
+        }
       }
 
       // Check-in is open (15 minutes before the start): a notification only, to people signed up who haven't checked in.
