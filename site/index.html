@@ -896,6 +896,7 @@ async function load(){
     avail: signed && t('availability'),
     mres: signed && t('member_resumes'),
     mySurveys: signed && t('event_surveys'),
+    pfChecks: signed && sb.from('profile_checks').select('section, term').eq('email', session),
     surveyResults: off && sb.rpc('survey_results'),
     surveyPending: off && sb.rpc('survey_pending'),
     testAccounts: off && t('test_accounts'),
@@ -963,7 +964,7 @@ async function load(){
   }
   db.users = (R.members || []).map(m => {
     const majors = (m.majors && m.majors.length) ? m.majors : (m.major ? [m.major] : []);
-    return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(' & '), email:m.email, joined:m.joined, interests:m.interests || [], year:m.year || '', jobFocus:m.job_focus || 'both', lbPublic:m.lb_public !== false,
+    return { id:m.id, uvuid:m.uvuid, first:m.first, last:m.last, majors, minor:m.minor || '', major:majors.join(' & '), email:m.email, joined:m.joined, interests:m.interests || [], year:m.year || '', jobFocus:m.job_focus || 'both', interestTop:m.interest_top || [], jobKinds:m.job_kinds || [], jobPlaces:m.job_places || [], lbPublic:m.lb_public !== false,
       resumePath:m.resume_path || '', resumeBook:!!m.resume_book, resumeUpdated:m.resume_updated || null, emailOptIn:m.email_opt_in !== false, chatEmails:m.chat_emails !== false, notify:m.notify || {} };
   });
   const codes = {}; (R.codes || []).forEach(c => codes[c.event_id] = c.code);
@@ -984,7 +985,8 @@ async function load(){
   db.careers = R.careers || [];
   db.questions = R.questions || [];
   db.contacts = Array.isArray(R.contacts) ? R.contacts : null; db.pevents = Array.isArray(R.pevents) ? R.pevents : [];
-  db.mySurveys = R.mySurveys || []; db.surveyResults = Array.isArray(R.surveyResults) ? R.surveyResults : [];
+  db.mySurveys = R.mySurveys || []; db.pfChecks = Array.isArray(R.pfChecks) ? R.pfChecks : [];   // profile sections confirmed this semester (124-profile-points.sql)
+  db.surveyResults = Array.isArray(R.surveyResults) ? R.surveyResults : [];
   db.surveyPending = Array.isArray(R.surveyPending) ? R.surveyPending : [];
   db.testAccounts = Array.isArray(R.testAccounts) ? R.testAccounts : [];
   db.chats = Array.isArray(R.chats) ? R.chats : [];
@@ -2303,6 +2305,10 @@ function jobLists(){
   const inPlace = j => !f.loc.length || (j.remote && f.loc.includes('remote')) || (j.states || []).some(x => f.loc.includes(x));
   const jobs = all.filter(j => j.kind !== 'employer' && (off || !isPast(j)) && inCareer(j) && (!f.sem.length || (j.semesters || []).some(x => f.sem.includes(x))) && (!f.type.length || f.type.includes(j.kind)) && inPlace(j) && inSearch(j))
     .sort((a, b) => isPast(a) - isPast(b) || inUtah(b) - inUtah(a) || b.created_at.localeCompare(a.created_at) || a.company.localeCompare(b.company));
+  // Signed in with something on the profile: the best matches go first. Nothing is hidden, and it can be switched off.
+  const mu = session ? me() : null, canMatch = !!(mu && mu.id && ((mu.interests || []).length || (mu.jobKinds || []).length || (mu.jobPlaces || []).length || (mu.jobFocus && mu.jobFocus !== 'both')));
+  const matching = canMatch && ui.jobMatch !== false, fit = matching ? new Map(jobs.map(j => [j, jobFit(j, mu)])) : null;
+  if (matching) jobs.sort((a, b) => isPast(a) - isPast(b) || fit.get(b) - fit.get(a));
   const employers = JOB_EMPLOYERS ? all.filter(j => j.kind === 'employer' && inCareer(j) && inSearch(j)).sort((a, b) => a.company.localeCompare(b.company)) : [];
   const empLong = employers.length > JOB_EMP_MAX && !words.length;   // a search shows every match
   return `${employers.length ? `<section class="stack" style="gap:10px"><div class="section-head"><h2>Employers hiring year-round</h2></div>
@@ -2310,6 +2316,7 @@ function jobLists(){
       <div class="job-emp-grid${empLong && !ui.jobEmpAll ? ' short' : ''}">${employers.map(jobRow).join('')}</div>
       ${empLong ? `<div><button class="btn ghost small" data-act="job-emp-toggle">${ui.jobEmpAll ? 'Show fewer employers' : `Show all ${employers.length} employers`}</button></div>` : ''}</section>` : ''}
     <section class="stack" style="gap:10px"><div class="section-head"><h2>Openings</h2><span class="muted">${jobs.length} ${jobs.length === 1 ? 'listing' : 'listings'}${filtered ? ' · <button class="btn ghost small" data-act="job-clear">Clear filters</button>' : ''}</span></div>
+      ${canMatch ? `<div class="row" style="gap:8px;align-items:center;flex-wrap:wrap"><span class="hint">${matching ? 'Openings that fit your preferences are listed first.' : 'Listed newest first.'}</span><button class="btn ghost small" data-act="job-match-toggle">${matching ? 'Show newest first instead' : 'Show my matches first'}</button></div>` : ''}
       ${jobs.slice(0, ui.jobShown || JOB_PAGE).map(jobRow).join('') || `<div class="empty">${filtered ? 'No openings match right now.' : 'No openings posted yet. Check back soon.'}</div>`}
       ${jobs.length > (ui.jobShown || JOB_PAGE) ? `<div id="job-more-auto" class="muted" style="padding:8px 0 24px">Showing ${ui.jobShown || JOB_PAGE} of ${jobs.length}. More load as you scroll; search or filter to narrow it down.</div>` : ''}</section>`;
 }
@@ -2334,6 +2341,7 @@ function viewJobs(){
       ${jobDrop('type', 'Type', 'Internships and full-time', 'types', [['internship', 'Internships'], ['full_time', 'Full-time']], f.type)}
       ${jobDrop('loc', 'Location', 'All locations', 'locations', [['remote', 'Remote'], ...usedStates.map(x => [x, JOB_STATES[x] || x])], f.loc)}
     </div>
+    ${jobPrefsBox()}
     <div id="job-lists" class="stack" style="gap:24px">${jobLists()}</div>
   </div>`;
 }
@@ -3080,7 +3088,7 @@ function adminAutoBody(){
           </div></details></div>
       <div class="stack" style="gap:6px"><strong>Messages</strong>
         <label class="check"><input type="checkbox" id="au-chat" ${c.chat_alerts !== false ? 'checked' : ''}> Email people when their messages sit unread for an hour (one summary; works even when the emails above are off)</label>
-        <label class="check"><input type="checkbox" id="au-profile" ${c.profile_reminders !== false ? 'checked' : ''}> Remind members to update their profile each semester (Jan 8, May 8, and Aug 8 at 10 AM: year, majors, career interests, and resume; works even when the emails above are off)</label>
+        <label class="check"><input type="checkbox" id="au-profile" ${c.profile_reminders !== false ? 'checked' : ''}> Remind members to update their profile each semester (Jan 8 and Aug 8 at 10 AM: year, majors, career interests, job preferences, and resume, each worth points; works even when the emails above are off)</label>
         <label class="check"><input type="checkbox" id="au-jobs" ${c.jobs_weekly !== false ? 'checked' : ''}> Send the Job openings email every Monday at 9 AM (up to 12 new listings per person, only ones never emailed before; skipped when there’s nothing new; works even when the emails above are off)</label>
         ${(db.jobDigests || []).length ? `<span class="hint">Last Job openings email: ${(d => `${fmtStamp(d.sent_at)} · ${d.status === 'sent' ? `${d.jobs} listings to ${d.recipients} ${d.recipients === 1 ? 'person' : 'people'}` : d.status === 'skipped' ? 'not sent: ' + esc(d.detail) : d.status === 'failed' ? 'failed: ' + esc(d.detail) : 'sending'}`)(db.jobDigests[0])}</span>` : ''}</div>
       <label style="max-width:24rem">Daily limit for automatic emails<input id="au-cap" type="number" min="1" max="5000" value="${esc(Math.max(c.daily_cap ?? 500, 500))}">
@@ -3159,12 +3167,6 @@ function viewAccount(){
               <div class="row" style="gap:6px"><button class="btn small" type="submit">Save</button><button class="btn ghost small" type="button" data-act="cancel-name">Cancel</button></div></form>`
             : `${esc((u.first + ' ' + u.last).trim()) || '<span class="muted">Not set</span>'} <button class="btn ghost small" data-act="edit-name" style="margin-left:6px">Edit</button>`}</dd>
           <dt>UVU ID</dt><dd class="num">${esc(u.uvuid)}</dd>
-          <dt>Major${u.majors && u.majors.length > 1 ? 's' : ''}</dt><dd>${esc(u.major) || '—'}</dd>
-          <dt>Minor</dt><dd>${esc(u.minor) || '—'}</dd>
-          <dt>Year in school</dt><dd>${esc(u.year) || '<span class="muted">Not set</span>'}</dd>
-          <dt>Career interests</dt><dd>${(u.interests || []).length ? esc(u.interests.join(', ')) : '<span class="muted">None picked yet</span>'}</dd>
-          <dt>Job picks</dt><dd>${esc(JOB_FOCUS[u.jobFocus || 'both'][0])}${u.jobFocus && u.jobFocus !== 'both' ? ' first' : ''} <button class="btn ghost small" data-act="edit-interests" data-id="focus" style="margin-left:6px">Edit</button>
-            <div class="hint">Which job openings the newsletter shows you first: big-name firms, Utah, or both.</div></dd>
           <dt>Club emails</dt><dd>${u.emailOptIn === false ? 'Off' : 'On'} <button class="btn ghost small" data-act="mail-optin" style="margin-left:6px">${u.emailOptIn === false ? 'Turn on' : 'Turn off'}</button>
             <div class="hint">Events and announcements. Account emails like password resets always send.</div></dd>
           ${installHtml() ? `<dt>App</dt><dd>${installHtml()}<div class="hint">Opens in its own window with the WFA icon, and gets message pop-ups.</div></dd>` : ''}
@@ -3174,10 +3176,9 @@ function viewAccount(){
           <dt>Email</dt><dd>${esc(u.email)}</dd>
           <dt>Joined</dt><dd>${fmtDay(u.joined)}</dd>
         </dl>
-        ${ui.editMajors ? majorEditForm(u) : ui.editInterests ? interestsForm(u) : `<div class="row" style="gap:8px"><button class="btn ghost small" data-act="edit-majors">Edit majors and minor</button><button class="btn ${(u.interests || []).length && u.year ? 'ghost ' : ''}small" data-act="edit-interests">${(u.interests || []).length && u.year ? 'Edit year and career interests' : 'Add your year and career interests'}</button></div>`}
         ${DUES_ENABLED && d === 'unpaid' && db.settings.dues ? `<p class="hint">Pay $${db.settings.dues} to any officer. They'll mark you paid here.</p>` : ''}
-        ${resumeSection(u)}
       </section>
+      ${profileCheckPanel(u)}
     </div>
     ${can('officer') ? `<section class="stack"><div class="section-head"><h2>Officer profile</h2><a href="#officers">See the Officers page</a></div>${officerProfileSection()}</section>` : ''}
   </div>`;
@@ -3325,10 +3326,10 @@ function majorEditForm(u){
 const NOT_SURE = 'Not sure yet';
 // Each career shows its summary, with pay, hours, and how to get in a click away (the same info as the Resources page).
 // tucked: on the sign-up form the list starts closed, so the form is short.
-function careerChecklist(p, selected, tucked){
+function careerChecklist(p, selected, tucked, tops){
   if (tucked) return `<details class="guest-opt"><summary>Add your career interests (optional)</summary>
     <div style="margin-top:10px"><span class="hint">This helps us match you with events and job openings. You can also add or change these later in My account.</span>${careerChecklist(p, selected)}</div></details>`;
-  const sel = selected || [], box = t => `<label class="check"><input type="checkbox" class="${p}-int" value="${esc(t)}" ${sel.includes(t) ? 'checked' : ''}> ${esc(t)}</label>`;
+  const sel = selected || [], box = t => `<label class="check"><input type="checkbox" class="${p}-int" value="${esc(t)}" ${sel.includes(t) ? 'checked' : ''}> ${esc(t)}</label>${tops && t !== NOT_SURE ? `<label class="check" style="margin-left:1.7rem;font-weight:400"><input type="checkbox" class="${p}-top" value="${esc(t)}" ${tops.includes(t) ? 'checked' : ''}> <span>★ Top choice</span></label>` : ''}`;
   const opt = c => `<div class="career-opt">${box(c.title)}
     ${c.summary ? `<span class="hint">${esc(c.summary)}</span>` : ''}
     ${c.pay || c.hours || c.path ? `<details><summary>Pay, hours, and getting in</summary><dl class="facts">
@@ -3362,6 +3363,72 @@ function interestsForm(u){
     <div class="err" id="ci-err"></div>
     <div class="row"><button class="btn small" type="submit">Save</button><button class="btn ghost small" type="button" data-act="cancel-interests">Cancel</button></div>
   </form>`;
+}
+
+/* ---------- Profile check: five sections, each worth points once a semester (124-profile-points.sql) ---------- */
+// Saving a section, or confirming it's still right, earns its points for the semester (fall and spring; summer counts as spring).
+const PF_SECTIONS = [['year', 'Year in school', 1], ['majors', 'Majors and minor', 1], ['careers', 'Career interests', 3], ['jobs', 'Job preferences', 3], ['resume', 'Resume', 3]];
+const JOB_KIND_PICK = [['internship', 'Internships'], ['full_time', 'Full-time jobs']], JOB_PLACE_PICK = [['UT', 'In Utah'], ['remote', 'Remote'], ['any', 'Anywhere in the U.S.']];
+function pfTerm(){ const p = mtParts(Date.now()); return `${p.year}-${+p.month >= 8 ? '08' : '01'}-01`; }
+function pfTermName(){ const p = mtParts(Date.now()); return (+p.month >= 8 ? 'Fall ' : 'Spring ') + p.year; }
+const pfDone = sec => (db.pfChecks || []).some(c => c.section === sec && c.term === pfTerm());
+const pfPts = sec => (PF_SECTIONS.find(x => x[0] === sec) || [])[2] || 0, pfPlural = n => `${n} point${n === 1 ? '' : 's'}`;
+function pfFilled(u, sec){
+  const ints = u.interests || [], top = (u.interestTop || []).filter(x => ints.includes(x));
+  return sec === 'year' ? !!u.year : sec === 'majors' ? (u.majors || []).length > 0 : sec === 'careers' ? ints.length > 0 && (top.length > 0 || (ints.length === 1 && ints[0] === NOT_SURE))
+    : sec === 'jobs' ? (u.jobKinds || []).length > 0 && (u.jobPlaces || []).length > 0 : !!u.resumePath;
+}
+// One button per section: "Still right" until something in the section is changed, then "Save changes".
+function pfButton(u, sec){
+  const pts = pfPts(sec), done = pfDone(sec), filled = pfFilled(u, sec);
+  return `<button class="btn ${done ? 'ghost ' : ''}small pf-btn" type="submit" data-pts="${pts}" data-done="${done ? 1 : 0}" ${done ? 'disabled' : ''}>${done ? `Up to date for ${pfTermName()} ✓` : filled ? `Still right · +${pfPlural(pts)}` : `Save · +${pfPlural(pts)}`}</button>`;
+}
+function pfDirty(f){ const b = f && f.querySelector('.pf-btn'); if (!b) return; f.dataset.dirty = '1'; b.disabled = false; b.classList.remove('ghost'); b.textContent = 'Save changes' + (b.dataset.done === '1' ? '' : ` · +${pfPlural(+b.dataset.pts)}`); }
+['input', 'change'].forEach(t => document.addEventListener(t, ev => { const f = ev.target.closest && ev.target.closest('form.pf-sec'); if (f && !ev.target.classList.contains('pf-btn')) pfDirty(f); }));
+document.addEventListener('click', ev => { const b = ev.target.closest && ev.target.closest('[data-act="add-major"], [data-act="rm-major"]'); if (b && b.closest('form.pf-sec')) pfDirty(b.closest('form.pf-sec')); });
+// Job preferences: the same three questions on My account and at the top of the Jobs page. p keeps the two apart.
+function pfJobsFields(u, p){
+  const kinds = u.jobKinds || [], places = u.jobPlaces || [];
+  return `<fieldset class="stack" style="gap:6px"><legend>What are you looking for?</legend><div class="checks">${JOB_KIND_PICK.map(([k, l]) => `<label class="check"><input type="checkbox" class="pfj-kind" value="${k}" ${kinds.includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div></fieldset>
+    <fieldset class="stack" style="gap:6px"><legend>Where?</legend><div class="checks">${JOB_PLACE_PICK.map(([k, l]) => `<label class="check"><input type="checkbox" class="pfj-place" value="${k}" ${places.includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div></fieldset>
+    <fieldset class="stack" style="gap:6px"><legend>Which openings should come first?</legend>
+      ${Object.entries(JOB_FOCUS).map(([k, [l, h]]) => `<label class="check"><input type="radio" name="${p}-focus" value="${k}" ${(u.jobFocus || 'both') === k ? 'checked' : ''}> ${l} <span class="hint">${h}</span></label>`).join('')}</fieldset>`;
+}
+const pfJobsLine = u => [(u.jobKinds || []).map(k => (JOB_KIND_PICK.find(x => x[0] === k) || [])[1]).filter(Boolean).join(' and '), (u.jobPlaces || []).map(k => (JOB_PLACE_PICK.find(x => x[0] === k) || [])[1]).filter(Boolean).join(', '),
+  u.jobFocus === 'big' ? 'big names first' : u.jobFocus === 'utah' ? 'Utah first' : ''].filter(Boolean).join(' · ');
+function profileCheckPanel(u){
+  ui.picks.pf = [...(u.majors || [])];
+  const earned = PF_SECTIONS.filter(([k]) => pfDone(k)).reduce((a, x) => a + x[2], 0), total = PF_SECTIONS.reduce((a, x) => a + x[2], 0), top = (u.interestTop || []).filter(x => (u.interests || []).includes(x));
+  const head = (sec, label) => `<div class="row" style="justify-content:space-between;align-items:baseline;gap:8px"><strong>${label}</strong><span class="hint">${pfDone(sec) ? '✓ ' : ''}${pfPlural(pfPts(sec))}</span></div>`;
+  const sec = (k, label, inner) => `<form class="pf-sec stack" data-sec="${k}" style="gap:8px;border-top:1px solid var(--line);padding-top:14px" novalidate>${head(k, label)}${inner}<div class="err"></div><div class="row">${pfButton(u, k)}</div></form>`;
+  return `<section class="panel stack" id="pf-panel">
+    <div><h3 style="margin:0">Keep your profile up to date</h3>
+      <div class="hint">Each section earns leaderboard points once a semester: save it, or confirm it’s still right. <strong>${earned} of ${total} points earned for ${pfTermName()}.</strong></div></div>
+    ${sec('year', 'Year in school', yearSelect('pf', u.year))}
+    ${sec('majors', 'Majors and minor', majorPicker('pf', ui.picks.pf, u.minor || ''))}
+    ${sec('careers', 'Career interests', `<details ${pfFilled(u, 'careers') ? '' : 'open'}><summary>${(u.interests || []).length ? esc(u.interests.map(x => top.includes(x) ? x + ' ★' : x).join(', ')) : 'None picked yet'}</summary>
+        <div style="margin-top:10px"><span class="hint">Tick the ones that interest you, and star your top choice (more than one is fine). Starred ones come first in your job matches.</span>${careerChecklist('pf', u.interests, false, top)}</div></details>`)}
+    ${sec('jobs', 'Job preferences', pfJobsFields(u, 'pf'))}
+    ${resumeSection(u)}
+    ${u.resumePath ? `<form class="pf-sec stack" data-sec="resume" style="gap:8px" novalidate>${head('resume', 'Is that still your latest resume?')}<div class="err"></div><div class="row">${pfButton(u, 'resume')}</div></form>` : `<span class="hint">Uploading a resume earns ${pfPlural(pfPts('resume'))}.</span>`}
+  </section>`;
+}
+// The Jobs page: the same preferences, saved to the profile, in a box that opens until they're filled in.
+function jobPrefsBox(){
+  const u = session ? me() : null; if (!u || !u.id) return '';
+  const top = (u.interestTop || []).filter(x => (u.interests || []).includes(x)), ints = (u.interests || []).filter(x => x !== NOT_SURE);
+  return `<details class="panel" id="job-prefs" ${pfFilled(u, 'jobs') ? '' : 'open'} style="padding:14px 16px"><summary><strong>Your job preferences</strong> <span class="hint">${pfFilled(u, 'jobs') ? esc(pfJobsLine(u)) : `Set them and earn ${pfPlural(pfPts('jobs'))}. Your matches then show first.`}</span></summary>
+    <form class="pf-sec stack" data-sec="jobs" data-p="jp" style="gap:10px;margin-top:12px" novalidate>${pfJobsFields(u, 'jp')}
+      <span class="hint">Career interests: ${ints.length ? esc(ints.map(x => top.includes(x) ? x + ' ★' : x).join(', ')) : 'none picked yet'}. <a href="#account">Change them in My account</a>, where you can also star your top choices.</span>
+      <div class="err"></div><div class="row">${pfButton(u, 'jobs')}</div></form></details>`;
+}
+// How well an opening fits someone's profile. Starred career paths count most, then other ticked ones, then the kind of job, the place, and big names or Utah.
+function jobFit(j, u){
+  const names = (j.careers || []).map(jobCareerName), ints = u.interests || [], tops = (u.interestTop || []).filter(x => ints.includes(x)), kinds = u.jobKinds || [], places = u.jobPlaces || [], focus = u.jobFocus || 'both';
+  const big = nlBigName(j), ut = nlUtah(j);
+  return (names.some(n => tops.includes(n)) ? 8 : names.some(n => ints.includes(n)) ? 4 : 0) + (kinds.includes(j.kind) ? 2 : 0)
+    + (places.includes('any') || (places.includes('UT') && (j.states || []).includes('UT')) || (places.includes('remote') && j.remote) ? 1 : 0)
+    + (focus === 'big' ? (big ? 2 : 0) : focus === 'utah' ? (ut ? 2 : 0) : big && ut ? 3 : big || ut ? 1 : 0);
 }
 
 /* ---------- Resume and resume book ---------- */
@@ -3530,6 +3597,7 @@ async function uploadResume(file){
   const r = await sb.from('members').update({ resume_path: path, resume_updated: new Date().toISOString() }).eq('id', authUser.id);
   if (r.error){ await sb.storage.from('resumes').remove([path]); return toast(/resume_/.test(r.error.message || '') ? 'Resumes aren’t set up yet. An admin needs to run the 19-resume-book.sql update.' : errMsg(r.error)); }
   if (old) await sb.storage.from('resumes').remove([old]);
+  try { await sb.rpc('profile_confirm', { p_section: 'resume' }); } catch (_) {}   // a new resume is this semester's resume points
   await load(); render(); toast('Resume uploaded');
 }
 
@@ -4839,7 +4907,8 @@ function nlJobsFor(u){
   const today = todayIso(), kinds = nlJobKinds(u && u.year), likes = new Set((u && u.interests) || []), focus = (u && u.jobFocus) || 'both';
   const open = (db.jobs || []).filter(j => j.kind !== 'employer' && kinds.includes(j.kind) && (!j.closes_on || j.closes_on >= today) && (!j.opens_on || j.opens_on <= today) && !(isJobsMail() && j.mailed_at));
   const max = isJobsMail() ? NL_JOBS_DIGEST : NL_JOBS;
-  const score = j => (likes.size && (j.careers || []).some(c => likes.has(jobCareerName(c))) ? 100 : 0)
+  const tops = new Set(((u && u.interestTop) || []).filter(x => likes.has(x)));
+  const score = j => (likes.size && (j.careers || []).some(c => likes.has(jobCareerName(c))) ? 100 : 0) + (tops.size && (j.careers || []).some(c => tops.has(jobCareerName(c))) ? 60 : 0)
     + (kinds.length > 1 && j.kind === kinds[0] ? 40 : 0) + ({ wall_street: 25, buy_side: 25, big4: 20, consulting: 20, big_company: 18 }[(firmOf(j.company) || {}).kind] || 0)
     + ((j.states || []).includes('UT') || (firmOf(j.company) || {}).kind === 'utah' ? 10 : 0)
     + (focus === 'big' && nlBigName(j) ? 60 : focus === 'utah' && nlUtah(j) ? 60 : 0);
@@ -10099,6 +10168,7 @@ document.addEventListener('click', async ev => {
     case 'visit-open': openVisit(id); break;
     case 'member-open': openMember(t.dataset.email); break;
     case 'member-find': closeModal(); ui.memberSearch = t.dataset.email; ui.officerTab = 'members'; if (route() !== 'officer') location.hash = 'officer/members'; else { history.pushState(null, '', ui._hash = '#officer/members'); render(); } window.scrollTo(0, 0); break;
+    case 'job-match-toggle': { ui.jobMatch = ui.jobMatch === false; ui.jobShown = JOB_PAGE; const box = document.getElementById('job-lists'); if (box) box.innerHTML = jobLists(); break; }
     case 'job-more': { ui.jobShown = (ui.jobShown || JOB_PAGE) + JOB_PAGE; const box = document.getElementById('job-lists'); if (box) box.innerHTML = jobLists(); break; }
     case 'cal-day': { const d = t.dataset.d, evs = visibleEvents().filter(e => e.date === d && ui.catsOn.has(e.cat)).sort((a, b) => a.start.localeCompare(b.start)), vis = myVisits().filter(x => x.date === d);
       if (evs.length === 1 && !vis.length) { openEvent(evs[0].id); break; }
@@ -10373,7 +10443,7 @@ document.addEventListener('click', async ev => {
       const orig = ui.photoOrig != null ? ui.photoOrig : p.photoOriginal, params = ui.photoOrig != null ? ui.photoCropNew : p.photoCrop;
       const src = orig || (ui.profilePhoto === null ? (p.photo || '') : ui.profilePhoto);
       if (src) openCropperFrom(src, orig ? params : null); break; }
-    case 'pf-go': location.hash = '#account'; setTimeout(() => { const f = document.getElementById('pf-name'); if (f){ f.closest('.panel, form, section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, 250); break;
+    case 'pf-go': location.hash = '#account'; setTimeout(() => { const f = document.getElementById('pf-panel') || document.getElementById('pf-name'); if (f){ f.closest('.panel, form, section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, 250); break;
     case 'pf-later': try { localStorage.setItem('wfa-pf-later', String(Date.now() + 7 * 864e5)); } catch(e){} render(); break;
     case 'bio-more': { const b = t.previousElementSibling, open = !b.classList.contains('open'); b.classList.toggle('open', open); t.textContent = open ? 'See less' : 'See more'; break; }
     case 'crop-cancel': cropFinish(false); break;
@@ -11034,6 +11104,19 @@ async function handleSubmit(f, v, err){
     await load(); toast('Password updated. You’re signed in.'); location.hash = 'home'; render();
   }
 
+  if (f.classList.contains('pf-sec')){
+    const sec = f.dataset.sec, u = me(), q = sel => [...f.querySelectorAll(sel)], pts = pfPts(sec); let row = null;
+    if (sec === 'year') row = { year: (f.querySelector('select') || {}).value || '' };
+    if (sec === 'majors'){ const pick = readPicker('pf'); if (pick.error) throw new Error(pick.error); if (!pick.majors.length) throw new Error('Add at least one major.'); row = { majors: pick.majors, minor: pick.minor, major: pick.majors[0] }; }
+    if (sec === 'careers'){ const ints = q('.pf-int:checked').map(c => c.value), top = q('.pf-top:checked').map(c => c.value).filter(x => ints.includes(x)); row = { interests: ints, interest_top: top }; }
+    if (sec === 'jobs') row = { job_focus: (f.querySelector(`input[name="${f.dataset.p || 'pf'}-focus"]:checked`) || {}).value || 'both', job_kinds: q('.pfj-kind:checked').map(c => c.value), job_places: q('.pfj-place:checked').map(c => c.value) };
+    if (row && (f.dataset.dirty || !pfFilled(u, sec))){ const r = await sb.from('members').update(row).eq('id', authUser.id);
+      if (r.error) throw new Error(/interest_top|job_kinds|job_places/.test(r.error.message || '') ? 'This isn’t set up yet. An admin needs to run the 124-profile-points.sql update.' : errMsg(r.error)); }
+    const c = await sb.rpc('profile_confirm', { p_section: sec }), res = c.error ? 'err' : c.data;
+    await load(); render();
+    toast(res === 'ok' ? `Saved. +${pfPlural(pts)} for ${pfTermName()}.` : res === 'err:empty' ? (sec === 'careers' ? 'Saved. Star at least one top choice to earn the points.' : 'Saved. Finish this section to earn its points.') : 'Saved.');
+    return;
+  }
   if (f.id === 'f-majors'){
     const pick = readPicker('ac'); if (pick.error) return err('ac-err', pick.error);
     if (!pick.majors.length) return err('ac-err', 'Add at least one major.');

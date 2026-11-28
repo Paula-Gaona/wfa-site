@@ -569,13 +569,13 @@ Its guide lists every step with a due date, and you'll get a reminder the day be
     // Mountain Time (or the first run after). Claimed in profile_reminders first so it only goes out once.
     if (cfg?.profile_reminders !== false) {
       const p = mtParts(Date.now());
-      if ([1, 5, 8].includes(p.month) && (p.day > 8 || (p.day === 8 && p.hour >= 10))) {
+      if ([1, 8].includes(p.month) && (p.day > 8 || (p.day === 8 && p.hour >= 10))) {
         const period = `${p.year}-${String(p.month).padStart(2, '0')}`;
         const claim = await db.from('profile_reminders').insert({ period }).select('period').single();
         if (!claim.error) {
           const season = p.month === 1 ? 'spring' : p.month === 5 ? 'summer' : 'fall';
           const link = `${site}/#account`, subject = `New semester: update your WFA profile`;
-          const body = `A new ${season} semester is starting! Take a minute to make sure your WFA profile is up to date, so we can match you with the right events, firms, and opportunities:\n\n- Your year in school\n- Your majors and minor\n- The finance careers you're interested in\n- Your resume, and whether to include it in the resume book we share with recruiters`;
+          const body = `A new ${season} semester is starting, and each part of your profile you save or confirm earns leaderboard points (up to 11). Take a minute to make sure your WFA profile is up to date, so we can match you with the right events, firms, and opportunities:\n\n- Your year in school\n- Your majors and minor\n- The finance careers you're interested in\n- Your resume, and whether to include it in the resume book we share with recruiters`;
           const to = real((members || []).map((m) => m.email));
           const reached = await sendPush(db, to.filter((e) => pushOn && hasDevice.has(e)), subject, 'Check your year, majors, career interests, and resume.', link, `profile-${period}`);
           const viaEmail = to.filter((e) => !reached.has(e) && (byEmail.get(e) || {}).email_opt_in !== false);
