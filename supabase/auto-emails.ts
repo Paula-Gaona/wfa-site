@@ -742,7 +742,7 @@ Its guide lists every step with a due date, and you'll get a reminder the day be
     let used = await sentToday();
     const cap = Math.max(0, Math.min(5000, Number(cfg.daily_cap ?? 500)));
 
-    const EV_COLS = 'id, title, cat, date, start_time, end_time, loc, descr, draft, test, reg_mode, dress_code, dress_note, qa_enabled, speakers, rsvp_closes, reg_deadline';
+    const EV_COLS = 'id, title, cat, date, start_time, end_time, loc, descr, draft, test, reg_mode, dress_code, dress_note, qa_enabled, speakers, rsvp_closes, reg_deadline, cap';
     const { data: events0 } = await db.from('events').select(EV_COLS)
       .eq('draft', false).eq('test', false).neq('cat', 'officer_meeting')
       .gte('date', isoDay(now - 2 * DAY)).lte('date', isoDay(now + 8 * DAY));
@@ -893,12 +893,19 @@ Its guide lists every step with a due date, and you'll get a reminder the day be
         const sendAt = closes - nine >= 3 * HOUR ? nine : closes - 15 * HOUR;
         if (closes < start && now >= sendAt && now < closes - 30 * 60000 && now - sendAt <= STALE) {
           const inSet = new Set(await signedUp(ev));
-          const base = real((members || []).map((m) => m.email)).filter((e) => !inSet.has(e));
+          // A full event isn't announced: there would be nothing to sign up for. (Officers on a role don't take seats.)
+          let full = false;
+          if (ev.cat !== 'case_competition' && Number(ev.cap) > 0) {
+            const { count: taken } = await db.from('rsvps').select('email', { count: 'exact', head: true }).eq('event_id', ev.id).not('by_role', 'is', true);
+            const { count: guests } = await db.from('guest_rsvps').select('email', { count: 'exact', head: true }).eq('event_id', ev.id);
+            full = (taken || 0) + (guests || 0) >= Number(ev.cap);
+          }
+          const base = full ? [] : real((members || []).map((m) => m.email)).filter((e) => !inSet.has(e));
           const team = ev.cat === 'case_competition', dayWord = isoDay(now) === isoDay(closes) ? 'today' : 'tomorrow';
           const subject = `Last day to ${team ? 'register' : 'RSVP'}: ${ev.title}`;
           const lead = `${team ? 'Team registration' : 'RSVPs'} for ${ev.title} close${team ? 's' : ''} ${dayWord} at ${fmtTime(closes)}.`;
           const label = team ? 'View the event and register' : 'View the event and RSVP';
-          jobs.push({ ev, kind: 'deadline', subject, emailTo: base.filter((e) => getsEmail(e, 'events')), pushTo: base.filter((e) => getsPush(e, 'events')),
+          if (!full) jobs.push({ ev, kind: 'deadline', subject, emailTo: base.filter((e) => getsEmail(e, 'events')), pushTo: base.filter((e) => getsPush(e, 'events')),
             html: (g) => htmlEmail(`<p style="margin:0 0 12px">${escHtml(g)}</p><p style="margin:0 0 16px">${escHtml(lead)}</p>${details}` +
               (dressShort ? `<p style="margin:0 0 6px"><strong>Dress:</strong> ${escHtml(dressShort)}</p>` : ''), { label, url: link }, footer),
             text: (g) => `${g}\n\n${lead}\n\n${when}\n${ev.loc || ''}\n\n${ev.descr || ''}` + (dressShort ? `\n\nDress: ${dressShort}` : '') + `\n\n${label}: ${link}`,
